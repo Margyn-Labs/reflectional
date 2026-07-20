@@ -1,0 +1,2859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#F0F1F3" />
+<title>Margyn — Your margin, live.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,340..600&family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- supabase-js is loaded programmatically at the bottom of this file -->
+<style>
+  :root{
+    --ink:#0B1220; --ink-soft:#16233A; --steel:#5C6B7A;
+    --bg:#F0F1F3; --bg-dim:#E6E8EB; --white:#FFFFFF;
+    --emerald:#12805A; --emerald-bright:#1FA374; --mint:#CFEFDD;
+    --gold:#C97F1E; --amber:#FBE7C7; --orange:#D9662A; --peach:#FFE0C7;
+    --rose:#C23B67; --blush:#FBD9E4; --sky:#2E6FA8; --sky-light:#D8E8F7;
+    --line: rgba(11,18,32,0.11); --line-strong: rgba(11,18,32,0.20);
+    --shadow-sm: 0 2px 10px rgba(18,128,90,0.05), 0 1px 2px rgba(11,18,32,0.05);
+    --shadow-md: 0 14px 34px rgba(18,128,90,0.08), 0 2px 8px rgba(11,18,32,0.06);
+    --shadow-lg: 0 30px 70px -20px rgba(11,18,32,0.26);
+  }
+  @keyframes cardIn{ from{ opacity:0; transform:translateY(14px); } to{ opacity:1; transform:translateY(0); } }
+  @media (prefers-reduced-motion: reduce){ @keyframes cardIn{ from{ opacity:1; transform:none; } to{ opacity:1; transform:none; } } }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:var(--bg); color:var(--ink); font-family:'Manrope',sans-serif; min-height:100vh; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  a{ color:inherit; text-decoration:none; }
+  .wrap{max-width:920px; margin:0 auto; padding:118px 24px 96px;}
+  .hidden{ display:none !important; }
+
+  .crescent{ position:relative; border-radius:50%; overflow:hidden; flex-shrink:0; background:var(--emerald); }
+  .crescent::after{ content:''; position:absolute; top:0; left:-42%; width:100%; height:100%; border-radius:50%; background:var(--bg); }
+
+  nav{ position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:100; background:rgba(255,255,255,0.68); backdrop-filter:blur(20px) saturate(1.5); border:1px solid rgba(255,255,255,0.8); border-radius:999px; box-shadow:var(--shadow-md); max-width:calc(100% - 32px); }
+  .nav-inner{ padding:10px 10px 10px 22px; display:flex; align-items:center; gap:24px; }
+  .nav-brand{ display:flex; align-items:center; gap:10px; }
+  .nav-logo{ font-family:'Fraunces', serif; font-size:18px; font-weight:600; letter-spacing:-0.01em; }
+  .nav-user{ display:flex; align-items:center; gap:12px; font-size:13px; color:var(--steel); }
+  .nav-logout{ background:transparent; border:1px solid var(--line-strong); color:var(--steel); padding:8px 14px; border-radius:999px; cursor:pointer; font-size:12.5px; font-weight:600; transition:all .2s ease; }
+  .nav-logout:hover{ border-color:var(--ink); color:var(--ink); }
+
+  .gate{ position:fixed; inset:0; background:var(--bg); z-index:200; display:flex; align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
+  .gate-col{ max-width:460px; width:100%; }
+  .gate-back{ display:block; text-align:center; margin-top:20px; font-size:13px; font-weight:600; color:var(--steel); transition:color .2s ease; }
+  .gate-back:hover{ color:var(--ink); }
+  .gate-modal{ max-width:460px; width:100%; background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:20px; padding:40px 34px; box-shadow:var(--shadow-lg); }
+  .gate-modal .eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--emerald); margin-bottom:14px; font-weight:600; }
+  .gate-modal h2{ font-family:'Fraunces',serif; font-weight:500; font-size:28px; letter-spacing:-0.01em; margin-bottom:12px; }
+  .gate-modal .sub{ font-size:14px; color:var(--steel); margin-bottom:28px; line-height:1.6; }
+  .auth-tab-bar{ display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--line); border-radius:999px; padding:4px; }
+  .auth-tab{ flex:1; padding:10px; text-align:center; cursor:pointer; background:transparent; color:var(--steel); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:999px; }
+  .auth-tab.active{ background:var(--ink); color:var(--white); }
+  .auth-form{ display:none; }
+  .auth-form.active{ display:block; }
+  .auth-field{ margin-bottom:16px; }
+  .auth-field label{ display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); margin-bottom:6px; font-weight:600; }
+  .auth-field input, .auth-field select{ width:100%; padding:11px 14px; border:1px solid var(--line-strong); border-radius:12px; font-family:'Manrope',sans-serif; font-size:14px; color:var(--ink); background:var(--white); transition:border-color .2s ease; }
+  .auth-field input:focus, .auth-field select:focus{ outline:none; border-color:var(--emerald); }
+  .auth-submit{ width:100%; background:var(--ink); color:var(--white); border:none; padding:12px; border-radius:999px; font-size:14px; font-weight:700; cursor:pointer; transition:all .25s ease; font-family:'Manrope',sans-serif; }
+  .auth-submit:hover{ background:var(--emerald); }
+  .auth-submit:disabled{ opacity:0.5; cursor:not-allowed; }
+  .auth-error{ font-size:12px; color:var(--rose); margin-top:12px; display:none; }
+  .auth-error.show{ display:block; }
+
+  header.app-head{ margin-bottom:26px; }
+  .app-eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--emerald); margin-bottom:10px; font-weight:600; }
+  .app-title{ font-family:'Fraunces',serif; font-weight:500; font-size:36px; letter-spacing:-0.01em; line-height:1.15; }
+  .app-sub{ margin-top:8px; font-size:14px; color:var(--steel); }
+
+  /* three-way page nav */
+  .pagenav{ display:flex; gap:4px; margin-bottom:30px; border:1px solid var(--line); border-radius:999px; padding:4px; background:var(--white); box-shadow:var(--shadow-sm); }
+  .pagenav button{ flex:1; padding:12px 10px; text-align:center; cursor:pointer; background:transparent; color:var(--steel); font-size:13.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:999px; }
+  .pagenav button.active{ background:var(--ink); color:var(--white); }
+
+  .card{ position:relative; background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:16px; padding:28px; margin-bottom:24px; box-shadow:var(--shadow-sm); animation:cardIn .5s cubic-bezier(.16,1,.3,1) backwards; }
+  .card h2{font-family:'Fraunces',serif; font-weight:500; font-size:20px; margin-bottom:6px;}
+  .hint{font-size:13px; color:var(--steel); margin-bottom:20px; line-height:1.6;}
+
+  .facts{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px; }
+  .fact{ background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:var(--shadow-sm); animation:cardIn .5s cubic-bezier(.16,1,.3,1) backwards; }
+  .fact .f-label{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; margin-bottom:8px; }
+  .fact .f-value{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; }
+
+  .kv{ display:flex; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .kv:last-child{ border-bottom:none; }
+  .kv .k{ font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; }
+  .kv .v{ font-weight:600; text-align:right; }
+
+  .pulse-wrap{ margin-bottom:22px; }
+  /* Compact rectangle: ring on the left, everything else stacked on the right.
+     Hovering (or focusing, for keyboard users) grows a panel below the main
+     row that surfaces the 3 most urgent action items without leaving the page. */
+  .pulse-score{
+    position:relative; border-radius:18px; padding:22px 26px; border:none;
+    background:linear-gradient(160deg, #101B2E 0%, #0B1220 62%, #0A1522 100%);
+    box-shadow:0 24px 54px -22px rgba(11,18,32,0.42), inset 0 1px 0 rgba(255,255,255,0.05);
+    cursor:pointer; overflow:hidden; animation:cardIn .5s cubic-bezier(.16,1,.3,1) backwards;
+    transition:box-shadow .3s ease;
+  }
+  .pulse-score:hover, .pulse-score:focus-visible{ box-shadow:0 32px 64px -20px rgba(11,18,32,0.5), inset 0 1px 0 rgba(255,255,255,0.06); }
+  .pulse-score:hover .pulse-tap-hint, .pulse-score:focus-visible .pulse-tap-hint{ color:rgba(255,255,255,0.62); }
+  .pulse-main{ display:flex; align-items:center; gap:22px; position:relative; z-index:1; }
+  .pulse-ring{ width:96px; height:96px; flex-shrink:0; position:relative; }
+  .pulse-ring svg{ width:100%; height:100%; display:block; transform:rotate(-90deg); }
+  .pulse-ring .num{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:29px; line-height:1; color:#FFFFFF; }
+  .pulse-score.is-zero .pulse-ring .num{ color:#FFFFFF; }
+  .pulse-text{ flex:1; min-width:0; text-align:left; }
+  .p-label{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--band-color, var(--emerald-bright)); display:flex; align-items:center; justify-content:flex-start; gap:7px; margin-bottom:8px; }
+  .pd-hero .p-label{ justify-content:center; }
+  .p-label::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--band-color, var(--emerald-bright)); box-shadow:0 0 0 4px color-mix(in srgb, var(--band-color, var(--emerald-bright)) 22%, transparent); }
+  .pulse-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .pulse-band-badge{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:4px 11px; border-radius:999px; background:var(--band-color, var(--emerald-bright)); color:#08130C; }
+  .pulse-delta{ font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.72); }
+  .pulse-asof{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(255,255,255,0.34); margin-top:0; }
+  .spark{ display:none; }
+  .pulse-tap-hint{ margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,0.42); transition:color .2s ease; display:flex; align-items:center; gap:5px; }
+  .pulse-tap-hint svg{ width:11px; height:11px; transition:transform .3s cubic-bezier(.16,1,.3,1); }
+  .pulse-score:hover .pulse-tap-hint svg, .pulse-score:focus-visible .pulse-tap-hint svg{ transform:rotate(90deg); }
+
+  .pulse-expand{
+    position:relative; z-index:1; max-height:0; opacity:0; overflow:hidden;
+    transition:max-height .42s cubic-bezier(.16,1,.3,1), opacity .3s ease .04s, margin-top .42s cubic-bezier(.16,1,.3,1);
+    margin-top:0;
+  }
+  .pulse-score:hover .pulse-expand, .pulse-score:focus-visible .pulse-expand, .pulse-score.is-open .pulse-expand{
+    max-height:320px; opacity:1; margin-top:18px;
+  }
+  .pulse-expand-inner{ border-top:1px solid rgba(255,255,255,0.09); padding-top:16px; }
+  .pulse-expand-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:rgba(255,255,255,0.4); margin-bottom:10px; font-weight:600; }
+  .pulse-action-row{ display:flex; align-items:center; gap:12px; padding:9px 10px; border-radius:10px; cursor:pointer; transition:background .18s ease; }
+  .pulse-action-row:hover{ background:rgba(255,255,255,0.05); }
+  .pulse-action-row-dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; background:var(--a-color); box-shadow:0 0 0 3px color-mix(in srgb, var(--a-color) 25%, transparent); }
+  .pulse-action-row-title{ flex:1; min-width:0; font-size:13px; font-weight:600; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pulse-action-row-tag{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; color:var(--a-color); white-space:nowrap; }
+  .pulse-action-row-arrow{ color:rgba(255,255,255,0.3); flex-shrink:0; }
+  .pulse-more{ margin-top:8px; padding:9px 10px; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:var(--emerald-bright); text-align:center; border-radius:10px; }
+  .pulse-all-clear{ font-size:13px; color:rgba(255,255,255,0.6); padding:8px 10px 2px; line-height:1.55; }
+
+  /* ---------- pulse detail page ---------- */
+  .pd-back{ background:none; border:none; color:var(--steel); font-family:'Manrope',sans-serif; font-size:13.5px; font-weight:700; cursor:pointer; margin-bottom:22px; padding:0; }
+  .pd-back:hover{ color:var(--ink); }
+  .pd-hero{ position:relative; text-align:center; padding:36px 28px; border-radius:20px; background:linear-gradient(160deg, #101B2E 0%, #0B1220 62%, #0A1522 100%); box-shadow:0 24px 54px -22px rgba(11,18,32,0.42), inset 0 1px 0 rgba(255,255,255,0.05); margin-bottom:28px; }
+  .pd-hero .pulse-ring{ width:220px; height:220px; margin:22px auto 14px; }
+  .pd-hero .pulse-ring .num{ font-size:50px; }
+  .pd-hero .pulse-band-badge{ margin-top:2px; }
+  .pd-hero .pulse-delta{ display:block; margin-top:12px; font-size:13px; }
+  .pd-hero .pulse-asof{ display:block; margin-top:6px; }
+  .pd-summary{ font-size:14px; color:rgba(255,255,255,0.72); max-width:440px; margin:16px auto 0; line-height:1.6; }
+
+  .pd-section-title{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--steel); font-weight:700; margin:34px 0 14px; }
+  .pd-section-title:first-of-type{ margin-top:0; }
+
+  .pd-trend-card{ background:var(--white); border:1px solid var(--line); border-radius:8px; padding:20px 20px 8px; box-shadow:var(--shadow-sm); }
+  .pd-trend-empty{ font-size:13.5px; color:var(--steel); padding:28px 4px; text-align:center; line-height:1.6; }
+  .pd-trend-legend{ display:flex; gap:16px; flex-wrap:wrap; padding:10px 4px 16px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--steel); }
+  .pd-trend-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .pd-trend-legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; }
+
+  /* Ledger treatment: no card box per item — a hairline divider between rows
+     does the separating, and a small rotated tick (same device as the
+     methodology page) carries the tier color instead of a border-left stripe. */
+  .pd-action-list{ border-top:1px solid var(--line-strong); }
+  .pd-tier-header{ font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--tier-color, var(--steel)); margin:20px 0 2px; display:flex; align-items:center; gap:8px; }
+  .pd-tier-header:first-child{ margin-top:14px; }
+  .pd-tier-header span{ background:var(--tier-color, var(--steel)); color:#fff; font-size:10px; border-radius:999px; padding:1px 7px; }
+  .pd-action{ display:flex; gap:14px; align-items:flex-start; padding:16px 6px; border-bottom:1px solid var(--line); cursor:pointer; transition:background .18s ease, padding-left .18s ease; border-radius:8px; }
+  .pd-action:hover{ background:rgba(11,18,32,0.025); padding-left:12px; }
+  .pd-action-tick{ width:8px; height:8px; border-radius:2px; background:var(--action-color, var(--steel)); transform:rotate(45deg); flex-shrink:0; margin-top:7px; }
+  .pd-action-body{ flex:1; min-width:0; }
+  .pd-action-title{ font-size:14px; font-weight:700; margin-bottom:3px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pd-action-tag{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; color:var(--action-color, var(--steel)); }
+  .pd-action-detail{ font-size:13px; color:var(--steel); line-height:1.55; }
+  .pd-action-cta{ font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:var(--action-color, var(--emerald)); white-space:nowrap; align-self:center; }
+  .pd-empty-good{ background:linear-gradient(165deg, var(--mint) 0%, #e3f5ec 100%); border:1px solid rgba(18,128,90,0.2); border-radius:16px; padding:26px 22px; text-align:center; color:var(--ink-soft); font-size:14px; }
+  .pd-empty-good strong{ display:block; color:var(--emerald); font-family:'Fraunces',serif; font-size:19px; font-weight:500; margin-bottom:6px; }
+  @media (max-width:640px){ .pd-hero .pulse-ring{ width:180px; height:180px; } .pd-hero .pulse-ring .num{ font-size:42px; } .pd-action{ flex-wrap:wrap; } }
+
+  .vitals-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:30px 16px; margin-bottom:34px;}
+  /* No card shell by design — these float directly on the page background.
+     Hover blooms a soft radial glow in the vital's own accent color behind
+     the ring, and tints the value/label/number text to match. */
+  .vital{ background:transparent; border:none; border-radius:0; padding:6px 4px 0; position:relative; box-shadow:none; text-align:center;
+    cursor:pointer; transition:transform .25s cubic-bezier(.16,1,.3,1);
+    opacity:0; transform:translateY(12px); animation:cardIn .55s cubic-bezier(.16,1,.3,1) forwards; }
+  .vital:nth-child(1){ animation-delay:.06s; } .vital:nth-child(2){ animation-delay:.11s; } .vital:nth-child(3){ animation-delay:.16s; }
+  .vital:nth-child(4){ animation-delay:.21s; } .vital:nth-child(5){ animation-delay:.26s; } .vital:nth-child(6){ animation-delay:.31s; }
+  .vital::before{ content:''; position:absolute; top:-4px; left:50%; width:150px; height:150px; margin-left:-75px;
+    border-radius:50%; background:radial-gradient(circle, var(--v-accent, var(--steel)) 0%, transparent 68%);
+    opacity:0; transition:opacity .35s ease; filter:blur(3px); z-index:0; pointer-events:none; }
+  .vital:not(.is-zero):hover{ transform:translateY(-3px); }
+  .vital:not(.is-zero):hover::before{ opacity:.14; }
+  .vital .v-value{font-family:'IBM Plex Mono',monospace; font-size:21px; font-weight:600; color:var(--ink); margin-bottom:14px; position:relative; z-index:1; transition:color .25s ease;}
+  .vital:not(.is-zero):hover .v-value{ color:var(--v-accent); }
+  .v-ring{ width:132px; height:132px; margin:0 auto 16px; position:relative; z-index:1; }
+  .v-ring svg{ width:100%; height:100%; display:block; transform:rotate(-90deg); }
+  .v-ring .rv{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:22px; color:var(--ink); transition:color .25s ease; }
+  .vital.is-zero .v-ring .rv{ color:var(--ink); }
+  .vital:not(.is-zero):hover .v-ring .rv{ color:var(--v-accent); }
+  .vital .v-top{ display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:7px; position:relative; z-index:1; }
+  .vital .v-dot{ width:6px; height:6px; border-radius:50%; background:var(--v-accent, var(--steel)); flex-shrink:0; }
+  .vital .v-label{font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; transition:color .25s ease;}
+  .vital:not(.is-zero):hover .v-label{ color:var(--v-accent); }
+  .vital .v-score{font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:500; color:var(--steel); position:relative; z-index:1;}
+  .vital.is-zero{ cursor:default; }
+
+  /* ---------- vital detail drawer ---------- */
+  .detail-overlay{ position:fixed; inset:0; z-index:300; background:rgba(11,18,32,0.42); backdrop-filter:blur(2px);
+    display:flex; justify-content:flex-end; }
+  .detail-panel{ width:min(480px, 100%); height:100%; background:var(--bg); overflow-y:auto; box-shadow:var(--shadow-lg);
+    padding:26px 24px 60px; position:relative; animation:slideIn .22s ease; }
+  @keyframes slideIn{ from{ transform:translateX(24px); opacity:0; } to{ transform:translateX(0); opacity:1; } }
+  .detail-close{ position:absolute; top:20px; right:20px; width:32px; height:32px; border-radius:50%; border:1px solid var(--line-strong);
+    background:var(--white); color:var(--steel); font-size:14px; cursor:pointer; }
+  .detail-close:hover{ color:var(--ink); border-color:var(--ink); }
+  .detail-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--steel); font-weight:600; margin:6px 0 4px; }
+  .detail-title{ font-family:'Fraunces',serif; font-weight:500; font-size:26px; letter-spacing:-0.01em; margin-bottom:4px; padding-right:40px; }
+  .detail-sub{ font-size:13px; color:var(--steel); margin-bottom:22px; line-height:1.6; }
+  .detail-stats{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px; }
+  .detail-stat{ background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .detail-stat .ds-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; margin-bottom:6px; }
+  .detail-stat .ds-value{ font-family:'IBM Plex Mono',monospace; font-size:17px; font-weight:600; }
+
+  .aging-bar{ display:flex; gap:6px; margin-bottom:22px; }
+  .aging-seg{ flex:1; background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:12px; padding:10px 8px; text-align:center; }
+  .aging-seg .ag-b{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--steel); font-weight:600; margin-bottom:4px; }
+  .aging-seg .ag-v{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; }
+  .aging-seg.hot{ border-color:var(--rose); background:var(--blush); }
+
+  .ledger-form{ background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:20px; }
+  .ledger-form .lf-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; margin-bottom:10px; }
+  .ledger-form .lf-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .ledger-form input{ width:100%; padding:9px 10px; border:1px solid var(--line-strong); border-radius:4px; font-family:'Manrope',sans-serif; font-size:13px; background:var(--white); color:var(--ink); }
+  .ledger-form input:focus{ outline:none; border-color:var(--emerald); }
+  .ledger-form button{ width:100%; background:var(--ink); color:var(--white); border:none; padding:10px; border-radius:999px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
+  .ledger-form button:hover{ background:var(--emerald); }
+  .ledger-form button:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .ledger-list-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; margin-bottom:2px; padding-top:8px; border-top:1px solid var(--line-strong); }
+  .ledger-row{ border-bottom:1px solid var(--line); padding:13px 4px; display:flex; align-items:center; gap:10px; }
+  .ledger-row:last-child{ border-bottom:none; }
+  .ledger-row .lr-main{ flex:1; min-width:0; }
+  .ledger-row .lr-party{ font-size:13.5px; font-weight:700; margin-bottom:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ledger-row .lr-meta{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--steel); }
+  .ledger-row .lr-amount{ font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; white-space:nowrap; }
+  .lr-tag{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; font-weight:600; padding:2px 6px; border-radius:4px; margin-left:6px; }
+  .lr-tag.ok{ background:var(--mint); color:var(--emerald); }
+  .lr-tag.warn{ background:var(--amber); color:var(--gold); }
+  .lr-tag.bad{ background:var(--blush); color:var(--rose); }
+  .lr-actions{ display:flex; flex-direction:column; gap:6px; }
+  .lr-btn{ font-family:'Manrope',sans-serif; font-size:11px; font-weight:700; padding:6px 10px; border-radius:999px; cursor:pointer; border:1px solid var(--line-strong); background:var(--white); color:var(--ink); white-space:nowrap; }
+  .lr-btn:hover{ border-color:var(--emerald); color:var(--emerald); }
+  .lr-btn.danger{ color:var(--rose); }
+  .lr-btn.danger:hover{ border-color:var(--rose); }
+  .ledger-empty{ font-size:13px; color:var(--steel); padding:20px 0; text-align:center; }
+  .ledger-search{ margin-bottom:12px; }
+  .ledger-search input{ width:100%; padding:9px 12px; border:1px solid var(--line-strong); border-radius:999px; font-family:'Manrope',sans-serif; font-size:13px; background:var(--white); color:var(--ink); }
+  .ledger-search input:focus{ outline:none; border-color:var(--emerald); }
+  .detail-note{ font-size:12px; margin-top:6px; min-height:16px; }
+  .detail-note.ok{ color:var(--emerald); }
+  .detail-note.bad{ color:var(--rose); }
+  .readonly-block{ background:var(--white); border:1px solid var(--line); border-radius:6px; padding:16px; font-size:13.5px; line-height:1.7; color:var(--ink-soft); }
+  .cash-tx-row{ display:flex; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .cash-tx-row:last-child{ border-bottom:none; }
+  .cash-tx-row .ctr-desc{ color:var(--ink-soft); }
+  .cash-tx-row .ctr-date{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--steel); display:block; margin-top:2px; }
+  .cash-tx-row .ctr-amt{ font-family:'IBM Plex Mono',monospace; font-weight:600; white-space:nowrap; }
+  .cash-tx-row .ctr-amt.in{ color:var(--emerald); }
+  .cash-tx-row .ctr-amt.out{ color:var(--rose); }
+  @media (max-width:640px){ .detail-panel{ width:100%; padding:22px 16px 50px; } .ledger-form .lf-grid{ grid-template-columns:1fr; } }
+  .score-good{color:var(--emerald);} .score-warn{color:var(--gold);} .score-bad{color:var(--rose);}
+  .score-none{color:var(--steel);}
+
+  .hist-row{ display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid var(--line); font-size:13.5px; }
+  .hist-row:last-child{ border-bottom:none; }
+  .hist-date{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--steel); }
+  .hist-right{ display:flex; align-items:center; gap:14px; }
+  .hist-pulse{ font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:15px; }
+  .hist-src{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); border:1px solid var(--line); border-radius:999px; padding:2px 8px; }
+  .hist-empty{ font-size:13.5px; color:var(--steel); padding:8px 0; }
+
+  .tabs{display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--line); border-radius:999px; padding:4px; background:var(--white); box-shadow:var(--shadow-sm);}
+  .tab{ flex:1; padding:11px; text-align:center; cursor:pointer; background:transparent; color:var(--steel); font-size:13.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:999px; }
+  .tab.active{background:var(--ink); color:var(--white);}
+  .panel{display:none;} .panel.active{display:block;}
+
+  .dropzone{ border:1.5px dashed var(--line-strong); border-radius:6px; padding:36px; text-align:center; cursor:pointer; transition:border-color .2s, background .2s; }
+  .dropzone:hover{border-color:var(--gold); background:rgba(201,127,30,0.03);}
+  .dropzone input{display:none;}
+  .dz-label{font-size:14px; font-weight:600;}
+  .dz-sub{font-size:12px; color:var(--steel); margin-top:6px;}
+  .file-name{margin-top:14px; font-size:13px; color:var(--emerald); font-weight:600;}
+  .template-link{display:inline-block; margin-top:18px; font-size:13px; color:var(--gold); cursor:pointer; font-weight:600; border-bottom:1px solid rgba(201,127,30,0.3);}
+
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  label{display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--steel); margin-bottom:7px; text-transform:uppercase; letter-spacing:.06em; font-weight:600;}
+  input[type=number], input[type=text], select{ width:100%; padding:11px 14px; background:var(--white); border:1px solid var(--line-strong); border-radius:12px; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
+  input:focus, select:focus{outline:none; border-color:var(--emerald);}
+
+  .btn-row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  button.primary{ background:var(--ink); color:var(--white); border:none; padding:14px 28px; border-radius:999px; font-weight:700; font-size:14.5px; font-family:'Manrope',sans-serif; cursor:pointer; transition:all .25s cubic-bezier(.16,1,.3,1); }
+  button.primary:hover{background:var(--emerald); transform:translateY(-1px); box-shadow:var(--shadow-md);}
+  button.primary:disabled{opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none;}
+  button.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--line-strong); padding:13px 28px; border-radius:999px; font-size:14.5px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; }
+  button.ghost:hover{ border-color:var(--ink); background:var(--white); }
+
+  #briefing-text{ white-space:pre-wrap; font-size:15px; line-height:1.75; }
+  .loading{color:var(--steel); font-size:14px; font-style:italic;}
+  .error-box{ border:1px solid var(--rose); background:var(--blush); color:var(--rose); padding:14px; border-radius:6px; font-size:13px; margin-top:14px; }
+  .note{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--steel); }
+  .note.ok{ color:var(--emerald); }
+  .note.bad{ color:var(--rose); }
+
+  footer{ border-top:1px solid var(--line); padding:32px 24px; text-align:center; font-size:12.5px; color:var(--steel); }
+
+  @media (max-width:640px){
+    .vitals-grid{grid-template-columns:1fr 1fr;}
+    .facts{grid-template-columns:1fr;}
+    .grid-2{grid-template-columns:1fr;}
+    .app-title{font-size:27px;}
+    .wrap{padding:100px 20px 72px;}
+    .pagenav button{ font-size:12px; padding:11px 6px; }
+  }
+
+  /* ---------- methodology link (small, under the pulse card) ---------- */
+  .methodology-link{ display:block; text-align:center; margin:0 0 30px; font-family:'IBM Plex Mono',monospace; font-size:11.5px;
+    color:var(--steel); cursor:pointer; font-weight:600; transition:color .2s ease; background:none; border:none; width:100%; }
+  .methodology-link:hover{ color:var(--emerald); }
+  .pagenav.hidden{ display:none; }
+  .pagenav button{ position:relative; }
+  .nav-badge{ position:absolute; top:4px; right:8px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--rose); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; font-family:'IBM Plex Mono',monospace; }
+  .nav-badge.hidden{ display:none; }
+
+  .fin-eligibility{ background:linear-gradient(165deg, var(--ink) 0%, var(--ink-soft) 100%); color:#fff; border-radius:20px; padding:28px 26px; margin-bottom:22px; box-shadow:var(--shadow-lg); }
+  .fin-eligibility .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mint); margin-bottom:10px; font-weight:600; }
+  .fin-range{ font-family:'Fraunces',serif; font-size:34px; font-weight:500; letter-spacing:-0.01em; margin-bottom:6px; }
+  .fin-note{ font-size:13px; color:rgba(255,255,255,0.65); line-height:1.5; }
+  .fin-consent{ display:flex; gap:10px; align-items:flex-start; padding:16px; background:var(--bg-dim); border-radius:12px; margin:16px 0; font-size:13px; line-height:1.55; color:var(--steel); }
+  .fin-consent input{ width:auto; margin-top:2px; flex-shrink:0; }
+  .fin-confirm{ text-align:center; padding:32px 20px; }
+  .fin-confirm .check{ width:48px; height:48px; border-radius:50%; background:var(--mint); color:var(--emerald); display:flex; align-items:center; justify-content:center; margin:0 auto 14px; font-size:22px; }
+
+  @media print{
+    nav, .pagenav, .methodology-link, #generateBriefing, .btn-row, form, .app-actions, .gate{ display:none !important; }
+    body{ background:#fff; }
+    .wrap{ max-width:720px; padding:24px; }
+    .card{ box-shadow:none; border:1px solid #ccc; break-inside:avoid; }
+    .print-only{ display:block !important; }
+  }
+  .print-only{ display:none; }
+
+
+  /* ---------- methodology page ---------- */
+  .meth-back{ background:transparent; border:1px solid var(--line-strong); color:var(--steel); padding:8px 16px; border-radius:999px;
+    cursor:pointer; font-size:12.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; margin-bottom:30px; }
+  .meth-back:hover{ border-color:var(--ink); color:var(--ink); }
+
+  .meth-pillars{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:34px; }
+  .meth-pillar{ background:var(--white); border:1px solid var(--line); border-top:3px solid var(--p-color); border-radius:10px; padding:16px 16px 14px; }
+  .meth-pillar .mp-name{ display:block; font-family:'Fraunces',serif; font-weight:500; font-size:15px; margin-bottom:4px; }
+  .meth-pillar .mp-pct{ display:block; font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:700; color:var(--p-color); margin-bottom:6px; }
+  .meth-pillar .mp-sub{ display:block; font-size:11.5px; color:var(--steel); line-height:1.4; }
+  @media (max-width:640px){ .meth-pillars{ grid-template-columns:1fr 1fr; } }
+  .meth-waterline{ margin:56px 0 8px; }
+  .meth-wl-bar{ display:flex; align-items:stretch; height:1px; background:var(--line-strong); position:relative; }
+  .meth-wl-seg{ position:relative; height:1px; }
+  .meth-wl-seg::before{ content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--seg-color); transform:translateY(-1px); transition:height .18s ease, transform .18s ease; }
+  .meth-wl-seg:hover::before{ height:6px; transform:translateY(-2.5px); }
+  .meth-wl-reflect{ display:flex; align-items:stretch; height:1px; margin-top:4px; -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,.35), transparent); mask-image:linear-gradient(to bottom, rgba(0,0,0,.35), transparent); }
+  .meth-wl-rseg{ height:14px; border-top:2px solid var(--seg-color); opacity:.5; }
+  .meth-wl-labels{ display:flex; margin-top:18px; }
+  .meth-wl-label{ padding-right:14px; }
+  .meth-wl-label .wl-name{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.02em; color:var(--ink-soft); font-weight:600; line-height:1.4; }
+  .meth-wl-label .wl-pct{ font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:700; margin-top:3px; }
+
+  .meth-section-label{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--steel); font-weight:600; margin:60px 0 4px; }
+
+  .meth-ledger{ border-top:1px solid var(--line-strong); }
+  .meth-row{ display:flex; justify-content:space-between; align-items:baseline; gap:20px; padding:20px 0 6px; border-bottom:1px solid var(--line); }
+  .meth-row .mr-left{ display:flex; align-items:baseline; gap:12px; }
+  .meth-row .mr-tick{ width:8px; height:8px; border-radius:1px; background:var(--seg-color); transform:rotate(45deg); flex-shrink:0; position:relative; top:-2px; }
+  .meth-row .mr-name{ font-family:'Fraunces',serif; font-weight:500; font-size:19px; }
+  .meth-row .mr-weight{ font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:700; white-space:nowrap; }
+  .meth-note{ padding:0 0 22px 20px; border-bottom:1px solid var(--line); }
+  .meth-note .mn-ratio{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--steel); margin-bottom:6px; }
+  .meth-note .mn-why{ font-size:13.5px; color:var(--ink-soft); line-height:1.65; max-width:560px; }
+
+  .meth-footnotes{ margin-top:8px; }
+  .meth-fn-row{ display:flex; gap:12px; padding:13px 0; border-bottom:1px solid var(--line); }
+  .meth-fn-row:first-child{ border-top:1px solid var(--line-strong); }
+  .meth-fn-num{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--steel); font-weight:600; flex-shrink:0; width:16px; }
+  .meth-fn-text{ font-size:13.5px; color:var(--ink-soft); line-height:1.65; }
+  .meth-fn-text b{ color:var(--ink); font-weight:700; }
+  .meth-fn-row.is-open .meth-fn-text i{ color:var(--sky); }
+
+  .meth-industry-line{ font-size:14px; color:var(--ink-soft); line-height:1.8; margin-top:2px; }
+  .meth-industry-line .mi-dot{ color:var(--line-strong); margin:0 9px; }
+  .meth-industry-line .mi-name{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; color:var(--ink-soft); }
+
+  .meth-footer{ margin-top:56px; padding-top:20px; border-top:1px solid var(--line-strong); display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; align-items:baseline; }
+  .meth-footer .mf-version{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--steel); }
+  .meth-footer .mf-note{ font-size:12.5px; color:var(--steel); max-width:400px; text-align:right; line-height:1.55; }
+
+  @media (max-width:640px){
+    .meth-wl-labels{ flex-wrap:wrap; row-gap:14px; }
+    .meth-wl-label{ min-width:30%; }
+    .meth-footer .mf-note{ text-align:left; }
+    .meth-row .mr-name{ font-size:17px; }
+  }
+
+  /* ---------- onboarding checklist ---------- */
+  .checklist{ background:linear-gradient(165deg, #ffffff 0%, #fafbfa 100%); border:1px solid var(--line); border-radius:16px; padding:24px 26px; margin-bottom:24px; box-shadow:var(--shadow-sm); }
+  .checklist-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:14px; }
+  .checklist-head h2{ font-family:'Fraunces',serif; font-weight:500; font-size:19px; }
+  .checklist-progress{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--steel); font-weight:600; white-space:nowrap; }
+  .checklist-bar{ height:5px; border-radius:999px; background:var(--bg-dim); overflow:hidden; margin-bottom:18px; }
+  .checklist-bar-fill{ height:100%; background:var(--emerald-bright); border-radius:999px; transition:width .5s cubic-bezier(.16,1,.3,1); }
+  .checklist-items{ display:flex; flex-direction:column; gap:2px; }
+  .checklist-item{ display:flex; align-items:center; gap:12px; padding:11px 4px; border-bottom:1px solid var(--line); cursor:pointer; transition:background .15s ease; border-radius:6px; }
+  .checklist-item:last-child{ border-bottom:none; }
+  .checklist-item:hover{ background:rgba(11,18,32,0.02); }
+  .checklist-check{ width:20px; height:20px; border-radius:50%; border:1.5px solid var(--line-strong); flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:all .2s ease; }
+  .checklist-item.is-done .checklist-check{ background:var(--emerald); border-color:var(--emerald); }
+  .checklist-item.is-done .checklist-check svg{ opacity:1; }
+  .checklist-check svg{ width:11px; height:11px; color:#fff; opacity:0; }
+  .checklist-item-text{ flex:1; min-width:0; }
+  .checklist-item-title{ font-size:13.5px; font-weight:700; }
+  .checklist-item.is-done .checklist-item-title{ color:var(--steel); text-decoration:line-through; text-decoration-color:var(--line-strong); }
+  .checklist-item-sub{ font-size:12px; color:var(--steel); margin-top:1px; }
+  .checklist-item-arrow{ color:var(--steel); flex-shrink:0; }
+  .checklist-dismiss{ background:none; border:none; color:var(--steel); font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+  .checklist-dismiss:hover{ color:var(--ink); }
+
+  /* ---------- freshness banner ---------- */
+  .stale-banner{ display:flex; align-items:center; gap:14px; background:var(--amber); border:1px solid rgba(201,127,30,0.28); border-radius:14px; padding:14px 18px; margin-bottom:20px; }
+  .stale-banner .sb-icon{ width:30px; height:30px; border-radius:50%; background:rgba(201,127,30,0.16); color:var(--gold); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .stale-banner .sb-text{ flex:1; font-size:13px; color:var(--ink-soft); line-height:1.5; }
+  .stale-banner .sb-text b{ color:var(--ink); }
+  .stale-banner .sb-cta{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:700; color:var(--gold); white-space:nowrap; cursor:pointer; background:none; border:none; text-decoration:underline; text-underline-offset:2px; }
+
+  /* ---------- benchmark chip on vitals ---------- */
+  .v-bench{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--steel); margin-top:4px; position:relative; z-index:1; }
+  .v-bench.above{ color:var(--emerald); }
+  .v-bench.below{ color:var(--rose); }
+
+  /* ---------- import summary toast ---------- */
+  .import-summary{ background:var(--mint); border:1px solid rgba(18,128,90,0.22); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--ink-soft); line-height:1.6; }
+  .import-summary b{ color:var(--emerald); }
+</style>
+</head>
+<body>
+
+<!-- ============ AUTH GATE ============ -->
+<div class="gate" id="authGate">
+  <div class="gate-col">
+  <div class="gate-modal">
+    <div class="eyebrow">Margyn 1.0</div>
+    <h2 id="authTitle">Welcome back.</h2>
+    <p class="sub">Log in to your dashboard or create an account to get started.</p>
+    <div class="auth-tab-bar">
+      <button type="button" class="auth-tab active" data-form="login">Log in</button>
+      <button type="button" class="auth-tab" data-form="signup">Sign up</button>
+    </div>
+    <form class="auth-form active" id="loginForm">
+      <div class="auth-field"><label for="loginEmail">Email</label>
+        <input type="email" id="loginEmail" required autocomplete="email" placeholder="you@company.com"></div>
+      <div class="auth-field"><label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••"></div>
+      <button type="submit" class="auth-submit" id="loginSubmit">Log in</button>
+      <div class="auth-error" id="loginError"></div>
+    </form>
+    <form class="auth-form" id="signupForm">
+      <div class="auth-field"><label for="signupEmail">Email</label>
+        <input type="email" id="signupEmail" required autocomplete="email" placeholder="you@company.com"></div>
+      <div class="auth-field"><label for="signupPassword">Password (min 6 characters)</label>
+        <input type="password" id="signupPassword" required autocomplete="new-password" placeholder="••••••••" minlength="6"></div>
+      <button type="submit" class="auth-submit" id="signupSubmit">Create account</button>
+      <div class="auth-error" id="signupError"></div>
+    </form>
+  </div>
+  <a class="gate-back" href="/">&larr; Back to the website</a>
+  </div>
+</div>
+
+<!-- ============ ONBOARDING GATE ============ -->
+<div class="gate hidden" id="onboardGate">
+  <div class="gate-modal">
+    <div class="eyebrow">One-time setup</div>
+    <h2>Tell us about your business.</h2>
+    <p class="sub">This shapes your scorecard and your briefing. You can change it any time on your profile.</p>
+    <form id="onboardForm">
+      <div class="auth-field"><label for="obCompany">Company name</label>
+        <input type="text" id="obCompany" required placeholder="Kavya Textiles Pvt Ltd"></div>
+      <div class="auth-field"><label for="obRevenue">Annual revenue</label>
+        <select id="obRevenue" required>
+          <option value="">Select a range…</option>
+          <option value="under_5cr">Under ₹5 crore</option>
+          <option value="5_25cr">₹5 – 25 crore</option>
+          <option value="25_50cr">₹25 – 50 crore</option>
+          <option value="50_100cr">₹50 – 100 crore</option>
+          <option value="100_200cr">₹100 – 200 crore</option>
+          <option value="over_200cr">Over ₹200 crore</option>
+        </select></div>
+      <div class="auth-field"><label for="obIndustry">Industry</label>
+        <select id="obIndustry">
+          <option value="">Select an industry…</option>
+          <option value="Manufacturing (General)">Manufacturing (General)</option>
+          <option value="Textiles & Apparel">Textiles &amp; Apparel</option>
+          <option value="Auto Components">Auto Components</option>
+          <option value="Pharma & Chemicals">Pharma &amp; Chemicals</option>
+          <option value="Trading & Distribution">Trading &amp; Distribution</option>
+          <option value="Professional & IT Services">Professional &amp; IT Services</option>
+          <option value="Other / Generalized">Other</option>
+        </select></div>
+      <div class="auth-field"><label for="obCity">City</label>
+        <input type="text" id="obCity" placeholder="Mumbai"></div>
+      <div class="auth-field"><label for="obGst">GSTIN <span style="font-weight:400; color:var(--steel);">(optional, add later if you don't have it handy)</span></label>
+        <input type="text" id="obGst" class="mono" placeholder="27ABCDE1234F1Z5" maxlength="15" style="text-transform:uppercase;"></div>
+      <button type="submit" class="auth-submit" id="obSubmit">Continue</button>
+      <div class="auth-error" id="obError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<nav>
+  <div class="nav-inner">
+    <a class="nav-brand" href="/">
+      <div class="crescent" style="width:20px;height:20px;"></div>
+      <div class="nav-logo">margyn</div>
+    </a>
+    <div style="flex:1;"></div>
+    <div class="nav-user">
+      <span id="userEmail"></span>
+      <button class="nav-logout" id="logoutBtn">Log out</button>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <header class="app-head">
+    <div class="app-eyebrow">Margyn 1.0</div>
+    <div class="app-title" id="headCompany">—</div>
+    <div class="app-sub" id="headSub"></div>
+  </header>
+
+  <div class="pagenav">
+    <button data-view="profile">Profile</button>
+    <button data-view="calculate">Upload &amp; calculate</button>
+    <button data-view="scores" class="active">Scores<span class="nav-badge hidden" id="scoresBadge"></span></button>
+    <button data-view="financing">Financing</button>
+  </div>
+
+  <!-- ---------- 1. PROFILE ---------- -->
+  <div id="view-profile" class="hidden">
+    <div class="facts">
+      <div class="fact"><div class="f-label">Snapshots recorded</div><div class="f-value" id="pfCount">0</div></div>
+      <div class="fact"><div class="f-label">Latest pulse</div><div class="f-value" id="pfPulse">0</div></div>
+      <div class="fact"><div class="f-label">Tracking since</div><div class="f-value" id="pfSince">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Account</h2>
+      <div class="hint">Read-only. These come from your login.</div>
+      <div class="kv"><span class="k">Email</span><span class="v" id="pfEmail">—</span></div>
+      <div class="kv"><span class="k">Account created</span><span class="v" id="pfCreated">—</span></div>
+      <div class="kv"><span class="k">User ID</span><span class="v mono" id="pfUid" style="font-size:11px;">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Business details</h2>
+      <div class="hint">Used in your scorecard and your AI briefing. Edit and save any time.</div>
+      <form id="profileForm">
+        <div class="grid-2">
+          <div><label>Company name</label><input type="text" id="pfCompany" required></div>
+          <div><label>Annual revenue</label>
+            <select id="pfRevenue" required>
+              <option value="">Select a range…</option>
+              <option value="under_5cr">Under ₹5 crore</option>
+              <option value="5_25cr">₹5 – 25 crore</option>
+              <option value="25_50cr">₹25 – 50 crore</option>
+              <option value="50_100cr">₹50 – 100 crore</option>
+              <option value="100_200cr">₹100 – 200 crore</option>
+              <option value="over_200cr">Over ₹200 crore</option>
+            </select></div>
+          <div><label>Industry</label>
+            <select id="pfIndustry">
+              <option value="">Select an industry…</option>
+              <option value="Manufacturing (General)">Manufacturing (General)</option>
+              <option value="Textiles & Apparel">Textiles &amp; Apparel</option>
+              <option value="Auto Components">Auto Components</option>
+              <option value="Pharma & Chemicals">Pharma &amp; Chemicals</option>
+              <option value="Trading & Distribution">Trading &amp; Distribution</option>
+              <option value="Professional & IT Services">Professional &amp; IT Services</option>
+              <option value="Other / Generalized">Other</option>
+            </select></div>
+          <div><label>City</label><input type="text" id="pfCity"></div>
+          <div><label>GSTIN <span style="font-weight:400; color:var(--steel); font-size:12px;">(used to verify data once GST sync goes live)</span></label>
+            <input type="text" id="pfGst" class="mono" placeholder="27ABCDE1234F1Z5" maxlength="15" style="text-transform:uppercase;"></div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="primary" id="pfSave">Save changes</button>
+          <span class="note" id="pfNote"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>WhatsApp briefings</h2>
+      <div class="hint">Opening Bell every morning, Closing Bell every evening — your Pulse Score and top action items, delivered straight to WhatsApp. <span class="mono" style="font-size:11px;">Coming soon — we're connecting this to the WhatsApp Business API. Save your number now to be first in line.</span></div>
+      <form id="whatsappForm">
+        <div class="grid-2">
+          <div><label>WhatsApp number</label><input type="tel" id="waNumber" placeholder="+91 98765 43210"></div>
+          <div style="display:flex; align-items:flex-end;">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
+              <input type="checkbox" id="waOptIn" style="width:auto;">
+              Send me Opening Bell &amp; Closing Bell
+            </label>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="primary" id="waSave">Save WhatsApp preferences</button>
+          <span class="note" id="waNote"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ---------- 2. UPLOAD & CALCULATE ---------- -->
+  <div id="view-calculate" class="hidden">
+    <div class="tabs">
+      <button class="tab active" data-tab="upload">Upload workbook</button>
+      <button class="tab" data-tab="manual">Quick manual entry</button>
+    </div>
+
+    <div class="panel active" id="panel-upload">
+      <div class="card">
+        <h2>Upload your workbook</h2>
+        <div class="hint">One Excel file with five sheets: <span class="mono">Bank Accounts</span>, <span class="mono">Receivables</span>, <span class="mono">Payables</span>, <span class="mono">P&amp;L Summary</span>, <span class="mono">GST ITC</span>.</div>
+        <div class="dropzone" id="dropzone">
+          <div class="dz-label">Click to choose a file, or drag it here</div>
+          <div class="dz-sub">.xlsx or .csv</div>
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+          <div class="file-name" id="fileName"></div>
+        </div>
+        <a class="template-link" id="downloadTemplate" href="/Margyn_Data_Template.xlsx" download="Margyn_Data_Template.xlsx">Download the blank template →</a>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="computeFromFile" disabled>Compute &amp; save</button>
+        <span class="note" id="noteUpload"></span>
+      </div>
+      <div class="import-summary hidden" id="importSummaryUpload"></div>
+    </div>
+
+    <div class="panel" id="panel-manual">
+      <div class="card">
+        <h2>Quick manual entry</h2>
+        <div class="hint">Set your reconciled cash balance and P&amp;L figures here. Receivables and payables are now tracked as a live ledger — open a vital on the Scores tab to add or clear individual entries.</div>
+        <div class="grid-2">
+          <div><label>Cash in bank (₹) — sets your reconciled balance</label><input type="number" id="m-cash" placeholder="4200000"></div>
+          <div><label>Monthly operating expenses (₹)</label><input type="number" id="m-burn" placeholder="1500000"></div>
+          <div><label>Monthly revenue (₹)</label><input type="number" id="m-rev" placeholder="6000000"></div>
+          <div><label>Net profit (this period, ₹)</label><input type="number" id="m-profit" placeholder="480000"></div>
+          <div><label>Monthly GST payable (₹)</label><input type="number" id="m-gstpay" placeholder="240000"></div>
+          <div><label>GST ITC available but unclaimed (₹)</label><input type="number" id="m-gst" placeholder="65000"></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="computeFromManual">Compute &amp; save</button>
+        <span class="note" id="noteManual"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 3. SCORES ---------- -->
+  <div id="view-scores">
+    <div class="print-only" style="margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid #ccc;">
+      <div style="font-family:'Fraunces',serif; font-size:20px; font-weight:600;" id="printCompanyName"></div>
+      <div style="font-size:12px; color:#666; margin-top:4px;" id="printGeneratedAt"></div>
+      <div style="font-size:11px; color:#999; margin-top:2px;">Prepared by Margyn — confidential, not a credit assessment or lending decision.</div>
+    </div>
+
+    <div class="checklist hidden" id="onboardChecklist">
+      <div class="checklist-head">
+        <h2>Get set up</h2>
+        <span class="checklist-progress" id="checklistProgress">0 of 4</span>
+      </div>
+      <div class="checklist-bar"><div class="checklist-bar-fill" id="checklistBarFill" style="width:0%;"></div></div>
+      <div class="checklist-items" id="checklistItems"></div>
+      <div style="text-align:right; margin-top:12px;"><button class="checklist-dismiss" id="checklistDismiss">Hide this</button></div>
+    </div>
+
+    <div class="stale-banner hidden" id="staleBanner">
+      <div class="sb-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      </div>
+      <div class="sb-text" id="staleBannerText"></div>
+      <button class="sb-cta" id="staleBannerCta">Add a snapshot →</button>
+    </div>
+
+    <div class="app-actions" style="display:flex; gap:8px; justify-content:flex-end; margin-bottom:14px;">
+      <button class="nav-logout" id="copySummaryBtn" type="button">Copy summary</button>
+      <button class="nav-logout" id="downloadCsvBtn" type="button">Export CSV</button>
+      <button class="nav-logout" id="downloadPdfBtn" type="button">Download PDF</button>
+    </div>
+    <div class="pulse-wrap">
+      <div class="pulse-score is-zero" id="pulseCard" role="button" tabindex="0" aria-label="Open Pulse Score detail">
+        <div class="pulse-main">
+          <div class="pulse-ring">
+            <svg viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="1.2"></circle>
+              <circle id="pulseArc" cx="50" cy="50" r="46" fill="none" stroke="#1FA374" stroke-width="2.4"
+                      stroke-linecap="round" stroke-dasharray="289.03" stroke-dashoffset="289.03"></circle>
+            </svg>
+            <div class="num" id="pulseNum">0</div>
+          </div>
+          <div class="pulse-text">
+            <div class="p-label" id="pulseLabel">Pulse score — live</div>
+            <div class="pulse-row">
+              <span class="pulse-band-badge" id="pulseBandBadge"></span>
+              <span class="pulse-delta" id="pulseDelta"></span>
+              <span class="pulse-asof" id="pulseAsOf"></span>
+            </div>
+            <div class="pulse-tap-hint" id="pulseTapHint">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+              Tap for full breakdown &amp; action items
+            </div>
+          </div>
+        </div>
+        <div class="spark" id="spark"></div>
+        <div class="pulse-expand" id="pulseExpand">
+          <div class="pulse-expand-inner" id="pulseExpandInner"></div>
+        </div>
+      </div>
+    </div>
+    <button class="methodology-link" id="methodologyLink">How this is calculated →</button>
+
+    <div class="vitals-grid" id="vitalsGrid"></div>
+
+    <div class="card">
+      <h2>Executive briefing</h2>
+      <div class="hint" id="briefHint">Generated from your latest snapshot.</div>
+      <div id="briefing-idle"><button class="primary" id="generateBriefing">Generate AI briefing</button></div>
+      <div id="briefing-text"></div>
+    </div>
+
+    <div class="card">
+      <h2>Previous scores</h2>
+      <div class="hint">Every snapshot you've recorded. Depth here is what makes the score meaningful over time.</div>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <!-- ---------- 3c. FINANCING ---------- -->
+  <div id="view-financing" class="hidden">
+    <div class="fin-eligibility">
+      <div class="eyebrow">Indicative working-capital eligibility</div>
+      <div class="fin-range" id="finRange">—</div>
+      <div class="fin-note" id="finNote">Upload or enter a snapshot to see an estimate.</div>
+    </div>
+
+    <div class="card" id="finLeadCard">
+      <h2>Get matched with a lender</h2>
+      <div class="hint">We don't broker this ourselves yet — express interest and we'll personally reach out once a lending partner is live. Your data is never shared without your consent.</div>
+      <form id="financingForm">
+        <div class="grid-2">
+          <div><label>Contact email</label><input type="email" id="finEmail" required></div>
+          <div><label>Phone (optional)</label><input type="tel" id="finPhone" placeholder="+91 98765 43210"></div>
+        </div>
+        <div><label>What kind of financing are you looking for? (optional)</label>
+          <input type="text" id="finPurpose" placeholder="e.g. working capital, inventory financing, invoice discounting"></div>
+        <label class="fin-consent">
+          <input type="checkbox" id="finConsent" required>
+          <span>I consent to Margyn Labs storing this business's financial summary (Pulse Score and vitals) and sharing it with a lending partner, only once one is onboarded and only for the purpose of a funding introduction, in line with the DPDPA, 2023. I can withdraw this consent at any time by emailing business@margyn.in.</span>
+        </label>
+        <div class="btn-row">
+          <button type="submit" class="primary" id="finSubmit">Express interest</button>
+          <span class="note" id="finFormNote"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card hidden" id="finConfirmCard">
+      <div class="fin-confirm">
+        <div class="check">✓</div>
+        <h2 style="margin-bottom:8px;">You're on the list</h2>
+        <div class="hint" id="finConfirmText">We've recorded your interest. We'll reach out directly once a lending partner is live.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- 3b. PULSE DETAIL ---------- -->
+  <div id="view-pulsedetail" class="hidden">
+    <button class="pd-back" id="pulseDetailBack">← Back to Scores</button>
+
+    <div class="pd-hero" id="pdHero">
+      <div class="p-label" id="pdLabel">Pulse score — live</div>
+      <div class="pulse-ring">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="1.2"></circle>
+          <circle id="pdPulseArc" cx="50" cy="50" r="46" fill="none" stroke="#1FA374" stroke-width="2.4"
+                  stroke-linecap="round" stroke-dasharray="289.03" stroke-dashoffset="289.03"></circle>
+        </svg>
+        <div class="num" id="pdPulseNum">0</div>
+      </div>
+      <div class="pulse-band-badge" id="pdBandBadge"></div>
+      <div class="pulse-delta" id="pdDelta"></div>
+      <div class="pulse-asof" id="pdAsOf"></div>
+      <div class="pd-summary" id="pdSummary"></div>
+    </div>
+
+    <div class="pd-section-title">Trend</div>
+    <div class="pd-trend-card" id="pdTrendCard"></div>
+
+    <div class="pd-section-title">What needs your attention</div>
+    <div class="pd-action-list" id="pdActionList"></div>
+  </div>
+
+  <!-- ---------- 4. METHODOLOGY ---------- -->
+  <div id="view-methodology" class="hidden">
+    <button class="meth-back" id="methodologyBack">← Back to Scores</button>
+
+    <header>
+      <div class="app-eyebrow">Methodology — v2.0</div>
+      <div class="app-title">How your Pulse Score is calculated</div>
+      <div class="app-sub">Four pillars — Liquidity, Efficiency, Profitability, Compliance — expressed as six vitals, benchmarked against published lending and accounting standards, not arbitrary thresholds.</div>
+    </header>
+
+    <div class="meth-pillars">
+      <div class="meth-pillar" style="--p-color:#C97F1E;"><span class="mp-name">Liquidity</span><span class="mp-pct">30%</span><span class="mp-sub">Cash Position + WC Runway</span></div>
+      <div class="meth-pillar" style="--p-color:#C23B67;"><span class="mp-name">Efficiency</span><span class="mp-pct">35%</span><span class="mp-sub">Receivables + Payables</span></div>
+      <div class="meth-pillar" style="--p-color:#12805A;"><span class="mp-name">Profitability</span><span class="mp-pct">20%</span><span class="mp-sub">Net Margin</span></div>
+      <div class="meth-pillar" style="--p-color:#D9662A;"><span class="mp-name">Compliance</span><span class="mp-pct">15%</span><span class="mp-sub">GST/ITC Leakage</span></div>
+    </div>
+
+    <div class="meth-waterline">
+      <div class="meth-wl-bar">
+        <div class="meth-wl-seg" style="--seg-color:#C97F1E; flex:15;"></div>
+        <div class="meth-wl-seg" style="--seg-color:#2E6FA8; flex:15;"></div>
+        <div class="meth-wl-seg" style="--seg-color:#C23B67; flex:17.5;"></div>
+        <div class="meth-wl-seg" style="--seg-color:#5C6B7A; flex:17.5;"></div>
+        <div class="meth-wl-seg" style="--seg-color:#12805A; flex:20;"></div>
+        <div class="meth-wl-seg" style="--seg-color:#D9662A; flex:15;"></div>
+      </div>
+      <div class="meth-wl-reflect">
+        <div class="meth-wl-rseg" style="--seg-color:#C97F1E; flex:15;"></div>
+        <div class="meth-wl-rseg" style="--seg-color:#2E6FA8; flex:15;"></div>
+        <div class="meth-wl-rseg" style="--seg-color:#C23B67; flex:17.5;"></div>
+        <div class="meth-wl-rseg" style="--seg-color:#5C6B7A; flex:17.5;"></div>
+        <div class="meth-wl-rseg" style="--seg-color:#12805A; flex:20;"></div>
+        <div class="meth-wl-rseg" style="--seg-color:#D9662A; flex:15;"></div>
+      </div>
+      <div class="meth-wl-labels">
+        <div class="meth-wl-label" style="flex:15;"><div class="wl-name">CASH POSITION</div><div class="wl-pct" style="color:#C97F1E;">15%</div></div>
+        <div class="meth-wl-label" style="flex:15;"><div class="wl-name">WC RUNWAY</div><div class="wl-pct" style="color:#2E6FA8;">15%</div></div>
+        <div class="meth-wl-label" style="flex:17.5;"><div class="wl-name">RECEIVABLES</div><div class="wl-pct" style="color:#C23B67;">17.5%</div></div>
+        <div class="meth-wl-label" style="flex:17.5;"><div class="wl-name">PAYABLES</div><div class="wl-pct" style="color:#5C6B7A;">17.5%</div></div>
+        <div class="meth-wl-label" style="flex:20;"><div class="wl-name">NET MARGIN</div><div class="wl-pct" style="color:#12805A;">20%</div></div>
+        <div class="meth-wl-label" style="flex:15;"><div class="wl-name">GST/ITC</div><div class="wl-pct" style="color:#D9662A;">15%</div></div>
+      </div>
+    </div>
+
+    <div class="meth-section-label">The six vitals</div>
+    <div class="meth-ledger">
+
+      <div class="meth-row">
+        <div class="mr-left"><span class="mr-tick" style="--seg-color:#C97F1E;"></span><span class="mr-name">Cash Position</span></div>
+        <span class="mr-weight" style="color:#C97F1E;">15%</span>
+      </div>
+      <div class="meth-note">
+        <div class="mn-ratio">cash ÷ monthly operating expense, mapped on a 3–6 month curve</div>
+        <div class="mn-why">Part of the 30% Liquidity pillar — running out of cash, not unprofitability, is what actually kills most SMEs.</div>
+      </div>
+
+      <div class="meth-row">
+        <div class="mr-left"><span class="mr-tick" style="--seg-color:#2E6FA8;"></span><span class="mr-name">Working Capital Runway</span></div>
+        <span class="mr-weight" style="color:#2E6FA8;">15%</span>
+      </div>
+      <div class="meth-note">
+        <div class="mn-ratio">(cash + risk-adjusted receivables − payables) ÷ burn</div>
+        <div class="mn-why">The other half of Liquidity. As of v2.0, this uses <b>risk-adjusted</b> receivables, not face value — see below — so runway can't be inflated by invoices unlikely to ever be collected.</div>
+      </div>
+
+      <div class="meth-row">
+        <div class="mr-left"><span class="mr-tick" style="--seg-color:#C23B67;"></span><span class="mr-name">Receivables Aging</span></div>
+        <span class="mr-weight" style="color:#C23B67;">17.5%</span>
+      </div>
+      <div class="meth-note">
+        <div class="mn-ratio">expected-credit-loss aging, invoice by invoice — plus a concentration cap</div>
+        <div class="mn-why">Part of the 35% Efficiency pillar. Every open invoice is aged individually and risk-weighted on a simplified Ind AS 109-style expected-credit-loss curve (0% loss under 30 days, rising to 95% past a year), then rolled up into one score — a sharper read than a single "% over 90 days" ratio. If your top three customers hold 40%+ of what you're owed, the score is capped at 65 regardless of aging, since concentration risk doesn't show up in aging alone.</div>
+      </div>
+
+      <div class="meth-row">
+        <div class="mr-left"><span class="mr-tick" style="--seg-color:#5C6B7A;"></span><span class="mr-name">Payables Due</span></div>
+        <span class="mr-weight" style="color:#5C6B7A;">17.5%</span>
+      </div>
+      <div class="meth-note">
+        <div class="mn-ratio">cash coverage of payables due in 30 days, minus an overdue penalty</div>
+        <div class="mn-why">The other half of Efficiency. Coverage (payables due ÷ cash) sets the base score; anything already overdue against its own due date subtracts further, since an unpaid bill is a sharper signal than a merely upcoming one.</div>
+      </div>
+
+      <div class="meth-row">
+        <div class="mr-left"><span class="mr-tick" style="--seg-color:#12805A;"></span><span class="mr-name">Net Margin</span></div>
+        <span class="mr-weight" style="color:#12805A;">20%</span>
+      </div>
+      <div class="meth-note">
+        <div class="mn-ratio">net profit ÷ revenue, against an industry benchmark</div>
+        <div class="mn-why">The full 20% Profitability pillar. Weighted up in v2.0 — profitability is still a lagging indicator, but it's the clearest read we have on whether the business model itself works, not just whether this month's cash holds.</div>
+      </div>
+
+      <div class="meth-row">
+        <div class="mr-left"><span class="mr-tick" style="--seg-color:#D9662A;"></span><span class="mr-name">GST/ITC Leakage</span></div>
+        <span class="mr-weight" style="color:#D9662A;">15%</span>
+      </div>
+      <div class="meth-note">
+        <div class="mn-ratio">unclaimed ITC ÷ monthly GST payable</div>
+        <div class="mn-why">The full 15% Compliance pillar. A real cash leak worth surfacing on its own — not a solvency risk like the other five, which is why it stands alone as its own pillar rather than folding into Liquidity.</div>
+      </div>
+
+    </div>
+
+    <div class="meth-section-label">Known gaps, on purpose</div>
+    <p class="meth-industry-line" style="margin-bottom:28px;">
+      v2.0 is more precise where the underlying ledger supports it, and deliberately not fancier than the data allows everywhere else. Payables scoring stops at cash-coverage and an overdue penalty rather than the full MSMED Act 45-day compliance check, because that needs vendors tagged as MSME-registered — not yet captured. GST/ITC is scored against your monthly GST payable, not eligible ITC from GSTR-2B, since eligible ITC isn't its own field yet. Cash Position uses one reconciled balance, so multi-account concentration isn't scoreable. Net Margin only has net profit, so a gross/operating decomposition isn't scoreable. Each of these is a sequencing choice, not an oversight — they'll sharpen as the underlying ledgers do.
+    </p>
+
+    <div class="meth-section-label">Where the benchmarks come from</div>
+    <div class="meth-footnotes">
+      <div class="meth-fn-row"><span class="meth-fn-num">01</span><span class="meth-fn-text"><b>Liquidity thresholds</b> — drawn from the RBI's Tandon Committee framework, the reference standard Indian banks have used to assess working-capital lending since 1975, plus cash-reserve conventions widely used by CFOs and advisors.</span></div>
+      <div class="meth-fn-row"><span class="meth-fn-num">02</span><span class="meth-fn-text"><b>Profitability benchmarks</b> — published net-margin ranges by industry, cross-checked against India Inc-wide averages.</span></div>
+      <div class="meth-fn-row"><span class="meth-fn-num">03</span><span class="meth-fn-text"><b>Receivables aging curve</b> — a simplified expected-credit-loss weighting in the spirit of Ind AS 109, the accounting standard Indian companies already use to provision for doubtful debts, adapted here into a live scoring curve rather than a period-end provision.</span></div>
+      <div class="meth-fn-row is-open"><span class="meth-fn-num">04</span><span class="meth-fn-text"><b>GST/ITC leakage</b> — scored as unclaimed input tax credit against your monthly GST payable, entered from your own records today. There's no line-item GSTR-2B reconciliation yet, so treat this vital as self-reported until GST sync goes live — every other vital in this build already carries a source tag for the same reason.</span></div>
+    </div>
+
+    <div class="meth-section-label">Built for your industry</div>
+    <p class="meth-industry-line">
+      Net Margin is benchmarked against your industry where we have real data for it — set yours on the Profile tab.
+      <span class="mi-name">Manufacturing</span><span class="mi-dot">·</span><span class="mi-name">Textiles &amp; Apparel</span><span class="mi-dot">·</span><span class="mi-name">Auto Components</span><span class="mi-dot">·</span><span class="mi-name">Pharma &amp; Chemicals</span><span class="mi-dot">·</span><span class="mi-name">Trading &amp; Distribution</span><span class="mi-dot">·</span><span class="mi-name">Professional &amp; IT Services</span><span class="mi-dot">·</span><span class="mi-name">Other</span>
+      — outside these, or in a category we haven't benchmarked yet, your score uses a cross-industry default.
+    </p>
+
+    <div class="meth-footer">
+      <span class="mf-version">Scoring methodology v2.0</span>
+      <span class="mf-note">We refine these benchmarks as we work directly with SME finance teams — this page will track every change.</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="detail-overlay hidden" id="detailOverlay">
+  <div class="detail-panel">
+    <button class="detail-close" id="detailClose">✕</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<footer>Margyn 1.0 · Built for Indian SMEs</footer>
+
+<script>
+// ============================================================
+// Config — static HTML, no bundler: values must be literal.
+// Anon key is public by design; RLS enforces access.
+// ============================================================
+const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
+
+// Named sbClient, NOT supabase: the UMD library declares a global
+// `var supabase`, and a global `let` of the same name throws SyntaxError
+// before the library can execute.
+let sbClient = null;
+let currentUser = null;
+let currentProfile = null;
+let snapshots = [];
+let receivables = [];
+let payables = [];
+let cashTx = [];
+let bootError = null;
+
+// ---------- usage events (analytics) ----------
+// Fire-and-forget: never awaited by callers, never throws into the UI.
+// Write-only from the client (RLS allows insert where auth.uid() = user_id,
+// no select) — this is instrumentation for us to query from Supabase
+// directly, not user-facing data.
+function logEvent(name, data){
+  if(!sbClient || !currentUser) return;
+  sbClient.from('usage_events').insert({
+    user_id: currentUser.id, event_name: name, event_data: data || null
+  }).then(({ error }) => { if(error) console.error('[margyn] logEvent:', name, error); });
+}
+
+// ---------- helpers ----------
+function showAuthError(msg){
+  const f = document.querySelector('.auth-form.active');
+  const el = f ? f.querySelector('.auth-error') : document.getElementById('loginError');
+  if(!el) return;
+  el.style.color = ''; el.textContent = msg; el.classList.add('show');
+}
+function clearAuthErrors(){
+  document.querySelectorAll('.auth-error').forEach(e => e.classList.remove('show'));
+  if(bootError) showAuthError(bootError);
+}
+function withTimeout(p, ms, label){
+  return Promise.race([ p, new Promise((_, rej) => setTimeout(() => rej(new Error(
+    label + ' timed out after ' + (ms/1000) + 's. The Supabase project may be paused — check your dashboard.'
+  )), ms)) ]);
+}
+const SOURCE_LABEL = { upload:'Excel upload', manual:'manual entry', ledger:'ledger update' };
+function freshnessText(snap){
+  if(!snap) return '';
+  const days = Math.floor((Date.now() - new Date(snap.created_at).getTime()) / 86400000);
+  const rel = days <= 0 ? 'today' : days === 1 ? '1 day ago' : days + ' days ago';
+  const src = SOURCE_LABEL[snap.source] || 'manual entry';
+  return 'synced ' + rel + ' \u00b7 ' + src;
+}
+function fmtDate(iso){
+  return new Date(iso).toLocaleString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit' });
+}
+function fmtDay(iso){
+  return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+}
+function scoreClass(s){ return s >= 70 ? 'score-good' : s >= 40 ? 'score-warn' : 'score-bad'; }
+
+// Single source of truth for score → color mapping, used everywhere a pulse
+// score is shown so red always means bad, amber means caution, green means
+// good — never inconsistent between the banner, the ring, or the badge.
+function scoreBand(s){
+  if(s >= 70) return { cls:'good', color:'#1FA374', label:'Healthy' };
+  if(s >= 40) return { cls:'warn', color:'#C97F1E', label:'Caution' };
+  return { cls:'bad', color:'#C23B67', label:'At risk' };
+}
+
+// ---------- library loading ----------
+function loadScript(src){
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve(src);
+    s.onerror = () => reject(new Error('blocked or unreachable: ' + src));
+    document.head.appendChild(s);
+  });
+}
+async function bootAuth(){
+  const sources = [
+    '/supabase.js',
+    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js',
+    'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js'
+  ];
+  for(const src of sources){
+    try {
+      await loadScript(src);
+      if(window.supabase){ console.log('[margyn] supabase-js loaded from', src); initSupabase(); return; }
+      console.warn('[margyn] loaded but window.supabase undefined:', src);
+    } catch(err){ console.warn('[margyn]', err.message); }
+  }
+  console.error('[margyn] all supabase-js sources failed');
+  bootError = 'Could not load the authentication library. Confirm supabase.js is deployed at the site root, then reload.';
+  showAuthError(bootError);
+  document.getElementById('loginSubmit').disabled = true;
+  document.getElementById('signupSubmit').disabled = true;
+}
+
+async function initSupabase(){
+  const { createClient } = window.supabase;
+  sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data: { session } } = await sbClient.auth.getSession();
+  await routeFor(session);
+  sbClient.auth.onAuthStateChange((_evt, s) => routeFor(s));
+}
+
+// ---------- routing ----------
+async function routeFor(session){
+  if(!session){
+    currentUser = null; currentProfile = null; snapshots = [];
+    receivables = []; payables = []; cashTx = [];
+    document.getElementById('authGate').classList.remove('hidden');
+    document.getElementById('onboardGate').classList.add('hidden');
+    // Wipe the signed-in view so nothing from the last session is left behind
+    // to flash on the next login.
+    document.getElementById('userEmail').textContent = '';
+    document.getElementById('headCompany').textContent = '—';
+    document.getElementById('headSub').textContent = '';
+    document.getElementById('briefing-text').textContent = '';
+    document.getElementById('historyList').innerHTML = '';
+    renderVitals(ZERO_VITALS, false);
+    document.getElementById('pulseNum').textContent = '0';
+    document.getElementById('loginForm').reset();
+    document.getElementById('signupForm').reset();
+    clearAuthErrors();
+    showView('scores');
+    return;
+  }
+  currentUser = session.user;
+  document.getElementById('userEmail').textContent = currentUser.email;
+  document.getElementById('authGate').classList.add('hidden');
+  logEvent('session_start');
+
+  currentProfile = await loadProfile();
+  if(!currentProfile){
+    document.getElementById('onboardGate').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('onboardGate').classList.add('hidden');
+  await refreshAll();
+}
+
+async function loadProfile(){
+  const { data, error } = await sbClient.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  if(error){ console.error('[margyn] loadProfile:', error); return null; }
+  return data;
+}
+async function loadSnapshots(){
+  const { data, error } = await sbClient.from('snapshots')
+    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(50);
+  if(error){ console.error('[margyn] loadSnapshots:', error); return []; }
+  return data || [];
+}
+async function loadReceivables(){
+  const { data, error } = await sbClient.from('receivables')
+    .select('*').eq('user_id', currentUser.id).eq('status', 'open').order('due_date', { ascending:true, nullsFirst:false });
+  if(error){ console.error('[margyn] loadReceivables:', error); return []; }
+  return data || [];
+}
+async function loadPayables(){
+  const { data, error } = await sbClient.from('payables')
+    .select('*').eq('user_id', currentUser.id).eq('status', 'open').order('due_date', { ascending:true, nullsFirst:false });
+  if(error){ console.error('[margyn] loadPayables:', error); return []; }
+  return data || [];
+}
+async function loadCashTx(){
+  const { data, error } = await sbClient.from('cash_transactions')
+    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(25);
+  if(error){ console.error('[margyn] loadCashTx:', error); return []; }
+  return data || [];
+}
+
+// ---------- onboarding ----------
+document.getElementById('onboardForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('obSubmit');
+  const err = document.getElementById('obError');
+  err.classList.remove('show');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const row = {
+      id: currentUser.id,
+      company_name: document.getElementById('obCompany').value.trim(),
+      revenue_range: document.getElementById('obRevenue').value,
+      industry: document.getElementById('obIndustry').value.trim() || null,
+      city: document.getElementById('obCity').value.trim() || null,
+      gst_number: document.getElementById('obGst').value.trim().toUpperCase() || null
+    };
+    const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
+    if(error) throw error;
+    currentProfile = row;
+    document.getElementById('onboardGate').classList.add('hidden');
+    await refreshAll();
+  } catch(e2){
+    console.error('[margyn] onboarding:', e2);
+    err.textContent = e2.message || 'Could not save. Try again.'; err.classList.add('show');
+  } finally { btn.disabled = false; btn.textContent = 'Continue'; }
+});
+
+// ---------- page nav ----------
+const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr',
+  '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
+
+function showView(name){
+  ['profile','calculate','scores','financing','pulsedetail','methodology'].forEach(v => {
+    document.getElementById('view-' + v).classList.toggle('hidden', v !== name);
+  });
+  document.querySelector('.pagenav').classList.toggle('hidden', name === 'methodology' || name === 'pulsedetail');
+  document.querySelectorAll('.pagenav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === name);
+  });
+  logEvent('view_tab', { tab: name });
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+document.querySelectorAll('.pagenav button').forEach(b => {
+  b.addEventListener('click', () => showView(b.dataset.view));
+});
+document.getElementById('methodologyLink').addEventListener('click', () => showView('methodology'));
+document.getElementById('methodologyBack').addEventListener('click', () => showView('scores'));
+document.getElementById('pulseDetailBack').addEventListener('click', () => showView('scores'));
+document.getElementById('pulseCard').addEventListener('click', () => { renderPulseDetail(); showView('pulsedetail'); });
+document.getElementById('pulseCard').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); renderPulseDetail(); showView('pulsedetail'); }
+});
+
+// ---------- render ----------
+async function refreshAll(){
+  snapshots = await loadSnapshots();
+  receivables = await loadReceivables();
+  payables = await loadPayables();
+  cashTx = await loadCashTx();
+  renderHeader();
+  renderProfile();
+  renderScores();
+  renderFinancing();
+  updateNavBadge();
+}
+
+function renderHeader(){
+  document.getElementById('headCompany').textContent = currentProfile.company_name;
+  const bits = [REV_LABEL[currentProfile.revenue_range], currentProfile.industry, currentProfile.city].filter(Boolean);
+  document.getElementById('headSub').textContent = bits.join(' · ');
+}
+
+function renderProfile(){
+  document.getElementById('pfCount').textContent = snapshots.length;
+  document.getElementById('pfPulse').textContent = snapshots.length ? snapshots[0].pulse_score : 0;
+  document.getElementById('pfSince').textContent = snapshots.length
+    ? fmtDay(snapshots[snapshots.length - 1].created_at) : '—';
+
+  document.getElementById('pfEmail').textContent = currentUser.email;
+  document.getElementById('pfCreated').textContent = currentUser.created_at ? fmtDay(currentUser.created_at) : '—';
+  document.getElementById('pfUid').textContent = currentUser.id;
+
+  document.getElementById('pfCompany').value = currentProfile.company_name || '';
+  document.getElementById('pfRevenue').value = currentProfile.revenue_range || '';
+  document.getElementById('pfIndustry').value = currentProfile.industry || '';
+  document.getElementById('pfCity').value = currentProfile.city || '';
+  document.getElementById('pfGst').value = currentProfile.gst_number || '';
+
+  document.getElementById('waNumber').value = currentProfile.whatsapp_number || '';
+  document.getElementById('waOptIn').checked = !!currentProfile.whatsapp_opt_in;
+}
+
+document.getElementById('profileForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('pfSave');
+  const note = document.getElementById('pfNote');
+  note.className = 'note'; note.textContent = 'Saving…';
+  btn.disabled = true;
+  try {
+    const row = {
+      id: currentUser.id,
+      company_name: document.getElementById('pfCompany').value.trim(),
+      revenue_range: document.getElementById('pfRevenue').value,
+      industry: document.getElementById('pfIndustry').value.trim() || null,
+      city: document.getElementById('pfCity').value.trim() || null,
+      gst_number: document.getElementById('pfGst').value.trim().toUpperCase() || null
+    };
+    const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
+    if(error) throw error;
+    currentProfile = row;
+    renderHeader();
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    setTimeout(() => { note.textContent = ''; note.className = 'note'; }, 2500);
+  } catch(err){
+    console.error('[margyn] profile save:', err);
+    note.className = 'note bad'; note.textContent = err.message || 'Could not save.';
+  } finally { btn.disabled = false; }
+});
+
+document.getElementById('whatsappForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('waSave');
+  const note = document.getElementById('waNote');
+  note.className = 'note'; note.textContent = 'Saving…';
+  btn.disabled = true;
+  try {
+    const patch = {
+      whatsapp_number: document.getElementById('waNumber').value.trim() || null,
+      whatsapp_opt_in: document.getElementById('waOptIn').checked
+    };
+    const { error } = await withTimeout(sbClient.from('profiles').update(patch).eq('id', currentUser.id), 20000, 'Saving WhatsApp preferences');
+    if(error) throw error;
+    currentProfile = { ...currentProfile, ...patch };
+    note.className = 'note ok'; note.textContent = 'Saved. We\'ll text you the day this goes live.';
+    setTimeout(() => { note.textContent = ''; note.className = 'note'; }, 3500);
+  } catch(err){
+    console.error('[margyn] whatsapp save:', err);
+    note.className = 'note bad'; note.textContent = err.message || 'Could not save.';
+  } finally { btn.disabled = false; }
+});
+
+const VITAL_ACCENTS = { 'Cash Position':'#C97F1E','Receivables Aging':'#C23B67','Payables Due (30d)':'#5C6B7A',
+  'GST/ITC Leakage':'#C97F1E','Net Margin':'#12805A','Working Capital Runway':'#12805A' };
+
+// Shown before any snapshot exists — the shape of the scorecard, at zero.
+const ZERO_VITALS = [
+  { label:'Cash Position', value:'₹0', score:0 },
+  { label:'Receivables Aging', value:'₹0 over 90d', score:0 },
+  { label:'Payables Due (30d)', value:'₹0', score:0 },
+  { label:'GST/ITC Leakage', value:'₹0', score:0 },
+  { label:'Net Margin', value:'0.0%', score:0 },
+  { label:'Working Capital Runway', value:'0.0 months', score:0 }
+];
+
+function renderScores(){
+  const hasData = snapshots.length > 0;
+  const latest = hasData ? snapshots[0] : null;
+  const prev = snapshots[1];
+
+  const card = document.getElementById('pulseCard');
+  card.classList.toggle('is-zero', !hasData);
+  const pulseVal = hasData ? latest.pulse_score : 0;
+  countUp(document.getElementById('pulseNum'), pulseVal, 900);
+
+  const band = hasData ? scoreBand(pulseVal) : { color:'#5C6B7A', label:'No data yet' };
+  card.style.setProperty('--band-color', band.color);
+  const badge = document.getElementById('pulseBandBadge');
+  badge.textContent = band.label;
+  badge.style.display = hasData ? 'inline-block' : 'none';
+
+  const arc = document.getElementById('pulseArc');
+  if(arc){
+    const pct = Math.max(0, Math.min(100, pulseVal));
+    arc.setAttribute('stroke-dashoffset', (RING_CIRC * (1 - pct / 100)).toFixed(2));
+    arc.setAttribute('stroke', band.color);
+  }
+
+  const deltaEl = document.getElementById('pulseDelta');
+  if(!hasData){
+    deltaEl.textContent = 'no snapshots yet \u2014 upload data to calculate'; deltaEl.className = 'pulse-delta';
+  } else if(prev){
+    const d = latest.pulse_score - prev.pulse_score;
+    deltaEl.textContent = d === 0 ? 'no change since last' : (d > 0 ? '▲ +' + d : '▼ ' + d) + ' since last';
+    deltaEl.className = 'pulse-delta ' + (d > 0 ? 'score-good' : d < 0 ? 'score-bad' : '');
+  } else {
+    deltaEl.textContent = 'first snapshot'; deltaEl.className = 'pulse-delta';
+  }
+
+  document.getElementById('pulseAsOf').textContent = hasData ? freshnessText(latest) : '';
+  document.getElementById('pulseAsOf').title = hasData ? 'as of ' + fmtDate(latest.created_at) : '';
+  renderVitals(hasData ? (latest.vitals || ZERO_VITALS) : ZERO_VITALS, hasData);
+  renderSpark(snapshots.slice().reverse().map(s => s.pulse_score));
+  renderHistory(snapshots);
+  renderPulseExpand(hasData);
+  renderChecklist();
+  renderStaleBanner(hasData ? latest : null);
+
+  const tapHint = document.getElementById('pulseTapHint');
+  if(!hasData){
+    tapHint.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>Tap for full breakdown &amp; action items';
+  } else {
+    const n = buildActionItems().length;
+    tapHint.innerHTML = n
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>' + n + (n===1?' item needs':' items need') + ' attention — hover for a preview'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>All clear — tap for the full breakdown';
+  }
+
+  const idle = document.getElementById('briefing-idle');
+  const text = document.getElementById('briefing-text');
+  const hint = document.getElementById('briefHint');
+  if(!hasData){
+    idle.style.display = 'none';
+    text.textContent = '';
+    hint.textContent = 'Add a snapshot on the Upload & calculate tab to generate your first briefing.';
+  } else {
+    hint.textContent = 'Generated from your latest snapshot.';
+    idle.style.display = latest.briefing ? 'none' : 'block';
+    text.textContent = latest.briefing || '';
+  }
+}
+
+// ---------- onboarding checklist ----------
+// A first-run guide so a founder never lands on a wall of zeros without
+// knowing what to do next. Steps track real state (not a stored flag), so
+// the checklist is always honest about where the account actually stands.
+// Dismissal is per-browser (localStorage) — this is guidance, not a gate.
+function checklistSteps(){
+  const hasData = snapshots.length > 0;
+  const latest = hasData ? snapshots[0] : null;
+  return [
+    { key:'profile', done: !!(currentProfile && currentProfile.company_name && currentProfile.revenue_range),
+      title:'Complete your business profile', sub:'Company name, revenue range, industry — powers your benchmark.',
+      go: () => showView('profile') },
+    { key:'snapshot', done: hasData,
+      title:'Add your first snapshot', sub:'Upload a Tally export or enter figures manually.',
+      go: () => showView('calculate') },
+    { key:'ledger', done: hasData && (receivables.length > 0 || payables.length > 0),
+      title:'Add a receivable or payable', sub:'Open a vital on the Scores tab and log a real invoice or bill.',
+      go: () => { if(hasData) openVitalDetail('Receivables Aging'); else showView('calculate'); } },
+    { key:'briefing', done: hasData && !!latest.briefing,
+      title:'Generate your first AI briefing', sub:'A CFO-style read on what your numbers mean, in plain language.',
+      go: () => { document.getElementById('generateBriefing') && document.getElementById('generateBriefing').click(); } }
+  ];
+}
+function checklistDismissed(){
+  try { return localStorage.getItem('margyn_checklist_dismissed') === '1'; } catch(e){ return false; }
+}
+function renderChecklist(){
+  const host = document.getElementById('onboardChecklist');
+  const steps = checklistSteps();
+  const doneCount = steps.filter(s => s.done).length;
+  if(checklistDismissed() || doneCount === steps.length){
+    host.classList.add('hidden');
+    return;
+  }
+  host.classList.remove('hidden');
+  document.getElementById('checklistProgress').textContent = doneCount + ' of ' + steps.length;
+  document.getElementById('checklistBarFill').style.width = Math.round((doneCount / steps.length) * 100) + '%';
+  const list = document.getElementById('checklistItems');
+  list.innerHTML = '';
+  steps.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'checklist-item' + (s.done ? ' is-done' : '');
+    row.innerHTML =
+      '<span class="checklist-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>' +
+      '<span class="checklist-item-text"><span class="checklist-item-title">' + s.title + '</span>' +
+      '<span class="checklist-item-sub">' + s.sub + '</span></span>' +
+      (s.done ? '' : '<span class="checklist-item-arrow">→</span>');
+    if(!s.done) row.addEventListener('click', s.go);
+    list.appendChild(row);
+  });
+}
+document.getElementById('checklistDismiss').addEventListener('click', () => {
+  try { localStorage.setItem('margyn_checklist_dismissed', '1'); } catch(e){}
+  document.getElementById('onboardChecklist').classList.add('hidden');
+});
+
+// ---------- data freshness banner ----------
+// The push-not-pull thesis falls apart quietly if a founder's last snapshot
+// is six weeks old and nothing on screen says so louder than the small
+// "synced N days ago" caption. This banner is the loud version.
+function renderStaleBanner(latest){
+  const banner = document.getElementById('staleBanner');
+  if(!latest){ banner.classList.add('hidden'); return; }
+  const days = Math.floor((Date.now() - new Date(latest.created_at).getTime()) / 86400000);
+  if(days < 14){ banner.classList.add('hidden'); return; }
+  banner.classList.remove('hidden');
+  document.getElementById('staleBannerText').innerHTML =
+    'Your last snapshot is <b>' + days + ' days old</b>. Everything below — including your Pulse Score — is only as fresh as your last upload.';
+}
+document.getElementById('staleBannerCta').addEventListener('click', () => showView('calculate'));
+
+// Shared across the compact card's hover-preview and the full pd-action list.
+const TIER_META = {
+  high:  { label:'High impact',   color:'#C23B67', bg:'#FBD9E4' },
+  medium:{ label:'Medium impact', color:'#C97F1E', bg:'#FBE7C7' },
+  low:   { label:'Low impact',    color:'#5C6B7A', bg:'#E6E8EB' }
+};
+
+// Populates the panel that grows in below the compact Pulse card on hover —
+// the 3 most urgent named items (by tier, then amount), each jumping straight
+// to that vital's real ledger detail. "See full breakdown" opens the full
+// Pulse Detail page instead.
+function renderPulseExpand(hasData){
+  const host = document.getElementById('pulseExpandInner');
+  if(!hasData){ host.innerHTML = ''; return; }
+  const items = buildActionItems().slice().sort((a,b) => {
+    const order = { high:0, medium:1, low:2 };
+    return order[a.tier] - order[b.tier] || b.amount - a.amount;
+  });
+
+  if(!items.length){
+    host.innerHTML = '<div class="pulse-expand-label">Most urgent</div>' +
+      '<div class="pulse-all-clear">Nothing urgent flagged — all six vitals are within a healthy range right now.</div>' +
+      '<div class="pulse-more" data-full>See full breakdown →</div>';
+  } else {
+    const top3 = items.slice(0, 3);
+    host.innerHTML = '<div class="pulse-expand-label">Most urgent — tap any item for detail</div>' +
+      top3.map(it => {
+        const meta = TIER_META[it.tier];
+        return '<div class="pulse-action-row" style="--a-color:' + meta.color + '" data-idx="' + items.indexOf(it) + '">' +
+          '<span class="pulse-action-row-dot"></span>' +
+          '<span class="pulse-action-row-title">' + it.title + '</span>' +
+          '<span class="pulse-action-row-tag">' + it.group + '</span>' +
+          '<span class="pulse-action-row-arrow">→</span>' +
+        '</div>';
+      }).join('') +
+      '<div class="pulse-more" data-full>See full breakdown →</div>';
+
+    host.querySelectorAll('.pulse-action-row').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        items[Number(el.dataset.idx)].onClick();
+      });
+    });
+  }
+  const full = host.querySelector('[data-full]');
+  if(full) full.addEventListener('click', (e) => { e.stopPropagation(); renderPulseDetail(); showView('pulsedetail'); });
+}
+
+// Eased count-up for the headline numbers — small touch, but it's the
+// difference between numbers that "appear" and numbers that feel live.
+function countUp(node, target, dur){
+  if(!node) return;
+  target = Math.round(Number(target) || 0);
+  const start = performance.now();
+  function tick(now){
+    const p = Math.min(1, (now - start) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    node.textContent = Math.round(target * eased);
+    if(p < 1) requestAnimationFrame(tick);
+  }
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){ node.textContent = target; return; }
+  requestAnimationFrame(tick);
+}
+
+const RING_CIRC = 289.03;   // 2 * PI * r, where r = 46
+
+// 'Rs 0 over 90d' -> main 'Rs 0', suffix 'over 90d' so the qualifier can sit
+// on the score line instead of crowding the headline figure.
+function splitValue(raw){
+  const i = String(raw).indexOf(' over ');
+  return i === -1 ? { main:String(raw), suffix:'' }
+                  : { main:String(raw).slice(0,i), suffix:String(raw).slice(i+1) };
+}
+
+// Industry net-margin anchors (see computeVitals below) doubles as a
+// founder-facing benchmark line under the Net Margin vital — "how do I
+// compare", answered inline instead of buried in the methodology page.
+function benchmarkNote(label, latest){
+  if(!latest || label !== 'Net Margin') return null;
+  const anchor = INDUSTRY_MARGIN_ANCHOR[currentProfile && currentProfile.industry] || UNIVERSAL_MARGIN_ANCHOR;
+  const actual = latest.revenue > 0 ? latest.net_profit / latest.revenue : 0;
+  const diff = actual - anchor;
+  const industryLabel = (currentProfile && currentProfile.industry) || 'cross-industry';
+  const dirClass = diff >= 0 ? 'above' : 'below';
+  const dirWord = diff >= 0 ? 'above' : 'below';
+  return { cls:dirClass, text:'vs ' + (anchor*100).toFixed(0) + '% ' + industryLabel + ' benchmark · ' + dirWord };
+}
+
+function renderVitals(vitals, hasData){
+  const grid = document.getElementById('vitalsGrid');
+  grid.innerHTML = '';
+  const latest = hasData ? snapshots[0] : null;
+  vitals.forEach(v => {
+    const accent = VITAL_ACCENTS[v.label] || '#5C6B7A';
+    const pct = Math.max(0, Math.min(100, v.score || 0));
+    const offset = RING_CIRC * (1 - pct / 100);
+    const { main, suffix } = splitValue(v.value);
+    const bench = benchmarkNote(v.label, latest);
+
+    const el = document.createElement('div');
+    el.className = 'vital' + (hasData ? '' : ' is-zero');
+    el.style.setProperty('--v-accent', accent);
+    if(hasData) el.addEventListener('click', () => openVitalDetail(v.label));
+    el.innerHTML =
+      '<div class="v-value"></div>' +
+      '<div class="v-ring">' +
+        '<svg viewBox="0 0 100 100" aria-hidden="true">' +
+          '<circle cx="50" cy="50" r="46" fill="none" stroke="rgba(11,18,32,0.10)" stroke-width="1.2"></circle>' +
+          '<circle cx="50" cy="50" r="46" fill="none" stroke="' + accent + '" stroke-width="2.4" ' +
+            'stroke-linecap="round" stroke-dasharray="' + RING_CIRC + '" stroke-dashoffset="' + offset.toFixed(2) + '"></circle>' +
+        '</svg>' +
+        '<div class="rv"></div>' +
+      '</div>' +
+      '<div class="v-top"><span class="v-dot"></span><span class="v-label"></span></div>' +
+      '<div class="v-score"></div>' +
+      (bench ? '<div class="v-bench ' + bench.cls + '">' + bench.text + '</div>' : '');
+
+    el.querySelector('.v-value').textContent = main;
+    countUp(el.querySelector('.rv'), v.score, 850);
+    el.querySelector('.v-label').textContent = v.label;
+    el.querySelector('.v-score').textContent =
+      (suffix ? suffix + ' \u2022 ' : '') + Math.round(v.score) + '/100';
+    grid.appendChild(el);
+  });
+}
+
+function renderSpark(series){
+  const host = document.getElementById('spark');
+  if(series.length < 2){ host.innerHTML = ''; return; }
+  const W = 420, H = 54, P = 4;
+  const min = Math.min(...series), max = Math.max(...series);
+  const span = (max - min) || 1;
+  const pts = series.map((v,i) => {
+    const x = P + (i / (series.length - 1)) * (W - 2*P);
+    const y = H - P - ((v - min) / span) * (H - 2*P);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  const lastPt = pts.split(' ').pop().split(',');
+  const color = scoreBand(series[series.length - 1]).color;
+  host.innerHTML =
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" preserveAspectRatio="none" aria-label="Pulse score trend">' +
+    '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>' +
+    '<circle cx="' + lastPt[0] + '" cy="' + lastPt[1] + '" r="3.2" fill="' + color + '"/></svg>';
+}
+
+function renderHistory(rows){
+  const host = document.getElementById('historyList');
+  host.innerHTML = '';
+  if(!rows.length){
+    host.innerHTML = '<div class="hist-empty">No snapshots recorded yet.</div>';
+    return;
+  }
+  rows.forEach((r, i) => {
+    const prev = rows[i+1];
+    const d = prev ? r.pulse_score - prev.pulse_score : null;
+    const row = document.createElement('div');
+    row.className = 'hist-row';
+    row.innerHTML = '<span class="hist-date"></span><span class="hist-right">' +
+      '<span class="hist-src"></span><span class="hist-pulse"></span></span>';
+    row.querySelector('.hist-date').textContent = fmtDate(r.created_at);
+    row.querySelector('.hist-src').textContent = r.source;
+    const p = row.querySelector('.hist-pulse');
+    p.textContent = r.pulse_score + (d === null ? '' : d > 0 ? '  ▲+' + d : d < 0 ? '  ▼' + d : '  —');
+    p.className = 'hist-pulse ' + scoreClass(r.pulse_score);
+    host.appendChild(row);
+  });
+}
+
+// ---------- notifications: nav badge ----------
+function updateNavBadge(){
+  const badge = document.getElementById('scoresBadge');
+  if(!snapshots.length){ badge.classList.add('hidden'); return; }
+  const urgent = buildActionItems().filter(i => i.tier === 'high').length;
+  if(urgent > 0){
+    badge.textContent = urgent > 9 ? '9+' : String(urgent);
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+// ---------- financing ----------
+// Indicative only — not an offer, not underwriting. A rough multiple of
+// monthly revenue, scaled by Pulse Score band, until real lender
+// eligibility rules are wired in via a signed LSP partner.
+function computeFinancingEligibility(){
+  if(!snapshots.length) return null;
+  const latest = snapshots[0];
+  const monthlyRevenue = Number(latest.revenue) || 0;
+  if(monthlyRevenue <= 0) return null;
+  const band = scoreBand(latest.pulse_score);
+  const multiplier = latest.pulse_score >= 70 ? 3 : latest.pulse_score >= 40 ? 2 : 1;
+  const mid = monthlyRevenue * multiplier;
+  return { low: Math.round(mid * 0.8), high: Math.round(mid * 1.2), band };
+}
+
+function renderFinancing(){
+  const range = document.getElementById('finRange');
+  const note = document.getElementById('finNote');
+  const elig = computeFinancingEligibility();
+  if(!elig){
+    range.textContent = '—';
+    note.textContent = 'Upload or enter a snapshot with monthly revenue to see an estimate.';
+  } else {
+    range.textContent = inr(elig.low) + ' – ' + inr(elig.high);
+    note.textContent = 'A rough working-capital estimate based on your revenue and Pulse Score band (' + elig.band.label + '). This isn\u2019t a credit decision or a lender offer — actual eligibility depends on full underwriting.';
+  }
+
+  const already = !!currentProfile.financing_interest_at;
+  document.getElementById('finLeadCard').classList.toggle('hidden', already);
+  document.getElementById('finConfirmCard').classList.toggle('hidden', !already);
+  if(already){
+    document.getElementById('finConfirmText').textContent =
+      'We recorded your interest on ' + fmtDate(currentProfile.financing_interest_at) + '. We\u2019ll reach out directly once a lending partner is live.';
+  }
+  document.getElementById('finEmail').value = currentUser ? currentUser.email : '';
+}
+
+document.getElementById('financingForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('finSubmit');
+  const note = document.getElementById('finFormNote');
+  if(!document.getElementById('finConsent').checked){
+    note.className = 'note bad'; note.textContent = 'Consent is required to proceed.';
+    return;
+  }
+  btn.disabled = true; note.className = 'note'; note.textContent = 'Saving…';
+  try {
+    const elig = computeFinancingEligibility();
+    const latest = snapshots[0];
+    const payload = {
+      user_id: currentUser.id,
+      company_name: currentProfile.company_name,
+      email: document.getElementById('finEmail').value.trim(),
+      phone: document.getElementById('finPhone').value.trim() || null,
+      purpose: document.getElementById('finPurpose').value.trim() || null,
+      pulse_score: latest ? latest.pulse_score : null,
+      vitals: latest ? latest.vitals : null,
+      eligibility_low: elig ? elig.low : null,
+      eligibility_high: elig ? elig.high : null,
+      consent: true,
+      consent_text: document.querySelector('#financingForm .fin-consent span').textContent
+    };
+    const res = await fetch('/api/financing-lead', {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Could not save your interest.');
+    const patch = { id: currentUser.id, financing_interest_at: new Date().toISOString() };
+    await sbClient.from('profiles').update(patch).eq('id', currentUser.id);
+    currentProfile.financing_interest_at = patch.financing_interest_at;
+    logEvent('financing_interest_submitted', { eligibility_low: elig ? elig.low : null, eligibility_high: elig ? elig.high : null });
+    renderFinancing();
+  } catch(err){
+    console.error('[margyn] financing lead:', err);
+    note.className = 'note bad'; note.textContent = err.message || 'Could not save. Try again.';
+  } finally { btn.disabled = false; }
+});
+
+// ---------- export & share ----------
+document.getElementById('downloadPdfBtn').addEventListener('click', () => {
+  const latest = snapshots[0];
+  document.getElementById('printCompanyName').textContent = currentProfile.company_name || 'Margyn scorecard';
+  document.getElementById('printGeneratedAt').textContent = 'Generated ' + new Date().toLocaleString('en-IN') +
+    (latest ? ' \u00b7 snapshot ' + freshnessText(latest) : '');
+  logEvent('export_pdf');
+  window.print();
+});
+
+document.getElementById('copySummaryBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('copySummaryBtn');
+  const latest = snapshots[0];
+  if(!latest){ btn.textContent = 'No data yet'; setTimeout(() => btn.textContent = 'Copy summary', 1800); return; }
+  const lines = [
+    currentProfile.company_name || 'Margyn scorecard',
+    'Pulse Score: ' + latest.pulse_score + ' (' + scoreBand(latest.pulse_score).label + ')',
+    freshnessText(latest),
+    ''
+  ];
+  (latest.vitals || []).forEach(v => lines.push(v.label + ': ' + v.value));
+  if(latest.briefing){ lines.push('', 'Briefing:', latest.briefing); }
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    btn.textContent = 'Copied ✓';
+    logEvent('export_copy');
+  } catch(e){
+    btn.textContent = 'Could not copy';
+  }
+  setTimeout(() => btn.textContent = 'Copy summary', 1800);
+});
+
+// Downloadable CSV of every snapshot on record — the raw numbers behind the
+// Pulse Score, for anyone who wants to pivot-table it themselves (an
+// accountant, a lender's analyst) rather than read a formatted PDF.
+function csvEscape(v){
+  const s = String(v == null ? '' : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+document.getElementById('downloadCsvBtn').addEventListener('click', () => {
+  if(!snapshots.length){
+    const btn = document.getElementById('downloadCsvBtn');
+    btn.textContent = 'No data yet'; setTimeout(() => btn.textContent = 'Export CSV', 1800);
+    return;
+  }
+  const headers = ['date','pulse_score','band','cash','receivables_total','receivables_over_90d','payables_due_30d','revenue','net_profit','monthly_burn','gst_leak','gst_payable','source'];
+  const rows = snapshots.slice().reverse().map(s => [
+    fmtDate(s.created_at), s.pulse_score, scoreBand(s.pulse_score).label, s.cash, s.recv_total, s.recv_90,
+    s.pay_soon, s.revenue, s.net_profit, s.burn, s.gst_leak, s.gst_payable, s.source
+  ]);
+  const csv = [headers.join(','), ...rows.map(r => r.map(csvEscape).join(','))].join('\n');
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (currentProfile.company_name || 'margyn') + '_snapshots.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  logEvent('export_csv');
+});
+
+// ---------- vital detail drawer ----------
+const inr = n => '₹' + Math.round(Number(n)||0).toLocaleString('en-IN');
+const fmtDay2 = iso => iso ? new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '—';
+
+function daysFromToday(dateStr){
+  if(!dateStr) return null;
+  const ms = new Date(dateStr) - new Date(new Date().toDateString());
+  return Math.round(ms / 86400000);
+}
+// Positive 'daysOverdue' = past due. Used for receivables.
+function recvBucket(dueDate){
+  const days = daysFromToday(dueDate);
+  if(days === null) return { label:'No due date', tag:'' };
+  const overdue = -days;
+  if(overdue <= 0) return { label:'not yet due', tag:'ok' };
+  if(overdue <= 30) return { label:overdue + 'd overdue', tag:'warn' };
+  if(overdue <= 90) return { label:overdue + 'd overdue', tag:'warn' };
+  return { label:overdue + 'd overdue', tag:'bad' };
+}
+function payUrgency(dueDate){
+  const days = daysFromToday(dueDate);
+  if(days === null) return { label:'no due date', tag:'warn' };
+  if(days < 0) return { label:(-days) + 'd overdue', tag:'bad' };
+  if(days <= 7) return { label:'due in ' + days + 'd', tag:'bad' };
+  if(days <= 30) return { label:'due in ' + days + 'd', tag:'warn' };
+  return { label:'due in ' + days + 'd', tag:'ok' };
+}
+
+// ---------- pulse detail page ----------
+// (reuses the global inr() / fmtDay2() helpers defined below with the vital detail drawer)
+
+function renderPulseDetail(){
+  const hasData = snapshots.length > 0;
+  const latest = hasData ? snapshots[0] : null;
+  const prev = snapshots[1];
+  const pulseVal = hasData ? latest.pulse_score : 0;
+  const band = hasData ? scoreBand(pulseVal) : { color:'#5C6B7A', label:'No data yet' };
+
+  const hero = document.getElementById('pdHero');
+  hero.style.setProperty('--band-color', band.color);
+  countUp(document.getElementById('pdPulseNum'), pulseVal, 900);
+  document.getElementById('pdBandBadge').textContent = band.label;
+  document.getElementById('pdBandBadge').style.display = hasData ? 'inline-block' : 'none';
+
+  const arc = document.getElementById('pdPulseArc');
+  const pct = Math.max(0, Math.min(100, pulseVal));
+  arc.setAttribute('stroke-dashoffset', (RING_CIRC * (1 - pct / 100)).toFixed(2));
+  arc.setAttribute('stroke', band.color);
+
+  const deltaEl = document.getElementById('pdDelta');
+  if(!hasData){
+    deltaEl.textContent = 'no snapshots yet — upload data to calculate'; deltaEl.className = 'pulse-delta';
+  } else if(prev){
+    const d = latest.pulse_score - prev.pulse_score;
+    deltaEl.textContent = d === 0 ? 'no change since last' : (d > 0 ? '▲ +' + d : '▼ ' + d) + ' since last';
+    deltaEl.className = 'pulse-delta ' + (d > 0 ? 'score-good' : d < 0 ? 'score-bad' : '');
+  } else {
+    deltaEl.textContent = 'first snapshot'; deltaEl.className = 'pulse-delta';
+  }
+  document.getElementById('pdAsOf').textContent = hasData ? 'as of ' + fmtDate(latest.created_at) : '';
+
+  document.getElementById('pdSummary').textContent = !hasData
+    ? 'Add a snapshot on the Upload & calculate tab to see your first score and a personalized breakdown.'
+    : band.cls === 'good'
+      ? 'Your financial vitals are in healthy territory. Keep an eye on the items below to stay there.'
+      : band.cls === 'warn'
+        ? 'A few vitals need attention before they become a bigger problem. Here\u2019s where to start.'
+        : 'This score signals real risk to cash and margin right now — the items below are the fastest ways to move it.';
+
+  renderPulseTrend();
+  renderPulseActions();
+}
+
+// Trend chart: a plain sparkline until there are 2+ snapshots, then a full
+// axis chart with red/amber/green reference bands so the shape of the line
+// against those bands is legible at a glance, not just its slope.
+function renderPulseTrend(){
+  const host = document.getElementById('pdTrendCard');
+  const rows = snapshots.slice().reverse(); // chronological
+  if(rows.length < 2){
+    host.innerHTML = '<div class="pd-trend-empty">' +
+      (rows.length === 1
+        ? 'You have one snapshot so far. Record another to start seeing a trend line here — it\u2019s the difference between a score and a story.'
+        : 'No snapshots yet. Once you add data on the Upload &amp; calculate tab, your trend will build here.') +
+      '</div>';
+    return;
+  }
+  const W = 640, H = 220, PL = 34, PR = 12, PT = 12, PB = 28;
+  const plotW = W - PL - PR, plotH = H - PT - PB;
+  const y = v => PT + plotH * (1 - Math.max(0, Math.min(100, v)) / 100);
+  const x = i => PL + (rows.length === 1 ? 0 : (i / (rows.length - 1)) * plotW);
+
+  const bandRect = (from, to, color) =>
+    '<rect x="' + PL + '" y="' + y(to).toFixed(1) + '" width="' + plotW + '" height="' + (y(from) - y(to)).toFixed(1) + '" fill="' + color + '" opacity="0.08"/>';
+  const gridLine = (v) =>
+    '<line x1="' + PL + '" y1="' + y(v).toFixed(1) + '" x2="' + (W - PR) + '" y2="' + y(v).toFixed(1) + '" stroke="rgba(11,18,32,0.12)" stroke-width="1" stroke-dasharray="3,3"/>' +
+    '<text x="' + (PL - 8) + '" y="' + (y(v) + 3).toFixed(1) + '" font-size="9" font-family="IBM Plex Mono, monospace" fill="#5C6B7A" text-anchor="end">' + v + '</text>';
+
+  const pts = rows.map((r,i) => x(i).toFixed(1) + ',' + y(r.pulse_score).toFixed(1));
+  const areaPts = 'M' + pts.map((p,i) => (i===0?'':'L') + p).join(' ') +
+    ' L' + x(rows.length-1).toFixed(1) + ',' + (H-PB) + ' L' + x(0).toFixed(1) + ',' + (H-PB) + ' Z';
+  const lineColor = scoreBand(rows[rows.length-1].pulse_score).color;
+
+  const dots = rows.map((r,i) => {
+    const c = scoreBand(r.pulse_score).color;
+    return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(r.pulse_score).toFixed(1) + '" r="3.4" fill="' + c + '" stroke="#fff" stroke-width="1.2"><title>' +
+      fmtDate(r.created_at) + ': ' + r.pulse_score + '</title></circle>';
+  }).join('');
+
+  const showEvery = rows.length > 8 ? Math.ceil(rows.length / 6) : 1;
+  const labels = rows.map((r,i) => {
+    if(i % showEvery !== 0 && i !== rows.length - 1) return '';
+    return '<text x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" font-size="9" font-family="IBM Plex Mono, monospace" fill="#5C6B7A" text-anchor="middle">' + fmtDay2short(r.created_at) + '</text>';
+  }).join('');
+
+  host.innerHTML =
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" preserveAspectRatio="none" role="img" aria-label="Pulse score trend over time">' +
+      bandRect(0, 40, '#C23B67') + bandRect(40, 70, '#C97F1E') + bandRect(70, 100, '#1FA374') +
+      gridLine(0) + gridLine(40) + gridLine(70) + gridLine(100) +
+      '<path d="' + areaPts + '" fill="' + lineColor + '" opacity="0.10"/>' +
+      '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + lineColor + '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      dots + labels +
+    '</svg>' +
+    '<div class="pd-trend-legend">' +
+      '<span><i style="background:#C23B67"></i>0–39 at risk</span>' +
+      '<span><i style="background:#C97F1E"></i>40–69 caution</span>' +
+      '<span><i style="background:#1FA374"></i>70–100 healthy</span>' +
+    '</div>';
+}
+function fmtDay2short(iso){ return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short' }); }
+
+// Action items: pull the vitals that are dragging the score down, plus the
+// specific ledger entries (top overdue receivables, most urgent payables)
+// a founder can actually act on today.
+// Action items: one row per actual thing to act on — a named receivable,
+// a named vendor bill, the GST leakage figure, a thin vital — bucketed into
+// High / Medium / Low impact so a founder knows what to hit first.
+// Shared builder: returns the flat list of actionable items (named
+// receivable/payable/etc). Used both for the full list on the Pulse Detail
+// page and for the small count preview on the main Pulse card.
+function buildActionItems(){
+  if(!snapshots.length) return [];
+  const latest = snapshots[0];
+  const items = [];
+
+  // ---- Receivables: one item per invoice overdue, tiered by how overdue ----
+  receivables.forEach(r => {
+    const days = -(daysFromToday(r.due_date) ?? 0);
+    if(days <= 0) return; // not yet due — nothing to act on
+    const tier = days > 90 ? 'high' : days > 30 ? 'medium' : 'low';
+    items.push({
+      tier, icon:'AR', group:'Receivable',
+      title: escapeHtml(r.party_name),
+      detail: inr(r.amount) + ' overdue by ' + days + (days===1?' day':' days') + ' — follow up to collect.',
+      amount: Number(r.amount),
+      cta:'View →',
+      onClick: () => openVitalDetail('Receivables Aging')
+    });
+  });
+
+  // ---- Receivables concentration: flagged whenever it's actively capping
+  // the score (same >=40% threshold the v2.0 scoring engine uses) ----
+  const conc = computeReceivablesConcentration(receivables);
+  if(conc.pct >= 40){
+    items.push({
+      tier: conc.pct >= 60 ? 'high' : 'medium', icon:'AR', group:'Concentration',
+      title:'Receivables concentrated in ' + (conc.names.split(', ').length > 1 ? 'a few customers' : 'one customer'),
+      detail: conc.pct.toFixed(0) + '% of what you\u2019re owed sits with ' + escapeHtml(conc.names) + ' — this caps your Receivables score even if aging looks fine, since losing one of these customers would hit disproportionately hard.',
+      amount: 0,
+      cta:'View →',
+      onClick: () => openVitalDetail('Receivables Aging')
+    });
+  }
+
+  // ---- Payables: one item per bill overdue or due within 30 days ----
+  payables.forEach(p => {
+    const days = daysFromToday(p.due_date);
+    if(days === null || days > 30) return;
+    const tier = days < 0 ? 'high' : days <= 7 ? 'medium' : 'low';
+    items.push({
+      tier, icon:'AP', group:'Payable',
+      title: escapeHtml(p.party_name),
+      detail: inr(p.amount) + (days < 0 ? ' — ' + (-days) + (days===-1?' day':' days') + ' overdue. Pay to avoid vendor friction.' : ' — due in ' + days + (days===1?' day':' days') + '.'),
+      amount: Number(p.amount),
+      cta:'View →',
+      onClick: () => openVitalDetail('Payables Due (30d)')
+    });
+  });
+
+  // ---- GST/ITC leakage: single aggregate figure (no itemized GST ledger yet) ----
+  const gstPayable = Number(latest.gst_payable) || 0;
+  const gstLeak = Number(latest.gst_leak) || 0;
+  const gstRatio = gstPayable > 0 ? gstLeak / gstPayable : 0;
+  if(gstLeak > 0 && gstRatio >= 0.05){
+    const tier = gstRatio >= 0.5 ? 'high' : gstRatio >= 0.15 ? 'medium' : 'low';
+    items.push({
+      tier, icon:'GST', group:'GST/ITC',
+      title:'Unclaimed input tax credit',
+      detail: inr(gstLeak) + ' — ' + (gstRatio*100).toFixed(0) + '% of your monthly GST payable. Reconcile against GSTR-2B this cycle to claim it. (Shown as one figure — GST isn\u2019t itemized by vendor yet.)',
+      amount: gstLeak,
+      cta:'View →',
+      onClick: () => openVitalDetail('GST/ITC Leakage')
+    });
+  }
+
+  // ---- Other vitals: only surface if genuinely below a healthy score ----
+  const vitalFlags = [
+    { label:'Working Capital Runway', icon:'WC', group:'Runway', tip:'Prioritize collecting receivables and delaying non-critical payables to extend it.' },
+    { label:'Net Margin', icon:'NM', group:'Margin', tip:'Review pricing and cost lines pulling margin below your industry benchmark.' },
+    { label:'Cash Position', icon:'CB', group:'Cash', tip:'Your cash-to-burn buffer is thin relative to the benchmark. Build it back up before committing to new spend.' }
+  ];
+  vitalFlags.forEach(vf => {
+    const v = (latest.vitals || []).find(x => x.label === vf.label);
+    if(!v || v.score >= 70) return;
+    const tier = v.score < 25 ? 'high' : v.score < 50 ? 'medium' : 'low';
+    items.push({
+      tier, icon:vf.icon, group:vf.group,
+      title: vf.label + ' — ' + v.value,
+      detail: vf.tip,
+      amount: 0,
+      cta:'View →',
+      onClick: () => openVitalDetail(vf.label)
+    });
+  });
+
+  return items;
+}
+
+function renderPulseActions(){
+  const host = document.getElementById('pdActionList');
+  const hasData = snapshots.length > 0;
+  if(!hasData){
+    host.innerHTML = '<div class="pd-trend-empty">Action items appear here once you have a snapshot — they\u2019re pulled straight from your vitals and open ledger.</div>';
+    return;
+  }
+  const items = buildActionItems();
+
+  if(!items.length){
+    host.innerHTML = '<div class="pd-empty-good"><strong>Nothing urgent flagged</strong>All six vitals are within a healthy range against your ledger and benchmarks right now. Keep recording snapshots to track it.</div>';
+    return;
+  }
+
+  const TIER_META = {
+    high:  { label:'High impact',   color:'#C23B67', bg:'#FBD9E4' },
+    medium:{ label:'Medium impact', color:'#C97F1E', bg:'#FBE7C7' },
+    low:   { label:'Low impact',    color:'#5C6B7A', bg:'#E6E8EB' }
+  };
+
+  let html = '';
+  let globalIdx = 0;
+  const flatItems = [];
+  ['high','medium','low'].forEach(tierKey => {
+    const bucket = items.filter(it => it.tier === tierKey).sort((a,b) => b.amount - a.amount);
+    if(!bucket.length) return;
+    const meta = TIER_META[tierKey];
+    html += '<div class="pd-tier-header" style="--tier-color:' + meta.color + ';">' + meta.label + ' <span>' + bucket.length + '</span></div>';
+    bucket.forEach(it => {
+      flatItems.push(it);
+      html += '<div class="pd-action" style="--action-color:' + meta.color + '; --action-bg:' + meta.bg + ';" data-idx="' + globalIdx + '">' +
+        '<span class="pd-action-tick"></span>' +
+        '<div class="pd-action-body">' +
+          '<div class="pd-action-title">' + it.title + '<span class="pd-action-tag">' + it.group + '</span></div>' +
+          '<div class="pd-action-detail">' + it.detail + '</div>' +
+        '</div>' +
+        '<div class="pd-action-cta">' + it.cta + '</div>' +
+      '</div>';
+      globalIdx++;
+    });
+  });
+
+  host.innerHTML = html;
+  host.querySelectorAll('.pd-action').forEach(el => {
+    const idx = Number(el.dataset.idx);
+    el.addEventListener('click', () => flatItems[idx].onClick());
+  });
+}
+
+function openVitalDetail(label){
+  const overlay = document.getElementById('detailOverlay');
+  overlay.classList.remove('hidden');
+  renderDetailFor(label);
+  logEvent('vital_opened', { label });
+}
+function closeVitalDetail(){
+  document.getElementById('detailOverlay').classList.add('hidden');
+}
+document.getElementById('detailClose').addEventListener('click', closeVitalDetail);
+document.getElementById('detailOverlay').addEventListener('click', (e) => {
+  if(e.target.id === 'detailOverlay') closeVitalDetail();
+});
+
+function renderDetailFor(label){
+  const host = document.getElementById('detailContent');
+  if(label === 'Cash Position') return renderCashDetail(host);
+  if(label === 'Receivables Aging') return renderReceivablesDetail(host);
+  if(label === 'Payables Due (30d)') return renderPayablesDetail(host);
+  return renderReadOnlyDetail(host, label);
+}
+
+// ---- Cash Position ----
+function renderCashDetail(host){
+  const bal = Number(currentProfile.cash_balance) || 0;
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div><div class="detail-title">Cash Position</div>' +
+    '<div class="detail-sub">Your running bank balance. This updates automatically when you mark a receivable as collected or a payable as paid — use the adjustment below only to reconcile against your actual bank statement.</div>' +
+    '<div class="detail-stats"><div class="detail-stat"><div class="ds-label">Current balance</div><div class="ds-value">' + inr(bal) + '</div></div>' +
+    '<div class="detail-stat"><div class="ds-label">Logged transactions</div><div class="ds-value">' + cashTx.length + '</div></div></div>' +
+    '<div class="ledger-form"><div class="lf-title">Adjust balance</div>' +
+    '<div class="lf-grid"><input type="number" id="cashAdjAmt" placeholder="Amount (± ₹)"><input type="text" id="cashAdjDesc" placeholder="Reason (optional)"></div>' +
+    '<button id="cashAdjBtn">Apply adjustment</button><div class="detail-note" id="cashAdjNote"></div></div>' +
+    '<div class="ledger-list-title">Recent activity</div><div id="cashTxList"></div>';
+
+  const list = host.querySelector('#cashTxList');
+  if(!cashTx.length){
+    list.innerHTML = '<div class="ledger-empty">No transactions logged yet.</div>';
+  } else {
+    list.innerHTML = cashTx.map(t => {
+      const inflow = Number(t.amount) >= 0;
+      return '<div class="cash-tx-row"><span class="ctr-desc">' + escapeHtml(t.description || t.type) +
+        '<span class="ctr-date">' + fmtDay2(t.created_at) + '</span></span>' +
+        '<span class="ctr-amt ' + (inflow ? 'in' : 'out') + '">' + (inflow ? '+' : '') + inr(t.amount) + '</span></div>';
+    }).join('');
+  }
+
+  host.querySelector('#cashAdjBtn').addEventListener('click', async () => {
+    const amt = Number(host.querySelector('#cashAdjAmt').value);
+    const desc = host.querySelector('#cashAdjDesc').value.trim() || 'Manual adjustment';
+    const note = host.querySelector('#cashAdjNote');
+    if(!amt){ note.className = 'detail-note bad'; note.textContent = 'Enter a non-zero amount.'; return; }
+    note.className = 'detail-note'; note.textContent = 'Saving…';
+    try {
+      await applyCashDelta(amt, 'adjustment', desc);
+      note.textContent = '';
+      renderDetailFor('Cash Position');
+    } catch(err){
+      console.error('[margyn] cash adjust:', err);
+      note.className = 'detail-note bad'; note.textContent = err.message || 'Could not save.';
+    }
+  });
+}
+
+// Central place all cash movements go through: updates the profile balance,
+// logs it to cash_transactions, and re-derives + saves a fresh snapshot so
+// every vital reflects the change immediately.
+async function applyCashDelta(amount, type, description){
+  const newBal = (Number(currentProfile.cash_balance) || 0) + Number(amount);
+  const { error: e1 } = await sbClient.from('profiles').update({ cash_balance:newBal }).eq('id', currentUser.id);
+  if(e1) throw e1;
+  currentProfile.cash_balance = newBal;
+  const { error: e2 } = await sbClient.from('cash_transactions').insert({
+    user_id:currentUser.id, type, amount, description
+  });
+  if(e2) throw e2;
+  cashTx = await loadCashTx();
+  await saveLedgerSnapshot();
+  renderScores();
+}
+
+// ---- Receivables ----
+function renderReceivablesDetail(host){
+  const total = receivables.reduce((s,r) => s + Number(r.amount), 0);
+  const over90 = receivables.reduce((s,r) => { const d = daysFromToday(r.due_date); return (d !== null && -d > 90) ? s + Number(r.amount) : s; }, 0);
+  const buckets = { notdue:0, d30:0, d60:0, d90p:0 };
+  receivables.forEach(r => {
+    const d = daysFromToday(r.due_date);
+    const overdue = d === null ? 0 : -d;
+    if(overdue <= 0) buckets.notdue += Number(r.amount);
+    else if(overdue <= 30) buckets.d30 += Number(r.amount);
+    else if(overdue <= 90) buckets.d60 += Number(r.amount);
+    else buckets.d90p += Number(r.amount);
+  });
+
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div><div class="detail-title">Receivables Aging</div>' +
+    '<div class="detail-sub">Money owed to you by customers. Mark an invoice as collected once the payment lands — that amount moves straight into your Cash Position.</div>' +
+    '<div class="detail-stats"><div class="detail-stat"><div class="ds-label">Total outstanding</div><div class="ds-value">' + inr(total) + '</div></div>' +
+    '<div class="detail-stat"><div class="ds-label">Over 90 days</div><div class="ds-value">' + inr(over90) + '</div></div></div>' +
+    '<div class="aging-bar">' +
+      '<div class="aging-seg"><div class="ag-b">Not due</div><div class="ag-v">' + inr(buckets.notdue) + '</div></div>' +
+      '<div class="aging-seg"><div class="ag-b">1–30d</div><div class="ag-v">' + inr(buckets.d30) + '</div></div>' +
+      '<div class="aging-seg"><div class="ag-b">31–90d</div><div class="ag-v">' + inr(buckets.d60) + '</div></div>' +
+      '<div class="aging-seg hot"><div class="ag-b">90d+</div><div class="ag-v">' + inr(buckets.d90p) + '</div></div>' +
+    '</div>' +
+    '<div class="ledger-form"><div class="lf-title">Add receivable</div>' +
+    '<div class="lf-grid"><input type="text" id="recvParty" placeholder="Customer name">' +
+    '<input type="number" id="recvAmt" placeholder="Amount (₹)"></div>' +
+    '<div class="lf-grid"><input type="date" id="recvDue"><span></span></div>' +
+    '<button id="recvAddBtn">Add to ledger</button><div class="detail-note" id="recvAddNote"></div></div>' +
+    '<div class="ledger-list-title">Open invoices (<span id="recvCountLabel">' + receivables.length + '</span>)</div>' +
+    '<div class="ledger-search"><input type="text" id="recvSearch" placeholder="Search by customer name…"></div>' +
+    '<div id="recvList"></div>';
+
+  renderReceivablesList(host, '');
+  host.querySelector('#recvSearch').addEventListener('input', (e) => renderReceivablesList(host, e.target.value));
+
+  host.querySelector('#recvAddBtn').addEventListener('click', async () => {
+    const party = host.querySelector('#recvParty').value.trim();
+    const amt = Number(host.querySelector('#recvAmt').value);
+    const due = host.querySelector('#recvDue').value || null;
+    const note = host.querySelector('#recvAddNote');
+    if(!party || !amt){ note.className = 'detail-note bad'; note.textContent = 'Enter a customer name and amount.'; return; }
+    note.className = 'detail-note'; note.textContent = 'Saving…';
+    try {
+      const { error } = await sbClient.from('receivables').insert({
+        user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open'
+      });
+      if(error) throw error;
+      receivables = await loadReceivables();
+      await saveLedgerSnapshot();
+      renderScores();
+      renderDetailFor('Receivables Aging');
+    } catch(err){
+      console.error('[margyn] add receivable:', err);
+      note.className = 'detail-note bad'; note.textContent = err.message || 'Could not save.';
+    }
+  });
+}
+
+function renderReceivablesList(host, query){
+  const list = host.querySelector('#recvList');
+  const q = (query || '').trim().toLowerCase();
+  const rows = q ? receivables.filter(r => (r.party_name || '').toLowerCase().includes(q)) : receivables;
+  const countLabel = host.querySelector('#recvCountLabel');
+  if(countLabel) countLabel.textContent = q ? rows.length + ' of ' + receivables.length : receivables.length;
+  if(!rows.length){
+    list.innerHTML = '<div class="ledger-empty">' + (q ? 'No receivables match "' + escapeHtml(query) + '".' : 'No open receivables. Add one above.') + '</div>';
+    return;
+  }
+  list.innerHTML = '';
+  rows.forEach(r => {
+    const b = recvBucket(r.due_date);
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">' + escapeHtml(r.party_name) + '</div>' +
+      '<div class="lr-meta">due ' + fmtDay2(r.due_date) + (b.tag ? '<span class="lr-tag ' + b.tag + '">' + b.label + '</span>' : '') + '</div></div>' +
+      '<div class="lr-amount">' + inr(r.amount) + '</div>' +
+      '<div class="lr-actions"><button class="lr-btn" data-act="collect">Mark received</button><button class="lr-btn danger" data-act="del">Delete</button></div>';
+    row.querySelector('[data-act="collect"]').addEventListener('click', () => collectReceivable(r));
+    row.querySelector('[data-act="del"]').addEventListener('click', () => deleteReceivable(r));
+    list.appendChild(row);
+  });
+}
+
+async function collectReceivable(r){
+  try {
+    const { error: e1 } = await sbClient.from('receivables').delete().eq('id', r.id);
+    if(e1) throw e1;
+    receivables = await loadReceivables();
+    await applyCashDelta(Number(r.amount), 'receivable_collected', 'Collected from ' + r.party_name);
+    renderDetailFor('Receivables Aging');
+    logEvent('receivable_collected', { amount: Number(r.amount) });
+  } catch(err){
+    console.error('[margyn] collect receivable:', err);
+    alert('Could not mark as received: ' + (err.message || 'unknown error'));
+  }
+}
+async function deleteReceivable(r){
+  try {
+    const { error } = await sbClient.from('receivables').delete().eq('id', r.id);
+    if(error) throw error;
+    receivables = await loadReceivables();
+    await saveLedgerSnapshot();
+    renderScores();
+    renderDetailFor('Receivables Aging');
+    logEvent('receivable_deleted', { amount: Number(r.amount) });
+  } catch(err){
+    console.error('[margyn] delete receivable:', err);
+    alert('Could not delete: ' + (err.message || 'unknown error'));
+  }
+}
+
+// ---- Payables ----
+function renderPayablesDetail(host){
+  const total = payables.reduce((s,p) => s + Number(p.amount), 0);
+  const soon = payables.reduce((s,p) => { const d = daysFromToday(p.due_date); return (d === null || d <= 30) ? s + Number(p.amount) : s; }, 0);
+
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div><div class="detail-title">Payables Due</div>' +
+    '<div class="detail-sub">Money you owe suppliers and vendors. Mark a bill as paid once you\u2019ve settled it — that amount comes straight out of your Cash Position.</div>' +
+    '<div class="detail-stats"><div class="detail-stat"><div class="ds-label">Total outstanding</div><div class="ds-value">' + inr(total) + '</div></div>' +
+    '<div class="detail-stat"><div class="ds-label">Due within 30 days</div><div class="ds-value">' + inr(soon) + '</div></div></div>' +
+    '<div class="ledger-form"><div class="lf-title">Add payable</div>' +
+    '<div class="lf-grid"><input type="text" id="payParty" placeholder="Vendor name">' +
+    '<input type="number" id="payAmt" placeholder="Amount (₹)"></div>' +
+    '<div class="lf-grid"><input type="date" id="payDue"><span></span></div>' +
+    '<button id="payAddBtn">Add to ledger</button><div class="detail-note" id="payAddNote"></div></div>' +
+    '<div class="ledger-list-title">Open bills (<span id="payCountLabel">' + payables.length + '</span>)</div>' +
+    '<div class="ledger-search"><input type="text" id="paySearch" placeholder="Search by vendor name…"></div>' +
+    '<div id="payList"></div>';
+
+  renderPayablesList(host, '');
+  host.querySelector('#paySearch').addEventListener('input', (e) => renderPayablesList(host, e.target.value));
+
+  host.querySelector('#payAddBtn').addEventListener('click', async () => {
+    const party = host.querySelector('#payParty').value.trim();
+    const amt = Number(host.querySelector('#payAmt').value);
+    const due = host.querySelector('#payDue').value || null;
+    const note = host.querySelector('#payAddNote');
+    if(!party || !amt){ note.className = 'detail-note bad'; note.textContent = 'Enter a vendor name and amount.'; return; }
+    note.className = 'detail-note'; note.textContent = 'Saving…';
+    try {
+      const { error } = await sbClient.from('payables').insert({
+        user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open'
+      });
+      if(error) throw error;
+      payables = await loadPayables();
+      await saveLedgerSnapshot();
+      renderScores();
+      renderDetailFor('Payables Due (30d)');
+    } catch(err){
+      console.error('[margyn] add payable:', err);
+      note.className = 'detail-note bad'; note.textContent = err.message || 'Could not save.';
+    }
+  });
+}
+
+function renderPayablesList(host, query){
+  const list = host.querySelector('#payList');
+  const q = (query || '').trim().toLowerCase();
+  const rows = q ? payables.filter(p => (p.party_name || '').toLowerCase().includes(q)) : payables;
+  const countLabel = host.querySelector('#payCountLabel');
+  if(countLabel) countLabel.textContent = q ? rows.length + ' of ' + payables.length : payables.length;
+  if(!rows.length){
+    list.innerHTML = '<div class="ledger-empty">' + (q ? 'No payables match "' + escapeHtml(query) + '".' : 'No open payables. Add one above.') + '</div>';
+    return;
+  }
+  list.innerHTML = '';
+  rows.forEach(p => {
+    const u = payUrgency(p.due_date);
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">' + escapeHtml(p.party_name) + '</div>' +
+      '<div class="lr-meta">due ' + fmtDay2(p.due_date) + '<span class="lr-tag ' + u.tag + '">' + u.label + '</span></div></div>' +
+      '<div class="lr-amount">' + inr(p.amount) + '</div>' +
+      '<div class="lr-actions"><button class="lr-btn" data-act="pay">Mark paid</button><button class="lr-btn danger" data-act="del">Delete</button></div>';
+    row.querySelector('[data-act="pay"]').addEventListener('click', () => payPayable(p));
+    row.querySelector('[data-act="del"]').addEventListener('click', () => deletePayable(p));
+    list.appendChild(row);
+  });
+}
+
+async function payPayable(p){
+  try {
+    const { error: e1 } = await sbClient.from('payables').delete().eq('id', p.id);
+    if(e1) throw e1;
+    payables = await loadPayables();
+    await applyCashDelta(-Number(p.amount), 'payable_paid', 'Paid to ' + p.party_name);
+    renderDetailFor('Payables Due (30d)');
+    logEvent('payable_paid', { amount: Number(p.amount) });
+  } catch(err){
+    console.error('[margyn] pay payable:', err);
+    alert('Could not mark as paid: ' + (err.message || 'unknown error'));
+  }
+}
+async function deletePayable(p){
+  try {
+    const { error } = await sbClient.from('payables').delete().eq('id', p.id);
+    if(error) throw error;
+    payables = await loadPayables();
+    await saveLedgerSnapshot();
+    renderScores();
+    renderDetailFor('Payables Due (30d)');
+    logEvent('payable_deleted', { amount: Number(p.amount) });
+  } catch(err){
+    console.error('[margyn] delete payable:', err);
+    alert('Could not delete: ' + (err.message || 'unknown error'));
+  }
+}
+
+// ---- Read-only vitals (GST/ITC, Net Margin, Working Capital Runway) ----
+function renderReadOnlyDetail(host, label){
+  const latest = snapshots[0];
+  let stats = '', body = '';
+  if(label === 'GST/ITC Leakage'){
+    const gstPayable = Number(latest.gst_payable) || 0;
+    const ratio = gstPayable > 0 ? (latest.gst_leak / gstPayable) * 100 : 0;
+    stats = '<div class="detail-stat"><div class="ds-label">Unclaimed ITC</div><div class="ds-value">' + inr(latest.gst_leak) + '</div></div>' +
+      '<div class="detail-stat"><div class="ds-label">% of monthly GST payable</div><div class="ds-value">' + ratio.toFixed(1) + '%</div></div>';
+    body = 'GST input tax credit sitting unclaimed reduces cash you\u2019re entitled to. Scored as a share of your monthly GST payable, not a flat rupee figure. Update both figures from the Upload &amp; calculate tab — a line-item GST ledger is on the roadmap.';
+  } else if(label === 'Net Margin'){
+    const margin = latest.revenue > 0 ? (latest.net_profit / latest.revenue) * 100 : 0;
+    const anchor = INDUSTRY_MARGIN_ANCHOR[currentProfile.industry] || UNIVERSAL_MARGIN_ANCHOR;
+    stats = '<div class="detail-stat"><div class="ds-label">Revenue</div><div class="ds-value">' + inr(latest.revenue) + '</div></div>' +
+      '<div class="detail-stat"><div class="ds-label">Net profit</div><div class="ds-value">' + inr(latest.net_profit) + '</div></div>';
+    body = 'Net margin is net profit divided by revenue (' + margin.toFixed(1) + '% currently), scored against a ' + (anchor*100).toFixed(0) + '% benchmark for ' + (currentProfile.industry || 'a cross-industry default') + ' — set your industry on the Profile tab if this looks off. Update revenue and net profit from the Upload &amp; calculate tab.';
+  } else {
+    const runway = latest.burn > 0 ? (latest.cash + latest.recv_total - latest.pay_soon) / latest.burn : 0;
+    stats = '<div class="detail-stat"><div class="ds-label">Cash + receivables − payables</div><div class="ds-value">' + inr(latest.cash + latest.recv_total - latest.pay_soon) + '</div></div>' +
+      '<div class="detail-stat"><div class="ds-label">Monthly burn</div><div class="ds-value">' + inr(latest.burn) + '</div></div>';
+    body = 'Runway estimates how many months of operating expenses your current cash position (adjusted for the receivables and payables ledger) would cover — currently ' + runway.toFixed(1) + ' months. It updates automatically as your ledger changes.';
+  }
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div><div class="detail-title">' + label + '</div>' +
+    '<div class="detail-sub">' + body + '</div>' +
+    '<div class="detail-stats">' + stats + '</div>';
+}
+
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// Recomputes all six vitals from the current ledger state (cash balance +
+// open receivables + open payables) and the most recent P&L figures, then
+// saves it as a new snapshot so history and the trend line stay accurate.
+async function saveLedgerSnapshot(){
+  const recvTotal = receivables.reduce((s,r) => s + Number(r.amount), 0);
+  const recv90 = receivables.reduce((s,r) => { const d = daysFromToday(r.due_date); return (d !== null && -d > 90) ? s + Number(r.amount) : s; }, 0);
+  const paySoon = payables.reduce((s,p) => { const d = daysFromToday(p.due_date); return (d === null || d <= 30) ? s + Number(p.amount) : s; }, 0);
+  const cash = Number(currentProfile.cash_balance) || 0;
+  const latest = snapshots[0];
+  const revenue = latest ? Number(latest.revenue) || 0 : 0;
+  const netProfit = latest ? Number(latest.net_profit) || 0 : 0;
+  const burn = latest ? (Number(latest.burn) || 1) : 1;
+  const gstLeak = latest ? Number(latest.gst_leak) || 0 : 0;
+  const gstPayable = latest ? Number(latest.gst_payable) || 0 : 0;
+  const industry = currentProfile.industry || '';
+
+  const { pulse, vitals } = computeVitals({
+    cash, recvTotal, recv90, paySoon, revenue, netProfit, burn, gstLeak, gstPayable, industry,
+    receivablesList: receivables, payablesList: payables
+  });
+  const row = {
+    user_id:currentUser.id, source:'ledger',
+    cash, recv_total:recvTotal, recv_90:recv90, pay_soon:paySoon,
+    revenue, net_profit:netProfit, burn, gst_leak:gstLeak, gst_payable:gstPayable,
+    pulse_score:pulse, vitals
+  };
+  const { data, error } = await sbClient.from('snapshots').insert(row).select().single();
+  if(error){ console.error('[margyn] saveLedgerSnapshot:', error); return; }
+  snapshots.unshift(data);
+  logEvent('snapshot_saved', { source:'ledger', pulse_score: pulse });
+}
+
+// ---------- auth ----------
+const authTabs = document.querySelectorAll('.auth-tab');
+const authForms = document.querySelectorAll('.auth-form');
+const authTitle = document.getElementById('authTitle');
+authTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const t = tab.dataset.form;
+    authTabs.forEach(x => x.classList.remove('active'));
+    authForms.forEach(f => f.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(t + 'Form').classList.add('active');
+    authTitle.textContent = t === 'signup' ? 'Create your account.' : 'Welcome back.';
+    clearAuthErrors();
+  });
+});
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('loginSubmit');
+  clearAuthErrors();
+  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
+  btn.disabled = true; btn.textContent = 'Logging in…';
+  try {
+    const { error } = await withTimeout(sbClient.auth.signInWithPassword({
+      email: document.getElementById('loginEmail').value,
+      password: document.getElementById('loginPassword').value
+    }), 20000, 'Login');
+    if(error) throw error;
+    document.getElementById('loginForm').reset();
+  } catch(err){
+    console.error('[margyn] login:', err); showAuthError(err.message || 'Login failed');
+  } finally { btn.disabled = false; btn.textContent = 'Log in'; }
+});
+
+document.getElementById('signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('signupSubmit');
+  const errorEl = document.getElementById('signupError');
+  const email = document.getElementById('signupEmail').value;
+  clearAuthErrors();
+  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
+  btn.disabled = true; btn.textContent = 'Creating account…';
+  try {
+    const { data, error } = await withTimeout(sbClient.auth.signUp({
+      email, password: document.getElementById('signupPassword').value
+    }), 20000, 'Signup');
+    if(error) throw error;
+    if(!(data && data.session)){
+      errorEl.style.color = 'var(--emerald)';
+      errorEl.textContent = 'Account created. Check ' + email + ' for the confirmation link.';
+      errorEl.classList.add('show');
+    }
+    document.getElementById('signupForm').reset();
+  } catch(err){
+    console.error('[margyn] signup:', err); showAuthError(err.message || 'Signup failed');
+  } finally { btn.disabled = false; btn.textContent = 'Create account'; }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('logoutBtn');
+  btn.disabled = true;
+  try {
+    if(sbClient) await sbClient.auth.signOut();
+  } catch(err){
+    // Session already gone, or the network dropped. Either way the local
+    // session is being discarded, so fall through and show the gate.
+    console.error('[margyn] signOut:', err);
+  } finally {
+    btn.disabled = false;
+    await routeFor(null);   // explicit — do not rely on onAuthStateChange firing
+  }
+});
+
+// ---------- entry tabs ----------
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+}));
+
+// ---------- 3D tilt ----------
+(function(){
+  const card = document.getElementById('pulseCard');
+  if(!card) return;
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if(!window.matchMedia('(hover:hover)').matches) return;
+  const wrap = document.querySelector('.pulse-wrap');
+  wrap.addEventListener('mousemove', (e) => {
+    const r = wrap.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    card.style.transform = 'rotateX(' + (-py*6).toFixed(2) + 'deg) rotateY(' + (px*8).toFixed(2) + 'deg)';
+  });
+  wrap.addEventListener('mouseleave', () => { card.style.transform = 'rotateX(0deg) rotateY(0deg)'; });
+})();
+
+// ---------- upload ----------
+let workbookData = null;
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', handleFile);
+dropzone.addEventListener('dragover', e => e.preventDefault());
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  if(e.dataTransfer.files[0]){ fileInput.files = e.dataTransfer.files; handleFile(); }
+});
+function handleFile(){
+  const file = fileInput.files[0];
+  if(!file) return;
+  const note = document.getElementById('noteUpload');
+  document.getElementById('importSummaryUpload').classList.add('hidden');
+  if(typeof XLSX === 'undefined'){
+    note.className = 'note bad';
+    note.textContent = 'Spreadsheet library failed to load — use manual entry, or reload.';
+    return;
+  }
+  document.getElementById('fileName').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      workbookData = XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true });
+      document.getElementById('computeFromFile').disabled = false;
+      note.className = 'note ok'; note.textContent = 'File read — review and click Compute & save.';
+    } catch(err){
+      console.error('[margyn] workbook parse:', err);
+      note.className = 'note bad';
+      note.textContent = 'Could not read this file. Confirm it\u2019s a valid .xlsx/.csv saved from the template.';
+      document.getElementById('computeFromFile').disabled = true;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function sheetToRows(wb, name){
+  const sheet = wb.Sheets[name];
+  // Every sheet in the Margyn template has its real header row at row 5
+  // (rows 1-4 are the brand mark + title + a blank spacer). Without pinning
+  // range:4, SheetJS uses row 1 of the sheet's used range as the header —
+  // and since row 1 is blank, every column comes back keyed as __EMPTY /
+  // __EMPTY_1 instead of 'Balance', 'Amount', etc., so nothing matches below.
+  return sheet ? XLSX.utils.sheet_to_json(sheet, { range:4, defval:0 }) : [];
+}
+
+document.getElementById('computeFromFile').addEventListener('click', async () => {
+  if(!workbookData) return;
+  const note = document.getElementById('noteUpload');
+  const summaryBox = document.getElementById('importSummaryUpload');
+  summaryBox.classList.add('hidden');
+  note.className = 'note'; note.textContent = 'Saving…';
+  try {
+    const bank = sheetToRows(workbookData, 'Bank Accounts');
+    const recv = sheetToRows(workbookData, 'Receivables');
+    const pay  = sheetToRows(workbookData, 'Payables');
+    const pl   = sheetToRows(workbookData, 'P&L Summary');
+    const gst  = sheetToRows(workbookData, 'GST ITC');
+
+    // Missing-sheet check: a template with sheets renamed or removed silently
+    // produces zero rows everywhere, which used to look identical to "this
+    // business genuinely has no receivables." Flag it explicitly instead.
+    const missingSheets = [];
+    if(!workbookData.Sheets['Bank Accounts']) missingSheets.push('Bank Accounts');
+    if(!workbookData.Sheets['Receivables']) missingSheets.push('Receivables');
+    if(!workbookData.Sheets['Payables']) missingSheets.push('Payables');
+    if(!workbookData.Sheets['P&L Summary']) missingSheets.push('P&L Summary');
+    if(!workbookData.Sheets['GST ITC']) missingSheets.push('GST ITC');
+
+    const cash = bank.reduce((s,r) => s + (Number(r['Balance'])||0), 0);
+
+    // Bank sheet is treated as the reconciled truth for cash on hand.
+    const { error: eCash } = await sbClient.from('profiles').update({ cash_balance:cash }).eq('id', currentUser.id);
+    if(eCash) throw eCash;
+    currentProfile.cash_balance = cash;
+
+    // Receivables/Payables sheet rows become open ledger entries — re-uploading
+    // the same file will add duplicate entries, so clear an entry from the
+    // ledger (mark received/paid, or delete) once it's actually settled.
+    const recvInserts = recv
+      .filter(r => (Number(r['Amount'])||0) - (Number(r['Amount Received'])||0) > 0)
+      .map(r => ({
+        user_id:currentUser.id,
+        party_name:String(r['Customer'] || 'Unnamed customer'),
+        amount:(Number(r['Amount'])||0) - (Number(r['Amount Received'])||0),
+        due_date:r['Due Date'] ? new Date(r['Due Date']).toISOString().slice(0,10) : null,
+        status:'open'
+      }));
+    const payInserts = pay
+      .filter(r => (Number(r['Amount'])||0) > 0)
+      .map(r => ({
+        user_id:currentUser.id,
+        party_name:String(r['Vendor'] || 'Unnamed vendor'),
+        amount:Number(r['Amount'])||0,
+        due_date:r['Due Date'] ? new Date(r['Due Date']).toISOString().slice(0,10) : null,
+        status:'open'
+      }));
+    if(recvInserts.length){ const { error } = await sbClient.from('receivables').insert(recvInserts); if(error) throw error; }
+    if(payInserts.length){ const { error } = await sbClient.from('payables').insert(payInserts); if(error) throw error; }
+
+    const plMap = {};
+    pl.forEach(r => { plMap[r['Line Item']] = Number(r['Amount'])||0; });
+    const revenue = plMap['Revenue'] || 0;
+    const netProfit = plMap['Net Profit'] || 0;
+    const burn = plMap['Monthly Operating Expenses'] || (revenue - netProfit) || 1;
+    let gstLeak = 0, gstPayable = 0;
+    gst.forEach(r => {
+      gstLeak += (Number(r['ITC Available'])||0) - (Number(r['ITC Claimed'])||0);
+      gstPayable += Number(r['GST Payable'])||0;
+    });
+
+    receivables = await loadReceivables();
+    payables = await loadPayables();
+    await saveLedgerSnapshotWithPL(revenue, netProfit, burn, gstLeak, gstPayable, 'upload');
+    note.textContent = '';
+
+    // Import summary: exactly what got written, so a founder never has to
+    // wonder whether the upload "actually did anything."
+    let summaryHtml = '<b>Imported:</b> cash set to ' + inr(cash) + ', ' +
+      recvInserts.length + ' receivable' + (recvInserts.length===1?'':'s') + ', ' +
+      payInserts.length + ' payable' + (payInserts.length===1?'':'s') + ', revenue ' + inr(revenue) + ', net profit ' + inr(netProfit) + '.';
+    if(missingSheets.length){
+      summaryHtml += '<br><b style="color:var(--rose);">Heads up:</b> could not find sheet' + (missingSheets.length===1?'':'s') + ' named ' + missingSheets.map(s => '"' + s + '"').join(', ') + ' in this file — those figures were treated as zero. Check the sheet names match the template exactly.';
+    }
+    summaryBox.innerHTML = summaryHtml;
+    summaryBox.classList.remove('hidden');
+
+    await refreshAll();
+    showView('scores');
+  } catch(err){
+    console.error('[margyn] upload compute:', err);
+    note.className = 'note bad';
+    note.textContent = 'Could not save: ' + (err.message || 'unknown error');
+  }
+});
+
+document.getElementById('computeFromManual').addEventListener('click', async () => {
+  const v = id => Number(document.getElementById(id).value) || 0;
+  const note = document.getElementById('noteManual');
+  note.className = 'note'; note.textContent = 'Saving…';
+  try {
+    const cash = v('m-cash');
+    const { error: eCash } = await sbClient.from('profiles').update({ cash_balance:cash }).eq('id', currentUser.id);
+    if(eCash) throw eCash;
+    currentProfile.cash_balance = cash;
+    await saveLedgerSnapshotWithPL(v('m-rev'), v('m-profit'), v('m-burn') || 1, v('m-gst'), v('m-gstpay'), 'manual');
+    note.textContent = '';
+    await refreshAll();
+    showView('scores');
+  } catch(err){
+    console.error('[margyn] manual compute:', err);
+    note.className = 'note bad';
+    note.textContent = 'Could not save: ' + (err.message || 'unknown error');
+  }
+});
+
+// ============================================================
+// ---------- scoring (v2.0 methodology) ----------
+// Four pillars — Liquidity 30%, Efficiency 35%, Profitability 20%,
+// Compliance 15% — expressed as six per-vital weights so the rest of the
+// app (rings, ledger, briefing, action items) doesn't need to change shape.
+// Liquidity: Cash 15 + Runway 15. Efficiency: Receivables 17.5 + Payables 17.5.
+// Profitability: Margin 20. Compliance: GST 15.
+//
+// Known data gaps, deliberately not papered over (see methodology page):
+//  - Payables: MSMED Act 45-day compliance needs vendors tagged MSME-registered.
+//    Not in this ledger yet, so payables scoring stops at cash-coverage +
+//    overdue penalty, not the full regulatory check.
+//  - GST: scored against monthly GST payable, not eligible ITC (GSTR-2B),
+//    because eligible ITC isn't captured as its own field yet.
+//  - Cash: single reconciled balance, so multi-account concentration risk
+//    isn't scoreable.
+//  - Margin: only net profit is captured, so gross/operating decomposition
+//    isn't scoreable.
+// ============================================================
+function clamp(n){ return Math.max(0, Math.min(100, n)); }
+
+const BENCH = { cashMin:3, cashMax:6, gstBad:0.5, runwayMin:3, runwayMax:6 };
+const WEIGHTS = { cash:0.15, runway:0.15, recv:0.175, pay:0.175, margin:0.20, gst:0.15 };
+const INDUSTRY_MARGIN_ANCHOR = {
+  'Manufacturing (General)': 0.10,
+  'Auto Components': 0.06,
+  'Trading & Distribution': 0.06,
+  'Professional & IT Services': 0.20
+};
+const UNIVERSAL_MARGIN_ANCHOR = 0.10;
+
+// Piecewise runway curve: 0→min maps 0-50, min→max maps 50-100, capped beyond max.
+function runwayScore(months, minM, maxM){
+  const s = months <= minM ? (months / minM) * 50 : 50 + Math.min(1, (months - minM) / (maxM - minM)) * 50;
+  return clamp(s);
+}
+
+// Ind AS 109-style simplified expected-credit-loss aging matrix. Every open
+// invoice is aged and risk-weighted individually — this is what replaces
+// the old single "% over 90 days" ratio.
+const ECL_BUCKETS = [
+  { max:30,  weight:0.00 },
+  { max:60,  weight:0.05 },
+  { max:90,  weight:0.15 },
+  { max:180, weight:0.40 },
+  { max:365, weight:0.75 },
+  { max:Infinity, weight:0.95 }
+];
+function eclWeightFor(daysOverdue){
+  const d = Math.max(0, daysOverdue);
+  for(const b of ECL_BUCKETS) if(d <= b.max) return b.weight;
+  return 0.95;
+}
+// Piecewise map from "receivables health %" (1 - expectedLoss/total) to a
+// 0-100 sub-score. Deliberately steep past the 90%/80% marks — a healthy
+// book should look close to 100, and losing even 10-20% to aging risk drops
+// the score fast, mirroring how sharply doubtful-debt provisioning bites.
+function recvHealthToScore(healthPct){
+  const pts = [ [1.00,100], [0.95,90], [0.90,75], [0.80,50], [0.70,30], [0.60,15], [0.50,5], [0.0,0] ];
+  for(let i=0; i<pts.length-1; i++){
+    const [hHi, sHi] = pts[i], [hLo, sLo] = pts[i+1];
+    if(healthPct <= hHi && healthPct >= hLo){
+      const t = (healthPct - hLo) / (hHi - hLo || 1);
+      return clamp(sLo + t * (sHi - sLo));
+    }
+  }
+  return healthPct > 1 ? 100 : 0;
+}
+function daysOverdueFor(dueDateStr){
+  if(!dueDateStr) return 0;
+  const ms = new Date(new Date().toDateString()) - new Date(dueDateStr);
+  return Math.round(ms / 86400000); // positive = overdue
+}
+
+// Expected-loss aging + top-3-customer concentration, computed straight off
+// the open receivables ledger (invoice-level — no data gap here, the ledger
+// already has amount + due_date per invoice).
+function computeReceivablesECL(receivablesList){
+  const total = receivablesList.reduce((s,r) => s + Number(r.amount), 0);
+  if(total <= 0) return { total:0, expectedLoss:0, healthPct:1, riskAdjustedTotal:0, subscore:100 };
+  let expectedLoss = 0;
+  receivablesList.forEach(r => {
+    const days = daysOverdueFor(r.due_date);
+    expectedLoss += Number(r.amount) * eclWeightFor(days);
+  });
+  const healthPct = clamp01(1 - expectedLoss / total);
+  return { total, expectedLoss, healthPct, riskAdjustedTotal: total - expectedLoss, subscore: recvHealthToScore(healthPct) };
+}
+function computeReceivablesConcentration(receivablesList){
+  const total = receivablesList.reduce((s,r) => s + Number(r.amount), 0);
+  if(total <= 0) return { pct:0, names:'' };
+  const byParty = {};
+  receivablesList.forEach(r => { byParty[r.party_name] = (byParty[r.party_name] || 0) + Number(r.amount); });
+  const top3 = Object.entries(byParty).sort((a,b) => b[1]-a[1]).slice(0,3);
+  const top3Sum = top3.reduce((s,[,amt]) => s + amt, 0);
+  return { pct: (top3Sum/total)*100, names: top3.map(([n]) => n).join(', ') };
+}
+function clamp01(n){ return Math.max(0, Math.min(1, n)); }
+
+// Payables: cash coverage of what's due within 30 days (as before), minus a
+// penalty scaled by how much is already overdue against its own due date —
+// invoice-level, using the same ledger data already collected.
+function computePayablesScore(payablesList, cash, paySoon){
+  const total = payablesList.reduce((s,p) => s + Number(p.amount), 0);
+  const payRatio = cash > 0 ? paySoon / cash : (paySoon > 0 ? 1 : 0);
+  const coverageScore = clamp(100 * (1 - payRatio));
+  if(total <= 0) return coverageScore;
+  const overdueValue = payablesList.reduce((s,p) => {
+    const days = daysOverdueFor(p.due_date);
+    return days > 0 ? s + Number(p.amount) : s;
+  }, 0);
+  const overdueRatio = overdueValue / total;
+  return clamp(coverageScore - overdueRatio * 30);
+}
+
+function computeVitals(d){
+  const cashMonths = d.burn > 0 ? d.cash / d.burn : 0;
+  const cashScore = runwayScore(cashMonths, BENCH.cashMin, BENCH.cashMax);
+
+  const recvList = d.receivablesList || [];
+  const payList = d.payablesList || [];
+
+  const ecl = computeReceivablesECL(recvList);
+  const conc = computeReceivablesConcentration(recvList);
+  let recvScore = ecl.subscore;
+  if(conc.pct >= 40) recvScore = Math.min(recvScore, 65); // concentration cap, per methodology
+
+  const payScore = computePayablesScore(payList, d.cash, d.paySoon);
+
+  const gstRatio = d.gstPayable > 0 ? d.gstLeak / d.gstPayable : 0;
+  const gstScore = clamp(100 * (1 - gstRatio / BENCH.gstBad));
+
+  const marginAnchor = INDUSTRY_MARGIN_ANCHOR[d.industry] || UNIVERSAL_MARGIN_ANCHOR;
+  const netMargin = d.revenue > 0 ? d.netProfit / d.revenue : 0;
+  const marginScore = clamp(100 * (netMargin / marginAnchor));
+
+  // Working Capital Runway uses risk-adjusted receivables (post-ECL), not
+  // face value — the core v2 upgrade to this vital.
+  const runwayMonths = d.burn > 0 ? (d.cash + ecl.riskAdjustedTotal - d.paySoon) / d.burn : 0;
+  const runwayScoreVal = runwayScore(runwayMonths, BENCH.runwayMin, BENCH.runwayMax);
+
+  const pulse = Math.round(
+    cashScore * WEIGHTS.cash + runwayScoreVal * WEIGHTS.runway + recvScore * WEIGHTS.recv +
+    payScore * WEIGHTS.pay + marginScore * WEIGHTS.margin + gstScore * WEIGHTS.gst
+  );
+
+  const vitals = [
+    { label:'Cash Position', value:'₹' + Math.round(d.cash).toLocaleString('en-IN'), score:cashScore },
+    { label:'Receivables Aging', value:'₹' + Math.round(d.recv90).toLocaleString('en-IN') + ' over 90d', score:recvScore },
+    { label:'Payables Due (30d)', value:'₹' + Math.round(d.paySoon).toLocaleString('en-IN'), score:payScore },
+    { label:'GST/ITC Leakage', value:'₹' + Math.round(d.gstLeak).toLocaleString('en-IN'), score:gstScore },
+    { label:'Net Margin', value:(netMargin * 100).toFixed(1) + '%', score:marginScore },
+    { label:'Working Capital Runway', value:runwayMonths.toFixed(1) + ' months', score:runwayScoreVal }
+  ];
+  return { pulse, vitals, meta:{ concentrationPct: conc.pct, concentrationNames: conc.names } };
+}
+
+// Same as saveLedgerSnapshot(), but takes P&L/GST figures explicitly instead
+// of carrying them forward — used right after a manual entry or upload.
+async function saveLedgerSnapshotWithPL(revenue, netProfit, burn, gstLeak, gstPayable, source){
+  const recvTotal = receivables.reduce((s,r) => s + Number(r.amount), 0);
+  const recv90 = receivables.reduce((s,r) => { const d = daysFromToday(r.due_date); return (d !== null && -d > 90) ? s + Number(r.amount) : s; }, 0);
+  const paySoon = payables.reduce((s,p) => { const d = daysFromToday(p.due_date); return (d === null || d <= 30) ? s + Number(p.amount) : s; }, 0);
+  const cash = Number(currentProfile.cash_balance) || 0;
+  const industry = currentProfile.industry || '';
+
+  const { pulse, vitals } = computeVitals({
+    cash, recvTotal, recv90, paySoon, revenue, netProfit, burn, gstLeak, gstPayable, industry,
+    receivablesList: receivables, payablesList: payables
+  });
+  const row = {
+    user_id:currentUser.id, source: source || 'manual',
+    cash, recv_total:recvTotal, recv_90:recv90, pay_soon:paySoon,
+    revenue, net_profit:netProfit, burn, gst_leak:gstLeak, gst_payable:gstPayable,
+    pulse_score:pulse, vitals
+  };
+  const { error } = await withTimeout(sbClient.from('snapshots').insert(row), 20000, 'Saving snapshot');
+  if(error) throw error;
+  logEvent('snapshot_saved', { source: source || 'manual', pulse_score: pulse });
+}
+
+// ---------- briefing ----------
+document.getElementById('generateBriefing').addEventListener('click', async () => {
+  const btn = document.getElementById('generateBriefing');
+  const out = document.getElementById('briefing-text');
+  const latest = snapshots[0];
+  if(!latest) return;
+  btn.disabled = true;
+  out.innerHTML = '<div class="loading">Generating briefing…</div>';
+  try {
+    const vitalsObj = {};
+    (latest.vitals || []).forEach(v => vitalsObj[v.label] = v.value);
+    const res = await fetch('/api/briefing', {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ vitals:vitalsObj, pulseScore:latest.pulse_score, companyName:currentProfile.company_name })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Unknown error');
+    out.textContent = data.briefing;
+    document.getElementById('briefing-idle').style.display = 'none';
+    await sbClient.from('snapshots').update({ briefing:data.briefing }).eq('id', latest.id);
+    latest.briefing = data.briefing;
+    logEvent('briefing_generated', { pulse_score: latest.pulse_score });
+    renderChecklist();
+  } catch(err){
+    out.innerHTML = '<div class="error-box">Could not generate briefing: ' + err.message + '</div>';
+  } finally { btn.disabled = false; }
+});
+
+// ---------- template ----------
+// Template download is now a static, pre-built branded file (Margyn_Data_Template.xlsx
+// at the site root) linked directly from the anchor tag above — no client-side
+// generation, since SheetJS's free tier can't produce styled/branded output.
+
+// Render zero-state immediately so the Scores page never looks broken pre-login.
+renderVitals(ZERO_VITALS, false);
+bootAuth();
+</script>
+</body>
+</html>

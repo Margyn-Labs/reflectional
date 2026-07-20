@@ -1,0 +1,9 @@
+{
+  "name": "reflection",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reflection — real-time financial health scorecard for Indian SMEs",
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}
