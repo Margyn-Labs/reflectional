@@ -177,8 +177,8 @@
   .instrument-tag .it-label{ font-family:'IBM Plex Mono', monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--steel); margin-bottom:4px; }
   .instrument-tag .it-val{ font-family:'IBM Plex Mono', monospace; font-size:14px; font-weight:600; }
 
-  .instrument-content{ transition:opacity .28s ease; }
-  .instrument-content.is-switching{ opacity:0; }
+  .instrument-content{ transition:opacity .35s ease; }
+  .instrument-content.is-switching{ opacity:0.35; }
   @media (prefers-reduced-motion: reduce){ .instrument-content{ transition:none; } }
   .instrument-tabs{ display:flex; gap:4px; margin-top:14px; border:1px solid var(--line); border-radius:999px; padding:4px; background:var(--bg); }
   .instrument-tabs button{ flex:1; padding:7px 6px; text-align:center; cursor:pointer; background:transparent; color:var(--steel); font-size:10.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:999px; }
@@ -1603,9 +1603,9 @@
       contentEl.classList.add('is-switching');
       setTimeout(() => {
         render(METRICS[idx]);
-        contentEl.classList.remove('is-switching');
+        requestAnimationFrame(() => contentEl.classList.remove('is-switching'));
         tabsEl.querySelectorAll('button').forEach((b, i) => b.classList.toggle('active', i === idx));
-      }, reduceMotion ? 0 : 220);
+      }, reduceMotion ? 0 : 140);
     }
     function tick(){ if(!paused) goTo((idx + 1) % METRICS.length); }
     function start(){ if(!timer && !reduceMotion) timer = setInterval(tick, 6000); }
