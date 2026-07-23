@@ -329,7 +329,7 @@
   .template-link{display:inline-block; margin-top:18px; font-size:13px; color:var(--gold); cursor:pointer; font-weight:600; border-bottom:1px solid rgba(201,127,30,0.3); transition:transform .2s ease;}
   .template-link:hover{ transform:translateX(2px); }
 
-  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;}
   label{display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--steel); margin-bottom:7px; text-transform:uppercase; letter-spacing:.06em; font-weight:600;}
   input[type=number], input[type=text], select{ width:100%; padding:11px 14px; background:var(--white); border:1px solid var(--line-strong); border-radius:12px; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
   input:focus, select:focus{outline:none; border-color:var(--emerald);}
@@ -374,7 +374,7 @@
   @keyframes finGlow{ 0%,100%{ opacity:.5; transform:scale(1); } 50%{ opacity:.9; transform:scale(1.1); } }
   @media (prefers-reduced-motion: reduce){ .fin-eligibility::before{ animation:none; } }
   .fin-eligibility .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mint); margin-bottom:10px; font-weight:600; position:relative; }
-  .fin-range{ font-family:'Fraunces',serif; font-size:34px; font-weight:500; letter-spacing:-0.01em; margin-bottom:6px; position:relative; }
+  .fin-range{ font-family:'Fraunces',serif; font-size:34px; font-weight:500; letter-spacing:-0.01em; margin-bottom:6px; position:relative; filter:blur(3px); }
   .fin-note{ font-size:13px; color:rgba(255,255,255,0.65); line-height:1.5; position:relative; }
   .fin-consent{ display:flex; gap:10px; align-items:flex-start; padding:16px; background:var(--bg-dim); border-radius:12px; margin:16px 0; font-size:13px; line-height:1.55; color:var(--steel); transition:background .25s ease; }
   .fin-consent:hover{ background:#dfe2e6; }
@@ -520,6 +520,8 @@
         <input type="email" id="signupEmail" required autocomplete="email" placeholder="you@company.com"></div>
       <div class="auth-field"><label for="signupPassword">Password (min 6 characters)</label>
         <input type="password" id="signupPassword" required autocomplete="new-password" placeholder="••••••••" minlength="6"></div>
+      <div class="auth-field"><label for="signupEntryCode">Entry code</label>
+        <input type="text" id="signupEntryCode" required placeholder="Enter your access code"></div>
       <button type="submit" class="auth-submit" id="signupSubmit">Create account</button>
       <div class="auth-error" id="signupError"></div>
     </form>
@@ -2481,10 +2483,21 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
   const btn = document.getElementById('signupSubmit');
   const errorEl = document.getElementById('signupError');
   const email = document.getElementById('signupEmail').value;
+  const entryCode = document.getElementById('signupEntryCode').value.trim();
   clearAuthErrors();
   if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
-  btn.disabled = true; btn.textContent = 'Creating account…';
+  if(!entryCode){ showAuthError('Entry code is required.'); return; }
+  btn.disabled = true; btn.textContent = 'Validating entry code…';
   try {
+    const { data: codes, error: codeError } = await withTimeout(sbClient.from('entry_codes').select('id').eq('code', entryCode).eq('is_active', true).maybeSingle(), 5000, 'Code validation');
+    if(codeError) throw codeError;
+    if(!codes){
+      showAuthError('Invalid entry code. Check and try again.');
+      btn.textContent = 'Create account';
+      btn.disabled = false;
+      return;
+    }
+    btn.textContent = 'Creating account…';
     const { data, error } = await withTimeout(sbClient.auth.signUp({
       email, password: document.getElementById('signupPassword').value
     }), 20000, 'Signup');
