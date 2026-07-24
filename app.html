@@ -521,8 +521,6 @@
         <input type="email" id="signupEmail" required autocomplete="email" placeholder="you@company.com"></div>
       <div class="auth-field"><label for="signupPassword">Password (min 6 characters)</label>
         <input type="password" id="signupPassword" required autocomplete="new-password" placeholder="••••••••" minlength="6"></div>
-      <div class="auth-field"><label for="signupEntryCode">Entry code</label>
-        <input type="text" id="signupEntryCode" required placeholder="Enter your access code"></div>
       <button type="submit" class="auth-submit" id="signupSubmit">Create account</button>
       <div class="auth-error" id="signupError"></div>
     </form>
@@ -2502,21 +2500,10 @@ document.getElementById('signupForm').addEventListener('submit', async (e) => {
   const btn = document.getElementById('signupSubmit');
   const errorEl = document.getElementById('signupError');
   const email = document.getElementById('signupEmail').value;
-  const entryCode = document.getElementById('signupEntryCode').value.trim();
   clearAuthErrors();
   if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
-  if(!entryCode){ showAuthError('Entry code is required.'); return; }
-  btn.disabled = true; btn.textContent = 'Validating entry code…';
+  btn.disabled = true; btn.textContent = 'Creating account…';
   try {
-    const { data: codes, error: codeError } = await withTimeout(sbClient.from('entry_codes').select('id').eq('code', entryCode).eq('is_active', true).maybeSingle(), 5000, 'Code validation');
-    if(codeError) throw codeError;
-    if(!codes){
-      showAuthError('Invalid entry code. Check and try again.');
-      btn.textContent = 'Create account';
-      btn.disabled = false;
-      return;
-    }
-    btn.textContent = 'Creating account…';
     const { data, error } = await withTimeout(sbClient.auth.signUp({
       email, password: document.getElementById('signupPassword').value
     }), 20000, 'Signup');
