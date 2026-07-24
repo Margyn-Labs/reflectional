@@ -220,8 +220,8 @@
   /* Speedometer ring fill: drains to empty then sweeps back up to the real
      score on a slow loop, staggered per card so all six don't reset in
      unison — reads as the dashboard re-confirming the number is live. */
-  .v-ring .progress{ animation:ringFill 1.4s cubic-bezier(.22,1,.36,1) forwards; }
-  @keyframes ringFill{ 0%{ stroke-dashoffset:289.03; } 5%{ stroke-dashoffset:var(--target); } 90%{ stroke-dashoffset:var(--target); } 100%{ stroke-dashoffset:289.03; } }
+  .v-ring .progress{ animation:ringFill 1.1s cubic-bezier(.22,1,.36,1) forwards; }
+  @keyframes ringFill{ 0%{ stroke-dashoffset:289.03; } 100%{ stroke-dashoffset:var(--target); } }
   .vital .v-top{ display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:7px; position:relative; z-index:1; }
   .vital .v-dot{ width:6px; height:6px; border-radius:50%; background:var(--v-accent, var(--steel)); flex-shrink:0; }
   .vital .v-label{font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--steel); font-weight:600; transition:color .25s ease;}
@@ -512,6 +512,7 @@
         <input type="email" id="loginEmail" required autocomplete="email" placeholder="you@company.com"></div>
       <div class="auth-field"><label for="loginPassword">Password</label>
         <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••"></div>
+      <div style="text-align:right; margin:-8px 0 16px;"><a href="#" id="forgotPasswordLink" style="font-size:12.5px; color:var(--steel); font-weight:600;">Forgot password?</a></div>
       <button type="submit" class="auth-submit" id="loginSubmit">Log in</button>
       <div class="auth-error" id="loginError"></div>
     </form>
@@ -527,6 +528,24 @@
     </form>
   </div>
   <a class="gate-back" href="/">&larr; Back to the website</a>
+  </div>
+</div>
+
+<!-- ============ FORGOT PASSWORD GATE ============ -->
+<div class="gate hidden" id="forgotPasswordGate">
+  <div class="gate-col">
+  <div class="gate-modal">
+    <div class="eyebrow">Margyn 1.0</div>
+    <h2>Reset your password.</h2>
+    <p class="sub">Enter your email and we'll send you a link to reset your password.</p>
+    <form id="forgotPasswordForm">
+      <div class="auth-field"><label for="forgotEmail">Email</label>
+        <input type="email" id="forgotEmail" required autocomplete="email" placeholder="you@company.com"></div>
+      <button type="submit" class="auth-submit" id="forgotSubmit">Send recovery link</button>
+      <div class="auth-error" id="forgotError"></div>
+    </form>
+    <a href="#" id="forgotBackLink" class="gate-back" style="display:block; margin-top:20px;">&larr; Back to login</a>
+  </div>
   </div>
 </div>
 
@@ -2926,20 +2945,48 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
 // Render zero-state immediately so the Scores page never looks broken pre-login.
 renderVitals(ZERO_VITALS, false);
 bootAuth();
-// FIX 1: Back to login button
-const forgotBackBtn = document.getElementById('forgotBackLink');
-if (forgotBackBtn) {
-  forgotBackBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    const forgotGate = document.getElementById('forgotPasswordGate');
-    const authGate = document.getElementById('authGate');
-    if (forgotGate) forgotGate.classList.add('hidden');
-    if (authGate) authGate.classList.remove('hidden');
-    const forgotForm = document.getElementById('forgotPasswordForm');
-    if (forgotForm) forgotForm.reset();
-  });
-}
 
+// ---------- forgot password ----------
+document.getElementById('forgotPasswordLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('authGate').classList.add('hidden');
+  document.getElementById('forgotPasswordGate').classList.remove('hidden');
+});
+
+document.getElementById('forgotBackLink').addEventListener('click', (e) => {
+  e.preventDefault();
+  document.getElementById('forgotPasswordGate').classList.add('hidden');
+  document.getElementById('authGate').classList.remove('hidden');
+  document.getElementById('forgotPasswordForm').reset();
+  document.getElementById('forgotError').classList.remove('show');
+});
+
+document.getElementById('forgotPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('forgotSubmit');
+  const errorEl = document.getElementById('forgotError');
+  const email = document.getElementById('forgotEmail').value.trim();
+  errorEl.classList.remove('show');
+  if(!sbClient){ errorEl.style.color = ''; errorEl.textContent = 'Not ready yet — reload the page.'; errorEl.classList.add('show'); return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const { error } = await sbClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/app.html'
+    });
+    if(error) throw error;
+    errorEl.style.color = 'var(--emerald)';
+    errorEl.textContent = 'Check ' + email + ' for a password reset link.';
+    errorEl.classList.add('show');
+    document.getElementById('forgotPasswordForm').reset();
+  } catch(err){
+    console.error('[margyn] forgot password:', err);
+    errorEl.style.color = '';
+    errorEl.textContent = err.message || 'Could not send reset link. Try again.';
+    errorEl.classList.add('show');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send recovery link';
+  }
+});
 
 </script>
 </body>
