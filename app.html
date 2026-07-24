@@ -686,7 +686,8 @@
         <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••"></div>
       <button type="submit" class="auth-submit" id="loginSubmit">Log in</button>
       <div class="auth-error" id="loginError"></div>
-    </form>
+    <div style="text-align:right; margin-top:12px;"><a href="#" id="forgotPasswordLink" style="font-size:12px; color:var(--steel); text-decoration:underline;">Forgot password?</a></div>
+      </form>
     <form class="auth-form" id="signupForm">
       <div class="auth-field"><label for="signupEmail">Email</label>
         <input type="email" id="signupEmail" required autocomplete="email" placeholder="you@company.com"></div>
@@ -3129,6 +3130,84 @@ bootAuth();
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) { logoutBtn.addEventListener('click', async () => { await sbClient.auth.signOut(); localStorage.clear(); sessionStorage.clear(); location.href = '/'; }); }
 
+  
+  
+  // Forgot password flow
+  document.getElementById('forgotPasswordLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('authGate').classList.add('hidden');
+    document.getElementById('forgotPasswordGate').classList.remove('hidden');
+  });
+  
+  document.getElementById('forgotBackLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('forgotPasswordGate').classList.add('hidden');
+    document.getElementById('authGate').classList.remove('hidden');
+  });
+  
+  document.getElementById('forgotPasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('forgotEmail').value.trim();
+    const btn = document.getElementById('forgotSubmit');
+    const errorDiv = document.getElementById('forgotError');
+    
+    // Validate email
+    if (!VALIDATORS.email(email)) {
+      errorDiv.textContent = 'Invalid email address';
+      errorDiv.classList.add('show');
+      return;
+    }
+    
+    btn.disabled = true;
+    errorDiv.classList.remove('show');
+    
+    try {
+      // Send password reset email via Supabase
+      const { error } = await sbClient.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/app.html?reset=true'
+      });
+      
+      if (error) throw error;
+      
+      // Show success message
+      btn.textContent = 'Link sent! Check your email.';
+      btn.style.background = 'var(--emerald)';
+      
+      // Auto-redirect back after 3 seconds
+      setTimeout(() => {
+        document.getElementById('forgotPasswordForm').reset();
+        btn.textContent = 'Send recovery link';
+        btn.style.background = '';
+        document.getElementById('forgotPasswordGate').classList.add('hidden');
+        document.getElementById('authGate').classList.remove('hidden');
+      }, 3000);
+    } catch (err) {
+      errorDiv.textContent = err.message || 'Could not send reset email. Try again.';
+      errorDiv.classList.add('show');
+      console.error(err);
+      btn.disabled = false;
+    }
+  });
+
   </script>
-</body>
+
+  <!-- Forgot Password Modal -->
+  <div class="gate hidden" id="forgotPasswordGate">
+    <div class="gate-col">
+      <div class="gate-modal">
+        <div class="eyebrow">Reset password</div>
+        <h2>We'll send you a recovery link.</h2>
+        <p class="sub">Enter your email and we'll send you a link to reset your password.</p>
+        <form id="forgotPasswordForm">
+          <div class="auth-field"><label for="forgotEmail">Email</label>
+            <input type="email" id="forgotEmail" required autocomplete="email" placeholder="you@company.com"></div>
+          <button type="submit" class="auth-submit" id="forgotSubmit">Send recovery link</button>
+          <div class="auth-error" id="forgotError"></div>
+        </form>
+        <div style="text-align:center; margin-top:20px;"><a href="#" id="forgotBackLink" style="font-size:13px; color:var(--steel); font-weight:600;">Back to login</a></div>
+      </div>
+    </div>
+  </div>
+
+  </body>
 </html>
