@@ -220,7 +220,7 @@
   /* Speedometer ring fill: drains to empty then sweeps back up to the real
      score on a slow loop, staggered per card so all six don't reset in
      unison — reads as the dashboard re-confirming the number is live. */
-  .v-ring .progress{ animation:ringFill 60s cubic-bezier(.65,0,.35,1) forwards; }
+  .v-ring .progress{ animation:ringFill 60s cubic-bezier(.65,0,.35,1) infinite; }
   @keyframes ringFill{ 0%{ stroke-dashoffset:289.03; } 5%{ stroke-dashoffset:var(--target); } 90%{ stroke-dashoffset:var(--target); } 100%{ stroke-dashoffset:289.03; } }
   .vital .v-top{ display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:7px; position:relative; z-index:1; }
   .vital .v-dot{ width:6px; height:6px; border-radius:50%; background:var(--v-accent, var(--steel)); flex-shrink:0; }
@@ -2926,42 +2926,6 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
 // Render zero-state immediately so the Scores page never looks broken pre-login.
 renderVitals(ZERO_VITALS, false);
 bootAuth();
-
-// FIX 1: Back to login button properly connected
-const forgotBackBtn = document.getElementById('forgotBackLink');
-if (forgotBackBtn) {
-  forgotBackBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    // Hide forgot password gate
-    const forgotGate = document.getElementById('forgotPasswordGate');
-    if (forgotGate) forgotGate.classList.add('hidden');
-    // Show login gate
-    const authGate = document.getElementById('authGate');
-    if (authGate) authGate.classList.remove('hidden');
-    // Reset form
-    const forgotForm = document.getElementById('forgotPasswordForm');
-    if (forgotForm) forgotForm.reset();
-  });
-}
-
-
-// FIX 2: Check session validity on page load/refresh
-async function verifySessionOnLoad() {
-  if (!sbClient) return;
-  const { data: { session }, error } = await sbClient.auth.getSession();
-  if (!session) {
-    // No valid session, log out and show login
-    await sbClient.auth.signOut();
-    localStorage.clear();
-    location.href = '/app.html';
-  }
-}
-
-// Call on page load
-window.addEventListener('load', verifySessionOnLoad);
-
-// FIX 3: Ring animation loads once per page refresh (not in a loop)
-
 </script>
 </body>
 </html>
