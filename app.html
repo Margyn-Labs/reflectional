@@ -652,6 +652,19 @@
   }
 
   </style>
+
+  <!-- Input Validation Utility -->
+  <script>
+    const VALIDATORS = {
+      currency: (v) => { if (typeof v !== 'number') return false; if (v < 0 || v > 999999999999) return false; return true; },
+      gstin: (v) => { if (typeof v !== 'string') return false; return /^[0-9A-Z]{15}$/.test(v); },
+      companyName: (v) => { if (typeof v !== 'string' || v.length === 0) return false; if (v.length > 120) return false; return /^[a-zA-Z0-9s-.&()]+$/.test(v); },
+      email: (v) => { if (typeof v !== 'string') return false; return /^[^s@]+@[^s@]+.[^s@]+$/.test(v); },
+      password: (v) => { if (typeof v !== 'string' || v.length < 12) return false; if (!/[A-Z]/.test(v) || !/[0-9]/.test(v) || !/[@$!%*?&]/.test(v)) return false; return true; }
+    };
+    function sanitize(input, type) { if (type === 'string') return String(input).trim().substring(0, 255).replace(/[<>"']/g, ''); if (type === 'number') return Math.floor(Number(input)); return input; }
+  </script>
+
 </head>
 <body>
 
@@ -3106,6 +3119,16 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
 // Render zero-state immediately so the Scores page never looks broken pre-login.
 renderVitals(ZERO_VITALS, false);
 bootAuth();
-</script>
+
+  
+  let idleTimer;
+  function resetIdleTimer() { clearTimeout(idleTimer); idleTimer = setTimeout(() => { sbClient.auth.signOut(); alert('Session expired. Log in again.'); location.reload(); }, 30*60*1000); }
+  ['click', 'keypress', 'mousemove'].forEach(e => document.addEventListener(e, resetIdleTimer, true));
+  
+  // Enhanced logout
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) { logoutBtn.addEventListener('click', async () => { await sbClient.auth.signOut(); localStorage.clear(); sessionStorage.clear(); location.href = '/'; }); }
+
+  </script>
 </body>
 </html>
