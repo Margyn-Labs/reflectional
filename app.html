@@ -493,64 +493,6 @@
   .import-summary{ background:var(--mint); border:1px solid rgba(18,128,90,0.22); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--ink-soft); line-height:1.6; }
   .import-summary b{ color:var(--emerald); }
 
-  /* ========== PULSE SCORE CARD HERO WITH GLOW ========== */
-  .pulse-card-hero {
-    position: relative;
-    background: linear-gradient(165deg, #ffffff 0%, #fafbfa 100%);
-    border: 1.5px solid var(--emerald);
-    border-radius: 20px;
-    padding: 40px;
-    margin-bottom: 32px;
-    box-shadow: 0 0 0 2px rgba(31,163,116,0.1), var(--shadow-md);
-    animation: cardIn .6s cubic-bezier(.16,1,.3,1) backwards;
-  }
-  
-  .pulse-score-number {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 64px;
-    font-weight: 600;
-    background: linear-gradient(135deg, var(--ink) 0%, var(--emerald) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    text-align: center;
-    animation: numberGlow 2.4s ease-in-out infinite;
-  }
-  
-  @keyframes numberGlow {
-    0%, 100% { text-shadow: 0 0 20px rgba(31,163,116,0.2); }
-    50% { text-shadow: 0 0 40px rgba(31,163,116,0.4); }
-  }
-  
-  .sync-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 16px;
-    padding: 10px 16px;
-    background: rgba(31,163,116,0.1);
-    border: 1px solid rgba(31,163,116,0.3);
-    border-radius: 999px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--emerald);
-    text-transform: uppercase;
-  }
-  
-  .sync-pulse-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--emerald);
-    animation: dotPulse 1.6s ease-in-out infinite;
-  }
-  
-  @keyframes dotPulse {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.4); opacity: 0.5; }
-  }
-  
   /* ========== SECURITY BADGE ========== */
   .nav-security-badge {
     display: inline-flex;
@@ -703,12 +645,10 @@
   .fact { animation-delay: calc(var(--index, 0) * 0.04s); }
   
   @media (max-width: 768px) {
-    .pulse-score-number { font-size: 48px; }
-    .pulse-card-hero { padding: 28px; }
   }
   
   @media (prefers-reduced-motion: reduce) {
-    .sync-pulse-dot, .pulse-score-number, .fact-premium, .sec-check { animation: none !important; }
+    .fact-premium, .sec-check { animation: none !important; }
   }
 
   </style>
@@ -1034,17 +974,7 @@
     </div>
     <button class="methodology-link" id="methodologyLink">How this is calculated →</button>
 
-      <div class="pulse-card-hero">
-    <div style="text-align:center;">
-      <div class="pulse-score-number" id="pulseScoreHero">0</div>
-      <div class="sync-indicator">
-        <div class="sync-pulse-dot"></div>
-        <span>Live data syncing</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="vitals-grid" id="vitalsGrid"></div>
+    <div class="vitals-grid" id="vitalsGrid"></div>
 
     <div class="card">
       <h2>Executive briefing</h2>
