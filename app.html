@@ -220,7 +220,7 @@
   /* Speedometer ring fill: drains to empty then sweeps back up to the real
      score on a slow loop, staggered per card so all six don't reset in
      unison — reads as the dashboard re-confirming the number is live. */
-  .v-ring .progress{ animation:ringFill 60s cubic-bezier(.65,0,.35,1) infinite; }
+  .v-ring .progress{ animation:ringFill 1.4s cubic-bezier(.22,1,.36,1) forwards; }
   @keyframes ringFill{ 0%{ stroke-dashoffset:289.03; } 5%{ stroke-dashoffset:var(--target); } 90%{ stroke-dashoffset:var(--target); } 100%{ stroke-dashoffset:289.03; } }
   .vital .v-top{ display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:7px; position:relative; z-index:1; }
   .vital .v-dot{ width:6px; height:6px; border-radius:50%; background:var(--v-accent, var(--steel)); flex-shrink:0; }
@@ -1315,9 +1315,25 @@ async function bootAuth(){
 async function initSupabase(){
   const { createClient } = window.supabase;
   sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  const { data: { session } } = await sbClient.auth.getSession();
+  
+  // Get current session with retry logic
+  let session = null;
+  try {
+    const { data: { session: s }, error } = await sbClient.auth.getSession();
+    if (error) throw error;
+    session = s;
+  } catch (err) {
+    console.error('[margyn] Failed to get session:', err);
+    session = null;
+  }
+  
   await routeFor(session);
-  sbClient.auth.onAuthStateChange((_evt, s) => routeFor(s));
+  
+  // Listen for auth changes (login/logout)
+  sbClient.auth.onAuthStateChange((_evt, s) => {
+    console.log('[margyn] auth state changed:', _evt);
+    routeFor(s);
+  });
 }
 
 // ---------- routing ----------
