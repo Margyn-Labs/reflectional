@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,340..600&family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- supabase-js is loaded programmatically at the bottom of this file -->
 <style>
   :root{
     --ink:#0B1220; --ink-soft:#16233A; --steel:#5C6B7A;
@@ -43,6 +44,7 @@
   .crescent{ position:relative; border-radius:50%; overflow:hidden; flex-shrink:0; background:var(--emerald-bright); }
   .crescent::after{ content:''; position:absolute; top:0; left:-42%; width:100%; height:100%; border-radius:50%; background:#fff; }
 
+  /* ================= AURORA BACKGROUND (site-parity) ================= */
   .stage{ position:fixed; inset:0; background:#000; overflow:hidden; z-index:0; }
   .stars{ position:absolute; inset:-4%; z-index:1; }
   .stars span{ position:absolute; inset:0; background-repeat:repeat; }
@@ -69,6 +71,7 @@
   @media (prefers-reduced-motion: reduce){ .stars span{ animation:none; } }
   .aurora-bg{ position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; }
   .aurora-bg canvas{ display:block; width:100%; height:100%; }
+  @media print{ .stage{ display:none; } }
 
   nav{ position:fixed; top:50px; left:50%; transform:translateX(-50%); z-index:100; background:rgba(16,23,38,0.72); backdrop-filter:blur(20px) saturate(1.5); border:1px solid var(--border-1); border-radius:999px; box-shadow:var(--shadow-md); max-width:calc(100% - 32px); transition:box-shadow .3s ease; }
   nav:hover{ box-shadow:0 18px 40px rgba(31,163,116,0.18), 0 2px 8px rgba(7,11,20,0.3); }
@@ -117,6 +120,8 @@
   .pagenav button{ flex:1; padding:12px 8px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .25s cubic-bezier(.22,1,.36,1); border:none; border-radius:999px; min-width:90px; position:relative; }
   .pagenav button:hover:not(.active){ color:var(--text-0); background:rgba(255,255,255,0.06); }
   .pagenav button.active{ background:var(--emerald); color:#fff; box-shadow:0 8px 18px -8px rgba(31,163,116,0.6); }
+  .nav-badge{ position:absolute; top:4px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--rose); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; font-family:'IBM Plex Mono',monospace; }
+  .nav-badge.hidden{ display:none; }
 
   .card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.05), rgba(255,255,255,0.015)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:28px; margin-bottom:20px; box-shadow:0 0 0 1px rgba(255,255,255,0.02) inset, 0 20px 60px -34px rgba(31,163,116,0.25); transition:box-shadow .3s ease, transform .3s cubic-bezier(.22,1,.36,1), border-color .3s ease; }
   .card:hover{ box-shadow:0 0 0 1px rgba(255,255,255,0.03) inset, 0 26px 70px -30px rgba(31,163,116,0.4); transform:translateY(-2px); border-color:rgba(31,163,116,0.32); }
@@ -155,6 +160,7 @@
   .pulse-band-badge{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:4px 11px; border-radius:999px; background:var(--band-color, var(--emerald-bright)); color:#08130C; }
   .pulse-delta{ font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.72); }
   .pulse-asof{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(255,255,255,0.34); margin-top:0; }
+  .pulse-tap-hint{ margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,0.42); display:flex; align-items:center; gap:5px; }
 
   .vitals-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:30px 16px; margin-bottom:34px;}
   .vital{ background:transparent; border:none; border-radius:0; padding:6px 4px 0; position:relative; box-shadow:none; text-align:center; cursor:pointer; transition:transform .25s cubic-bezier(.22,1,.36,1); }
@@ -193,7 +199,7 @@
 
   .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;}
   label{display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--text-2); margin-bottom:7px; text-transform:uppercase; letter-spacing:.06em; font-weight:600;}
-  input[type=number], input[type=text], input[type=password], select{ width:100%; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
+  input[type=number], input[type=text], select{ width:100%; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
   input::placeholder{ color:var(--text-3); }
   input:focus, select:focus{outline:none; border-color:var(--emerald-bright);}
   select option{ background:var(--surf-1-solid); color:var(--text-0); }
@@ -205,39 +211,6 @@
   button.ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:13px 28px; border-radius:999px; font-size:14.5px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; }
   button.ghost:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
 
-  .connected-sources{ background:rgba(31,163,116,0.04); border:1px solid rgba(31,163,116,0.14); border-radius:14px; padding:18px; margin-bottom:20px; }
-  .cs-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:12px; }
-  .cs-item{ display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(31,163,116,0.14); }
-  .cs-item:last-child{ border-bottom:none; }
-  .cs-info{ flex:1; }
-  .cs-name{ font-size:13px; font-weight:600; color:var(--text-0); margin-bottom:3px; }
-  .cs-meta{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-2); }
-  .cs-status{ display:inline-block; padding:3px 8px; border-radius:4px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; }
-  .cs-status.connected{ background:rgba(31,163,116,0.2); color:#5EE0AC; }
-  .cs-status.pending{ background:rgba(201,127,30,0.2); color:#F2B662; }
-
-  .razorpay-modal{ position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:20px; }
-  .razorpay-modal.active{ display:flex; }
-  .razorpay-modal-box{ width:min(440px, 100%); background:linear-gradient(165deg, rgba(16,23,38,0.92), rgba(8,13,22,0.96)); backdrop-filter:blur(24px); border:1px solid rgba(31,163,116,0.3); border-radius:18px; padding:28px; box-shadow:0 0 60px -10px rgba(31,163,116,0.4); position:relative; animation:razorpayIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
-  @keyframes razorpayIn{ from{ opacity:0; transform:scale(0.96) translateY(8px); } to{ opacity:1; transform:scale(1) translateY(0); } }
-  .razorpay-close{ position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.04); color:var(--text-2); cursor:pointer; font-size:14px; }
-  .razorpay-close:hover{ color:var(--text-0); border-color:var(--emerald-bright); }
-  .razorpay-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--emerald-bright); font-weight:700; margin-bottom:8px; }
-  .razorpay-title{ font-family:'Fraunces',serif; font-weight:500; font-size:24px; color:var(--text-0); margin-bottom:14px; padding-right:30px; }
-  .razorpay-body{ font-size:13.5px; color:var(--text-1); line-height:1.7; }
-  .razorpay-form{ display:none; }
-  .razorpay-form.active{ display:block; }
-  .razorpay-buttons{ display:flex; flex-direction:column; gap:10px; margin-top:16px; }
-  .razorpay-buttons button{ width:100%; padding:12px; border:none; border-radius:12px; font-family:'Manrope',sans-serif; font-weight:700; cursor:pointer; transition:all .2s ease; }
-  .razorpay-btn-primary{ background:var(--emerald); color:#fff; }
-  .razorpay-btn-primary:hover{ background:var(--emerald-bright); }
-  .razorpay-btn-secondary{ background:rgba(255,255,255,0.1); color:var(--text-1); border:1px solid var(--border-2); }
-  .razorpay-btn-secondary:hover{ border-color:var(--emerald-bright); color:var(--text-0); }
-  .razorpay-error{ color:#FF8FA8; font-size:12px; margin-top:12px; display:none; }
-  .razorpay-error.show{ display:block; }
-  .razorpay-success{ color:var(--emerald-bright); font-size:12px; margin-top:12px; display:none; }
-  .razorpay-success.show{ display:block; }
-
   #briefing-text{ white-space:pre-wrap; font-size:15px; line-height:1.75; color:var(--text-1); }
   .loading{color:var(--text-2); font-size:14px; font-style:italic;}
   .error-box{ border:1px solid rgba(194,59,103,0.4); background:rgba(194,59,103,0.14); color:#FF8FA8; padding:14px; border-radius:6px; font-size:13px; margin-top:14px; }
@@ -247,33 +220,99 @@
 
   footer{ border-top:1px solid var(--border-1); padding:32px 24px; text-align:center; font-size:12.5px; color:var(--text-2); position:relative; z-index:2; }
 
+  /* ---------- payments tab (NEW) — transparent glass, neon green accents ---------- */
   .mock-banner{ display:flex; align-items:center; gap:10px; padding:10px 16px; border-radius:999px; background:rgba(201,127,30,0.1); border:1px solid rgba(201,127,30,0.3); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#F2B662; margin-bottom:20px; font-weight:600; }
   .mock-banner::before{ content:''; width:6px; height:6px; border-radius:50%; background:#F2B662; flex-shrink:0; box-shadow:0 0 0 3px rgba(242,182,98,0.25); }
 
   .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
   .pay-card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.06), rgba(255,255,255,0.01)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:20px; transition:border-color .25s ease, transform .25s ease; }
   .pay-card:hover{ border-color:rgba(31,163,116,0.4); transform:translateY(-2px); }
+  .pay-card.wide{ grid-column:span 2; }
   .pay-card .pc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
-  .pay-card .pc-value{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; color:var(--text-0); margin-bottom:6px; }
+  .pay-card .pc-value{ font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; color:var(--text-0); margin-bottom:6px; }
   .pay-card .pc-sub{ font-size:12px; color:var(--text-2); line-height:1.5; }
+  .pay-card .pc-flag{ display:inline-block; margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; }
+  .pc-flag.ok{ background:rgba(31,163,116,0.2); color:#5EE0AC; }
+  .pc-flag.warn{ background:rgba(201,127,30,0.22); color:#F2B662; }
+  .pc-flag.bad{ background:rgba(194,59,103,0.22); color:#FF8FA8; }
+  .method-bar{ display:flex; height:24px; border-radius:7px; overflow:hidden; margin-top:10px; background:rgba(255,255,255,0.04); }
+  .method-bar span{ display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; color:#04120B; white-space:nowrap; overflow:hidden; }
+  .method-legend{ display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:12px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-2); }
+  .method-legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
+  .pay-empty{ text-align:center; padding:40px 20px; color:var(--text-2); font-size:13.5px; line-height:1.7; }
 
+  /* ---------- charts (SVG, neon green, transparent) ---------- */
   .chart-card{ background:linear-gradient(180deg, rgba(31,163,116,0.05), rgba(255,255,255,0.01)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:24px; margin-bottom:20px; }
   .chart-card .cc-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px; }
   .chart-card h3{ font-family:'Fraunces',serif; font-weight:500; font-size:17px; color:var(--text-0); }
   .chart-card .cc-sub{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--text-2); text-transform:uppercase; letter-spacing:.05em; }
+  .bar-chart{ display:flex; align-items:flex-end; gap:10px; height:150px; padding-top:10px; }
+  .bar-chart .bc-col{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; gap:8px; }
+  .bar-chart .bc-bar{ width:100%; max-width:38px; border-radius:6px 6px 3px 3px; background:linear-gradient(180deg, #4FE3A8, #1FA374 65%, #0E5C3E); box-shadow:0 0 16px -2px rgba(31,163,116,0.55); transition:height .6s cubic-bezier(.22,1,.36,1), filter .2s ease; min-height:3px; }
+  .bar-chart .bc-col:hover .bc-bar{ filter:brightness(1.25); }
+  .bar-chart .bc-val{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-1); font-weight:600; }
+  .bar-chart .bc-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--text-2); text-transform:uppercase; letter-spacing:.03em; }
+  .hbar-list{ display:flex; flex-direction:column; gap:14px; }
+  .hbar-row{ display:flex; align-items:center; gap:12px; }
+  .hbar-label{ width:150px; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-1); font-weight:600; text-align:right; }
+  .hbar-track{ flex:1; height:16px; border-radius:8px; background:rgba(255,255,255,0.05); overflow:hidden; position:relative; }
+  .hbar-fill{ height:100%; border-radius:8px; background:linear-gradient(90deg, #0E5C3E, #1FA374 60%, #4FE3A8); box-shadow:0 0 14px -2px rgba(31,163,116,0.6); transition:width .7s cubic-bezier(.22,1,.36,1); }
+  .hbar-val{ width:52px; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-0); font-weight:700; }
+  .trend-svg{ width:100%; height:130px; display:block; }
   .trend-empty{ text-align:center; padding:30px 10px; color:var(--text-2); font-size:13px; line-height:1.6; }
 
-  @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } }
+  /* ---------- vital detail overlay ---------- */
+  .detail-overlay{ position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:20px; }
+  .detail-modal{ width:min(440px, 100%); background:linear-gradient(165deg, rgba(16,23,38,0.92), rgba(8,13,22,0.96)); backdrop-filter:blur(24px); border:1px solid rgba(31,163,116,0.3); border-radius:18px; padding:28px; box-shadow:0 0 60px -10px rgba(31,163,116,0.4); position:relative; animation:detailIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
+  .detail-modal.wide{ width:min(560px, 100%); }
+  @keyframes detailIn{ from{ opacity:0; transform:scale(0.96) translateY(8px); } to{ opacity:1; transform:scale(1) translateY(0); } }
+  .detail-close{ position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.04); color:var(--text-2); cursor:pointer; font-size:14px; }
+  .detail-close:hover{ color:var(--text-0); border-color:var(--emerald-bright); }
+  .detail-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--emerald-bright); font-weight:700; margin-bottom:8px; }
+  .detail-title{ font-family:'Fraunces',serif; font-weight:500; font-size:24px; color:var(--text-0); margin-bottom:14px; padding-right:30px; }
+  .detail-score-row{ display:flex; align-items:center; gap:16px; margin-bottom:18px; }
+  .detail-score-num{ font-family:'IBM Plex Mono',monospace; font-size:36px; font-weight:700; }
+  .detail-score-bar{ flex:1; height:8px; border-radius:6px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .detail-score-fill{ height:100%; border-radius:6px; }
+  .detail-body{ font-size:13.5px; color:var(--text-1); line-height:1.7; }
+
+  @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
   .summary-grid{ grid-template-columns:repeat(5,1fr); margin-bottom:20px; }
 
+  /* ---------- ledger UI (receivables / payables / settlements) ---------- */
+  .ledger-form{ background:rgba(255,255,255,0.03); border:1px solid rgba(31,163,116,0.18); border-radius:14px; padding:16px; margin-bottom:18px; }
+  .ledger-form .lf-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
+  .ledger-form .lf-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .ledger-form input{ width:100%; padding:9px 10px; border:1px solid rgba(255,255,255,0.16); border-radius:8px; font-family:'Manrope',sans-serif; font-size:13px; background:rgba(0,0,0,0.25); color:var(--text-0); margin-bottom:0; }
+  .ledger-form input:focus{ outline:none; border-color:var(--emerald-bright); }
+  .ledger-form button{ width:100%; background:var(--emerald); color:#fff; border:none; padding:10px; border-radius:999px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
+  .ledger-form button:hover{ background:var(--emerald-bright); }
+  .ledger-list-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin:14px 0 8px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.1); }
+  .ledger-row{ border-bottom:1px solid rgba(255,255,255,0.08); padding:12px 2px; display:flex; align-items:center; gap:10px; }
+  .ledger-row:last-child{ border-bottom:none; }
+  .ledger-row .lr-main{ flex:1; min-width:0; }
+  .ledger-row .lr-party{ font-size:13px; font-weight:700; color:var(--text-0); }
+  .ledger-row .lr-meta{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--text-2); margin-top:2px; }
+  .ledger-row .lr-amount{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; font-weight:600; color:var(--text-0); white-space:nowrap; }
+  .lr-tag{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:6px; }
+  .lr-tag.ok{ background:rgba(31,163,116,0.2); color:#5EE0AC; }
+  .lr-tag.warn{ background:rgba(201,127,30,0.22); color:#F2B662; }
+  .lr-tag.bad{ background:rgba(194,59,103,0.22); color:#FF8FA8; }
+  .lr-actions{ display:flex; flex-direction:column; gap:5px; }
+  .lr-btn{ font-family:'Manrope',sans-serif; font-size:10.5px; font-weight:700; padding:5px 9px; border-radius:999px; cursor:pointer; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.03); color:var(--text-1); white-space:nowrap; }
+  .lr-btn:hover{ border-color:var(--emerald-bright); color:var(--emerald-bright); }
+  .lr-btn.danger:hover{ border-color:#FF8FA8; color:#FF8FA8; }
+  .ledger-empty{ font-size:12.5px; color:var(--text-2); padding:14px 0; text-align:center; }
   @media (max-width:640px){
     .vitals-grid{grid-template-columns:1fr 1fr;}
     .facts{grid-template-columns:1fr;}
     .grid-2{grid-template-columns:1fr;}
     .pay-grid{grid-template-columns:1fr 1fr;}
+    .pay-card.wide{ grid-column:span 2; }
     .app-title{font-size:27px;}
     .wrap{padding:112px 20px 72px;}
     .pagenav button{ font-size:12px; padding:11px 6px; }
+    .hbar-label{ width:96px; font-size:10.5px; }
   }
 </style>
 </head>
@@ -284,6 +323,7 @@
   <div class="aurora-bg" id="auroraBg"></div>
 </div>
 
+<!-- ============ AUTH GATE ============ -->
 <div class="gate" id="authGate">
   <div class="gate-col">
   <div class="gate-modal">
@@ -315,6 +355,7 @@
   </div>
 </div>
 
+<!-- ============ ONBOARDING GATE ============ -->
 <div class="gate hidden" id="onboardGate">
   <div class="gate-modal">
     <div class="eyebrow">One-time setup</div>
@@ -353,13 +394,14 @@
 </div>
 
 <div id="appShell" class="hidden">
+<div class="marquee-placeholder"></div>
 <nav>
   <div class="nav-inner">
     <a class="nav-brand" href="/">
       <div class="crescent" style="width:20px;height:20px;"></div>
       <div class="nav-logo">margyn</div>
     </a>
-    <span class="nav-live">Live</span>
+    <span class="nav-live" style="display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--emerald-bright); font-weight:600;">Live</span>
     <div style="flex:1;"></div>
     <div class="nav-user">
       <span id="userEmail"></span>
@@ -379,47 +421,43 @@
   <div class="pagenav">
     <button data-view="summary" class="active">Summary</button>
     <button data-view="profile">Profile</button>
-    <button data-view="calculate">Upload</button>
+    <button data-view="calculate">Upload &amp; calculate</button>
     <button data-view="scores">Scores</button>
+    <button data-view="payments">Payments<span class="nav-badge hidden" id="paymentsBadge"></span></button>
     <button data-view="financing">Financing</button>
   </div>
 
-  <!-- SUMMARY TAB -->
+  <!-- ---------- 0. SUMMARY (NEW) ---------- -->
   <div id="view-summary">
     <div class="card">
-      <h2>Business snapshot</h2>
-      <div class="hint">Ten key metrics from your latest snapshot and connected data sources.</div>
+      <h2>Business summary</h2>
+      <div class="hint">The ten numbers that matter most — pulled from your latest snapshot, ledger, and payments data. Everything shows zero until you upload or enter real numbers.</div>
     </div>
     <div class="pay-grid summary-grid" id="summaryGrid"></div>
+    <div class="card">
+      <h2>What "last month" means here</h2>
+      <div class="hint">Revenue, spend, and net profit reflect whatever period you last uploaded or entered on the Upload &amp; calculate tab — Margyn doesn't yet auto-detect calendar months from your data (see the validation roadmap). Label each snapshot by the period it covers until that's automated.</div>
+    </div>
   </div>
 
-  <!-- PROFILE TAB -->
+  <!-- ---------- 1. PROFILE ---------- -->
   <div id="view-profile" class="hidden">
     <div class="facts">
-      <div class="fact"><div class="f-label">Snapshots</div><div class="f-value" id="pfCount">0</div></div>
+      <div class="fact"><div class="f-label">Snapshots recorded</div><div class="f-value" id="pfCount">0</div></div>
       <div class="fact"><div class="f-label">Latest pulse</div><div class="f-value" id="pfPulse">0</div></div>
-      <div class="fact"><div class="f-label">Since</div><div class="f-value" id="pfSince">—</div></div>
+      <div class="fact"><div class="f-label">Tracking since</div><div class="f-value" id="pfSince">—</div></div>
     </div>
-
     <div class="card">
       <h2>Connected data sources</h2>
-      <div class="hint">Add automated connectors to supplement manual data entry. Keep uploading your full snapshot (cash, receivables, payables, margin, GST) — Razorpay adds payment-level detail. Syncs nightly at 2 AM IST.</div>
-      <div class="connected-sources">
-        <div class="cs-title">Razorpay (Optional)</div>
-        <div id="razorpayStatus"></div>
-      </div>
-      <div style="margin-top:16px; padding:12px; background:rgba(31,163,116,0.08); border:1px solid rgba(31,163,116,0.14); border-radius:8px; font-size:12px; color:var(--text-2); line-height:1.6;">
-        <strong style="color:var(--text-0);">Hybrid Mode:</strong> You still upload your complete monthly snapshot (P&L, Bank, Receivables, Payables, GST). Razorpay auto-adds transaction detail each night to improve accuracy. Both work together — neither replaces the other yet.
-      </div>
+      <div class="hint">Optional automated connectors that supplement your uploads. Keep uploading your full monthly snapshot as usual — connectors add detail on top, they don't replace it.</div>
+      <div id="razorpayStatus"></div>
     </div>
-
     <div class="card">
       <h2>Account</h2>
       <div class="hint">Read-only. These come from your login.</div>
       <div class="kv"><span class="k">Email</span><span class="v" id="pfEmail">—</span></div>
       <div class="kv"><span class="k">Account created</span><span class="v" id="pfCreated">—</span></div>
     </div>
-
     <div class="card">
       <h2>Business details</h2>
       <div class="hint">Used in your scorecard and your AI briefing.</div>
@@ -455,54 +493,68 @@
     </div>
   </div>
 
-  <!-- UPLOAD TAB -->
+  <!-- ---------- 2. UPLOAD & CALCULATE ---------- -->
   <div id="view-calculate" class="hidden">
     <div class="tabs">
       <button class="tab active" data-tab="upload">Upload workbook</button>
-      <button class="tab" data-tab="manual">Manual entry</button>
+      <button class="tab" data-tab="manual">Quick manual entry</button>
     </div>
 
     <div class="panel active" id="panel-upload">
       <div class="card">
         <h2>Upload your workbook</h2>
-        <div class="hint">Excel file with Bank Accounts, Receivables, Payables, P&L Summary, GST ITC sheets.</div>
+        <div class="hint">One Excel file with seven sheets: <span class="mono">Bank Accounts</span>, <span class="mono">Receivables</span>, <span class="mono">Payables</span>, <span class="mono">P&amp;L Summary</span>, <span class="mono">GST ITC</span>, <span class="mono">Razorpay Settlements</span>, <span class="mono">Shopify Orders</span>.</div>
         <div class="dropzone" id="dropzone">
           <div class="dz-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
           </div>
-          <div class="dz-label">Click to choose, or drag here</div>
+          <div class="dz-label">Click to choose a file, or drag it here</div>
           <div class="dz-sub">.xlsx or .csv</div>
           <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
           <div class="file-name" id="fileName"></div>
         </div>
-        <a class="template-link" href="/Margyn_Data_Template.xlsx" download="Margyn_Data_Template.xlsx">Download template →</a>
+        <a class="template-link" id="downloadTemplate" href="/Margyn_Data_Template.xlsx" download="Margyn_Data_Template.xlsx">Download the blank template →</a>
       </div>
       <div class="btn-row">
-        <button class="primary" id="computeFromFile" disabled>Compute & save</button>
+        <button class="primary" id="computeFromFile" disabled>Compute &amp; save</button>
         <span class="note" id="noteUpload"></span>
       </div>
+      <div class="import-summary hidden" id="importSummaryUpload" style="background:rgba(31,163,116,0.16); border:1px solid rgba(31,163,116,0.32); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--text-1); line-height:1.6;"></div>
     </div>
 
     <div class="panel" id="panel-manual">
       <div class="card">
-        <h2>Quick entry</h2>
+        <h2>Quick manual entry</h2>
+        <div class="hint">Core financials — sets your reconciled cash balance and P&amp;L figures.</div>
         <div class="grid-2">
           <div><label>Cash in bank (₹)</label><input type="number" id="m-cash" placeholder="4200000"></div>
-          <div><label>Monthly burn (₹)</label><input type="number" id="m-burn" placeholder="1500000"></div>
+          <div><label>Monthly operating expenses (₹)</label><input type="number" id="m-burn" placeholder="1500000"></div>
           <div><label>Monthly revenue (₹)</label><input type="number" id="m-rev" placeholder="6000000"></div>
-          <div><label>Net profit (₹)</label><input type="number" id="m-profit" placeholder="480000"></div>
+          <div><label>Net profit (this period, ₹)</label><input type="number" id="m-profit" placeholder="480000"></div>
           <div><label>Monthly GST payable (₹)</label><input type="number" id="m-gstpay" placeholder="240000"></div>
-          <div><label>GST ITC unclaimed (₹)</label><input type="number" id="m-gst" placeholder="65000"></div>
+          <div><label>GST ITC available but unclaimed (₹)</label><input type="number" id="m-gst" placeholder="65000"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Payments &amp; settlement (Razorpay / Shopify)</h2>
+        <div class="hint">Optional — powers the new Payments tab. Simple entry for now; automatic parsing comes from the upload sheet.</div>
+        <div class="grid-2">
+          <div><label>Gross payments processed, this period (₹)</label><input type="number" id="m-pay-gross" placeholder="6200000"></div>
+          <div><label>Total MDR + GST on MDR charged (₹)</label><input type="number" id="m-pay-mdr" placeholder="142000"></div>
+          <div><label>Failed transaction count</label><input type="number" id="m-pay-failed" placeholder="18"></div>
+          <div><label>Total transaction count (captured + failed)</label><input type="number" id="m-pay-total" placeholder="612"></div>
+          <div><label>Average settlement lag (days, txn → bank credit)</label><input type="number" id="m-pay-lag" placeholder="2"></div>
+          <div><label>% of payments via UPI</label><input type="number" id="m-pay-upi" placeholder="58"></div>
         </div>
       </div>
       <div class="btn-row">
-        <button class="primary" id="computeFromManual">Compute & save</button>
+        <button class="primary" id="computeFromManual">Compute &amp; save</button>
         <span class="note" id="noteManual"></span>
       </div>
     </div>
   </div>
 
-  <!-- SCORES TAB -->
+  <!-- ---------- 3. SCORES ---------- -->
   <div id="view-scores" class="hidden">
     <div class="pulse-wrap">
       <div class="pulse-score is-zero" id="pulseCard">
@@ -516,12 +568,13 @@
             <div class="num" id="pulseNum">0</div>
           </div>
           <div class="pulse-text">
-            <div class="p-label" id="pulseLabel">Pulse score</div>
+            <div class="p-label" id="pulseLabel">Pulse score — live</div>
             <div class="pulse-row">
               <span class="pulse-band-badge" id="pulseBandBadge"></span>
               <span class="pulse-delta" id="pulseDelta"></span>
+              <span class="pulse-asof" id="pulseAsOf"></span>
             </div>
-            <div class="pulse-asof" id="pulseAsOf"></div>
+            <div class="pulse-tap-hint">Six vitals below — new payment metrics live under the Payments tab</div>
           </div>
         </div>
       </div>
@@ -529,29 +582,135 @@
 
     <div class="vitals-grid" id="vitalsGrid"></div>
 
+    <div class="chart-card">
+      <div class="cc-head"><h3>Pulse trend</h3><span class="cc-sub">Last 10 snapshots</span></div>
+      <div id="pulseTrendChart"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="cc-head"><h3>Vitals compared</h3><span class="cc-sub">Score out of 100</span></div>
+      <div class="hbar-list" id="vitalsBarChart"></div>
+    </div>
+
     <div class="card">
       <h2>Executive briefing</h2>
       <div class="hint" id="briefHint">Generated from your latest snapshot.</div>
       <div id="briefing-idle"><button class="primary" id="generateBriefing">Generate AI briefing</button></div>
       <div id="briefing-text"></div>
     </div>
+
+    <div class="card">
+      <h2>Previous scores</h2>
+      <div class="hint">Every snapshot you've recorded.</div>
+      <div id="historyList"></div>
+    </div>
   </div>
 
-  <!-- FINANCING TAB -->
+  <!-- ---------- 3d. PAYMENTS (NEW) ---------- -->
+  <div id="view-payments" class="hidden">
+    <div class="card">
+      <h2>Payment health</h2>
+      <div class="hint">From Razorpay + Shopify data. See the validation roadmap doc for what's needed to make each of these production-grade.</div>
+    </div>
+    <div id="paymentsMockBanner" class="mock-banner hidden">No payments data yet — showing zero. Upload a Razorpay Settlements sheet or use Quick manual entry to see your real numbers.</div>
+
+    <div class="pay-grid">
+      <div class="pay-card">
+        <div class="pc-label">Gross processed</div>
+        <div class="pc-value" id="payGrossVal">—</div>
+        <div class="pc-sub">Total payments processed this period.</div>
+      </div>
+      <div class="pay-card">
+        <div class="pc-label">Net settled to bank</div>
+        <div class="pc-value" id="payNetVal">—</div>
+        <div class="pc-sub">After MDR, GST on MDR, and refunds.</div>
+      </div>
+      <div class="pay-card">
+        <div class="pc-label">Settlement velocity</div>
+        <div class="pc-value" id="paySettleVal">—</div>
+        <div class="pc-sub">Avg. days, transaction capture → bank credit.</div>
+        <span class="pc-flag" id="paySettleFlag"></span>
+      </div>
+      <div class="pay-card">
+        <div class="pc-label">MDR burden</div>
+        <div class="pc-value" id="payMdrVal">—</div>
+        <div class="pc-sub">MDR + GST on MDR, as % of gross.</div>
+        <span class="pc-flag" id="payMdrFlag"></span>
+      </div>
+      <div class="pay-card">
+        <div class="pc-label">Failed payment rate</div>
+        <div class="pc-value" id="payFailVal">—</div>
+        <div class="pc-sub">Share of attempted transactions that failed.</div>
+        <span class="pc-flag" id="payFailFlag"></span>
+      </div>
+      <div class="pay-card">
+        <div class="pc-label">Avg. transaction value</div>
+        <div class="pc-value" id="payAtvVal">—</div>
+        <div class="pc-sub">Gross processed ÷ transaction count.</div>
+      </div>
+      <div class="pay-card wide">
+        <div class="pc-label">Payment method mix</div>
+        <div class="pc-value" id="payMethodVal">—</div>
+        <div class="pc-sub">Concentration risk if your top rail goes down.</div>
+        <div class="method-bar" id="payMethodBar"></div>
+        <div class="method-legend" id="payMethodLegend"></div>
+        <span class="pc-flag" id="payMethodFlag"></span>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="cc-head"><h3>Gross settled, last 7 days</h3><span class="cc-sub" id="paySettleTrendSub">₹ per day</span></div>
+      <div class="bar-chart" id="paySettleBarChart"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="cc-head"><h3>Settlement batches</h3><span class="cc-sub" id="settleListSub">Toggle status</span></div>
+      <div id="settlementList"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="cc-head"><h3>Shopify orders</h3><span class="cc-sub">From last upload — reference only, not yet scored</span></div>
+      <div class="hbar-list" id="shopifyBarChart"></div>
+    </div>
+  </div>
+
+  <!-- ---------- 3c. FINANCING ---------- -->
   <div id="view-financing" class="hidden">
-    <div class="card" style="background:linear-gradient(160deg, #16233A 0%, #0F1A2C 100%); backdrop-filter:none;">
-      <h2>Indicative working capital</h2>
-      <div class="app-title" id="finRange" style="font-size:30px; filter:blur(5px); user-select:none;">—</div>
+    <div class="card" style="background:linear-gradient(160deg, #16233A 0%, #0F1A2C 100%); backdrop-filter:none; -webkit-backdrop-filter:none;">
+      <h2>Indicative working-capital eligibility</h2>
+      <div class="app-title" id="finRange" style="font-size:30px; filter:blur(5px); user-select:none; transition:filter .25s ease;">—</div>
+      <div class="hint" style="margin-bottom:6px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-2);">Indicative only — blurred until a lending partner verifies your data</div>
       <div class="hint" id="finNote">Upload or enter a snapshot to see an estimate.</div>
+    </div>
+    <div class="card" id="finLeadCard">
+      <h2>Get matched with a lender</h2>
+      <div class="hint">Express interest and we'll reach out once a lending partner is live.</div>
+      <form id="financingForm">
+        <div class="grid-2">
+          <div><label>Contact email</label><input type="email" id="finEmail" required></div>
+          <div><label>Phone (optional)</label><input type="tel" id="finPhone" placeholder="+91 98765 43210"></div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="primary" id="finSubmit">Express interest</button>
+          <span class="note" id="finFormNote"></span>
+        </div>
+      </form>
     </div>
   </div>
 
 </div>
 </div>
 
-<div class="razorpay-modal" id="razorpayModal">
-  <div class="razorpay-modal-box">
-    <button class="razorpay-close" id="razorpayClose">✕</button>
+<div class="detail-overlay hidden" id="detailOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="detailClose">✕</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<div class="detail-overlay hidden" id="razorpayOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="razorpayClose">✕</button>
     <div id="razorpayContent"></div>
   </div>
 </div>
@@ -565,13 +724,19 @@ let sbClient = null;
 let currentUser = null;
 let currentProfile = null;
 let snapshots = [];
-let razorpayConnected = false;
+let receivables = [];
+let payables = [];
+let paymentsData = null; // NEW — session-only, not yet persisted (see roadmap)
+let settlementRows = null; // itemized settlement batches — session-only, "Mark as settled" is local state (see roadmap)
+let settlementDailyTrend = null; // real per-day gross totals, last 7 uploaded days — null until upload
+let razorpayConnected = false; // optional connector — supplements manual upload, doesn't replace it
 let lastSyncedAt = null;
 
 function inr(n){ return '₹' + Math.round(Number(n)||0).toLocaleString('en-IN'); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
 function fmtDate(iso){ return new Date(iso).toLocaleString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit' }); }
 function fmtDay(iso){ return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); }
+function scoreClass(s){ return s >= 70 ? 'score-good' : s >= 40 ? 'score-warn' : 'score-bad'; }
 function scoreBand(s){
   if(s >= 70) return { cls:'good', color:'#1FA374', label:'Healthy' };
   if(s >= 40) return { cls:'warn', color:'#C97F1E', label:'Caution' };
@@ -592,7 +757,7 @@ function showAuthError(msg){
   const f = document.querySelector('.auth-form.active');
   const el = f ? f.querySelector('.auth-error') : document.getElementById('loginError');
   if(!el) return;
-  el.textContent = msg; el.classList.add('show');
+  el.style.color = ''; el.textContent = msg; el.classList.add('show');
 }
 function clearAuthErrors(){ document.querySelectorAll('.auth-error').forEach(e => e.classList.remove('show')); }
 
@@ -601,7 +766,7 @@ async function bootAuth(){
   for(const src of sources){
     try { await loadScript(src); if(window.supabase){ initSupabase(); return; } } catch(e){ console.warn('[margyn]', e.message); }
   }
-  showAuthError('Could not load authentication. Reload to retry.');
+  showAuthError('Could not load the authentication library. Reload to retry.');
 }
 async function initSupabase(){
   const { createClient } = window.supabase;
@@ -613,12 +778,19 @@ async function initSupabase(){
 
 async function routeFor(session){
   if(!session){
-    currentUser = null; currentProfile = null; snapshots = []; razorpayConnected = false; lastSyncedAt = null;
+    currentUser = null; currentProfile = null; snapshots = []; paymentsData = null;
+    receivables = []; payables = []; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
+    razorpayConnected = false; lastSyncedAt = null;
     document.getElementById('appShell').classList.add('hidden');
     document.getElementById('authGate').classList.remove('hidden');
     document.getElementById('onboardGate').classList.add('hidden');
     document.getElementById('userEmail').textContent = '';
+    document.getElementById('headCompany').textContent = '—';
+    document.getElementById('headSub').textContent = '';
+    renderVitals(ZERO_VITALS, false);
+    document.getElementById('pulseNum').textContent = '0';
     clearAuthErrors();
+    showView('summary');
     return;
   }
   currentUser = session.user;
@@ -632,82 +804,37 @@ async function routeFor(session){
 }
 async function loadProfile(){
   const { data, error } = await sbClient.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
-  if(error){ console.error('[margyn]', error); return null; }
+  if(error){ console.error('[margyn] loadProfile:', error); return null; }
   return data;
 }
 async function loadSnapshots(){
   const { data, error } = await sbClient.from('snapshots').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(50);
-  if(error){ console.error('[margyn]', error); return []; }
+  if(error){ console.error('[margyn] loadSnapshots:', error); return []; }
   return data || [];
-}
-
-async function checkRazorpayConnection(){
-  const { data, error } = await sbClient.from('connector_credentials')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .eq('connector_type', 'razorpay')
-    .is('disconnected_at', null)
-    .maybeSingle();
-  if(error){ console.error('[margyn]', error); return false; }
-  razorpayConnected = !!data;
-  if(razorpayConnected) await loadLastSyncTime();
-  return razorpayConnected;
-}
-
-async function loadLastSyncTime(){
-  const { data, error } = await sbClient.from('connector_logs')
-    .select('created_at')
-    .eq('user_id', currentUser.id)
-    .eq('connector_type', 'razorpay')
-    .order('created_at', { ascending:false })
-    .limit(1)
-    .maybeSingle();
-  if(!error && data) lastSyncedAt = data.created_at;
-}
-
-async function loadLiveVitals(){
-  if(!razorpayConnected) return null;
-  try {
-    const { data, error } = await withTimeout(
-      sbClient.rpc('calculate_pulse_score', { p_user_id: currentUser.id }),
-      10000,
-      'Loading vitals'
-    );
-    if(error) throw error;
-    return data?.[0] || null;
-  } catch(err){
-    console.error('[margyn] vitals:', err);
-    return null;
-  }
 }
 
 document.getElementById('onboardForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const btn = document.getElementById('obSubmit');
-  btn.disabled = true; btn.textContent = 'Saving…';
+  const btn = document.getElementById('obSubmit'); const err = document.getElementById('obError');
+  err.classList.remove('show'); btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    const row = { 
-      id: currentUser.id, 
-      company_name: document.getElementById('obCompany').value.trim(),
-      revenue_range: document.getElementById('obRevenue').value, 
-      industry: document.getElementById('obIndustry').value.trim() || null,
-      city: document.getElementById('obCity').value.trim() || null, 
-      gst_number: document.getElementById('obGst').value.trim().toUpperCase() || null 
-    };
+    const row = { id: currentUser.id, company_name: document.getElementById('obCompany').value.trim(),
+      revenue_range: document.getElementById('obRevenue').value, industry: document.getElementById('obIndustry').value.trim() || null,
+      city: document.getElementById('obCity').value.trim() || null, gst_number: document.getElementById('obGst').value.trim().toUpperCase() || null };
     const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
     if(error) throw error;
     currentProfile = row;
     document.getElementById('onboardGate').classList.add('hidden');
     document.getElementById('appShell').classList.remove('hidden');
     await refreshAll();
-  } catch(e){ alert('Error: ' + (e.message || 'unknown')); }
+  } catch(e2){ err.textContent = e2.message || 'Could not save.'; err.classList.add('show'); }
   finally { btn.disabled = false; btn.textContent = 'Continue'; }
 });
 
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 
 function showView(name){
-  ['summary','profile','calculate','scores','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  ['summary','profile','calculate','scores','payments','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   window.scrollTo({ top:0, behavior:'smooth' });
 }
@@ -715,20 +842,150 @@ document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('cl
 
 async function refreshAll(){
   snapshots = await loadSnapshots();
+  receivables = await loadReceivables();
+  payables = await loadPayables();
   await checkRazorpayConnection();
-  renderHeader();
-  renderProfile();
-  renderScores();
-  renderFinancing();
-  renderSummary();
+  renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
 }
 
+/* ============================================================
+   RAZORPAY CONNECTOR (optional, supplements manual upload)
+   ============================================================ */
+async function checkRazorpayConnection(){
+  try {
+    const { data, error } = await sbClient.from('connector_credentials')
+      .select('id').eq('user_id', currentUser.id).eq('connector_type', 'razorpay')
+      .is('disconnected_at', null).maybeSingle();
+    if(error){ razorpayConnected = false; return; }
+    razorpayConnected = !!data;
+    if(razorpayConnected) await loadLastSyncTime();
+  } catch(e){ razorpayConnected = false; }
+}
+async function loadLastSyncTime(){
+  try {
+    const { data, error } = await sbClient.from('connector_logs')
+      .select('created_at').eq('user_id', currentUser.id).eq('connector_type', 'razorpay')
+      .order('created_at', { ascending:false }).limit(1).maybeSingle();
+    if(!error && data) lastSyncedAt = data.created_at;
+  } catch(e){}
+}
+function renderRazorpayStatus(){
+  const host = document.getElementById('razorpayStatus'); if(!host) return;
+  if(razorpayConnected){
+    const syncText = lastSyncedAt ? 'Last synced ' + fmtDate(lastSyncedAt) : 'Connected — syncing tonight at 2 AM IST';
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">✓ Razorpay</div>' +
+        '<div class="lr-meta">'+syncText+'</div>' +
+      '</div><span class="lr-tag ok">Connected</span></div>';
+  } else {
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Razorpay</div>' +
+        '<div class="lr-meta">Not connected — optional, adds payment detail nightly on top of your uploads</div>' +
+      '</div><div class="lr-actions"><button class="lr-btn" id="connectRazorpayBtn">Connect</button></div></div>';
+    const btn = document.getElementById('connectRazorpayBtn');
+    if(btn) btn.addEventListener('click', openRazorpayModal);
+  }
+}
+function openRazorpayModal(){
+  const overlay = document.getElementById('razorpayOverlay');
+  const host = document.getElementById('razorpayContent');
+  host.innerHTML =
+    '<div class="detail-eyebrow">Connect data</div>' +
+    '<div class="detail-title">Connect Razorpay</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Adds payment-level detail from Razorpay each night at 2 AM IST. Your manual upload stays the primary source — this is a supplement.</div>' +
+    '<div class="ledger-form">' +
+      '<div class="lf-title">Manual API key entry</div>' +
+      '<input type="password" id="rzpKeyId" placeholder="Key ID (rzp_live_xxxxxxxxxxxx)" style="margin-bottom:8px;">' +
+      '<input type="password" id="rzpKeySecret" placeholder="Key Secret">' +
+      '<div style="font-size:11px; color:var(--text-2); margin:8px 0;">Get these from razorpay.com/settings/api-keys</div>' +
+      '<div class="note bad" id="rzpError" style="display:none; margin-bottom:8px;"></div>' +
+      '<div class="note ok" id="rzpSuccess" style="display:none; margin-bottom:8px;"></div>' +
+      '<button id="rzpConnectBtn">Connect</button>' +
+    '</div>';
+  document.getElementById('rzpConnectBtn').addEventListener('click', async () => {
+    const keyId = document.getElementById('rzpKeyId').value.trim();
+    const keySecret = document.getElementById('rzpKeySecret').value.trim();
+    const errorEl = document.getElementById('rzpError');
+    const successEl = document.getElementById('rzpSuccess');
+    const btn = document.getElementById('rzpConnectBtn');
+    errorEl.style.display = 'none'; successEl.style.display = 'none';
+    if(!keyId || !keySecret){ errorEl.textContent = 'Both fields required'; errorEl.style.display = 'block'; return; }
+    btn.disabled = true; btn.textContent = 'Connecting…';
+    try {
+      const { data:{ session } } = await sbClient.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch('/api/store-razorpay-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ keyId, keySecret })
+      });
+      const data = await res.json().catch(() => ({}));
+      if(res.status === 401){ errorEl.textContent = 'Invalid credentials'; errorEl.style.display = 'block'; }
+      else if(!res.ok){ errorEl.textContent = data.error || 'Connection failed'; errorEl.style.display = 'block'; }
+      else {
+        successEl.textContent = '✓ Connected! Syncing now…'; successEl.style.display = 'block';
+        setTimeout(async () => { await refreshAll(); overlay.classList.add('hidden'); }, 1400);
+      }
+    } catch(err){ errorEl.textContent = 'Network error'; errorEl.style.display = 'block'; }
+    finally { btn.disabled = false; btn.textContent = 'Connect'; }
+  });
+  overlay.classList.remove('hidden');
+}
+document.getElementById('razorpayClose').addEventListener('click', () => document.getElementById('razorpayOverlay').classList.add('hidden'));
+document.getElementById('razorpayOverlay').addEventListener('click', (e) => { if(e.target.id === 'razorpayOverlay') e.currentTarget.classList.add('hidden'); });
+async function loadReceivables(){
+  const { data, error } = await sbClient.from('receivables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
+  if(error){ console.error('[margyn] loadReceivables:', error); return []; }
+  return data || [];
+}
+async function loadPayables(){
+  const { data, error } = await sbClient.from('payables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
+  if(error){ console.error('[margyn] loadPayables:', error); return []; }
+  return data || [];
+}
+function daysFromToday(dateStr){
+  if(!dateStr) return null;
+  return Math.round((new Date(dateStr) - new Date(new Date().toDateString())) / 86400000);
+}
+function recvBucket(dueDate){
+  const days = daysFromToday(dueDate);
+  if(days === null) return { label:'no due date', tag:'' };
+  const overdue = -days;
+  if(overdue <= 0) return { label:'not yet due', tag:'ok' };
+  if(overdue <= 90) return { label:overdue+'d overdue', tag:'warn' };
+  return { label:overdue+'d overdue', tag:'bad' };
+}
+function payUrgency(dueDate){
+  const days = daysFromToday(dueDate);
+  if(days === null) return { label:'no due date', tag:'warn' };
+  if(days < 0) return { label:(-days)+'d overdue', tag:'bad' };
+  if(days <= 7) return { label:'due in '+days+'d', tag:'bad' };
+  if(days <= 30) return { label:'due in '+days+'d', tag:'warn' };
+  return { label:'due in '+days+'d', tag:'ok' };
+}
+function ledgerAggregates(){
+  const recvTotal = receivables.reduce((s,r) => s + Number(r.amount), 0);
+  const recv90 = receivables.reduce((s,r) => { const d = daysFromToday(r.due_date); return (d !== null && -d > 90) ? s + Number(r.amount) : s; }, 0);
+  const paySoon = payables.reduce((s,p) => { const d = daysFromToday(p.due_date); return (d === null || d <= 30) ? s + Number(p.amount) : s; }, 0);
+  return { recvTotal, recv90, paySoon };
+}
+async function saveLedgerSnapshot(){
+  const latest = snapshots[0];
+  if(!latest){ return; } // no baseline cash/revenue yet — user needs one snapshot from Upload & calculate first
+  const { recvTotal, recv90, paySoon } = ledgerAggregates();
+  await saveSnapshot({ cash: Number(latest.cash)||0, recvTotal, recv90, paySoon, revenue: Number(latest.revenue)||0,
+    netProfit: Number(latest.net_profit)||0, burn: Number(latest.burn)||1, gstLeak: Number(latest.gst_leak)||0,
+    gstPayable: Number(latest.gst_payable)||0, source:'ledger' });
+  snapshots = await loadSnapshots();
+  renderScores();
+}
 function renderHeader(){
   document.getElementById('headCompany').textContent = currentProfile.company_name;
   const bits = [REV_LABEL[currentProfile.revenue_range], currentProfile.industry, currentProfile.city].filter(Boolean);
   document.getElementById('headSub').textContent = bits.join(' · ');
 }
-
 function renderProfile(){
   document.getElementById('pfCount').textContent = snapshots.length;
   document.getElementById('pfPulse').textContent = snapshots.length ? snapshots[0].pulse_score : 0;
@@ -739,143 +996,22 @@ function renderProfile(){
   document.getElementById('pfRevenue').value = currentProfile.revenue_range || '';
   document.getElementById('pfIndustry').value = currentProfile.industry || '';
   document.getElementById('pfCity').value = currentProfile.city || '';
-  
   renderRazorpayStatus();
 }
-
-function renderRazorpayStatus(){
-  const host = document.getElementById('razorpayStatus');
-  if(razorpayConnected){
-    const syncText = lastSyncedAt ? 'Last synced ' + fmtDate(lastSyncedAt) : 'Connected';
-    host.innerHTML = `
-      <div class="cs-item">
-        <div class="cs-info">
-          <div class="cs-name">✓ Razorpay connected</div>
-          <div class="cs-meta">${syncText}</div>
-        </div>
-        <div class="cs-status connected">Connected</div>
-      </div>
-    `;
-  } else {
-    host.innerHTML = `
-      <div class="cs-item">
-        <div class="cs-info">
-          <div class="cs-name">Razorpay</div>
-          <div class="cs-meta">Not connected — your payments data will sync nightly once connected.</div>
-        </div>
-        <button class="primary" id="connectRazorpayBtn" style="padding:8px 16px; font-size:13px;">Connect</button>
-      </div>
-    `;
-    document.getElementById('connectRazorpayBtn').addEventListener('click', openRazorpayModal);
-  }
-}
-
-function openRazorpayModal(){
-  const modal = document.getElementById('razorpayModal');
-  const content = document.getElementById('razorpayContent');
-  
-  const getAccessToken = async () => {
-    const { data } = await sbClient.auth.getSession();
-    return data.session?.access_token;
-  };
-  
-  content.innerHTML = `
-    <div class="razorpay-eyebrow">Connect data</div>
-    <div class="razorpay-title">Connect Razorpay</div>
-    <div class="razorpay-body">Your payments data will sync automatically every night at 2 AM IST.</div>
-    <div class="razorpay-form active" id="chooseForm">
-      <div class="razorpay-buttons">
-        <button class="razorpay-btn-primary" id="manualBtn">Manual API keys</button>
-        <button class="razorpay-btn-secondary" disabled title="Coming soon">Quick Connect (OAuth)</button>
-      </div>
-    </div>
-    <div class="razorpay-form" id="manualForm">
-      <label>Key ID</label>
-      <input type="password" id="rzpKeyId" placeholder="rzp_live_xxxxxxxxxxxx" style="margin-bottom:12px;">
-      <label>Key Secret</label>
-      <input type="password" id="rzpKeySecret" placeholder="••••••••" style="margin-bottom:12px;">
-      <p style="font-size:11px; color:var(--text-2); margin-bottom:16px;">Get these from razorpay.com/settings/api-keys</p>
-      <div class="razorpay-error" id="rzpError"></div>
-      <div class="razorpay-success" id="rzpSuccess"></div>
-      <div class="razorpay-buttons">
-        <button class="razorpay-btn-primary" id="rzpConnectBtn">Connect</button>
-        <button class="razorpay-btn-secondary" id="rzpBackBtn">Back</button>
-      </div>
-    </div>
-  `;
-  
-  document.getElementById('manualBtn').addEventListener('click', () => {
-    document.getElementById('chooseForm').classList.remove('active');
-    document.getElementById('manualForm').classList.add('active');
-  });
-  
-  document.getElementById('rzpBackBtn').addEventListener('click', () => {
-    document.getElementById('manualForm').classList.remove('active');
-    document.getElementById('chooseForm').classList.add('active');
-  });
-  
-  document.getElementById('rzpConnectBtn').addEventListener('click', async () => {
-    const keyId = document.getElementById('rzpKeyId').value.trim();
-    const keySecret = document.getElementById('rzpKeySecret').value.trim();
-    const errorEl = document.getElementById('rzpError');
-    const successEl = document.getElementById('rzpSuccess');
-    const btn = document.getElementById('rzpConnectBtn');
-    
-    errorEl.classList.remove('show');
-    successEl.classList.remove('show');
-    
-    if(!keyId || !keySecret){ errorEl.textContent = 'Both fields required'; errorEl.classList.add('show'); return; }
-    
-    btn.disabled = true; btn.textContent = 'Connecting…';
-    
-    try {
-      const token = await getAccessToken();
-      const res = await fetch('/api/store-razorpay-credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ keyId, keySecret })
-      });
-      
-      const data = await res.json();
-      
-      if(res.status === 401){ errorEl.textContent = 'Invalid credentials'; errorEl.classList.add('show'); }
-      else if(!res.ok){ errorEl.textContent = data.error || 'Connection failed'; errorEl.classList.add('show'); }
-      else {
-        successEl.textContent = '✓ Connected! Syncing your data now…'; successEl.classList.add('show');
-        setTimeout(async () => {
-          await refreshAll();
-          modal.classList.remove('active');
-        }, 1500);
-      }
-    } catch(err){ errorEl.textContent = 'Network error'; errorEl.classList.add('show'); }
-    finally { btn.disabled = false; btn.textContent = 'Connect'; }
-  });
-  
-  modal.classList.add('active');
-}
-
-document.getElementById('razorpayClose').addEventListener('click', () => document.getElementById('razorpayModal').classList.remove('active'));
-document.getElementById('razorpayModal').addEventListener('click', (e) => { if(e.target.id === 'razorpayModal') e.currentTarget.classList.remove('active'); });
-
 document.getElementById('profileForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('pfSave'); const note = document.getElementById('pfNote');
   note.className = 'note'; note.textContent = 'Saving…'; btn.disabled = true;
   try {
-    const row = { 
-      id: currentUser.id, 
-      company_name: document.getElementById('pfCompany').value.trim(),
-      revenue_range: document.getElementById('pfRevenue').value, 
-      industry: document.getElementById('pfIndustry').value.trim() || null,
-      city: document.getElementById('pfCity').value.trim() || null 
-    };
+    const row = { id: currentUser.id, company_name: document.getElementById('pfCompany').value.trim(),
+      revenue_range: document.getElementById('pfRevenue').value, industry: document.getElementById('pfIndustry').value.trim() || null,
+      city: document.getElementById('pfCity').value.trim() || null };
     const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
     if(error) throw error;
-    currentProfile = row; 
-    renderHeader();
+    currentProfile = row; renderHeader();
     note.className = 'note ok'; note.textContent = 'Saved.';
     setTimeout(() => { note.textContent = ''; note.className = 'note'; }, 2500);
-  } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Error'; }
+  } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
   finally { btn.disabled = false; }
 });
 
@@ -908,24 +1044,28 @@ function renderScores(){
   arc.setAttribute('stroke', band.color);
   const deltaEl = document.getElementById('pulseDelta');
   if(!hasData){ deltaEl.textContent = 'no snapshots yet — upload data to calculate'; }
-  else if(prev){ const d = latest.pulse_score - prev.pulse_score; deltaEl.textContent = d===0?'no change':(d>0?'▲ +'+d:'▼ '+d)+' vs last'; }
+  else if(prev){ const d = latest.pulse_score - prev.pulse_score; deltaEl.textContent = d===0?'no change since last':(d>0?'▲ +'+d:'▼ '+d)+' since last'; }
   else { deltaEl.textContent = 'first snapshot'; }
-  
-  const asofEl = document.getElementById('pulseAsOf');
-  if(razorpayConnected && lastSyncedAt){
-    asofEl.textContent = 'synced ' + fmtDate(lastSyncedAt) + ' (live from Razorpay)';
-  } else if(hasData){
-    asofEl.textContent = 'uploaded ' + fmtDate(latest.created_at);
-  } else {
-    asofEl.textContent = '';
-  }
-  
+  let asOfText = hasData ? 'synced ' + fmtDate(latest.created_at) : '';
+  if(razorpayConnected && lastSyncedAt) asOfText += ' · Razorpay data synced ' + fmtDate(lastSyncedAt);
+  document.getElementById('pulseAsOf').textContent = asOfText;
   renderVitals(hasData ? (latest.vitals || ZERO_VITALS) : ZERO_VITALS, hasData);
-  
+  renderHistory(snapshots);
+  renderPulseTrendChart();
   const idle = document.getElementById('briefing-idle'); const text = document.getElementById('briefing-text'); const hint = document.getElementById('briefHint');
-  if(!hasData){ idle.style.display = 'none'; text.textContent = ''; hint.textContent = 'Add a snapshot on the Upload tab to generate your first briefing.'; }
+  if(!hasData){ idle.style.display = 'none'; text.textContent = ''; hint.textContent = 'Add a snapshot on the Upload & calculate tab to generate your first briefing.'; }
   else { hint.textContent = 'Generated from your latest snapshot.'; idle.style.display = latest.briefing ? 'none' : 'block'; text.textContent = latest.briefing || ''; }
 }
+function splitValue(raw){ const i = String(raw).indexOf(' over '); return i === -1 ? { main:String(raw), suffix:'' } : { main:String(raw).slice(0,i), suffix:String(raw).slice(i+1) }; }
+
+const VITAL_EXPLAIN = {
+  'Cash Position': 'How many months your current cash balance covers at your current monthly burn, mapped against a 3–6 month healthy range.',
+  'Receivables Aging': 'Share of outstanding receivables that are overdue by more than 90 days — the money you\u2019re least likely to collect without a push.',
+  'Payables Due (30d)': 'How much of your cash is already spoken for by bills due in the next 30 days.',
+  'GST/ITC Leakage': 'Input tax credit sitting unclaimed, as a share of your monthly GST payable — cash you\u2019re entitled to but haven\u2019t reconciled yet.',
+  'Net Margin': 'Net profit as a share of revenue, benchmarked against your industry.',
+  'Working Capital Runway': 'Months of operating expenses covered by cash plus receivables, minus payables due.'
+};
 
 function renderVitals(vitals, hasData){
   const grid = document.getElementById('vitalsGrid'); grid.innerHTML = '';
@@ -933,53 +1073,423 @@ function renderVitals(vitals, hasData){
     const accent = VITAL_ACCENTS[v.label] || '#5C6B7A';
     const pct = Math.max(0, Math.min(100, v.score || 0));
     const offset = RING_CIRC * (1 - pct/100);
+    const { main, suffix } = splitValue(v.value);
     const el = document.createElement('div');
     el.className = 'vital' + (hasData ? '' : ' is-zero');
     el.style.setProperty('--v-accent', accent);
     el.innerHTML =
-      '<div class="v-value">'+v.value+'</div>' +
+      '<div class="v-value">'+main+'</div>' +
       '<div class="v-ring"><svg viewBox="0 0 100 100" aria-hidden="true">' +
         '<circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.2"></circle>' +
         '<circle cx="50" cy="50" r="46" fill="none" stroke="'+accent+'" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="'+RING_CIRC+'" stroke-dashoffset="'+offset.toFixed(2)+'"></circle>' +
       '</svg><div class="rv">'+Math.round(v.score)+'</div></div>' +
-      '<div class="v-label">'+v.label+'</div>' +
-      '<div class="v-score">'+Math.round(v.score)+'/100</div>';
+      '<div class="v-top"><span class="v-dot"></span><span class="v-label">'+v.label+'</span></div>' +
+      '<div class="v-score">'+(suffix ? suffix+' • ' : '')+Math.round(v.score)+'/100</div>';
+    if(hasData) el.addEventListener('click', () => openVitalDetail(v, accent));
     grid.appendChild(el);
+  });
+  renderVitalsBarChart(vitals, hasData);
+}
+
+function openVitalDetail(v, accent){
+  const overlay = document.getElementById('detailOverlay');
+  const modal = overlay.querySelector('.detail-modal');
+  if(v.label === 'Receivables Aging'){ modal.classList.add('wide'); renderReceivablesDetail(accent); overlay.classList.remove('hidden'); return; }
+  if(v.label === 'Payables Due (30d)'){ modal.classList.add('wide'); renderPayablesDetail(accent); overlay.classList.remove('hidden'); return; }
+  modal.classList.remove('wide');
+  const host = document.getElementById('detailContent');
+  const pct = Math.max(0, Math.min(100, v.score || 0));
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div>' +
+    '<div class="detail-title">'+v.label+'</div>' +
+    '<div class="detail-score-row">' +
+      '<div class="detail-score-num" style="color:'+accent+';">'+Math.round(v.score)+'</div>' +
+      '<div class="detail-score-bar"><div class="detail-score-fill" style="width:'+pct+'%; background:'+accent+';"></div></div>' +
+    '</div>' +
+    '<div class="detail-body"><b style="color:var(--text-0);">Current reading: '+v.value+'</b><br><br>' + (VITAL_EXPLAIN[v.label] || '') + '</div>';
+  overlay.classList.remove('hidden');
+}
+
+/* ---------- itemized receivables ledger ---------- */
+function renderReceivablesDetail(accent){
+  const host = document.getElementById('detailContent');
+  const { recvTotal, recv90 } = ledgerAggregates();
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div><div class="detail-title">Receivables Aging</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Total outstanding: <b style="color:var(--text-0);">'+inr(recvTotal)+'</b> &nbsp;·&nbsp; Over 90 days: <b style="color:#FF8FA8;">'+inr(recv90)+'</b></div>' +
+    '<div class="ledger-form"><div class="lf-title">Add receivable</div>' +
+    '<div class="lf-grid"><input type="text" id="recvParty" placeholder="Customer name"><input type="number" id="recvAmt" placeholder="Amount (₹)"></div>' +
+    '<div class="lf-grid"><input type="date" id="recvDue"><span></span></div>' +
+    '<button id="recvAddBtn">Add to ledger</button></div>' +
+    '<div class="ledger-list-title">Open invoices ('+receivables.length+')</div>' +
+    '<div id="recvList"></div>';
+  renderReceivablesList();
+  document.getElementById('recvAddBtn').addEventListener('click', async () => {
+    const party = document.getElementById('recvParty').value.trim();
+    const amt = Number(document.getElementById('recvAmt').value);
+    const due = document.getElementById('recvDue').value || null;
+    if(!party || !amt) return;
+    try {
+      const { error } = await sbClient.from('receivables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open' });
+      if(error) throw error;
+      receivables = await loadReceivables();
+      await saveLedgerSnapshot();
+      renderReceivablesDetail(accent);
+    } catch(err){ alert('Could not add: ' + (err.message||'unknown error')); }
+  });
+}
+function renderReceivablesList(){
+  const list = document.getElementById('recvList');
+  if(!receivables.length){ list.innerHTML = '<div class="ledger-empty">No open receivables. Add one above.</div>'; return; }
+  list.innerHTML = '';
+  receivables.forEach(r => {
+    const b = recvBucket(r.due_date);
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">'+escapeHtml(r.party_name)+'</div>' +
+      '<div class="lr-meta">due '+(r.due_date?fmtDay(r.due_date):'—')+(b.tag?'<span class="lr-tag '+b.tag+'">'+b.label+'</span>':'')+'</div></div>' +
+      '<div class="lr-amount">'+inr(r.amount)+'</div>' +
+      '<div class="lr-actions"><button class="lr-btn" data-act="collect">Mark received</button><button class="lr-btn danger" data-act="del">Delete</button></div>';
+    row.querySelector('[data-act="collect"]').addEventListener('click', () => collectReceivable(r));
+    row.querySelector('[data-act="del"]').addEventListener('click', () => deleteReceivable(r));
+    list.appendChild(row);
+  });
+}
+async function collectReceivable(r){
+  try {
+    const { error } = await sbClient.from('receivables').delete().eq('id', r.id);
+    if(error) throw error;
+    receivables = await loadReceivables();
+    await saveLedgerSnapshot();
+    renderReceivablesDetail('#FF8FA8');
+  } catch(err){ alert('Could not mark as received: ' + (err.message||'unknown error')); }
+}
+async function deleteReceivable(r){
+  try {
+    const { error } = await sbClient.from('receivables').delete().eq('id', r.id);
+    if(error) throw error;
+    receivables = await loadReceivables();
+    await saveLedgerSnapshot();
+    renderReceivablesDetail('#FF8FA8');
+  } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
+}
+
+/* ---------- itemized payables ledger ---------- */
+function renderPayablesDetail(accent){
+  const host = document.getElementById('detailContent');
+  const { paySoon } = ledgerAggregates();
+  const total = payables.reduce((s,p) => s + Number(p.amount), 0);
+  host.innerHTML =
+    '<div class="detail-eyebrow">Vital</div><div class="detail-title">Payables Due</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Total outstanding: <b style="color:var(--text-0);">'+inr(total)+'</b> &nbsp;·&nbsp; Due within 30 days: <b style="color:#8FA0B5;">'+inr(paySoon)+'</b></div>' +
+    '<div class="ledger-form"><div class="lf-title">Add payable</div>' +
+    '<div class="lf-grid"><input type="text" id="payParty" placeholder="Vendor name"><input type="number" id="payAmt" placeholder="Amount (₹)"></div>' +
+    '<div class="lf-grid"><input type="date" id="payDue"><span></span></div>' +
+    '<button id="payAddBtn">Add to ledger</button></div>' +
+    '<div class="ledger-list-title">Open bills ('+payables.length+')</div>' +
+    '<div id="payList"></div>';
+  renderPayablesList();
+  document.getElementById('payAddBtn').addEventListener('click', async () => {
+    const party = document.getElementById('payParty').value.trim();
+    const amt = Number(document.getElementById('payAmt').value);
+    const due = document.getElementById('payDue').value || null;
+    if(!party || !amt) return;
+    try {
+      const { error } = await sbClient.from('payables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open' });
+      if(error) throw error;
+      payables = await loadPayables();
+      await saveLedgerSnapshot();
+      renderPayablesDetail(accent);
+    } catch(err){ alert('Could not add: ' + (err.message||'unknown error')); }
+  });
+}
+function renderPayablesList(){
+  const list = document.getElementById('payList');
+  if(!payables.length){ list.innerHTML = '<div class="ledger-empty">No open payables. Add one above.</div>'; return; }
+  list.innerHTML = '';
+  payables.forEach(p => {
+    const u = payUrgency(p.due_date);
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">'+escapeHtml(p.party_name)+'</div>' +
+      '<div class="lr-meta">due '+(p.due_date?fmtDay(p.due_date):'—')+'<span class="lr-tag '+u.tag+'">'+u.label+'</span></div></div>' +
+      '<div class="lr-amount">'+inr(p.amount)+'</div>' +
+      '<div class="lr-actions"><button class="lr-btn" data-act="pay">Mark paid</button><button class="lr-btn danger" data-act="del">Delete</button></div>';
+    row.querySelector('[data-act="pay"]').addEventListener('click', () => payPayable(p));
+    row.querySelector('[data-act="del"]').addEventListener('click', () => deletePayable(p));
+    list.appendChild(row);
+  });
+}
+async function payPayable(p){
+  try {
+    const { error } = await sbClient.from('payables').delete().eq('id', p.id);
+    if(error) throw error;
+    payables = await loadPayables();
+    await saveLedgerSnapshot();
+    renderPayablesDetail('#8FA0B5');
+  } catch(err){ alert('Could not mark as paid: ' + (err.message||'unknown error')); }
+}
+async function deletePayable(p){
+  try {
+    const { error } = await sbClient.from('payables').delete().eq('id', p.id);
+    if(error) throw error;
+    payables = await loadPayables();
+    await saveLedgerSnapshot();
+    renderPayablesDetail('#8FA0B5');
+  } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
+}
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+document.getElementById('detailClose').addEventListener('click', () => document.getElementById('detailOverlay').classList.add('hidden'));
+document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e.target.id === 'detailOverlay') e.currentTarget.classList.add('hidden'); });
+
+function renderVitalsBarChart(vitals, hasData){
+  const host = document.getElementById('vitalsBarChart'); if(!host) return;
+  host.innerHTML = '';
+  if(!hasData){ host.innerHTML = '<div class="trend-empty">Add a snapshot to compare your six vitals here.</div>'; return; }
+  vitals.forEach(v => {
+    const accent = VITAL_ACCENTS[v.label] || '#1FA374';
+    const pct = Math.max(2, Math.min(100, v.score || 0));
+    const row = document.createElement('div'); row.className = 'hbar-row';
+    row.innerHTML = '<span class="hbar-label">'+v.label+'</span>' +
+      '<div class="hbar-track"><div class="hbar-fill" style="width:0%;"></div></div>' +
+      '<span class="hbar-val">'+Math.round(v.score)+'</span>';
+    host.appendChild(row);
+    requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = pct + '%'; });
   });
 }
 
-function renderFinancing(){
-  const range = document.getElementById('finRange'); const note = document.getElementById('finNote');
-  if(!snapshots.length){ range.textContent = '—'; note.textContent = 'Upload or enter a snapshot with monthly revenue to see an estimate.'; return; }
-  const latest = snapshots[0];
-  const monthlyRevenue = Number(latest.revenue) || 0;
-  if(monthlyRevenue <= 0){ range.textContent = '—'; note.textContent = 'Needs revenue data — upload or enter a snapshot.'; return; }
-  const multiplier = latest.pulse_score >= 70 ? 3 : latest.pulse_score >= 40 ? 2 : 1;
-  const mid = monthlyRevenue * multiplier;
-  range.textContent = inr(mid*0.8) + ' – ' + inr(mid*1.2);
-  note.textContent = 'Estimate based on revenue & health. Not a credit decision.';
+function renderPulseTrendChart(){
+  const host = document.getElementById('pulseTrendChart'); if(!host) return;
+  const rows = snapshots.slice(0, 10).slice().reverse();
+  if(rows.length < 2){
+    host.innerHTML = '<div class="trend-empty">Record at least two snapshots to see your Pulse Score trend as a line chart.</div>';
+    return;
+  }
+  const W = 640, H = 130, PAD = 10;
+  const vals = rows.map(r => r.pulse_score);
+  const min = 0, max = 100;
+  const x = i => PAD + (i/(rows.length-1)) * (W-2*PAD);
+  const y = v => H-PAD - ((v-min)/(max-min)) * (H-2*PAD);
+  const pts = vals.map((v,i) => x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+  const areaPts = 'M'+pts.split(' ').map((p,i)=>(i===0?'':'L')+p).join(' ')+' L'+x(rows.length-1).toFixed(1)+','+(H-PAD)+' L'+x(0).toFixed(1)+','+(H-PAD)+' Z';
+  const dots = rows.map((r,i) => '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(r.pulse_score).toFixed(1)+'" r="3.4" fill="#1FA374" stroke="#04120B" stroke-width="1"><title>'+fmtDate(r.created_at)+': '+r.pulse_score+'</title></circle>').join('');
+  host.innerHTML = '<svg class="trend-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' +
+    '<defs><linearGradient id="pulseGlow" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1FA374" stop-opacity="0.35"/><stop offset="100%" stop-color="#1FA374" stop-opacity="0"/></linearGradient></defs>' +
+    '<path d="'+areaPts+'" fill="url(#pulseGlow)"/>' +
+    '<polyline points="'+pts+'" fill="none" stroke="#1FA374" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 0 6px rgba(31,163,116,0.6));"/>' +
+    dots + '</svg>';
+}
+function renderHistory(rows){
+  const host = document.getElementById('historyList'); host.innerHTML = '';
+  if(!rows.length){ host.innerHTML = '<div style="font-size:13.5px; color:var(--text-2);">No snapshots recorded yet.</div>'; return; }
+  rows.forEach((r, i) => {
+    const prev = rows[i+1]; const d = prev ? r.pulse_score - prev.pulse_score : null;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border-1); font-size:13.5px;';
+    row.innerHTML = '<span class="mono" style="color:var(--text-2); font-size:12.5px;">'+fmtDate(r.created_at)+'</span>' +
+      '<span class="mono" style="font-weight:600;">'+r.pulse_score+(d===null?'':d>0?' ▲+'+d:d<0?' ▼'+d:' —')+'</span>';
+    host.appendChild(row);
+  });
 }
 
+function computeFinancingEligibility(){
+  if(!snapshots.length) return null;
+  const latest = snapshots[0]; const monthlyRevenue = Number(latest.revenue) || 0;
+  if(monthlyRevenue <= 0) return null;
+  const band = scoreBand(latest.pulse_score);
+  const multiplier = latest.pulse_score >= 70 ? 3 : latest.pulse_score >= 40 ? 2 : 1;
+  const mid = monthlyRevenue * multiplier;
+  return { low: Math.round(mid*0.8), high: Math.round(mid*1.2), band };
+}
+function renderFinancing(){
+  const range = document.getElementById('finRange'); const note = document.getElementById('finNote');
+  const elig = computeFinancingEligibility();
+  if(!elig){ range.textContent = '—'; note.textContent = 'Upload or enter a snapshot with monthly revenue to see an estimate.'; }
+  else { range.textContent = inr(elig.low) + ' – ' + inr(elig.high); note.textContent = 'A rough estimate based on revenue and Pulse Score band (' + elig.band.label + '). Not a credit decision.'; }
+  document.getElementById('finEmail').value = currentUser ? currentUser.email : '';
+}
+document.getElementById('financingForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const note = document.getElementById('finFormNote');
+  note.className = 'note ok'; note.textContent = 'Interest recorded. We\u2019ll reach out once a lending partner is live.';
+});
+
+/* ============================================================
+   SUMMARY (NEW) — the top-10 KPI overview. Every figure reads
+   real data only (latest snapshot / ledger / payments) — shows
+   zero, never a mock number, until you upload or enter something.
+   ============================================================ */
 function renderSummary(){
   const host = document.getElementById('summaryGrid'); if(!host) return;
   const latest = snapshots[0] || null;
+  const { recvTotal, paySoon } = ledgerAggregates();
+  const pay = paymentsData;
   const cards = [
-    { label:'Pulse score', value: latest ? String(latest.pulse_score) : '0', sub: latest ? scoreBand(latest.pulse_score).label : 'No data' },
-    { label:'Cash in bank', value: inr(latest ? latest.cash : 0), sub: 'Verified funds' },
-    { label:'Revenue, this period', value: inr(latest ? latest.revenue : 0), sub: 'From snapshot' },
-    { label:'Monthly burn', value: inr(latest ? latest.burn : 0), sub: 'Operating spend' },
-    { label:'Net profit', value: inr(latest ? latest.net_profit : 0), sub: 'Bottom line' },
-    { label:'Runway', value: (latest && latest.burn > 0) ? (latest.cash / latest.burn).toFixed(1) + ' mo' : '—', sub: 'Months @ current burn' },
-    { label:'GST/ITC leakage', value: inr(latest ? latest.gst_leak : 0), sub: 'Unclaimed credit' },
-    { label:'Payables due (30d)', value: '—', sub: 'Tracked in ledger' },
-    { label:'Receivables', value: '—', sub: 'Tracked in ledger' },
-    { label:'Last updated', value: latest ? fmtDay(latest.created_at) : '—', sub: 'Latest snapshot' }
+    { label:'Pulse score', value: latest ? String(latest.pulse_score) : '0', sub: latest ? scoreBand(latest.pulse_score).label : 'No data yet' },
+    { label:'Cash position', value: inr(latest ? latest.cash : 0), sub: 'Latest snapshot' },
+    { label:'Revenue, last period', value: inr(latest ? latest.revenue : 0), sub: 'From latest snapshot' },
+    { label:'Total spend, last period', value: inr(latest ? latest.burn : 0), sub: 'Monthly operating expenses' },
+    { label:'Net profit, last period', value: inr(latest ? latest.net_profit : 0), sub: 'Revenue minus spend' },
+    { label:'Receivables outstanding', value: inr(recvTotal), sub: receivables.length + ' open invoice' + (receivables.length===1?'':'s') },
+    { label:'Payables due (30d)', value: inr(paySoon), sub: payables.length + ' open bill' + (payables.length===1?'':'s') },
+    { label:'GST/ITC leakage', value: inr(latest ? latest.gst_leak : 0), sub: 'Unclaimed input credit' },
+    { label:'Gross payments processed', value: inr(pay ? pay.gross : 0), sub: pay ? 'From Razorpay data' : 'No payments data yet' },
+    { label:'Net settled to bank', value: inr(pay ? (pay.gross - pay.mdr) : 0), sub: pay ? 'After MDR + GST on MDR' : 'No payments data yet' }
   ];
   host.innerHTML = '';
   cards.forEach(c => {
     const el = document.createElement('div'); el.className = 'pay-card';
-    el.innerHTML = '<div class="pc-label">'+c.label+'</div><div class="pc-value" style="font-size:16px;">'+c.value+'</div><div class="pc-sub">'+c.sub+'</div>';
+    el.innerHTML = '<div class="pc-label">'+c.label+'</div><div class="pc-value" style="font-size:19px;">'+c.value+'</div><div class="pc-sub">'+c.sub+'</div>';
     host.appendChild(el);
+  });
+}
+
+/* ============================================================
+   PAYMENTS (NEW) — simple, session-only placeholder logic.
+   Not yet persisted to Supabase (no schema change made here).
+   No mock/example numbers — every KPI below reads real data only
+   (from Quick manual entry or an uploaded Razorpay Settlements /
+   Shopify Orders sheet) and shows zero/empty until you provide it.
+   See "Margyn Validation & Logic Roadmap" doc for what's needed
+   to make this production-grade.
+   ============================================================ */
+const ZERO_PAYMENTS = { gross:0, mdr:0, failed:0, total:0, lag:0, upiPct:0 };
+let shopifyOrdersData = null; // set on upload only — no mock fallback
+
+function computePaymentsMetrics(d){
+  const gross = Number(d.gross) || 0;
+  const mdr = Number(d.mdr) || 0;
+  const failed = Number(d.failed) || 0;
+  const total = Number(d.total) || 0;
+  const lag = Number(d.lag) || 0;
+  const upiPct = Math.max(0, Math.min(100, Number(d.upiPct) || 0));
+  const mdrPct = gross > 0 ? (mdr / gross) * 100 : 0;
+  const failRate = total > 0 ? (failed / total) * 100 : 0;
+  const netSettled = gross - mdr;
+  const avgTxn = total > 0 ? gross / total : 0;
+  // Simple method mix placeholder: UPI vs "Other" (card/netbanking/wallet combined).
+  // Real version needs per-transaction method breakdown from Razorpay Transactions export — see roadmap.
+  const methods = [
+    { name:'UPI', pct: upiPct, color:'#1FA374' },
+    { name:'Other (card/NB/wallet)', pct: 100 - upiPct, color:'#5C6B7A' }
+  ];
+  const topMethod = methods.slice().sort((a,b) => b.pct - a.pct)[0];
+  return { gross, netSettled, avgTxn, mdrPct, failRate, lag, methods, topMethodPct: topMethod.pct, topMethodName: topMethod.name };
+}
+function flagFor(kind, val){
+  if(kind === 'lag') return val <= 1 ? {c:'ok',t:'Fast'} : val <= 2 ? {c:'warn',t:'Normal'} : {c:'bad',t:'Slow'};
+  if(kind === 'mdr') return val <= 2 ? {c:'ok',t:'Healthy'} : val <= 2.5 ? {c:'warn',t:'Watch'} : {c:'bad',t:'High'};
+  if(kind === 'fail') return val <= 3 ? {c:'ok',t:'Healthy'} : val <= 8 ? {c:'warn',t:'Watch'} : {c:'bad',t:'High'};
+  if(kind === 'conc') return val <= 60 ? {c:'ok',t:'Diversified'} : val <= 80 ? {c:'warn',t:'Concentrated'} : {c:'bad',t:'High risk'};
+  return {c:'ok',t:''};
+}
+function renderPayments(){
+  const banner = document.getElementById('paymentsMockBanner');
+  const badge = document.getElementById('paymentsBadge');
+  const hasData = !!paymentsData;
+  banner.classList.toggle('hidden', hasData);
+  const d = paymentsData || ZERO_PAYMENTS;
+  const m = computePaymentsMetrics(d);
+
+  document.getElementById('payGrossVal').textContent = inr(m.gross);
+  document.getElementById('payNetVal').textContent = inr(m.netSettled);
+  document.getElementById('payAtvVal').textContent = inr(m.avgTxn);
+
+  document.getElementById('paySettleVal').textContent = hasData ? m.lag.toFixed(1) + ' days' : '—';
+  const lf = hasData ? flagFor('lag', m.lag) : {c:'',t:''};
+  const sf = document.getElementById('paySettleFlag'); sf.textContent = lf.t; sf.className = 'pc-flag ' + lf.c;
+
+  document.getElementById('payMdrVal').textContent = hasData ? m.mdrPct.toFixed(2) + '%' : '—';
+  const mf = hasData ? flagFor('mdr', m.mdrPct) : {c:'',t:''};
+  const mfe = document.getElementById('payMdrFlag'); mfe.textContent = mf.t; mfe.className = 'pc-flag ' + mf.c;
+
+  document.getElementById('payFailVal').textContent = hasData ? m.failRate.toFixed(1) + '%' : '—';
+  const ff = hasData ? flagFor('fail', m.failRate) : {c:'',t:''};
+  const ffe = document.getElementById('payFailFlag'); ffe.textContent = ff.t; ffe.className = 'pc-flag ' + ff.c;
+
+  document.getElementById('payMethodVal').textContent = hasData ? (m.topMethodPct.toFixed(0) + '% ' + m.topMethodName) : '—';
+  const bar = document.getElementById('payMethodBar'); bar.innerHTML = '';
+  const legend = document.getElementById('payMethodLegend'); legend.innerHTML = '';
+  if(hasData){
+    m.methods.forEach(meth => {
+      if(meth.pct <= 0) return;
+      const seg = document.createElement('span');
+      seg.style.cssText = 'width:' + meth.pct + '%; background:' + meth.color + ';';
+      seg.textContent = meth.pct >= 12 ? meth.pct.toFixed(0) + '%' : '';
+      bar.appendChild(seg);
+      const leg = document.createElement('span');
+      leg.innerHTML = '<i style="background:' + meth.color + ';"></i>' + meth.name + ' ' + meth.pct.toFixed(0) + '%';
+      legend.appendChild(leg);
+    });
+  }
+  const cf = hasData ? flagFor('conc', m.topMethodPct) : {c:'',t:''};
+  const cfe = document.getElementById('payMethodFlag'); cfe.textContent = cf.t; cfe.className = 'pc-flag ' + cf.c;
+  badge.textContent = (hasData && (mf.c==='bad'||ff.c==='bad'||cf.c==='bad')) ? '!' : '';
+  badge.classList.toggle('hidden', !hasData || !(mf.c==='bad'||ff.c==='bad'||cf.c==='bad'));
+
+  renderSettleTrendChart();
+  renderShopifyChart();
+  renderSettlementList();
+}
+
+function renderSettlementList(){
+  const host = document.getElementById('settlementList'); if(!host) return;
+  const sub = document.getElementById('settleListSub');
+  const rows = settlementRows || [];
+  if(!rows.length){
+    sub.textContent = 'No settlement batches yet';
+    host.innerHTML = '<div class="ledger-empty">Upload a Razorpay Settlements sheet to see batches here, each with a Mark as settled toggle.</div>';
+    return;
+  }
+  sub.textContent = rows.length + ' batches — status is a local toggle, not yet persisted';
+  host.innerHTML = '';
+  rows.forEach((r, i) => {
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">'+r.id+'</div>' +
+      '<div class="lr-meta">'+(r.date||'—')+' · gross '+inr(r.gross)+'<span class="lr-tag '+(r.settled?'ok':'warn')+'">'+(r.settled?'Settled':'Pending')+'</span></div></div>' +
+      '<div class="lr-amount">'+inr(r.net)+'</div>' +
+      '<div class="lr-actions"><button class="lr-btn" data-idx="'+i+'">'+(r.settled?'Mark pending':'Mark as settled')+'</button></div>';
+    row.querySelector('button').addEventListener('click', () => {
+      settlementRows[i].settled = !settlementRows[i].settled;
+      renderSettlementList();
+    });
+    host.appendChild(row);
+  });
+}
+
+function renderSettleTrendChart(){
+  const host = document.getElementById('paySettleBarChart'); if(!host) return;
+  const sub = document.getElementById('paySettleTrendSub');
+  const series = settlementDailyTrend || [0,0,0,0,0,0,0];
+  const hasReal = !!settlementDailyTrend;
+  sub.textContent = hasReal ? '₹ per day (from uploaded settlement rows)' : 'No data yet — upload settlements to see daily trend';
+  const max = Math.max(...series, 1);
+  host.innerHTML = '';
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  series.forEach((v, i) => {
+    const pct = hasReal ? (v/max)*100 : 0;
+    const col = document.createElement('div'); col.className = 'bc-col';
+    col.innerHTML = '<span class="bc-val">'+(hasReal ? (v/1000).toFixed(0)+'K' : '—')+'</span><div class="bc-bar" style="height:0%;"></div><span class="bc-label">'+days[i]+'</span>';
+    host.appendChild(col);
+    requestAnimationFrame(() => { col.querySelector('.bc-bar').style.height = pct + '%'; });
+  });
+}
+function renderShopifyChart(){
+  const host = document.getElementById('shopifyBarChart'); if(!host) return;
+  const rows = shopifyOrdersData;
+  if(!rows){ host.innerHTML = '<div class="ledger-empty">Upload a Shopify Orders sheet to see paid/pending order counts and revenue here.</div>'; return; }
+  host.innerHTML = '';
+  const max = Math.max(...rows.map(r => r.value), 1);
+  rows.forEach(r => {
+    const pct = Math.max(3, (r.value/max)*100);
+    const row = document.createElement('div'); row.className = 'hbar-row';
+    const valText = r.isCurrency ? inr(r.value) : r.value;
+    row.innerHTML = '<span class="hbar-label">'+r.label+'</span>' +
+      '<div class="hbar-track"><div class="hbar-fill" style="width:0%;"></div></div>' +
+      '<span class="hbar-val">'+valText+'</span>';
+    host.appendChild(row);
+    requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = pct + '%'; });
   });
 }
 
@@ -996,7 +1506,7 @@ authTabs.forEach(tab => tab.addEventListener('click', () => {
 }));
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault(); const btn = document.getElementById('loginSubmit'); clearAuthErrors();
-  if(!sbClient){ showAuthError('Not ready — reload.'); return; }
+  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
   btn.disabled = true; btn.textContent = 'Logging in…';
   try {
     const { error } = await withTimeout(sbClient.auth.signInWithPassword({ email: document.getElementById('loginEmail').value, password: document.getElementById('loginPassword').value }), 20000, 'Login');
@@ -1006,23 +1516,29 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   finally { btn.disabled = false; btn.textContent = 'Log in'; }
 });
 document.getElementById('signupForm').addEventListener('submit', async (e) => {
-  e.preventDefault(); const btn = document.getElementById('signupSubmit');
+  e.preventDefault(); const btn = document.getElementById('signupSubmit'); const errorEl = document.getElementById('signupError');
   const email = document.getElementById('signupEmail').value; clearAuthErrors();
-  if(!sbClient){ showAuthError('Not ready — reload.'); return; }
-  btn.disabled = true; btn.textContent = 'Creating…';
+  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
+  btn.disabled = true; btn.textContent = 'Creating account…';
   try {
     const { data, error } = await withTimeout(sbClient.auth.signUp({ email, password: document.getElementById('signupPassword').value }), 20000, 'Signup');
     if(error) throw error;
-    if(!(data && data.session)){ const el = document.getElementById('signupError'); el.style.color = 'var(--emerald-bright)'; el.textContent = 'Check ' + email + ' for confirmation link'; el.classList.add('show'); }
+    if(!(data && data.session)){ errorEl.style.color = 'var(--emerald-bright)'; errorEl.textContent = 'Account created. Check ' + email + ' for the confirmation link.'; errorEl.classList.add('show'); }
     document.getElementById('signupForm').reset();
   } catch(err){ showAuthError(err.message || 'Signup failed'); }
   finally { btn.disabled = false; btn.textContent = 'Create account'; }
 });
 document.getElementById('logoutBtn').addEventListener('click', async () => {
   const btn = document.getElementById('logoutBtn'); btn.disabled = true;
-  try { if(sbClient) await sbClient.auth.signOut(); } catch(e){}
-  finally { btn.disabled = false; await routeFor(null); }
+  try { if(sbClient) await sbClient.auth.signOut(); } catch(e){} finally { btn.disabled = false; await routeFor(null); }
 });
+
+/* ---------- entry tabs ---------- */
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  t.classList.add('active'); document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+}));
 
 /* ---------- upload ---------- */
 let workbookData = null;
@@ -1035,15 +1551,16 @@ dropzone.addEventListener('drop', e => { e.preventDefault(); if(e.dataTransfer.f
 function handleFile(){
   const file = fileInput.files[0]; if(!file) return;
   const note = document.getElementById('noteUpload');
-  if(typeof XLSX === 'undefined'){ note.className = 'note bad'; note.textContent = 'Library failed'; return; }
+  document.getElementById('importSummaryUpload').classList.add('hidden');
+  if(typeof XLSX === 'undefined'){ note.className = 'note bad'; note.textContent = 'Spreadsheet library failed to load — use manual entry, or reload.'; return; }
   document.getElementById('fileName').textContent = file.name;
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
       workbookData = XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true });
       document.getElementById('computeFromFile').disabled = false;
-      note.className = 'note ok'; note.textContent = 'Ready — click Compute & save.';
-    } catch(err){ note.className = 'note bad'; note.textContent = 'Could not read file.'; document.getElementById('computeFromFile').disabled = true; }
+      note.className = 'note ok'; note.textContent = 'File read — review and click Compute & save.';
+    } catch(err){ note.className = 'note bad'; note.textContent = 'Could not read this file.'; document.getElementById('computeFromFile').disabled = true; }
   };
   reader.readAsArrayBuffer(file);
 }
@@ -1054,26 +1571,107 @@ function sheetToRows(wb, name){
 
 document.getElementById('computeFromFile').addEventListener('click', async () => {
   if(!workbookData) return;
-  const note = document.getElementById('noteUpload');
-  note.className = 'note'; note.textContent = 'Saving…';
+  const note = document.getElementById('noteUpload'); const summaryBox = document.getElementById('importSummaryUpload');
+  summaryBox.classList.add('hidden'); note.className = 'note'; note.textContent = 'Saving…';
   try {
-    const pl = sheetToRows(workbookData, 'P&L Summary');
-    const gst = sheetToRows(workbookData, 'GST ITC');
+    const bank = sheetToRows(workbookData, 'Bank Accounts');
+    const recv = sheetToRows(workbookData, 'Receivables');
+    const pay  = sheetToRows(workbookData, 'Payables');
+    const pl   = sheetToRows(workbookData, 'P&L Summary');
+    const gst  = sheetToRows(workbookData, 'GST ITC');
+    const rzp  = sheetToRows(workbookData, 'Razorpay Settlements');
+    const shop = sheetToRows(workbookData, 'Shopify Orders');
+
+    const cash = bank.reduce((s,r) => s + (Number(r['Balance'])||0), 0);
+
+    // Insert into the itemized ledger tables (not just an aggregate) so uploaded
+    // invoices/bills show up in the Receivables/Payables detail view with
+    // Mark as received / Mark as paid actions, same as manually-added rows.
+    const recvInserts = recv
+      .filter(r => Math.max(0,(Number(r['Amount'])||0) - (Number(r['Amount Received'])||0)) > 0)
+      .map(r => ({ user_id: currentUser.id, party_name: String(r['Customer']||'Unnamed customer'),
+        amount: Math.max(0,(Number(r['Amount'])||0) - (Number(r['Amount Received'])||0)),
+        due_date: r['Due Date'] ? new Date(r['Due Date']).toISOString().slice(0,10) : null, status:'open' }));
+    const payInserts = pay
+      .filter(r => (Number(r['Amount'])||0) > 0)
+      .map(r => ({ user_id: currentUser.id, party_name: String(r['Vendor']||'Unnamed vendor'),
+        amount: Number(r['Amount'])||0,
+        due_date: r['Due Date'] ? new Date(r['Due Date']).toISOString().slice(0,10) : null, status:'open' }));
+    if(recvInserts.length){ const { error } = await sbClient.from('receivables').insert(recvInserts); if(error) throw error; }
+    if(payInserts.length){ const { error } = await sbClient.from('payables').insert(payInserts); if(error) throw error; }
+    receivables = await loadReceivables();
+    payables = await loadPayables();
+    const { recvTotal, recv90, paySoon } = ledgerAggregates();
+
     const plMap = {}; pl.forEach(r => { plMap[r['Line Item']] = Number(r['Amount'])||0; });
     const revenue = plMap['Revenue'] || 0;
     const netProfit = plMap['Net Profit'] || 0;
     const burn = plMap['Monthly Operating Expenses'] || (revenue - netProfit) || 1;
+
     let gstLeak = 0, gstPayable = 0;
     gst.forEach(r => { gstLeak += (Number(r['ITC Available'])||0) - (Number(r['ITC Claimed'])||0); gstPayable += Number(r['GST Payable'])||0; });
-    
-    const bank = sheetToRows(workbookData, 'Bank Accounts');
-    const cash = bank.reduce((s,r) => s + (Number(r['Balance'])||0), 0);
-    
-    await saveSnapshot({ cash, revenue, netProfit, burn, gstLeak, gstPayable, source:'upload' });
+
+    // NEW: Razorpay Settlements sheet — simple aggregate parsing.
+    // Expected columns: Settlement Date, Gross Amount, MDR, GST on MDR, Net Settled, Txn Count, Failed Count, Settlement Lag (days), UPI %
+    let rzpGross=0, rzpMdr=0, rzpFailed=0, rzpTotal=0, rzpLagSum=0, rzpLagCount=0, rzpUpiSum=0, rzpUpiCount=0;
+    rzp.forEach(r => {
+      rzpGross += Number(r['Gross Amount'])||0;
+      rzpMdr += (Number(r['MDR'])||0) + (Number(r['GST on MDR'])||0);
+      rzpFailed += Number(r['Failed Count'])||0;
+      rzpTotal += (Number(r['Txn Count'])||0) + (Number(r['Failed Count'])||0);
+      if(r['Settlement Lag (days)'] !== undefined){ rzpLagSum += Number(r['Settlement Lag (days)'])||0; rzpLagCount++; }
+      if(r['UPI %'] !== undefined){ rzpUpiSum += Number(r['UPI %'])||0; rzpUpiCount++; }
+    });
+
+    // Itemized settlement rows — feeds the "Mark as settled" list on the Payments tab.
+    if(rzp.length){
+      settlementRows = rzp.map(r => ({
+        date: r['Settlement Date'] ? new Date(r['Settlement Date']).toISOString().slice(0,10) : '',
+        id: r['Settlement ID'] || '—', gross: Number(r['Gross Amount'])||0, net: Number(r['Net Settled'])||0,
+        settled: String(r['Status']||'processed').toLowerCase() !== 'pending'
+      }));
+      // Real daily trend — group by date (falls back to per-row order if dates are missing/duplicated
+      // across fewer than 7 distinct days; last 7 rows shown as-is otherwise).
+      const byDate = {};
+      settlementRows.forEach(r => { const k = r.date || '—'; byDate[k] = (byDate[k]||0) + r.gross; });
+      const dateKeys = Object.keys(byDate).sort();
+      settlementDailyTrend = (dateKeys.length ? dateKeys.map(k => byDate[k]) : settlementRows.map(r => r.gross)).slice(-7);
+      while(settlementDailyTrend.length < 7) settlementDailyTrend.unshift(0);
+    }
+
+    // NEW: Shopify Orders sheet — aggregate revenue/orders for reference (not yet scored; see roadmap)
+    let shopRevenue = 0, shopOrders = 0, shopPaid = 0, shopOther = 0;
+    const seenOrders = new Set();
+    shop.forEach(r => {
+      const id = r['Order Name'] || r['Order ID'];
+      if(id && !seenOrders.has(id)){
+        seenOrders.add(id); shopRevenue += Number(r['Total'])||0; shopOrders++;
+        if(String(r['Financial Status']||'').toLowerCase() === 'paid') shopPaid++; else shopOther++;
+      }
+    });
+    if(shop.length){
+      shopifyOrdersData = [
+        { label:'Orders (paid)', value: shopPaid },
+        { label:'Orders (pending/refunded)', value: shopOther },
+        { label:'Revenue (₹)', value: shopRevenue, isCurrency:true }
+      ];
+    }
+
+    if(rzp.length){
+      paymentsData = { gross: rzpGross, mdr: rzpMdr, failed: rzpFailed, total: rzpTotal,
+        lag: rzpLagCount ? rzpLagSum/rzpLagCount : 0, upiPct: rzpUpiCount ? rzpUpiSum/rzpUpiCount : 0 };
+    }
+
+    await saveSnapshot({ cash, recvTotal, recv90, paySoon, revenue, netProfit, burn, gstLeak, gstPayable, source:'upload' });
+
+    let summaryHtml = '<b>Imported:</b> cash ' + inr(cash) + ', ' + recvInserts.length + ' receivable(s), ' + payInserts.length + ' payable(s), revenue ' + inr(revenue) + '.';
+    if(rzp.length) summaryHtml += '<br><b>Razorpay:</b> ' + inr(rzpGross) + ' gross across ' + rzp.length + ' settlement rows.';
+    if(shop.length) summaryHtml += '<br><b>Shopify:</b> ' + inr(shopRevenue) + ' across ' + shopOrders + ' orders (reference only for now).';
+    summaryBox.innerHTML = summaryHtml; summaryBox.classList.remove('hidden');
     note.textContent = '';
     await refreshAll();
     showView('summary');
-  } catch(err){ note.className = 'note bad'; note.textContent = 'Error: ' + (err.message || 'unknown'); }
+  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
 });
 
 document.getElementById('computeFromManual').addEventListener('click', async () => {
@@ -1081,30 +1679,44 @@ document.getElementById('computeFromManual').addEventListener('click', async () 
   const note = document.getElementById('noteManual');
   note.className = 'note'; note.textContent = 'Saving…';
   try {
-    await saveSnapshot({ cash: v('m-cash'), revenue: v('m-rev'), netProfit: v('m-profit'), burn: v('m-burn')||1, gstLeak: v('m-gst'), gstPayable: v('m-gstpay'), source:'manual' });
+    const gross = v('m-pay-gross');
+    if(gross > 0 || v('m-pay-total') > 0){
+      paymentsData = { gross, mdr: v('m-pay-mdr'), failed: v('m-pay-failed'), total: v('m-pay-total'), lag: v('m-pay-lag'), upiPct: v('m-pay-upi') };
+    }
+    const { recvTotal, recv90, paySoon } = ledgerAggregates();
+    await saveSnapshot({ cash: v('m-cash'), recvTotal, recv90, paySoon, revenue: v('m-rev'), netProfit: v('m-profit'), burn: v('m-burn')||1, gstLeak: v('m-gst'), gstPayable: v('m-gstpay'), source:'manual' });
     note.textContent = '';
     await refreshAll();
     showView('summary');
-  } catch(err){ note.className = 'note bad'; note.textContent = 'Error: ' + (err.message || 'unknown'); }
+  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
 });
 
+/* ---------- scoring (same weighted model as v2.0, simplified receivables curve
+   since this build doesn't carry a per-invoice ledger — see roadmap) ---------- */
 const BENCH = { cashMin:3, cashMax:6, gstBad:0.5, runwayMin:3, runwayMax:6 };
 const WEIGHTS = { cash:0.15, runway:0.15, recv:0.175, pay:0.175, margin:0.20, gst:0.15 };
+const INDUSTRY_MARGIN_ANCHOR = { 'D2C / E-commerce':0.10, 'SaaS / Software':0.20, 'Agency / Services':0.15, 'Manufacturing (General)':0.10 };
+const UNIVERSAL_MARGIN_ANCHOR = 0.10;
 function runwayScore(months, minM, maxM){ const s = months <= minM ? (months/minM)*50 : 50 + Math.min(1,(months-minM)/(maxM-minM))*50; return clamp(s); }
+
 function computeVitals(d){
   const cashMonths = d.burn > 0 ? d.cash / d.burn : 0;
   const cashScore = runwayScore(cashMonths, BENCH.cashMin, BENCH.cashMax);
-  const recvHealth = 100; const payScore = 100; const gstRatio = d.gstPayable > 0 ? d.gstLeak/d.gstPayable : 0;
+  const recvHealth = d.recvTotal > 0 ? clamp(100*(1 - d.recv90/d.recvTotal)) : 100;
+  const payRatio = d.cash > 0 ? d.paySoon/d.cash : (d.paySoon>0?1:0);
+  const payScore = clamp(100*(1-payRatio));
+  const gstRatio = d.gstPayable > 0 ? d.gstLeak/d.gstPayable : 0;
   const gstScore = clamp(100*(1-gstRatio/BENCH.gstBad));
+  const marginAnchor = INDUSTRY_MARGIN_ANCHOR[d.industry] || UNIVERSAL_MARGIN_ANCHOR;
   const netMargin = d.revenue > 0 ? d.netProfit/d.revenue : 0;
-  const marginScore = clamp(100*Math.min(1, netMargin/0.10));
-  const runwayMonths = d.burn > 0 ? d.cash/d.burn : 0;
+  const marginScore = clamp(100*(netMargin/marginAnchor));
+  const runwayMonths = d.burn > 0 ? (d.cash + d.recvTotal - d.paySoon)/d.burn : 0;
   const runwayScoreVal = runwayScore(runwayMonths, BENCH.runwayMin, BENCH.runwayMax);
   const pulse = Math.round(cashScore*WEIGHTS.cash + runwayScoreVal*WEIGHTS.runway + recvHealth*WEIGHTS.recv + payScore*WEIGHTS.pay + marginScore*WEIGHTS.margin + gstScore*WEIGHTS.gst);
   const vitals = [
     { label:'Cash Position', value: inr(d.cash), score:cashScore },
-    { label:'Receivables Aging', value: inr(0) + ' over 90d', score:recvHealth },
-    { label:'Payables Due (30d)', value: inr(0), score:payScore },
+    { label:'Receivables Aging', value: inr(d.recv90) + ' over 90d', score:recvHealth },
+    { label:'Payables Due (30d)', value: inr(d.paySoon), score:payScore },
     { label:'GST/ITC Leakage', value: inr(d.gstLeak), score:gstScore },
     { label:'Net Margin', value: (netMargin*100).toFixed(1)+'%', score:marginScore },
     { label:'Working Capital Runway', value: runwayMonths.toFixed(1)+' months', score:runwayScoreVal }
@@ -1113,29 +1725,15 @@ function computeVitals(d){
 }
 async function saveSnapshot(d){
   const industry = currentProfile.industry || '';
-  const { pulse, vitals } = computeVitals(d);
-  // source: 'manual' = user uploaded/entered, 'razorpay' = auto-synced from connector
-  const row = { user_id: currentUser.id, source: d.source || 'manual', cash: d.cash, recv_total:0, recv_90:0, pay_soon:0, revenue: d.revenue, net_profit: d.netProfit, burn: d.burn, gst_leak: d.gstLeak, gst_payable: d.gstPayable, pulse_score: pulse, vitals };
+  const { pulse, vitals } = computeVitals({ ...d, industry });
+  const row = { user_id: currentUser.id, source: d.source || 'manual', cash: d.cash, recv_total: d.recvTotal, recv_90: d.recv90,
+    pay_soon: d.paySoon, revenue: d.revenue, net_profit: d.netProfit, burn: d.burn, gst_leak: d.gstLeak, gst_payable: d.gstPayable,
+    pulse_score: pulse, vitals };
   const { error } = await withTimeout(sbClient.from('snapshots').insert(row), 20000, 'Saving snapshot');
   if(error) throw error;
 }
 
-async function saveRazorpaySnapshot(d){
-  // Called by cron/manual sync from Razorpay API
-  // Merges Razorpay data with latest manual snapshot if exists
-  const latest = snapshots[0];
-  const merged = {
-    cash: d.cash !== undefined ? d.cash : (latest?.cash || 0),
-    revenue: d.revenue !== undefined ? d.revenue : (latest?.revenue || 0),
-    netProfit: d.netProfit !== undefined ? d.netProfit : (latest?.net_profit || 0),
-    burn: d.burn !== undefined ? d.burn : (latest?.burn || 0),
-    gstLeak: d.gstLeak !== undefined ? d.gstLeak : (latest?.gst_leak || 0),
-    gstPayable: d.gstPayable !== undefined ? d.gstPayable : (latest?.gst_payable || 0),
-    source: 'razorpay'
-  };
-  await saveSnapshot(merged);
-}
-
+/* ---------- briefing ---------- */
 document.getElementById('generateBriefing').addEventListener('click', async () => {
   const btn = document.getElementById('generateBriefing'); const out = document.getElementById('briefing-text'); const latest = snapshots[0];
   if(!latest) return;
@@ -1149,53 +1747,98 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
     document.getElementById('briefing-idle').style.display = 'none';
     await sbClient.from('snapshots').update({ briefing:data.briefing }).eq('id', latest.id);
     latest.briefing = data.briefing;
-  } catch(err){ out.innerHTML = '<div class="error-box">Error: ' + err.message + '</div>'; }
+  } catch(err){ out.innerHTML = '<div class="error-box">Could not generate briefing: ' + err.message + '</div>'; }
   finally { btn.disabled = false; }
 });
 
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
-  t.classList.add('active'); document.getElementById('panel-' + t.dataset.tab).classList.add('active');
-}));
-
+renderVitals(ZERO_VITALS, false);
 bootAuth();
 
+/* ============================================================
+   AURORA BACKGROUND SHADER — matches index.html exactly.
+   ============================================================ */
 (function(){
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const container = document.getElementById('auroraBg');
-  if(!container || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if(!container || reduceMotion) return;
   const canvas = document.createElement('canvas');
   canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.display = 'block';
   container.appendChild(canvas);
   const gl = canvas.getContext('webgl', { alpha:true, premultipliedAlpha:false }) || canvas.getContext('experimental-webgl', { alpha:true, premultipliedAlpha:false });
-  if(!gl) return;
+  if(!gl){ container.removeChild(canvas); return; }
   gl.clearColor(0,0,0,0);
   const vertexSrc = 'attribute vec2 position; attribute vec2 uv; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position, 0.0, 1.0); }';
-  const fragmentSrc = `precision highp float; uniform float uTime; uniform vec3 uResolution; uniform vec3 uColor1;
-    void main(){ vec2 uv = gl_FragCoord.xy/uResolution.xy; float t = uTime*0.5;
-      float noise = sin(uv.x*3.0+t)*sin(uv.y*2.0+t)*0.5+0.5;
-      vec3 col = mix(vec3(0.0), uColor1*0.3, noise*uv.y);
-      gl_FragColor = vec4(col, 0.1); }`;
-  function compile(type, src){ const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); return gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? sh : null; }
+  const fragmentSrc = `
+    precision highp float;
+    uniform float uTime; uniform vec3 uResolution; uniform float uSpeed; uniform float uScale; uniform float uBrightness;
+    uniform vec3 uColor1; uniform vec3 uColor2; uniform float uNoiseFreq; uniform float uNoiseAmp; uniform float uBandHeight;
+    uniform float uBandSpread; uniform float uOctaveDecay; uniform float uLayerOffset; uniform float uColorSpeed;
+    uniform vec2 uMouse; uniform float uMouseInfluence; uniform bool uEnableMouse;
+    #define TAU 6.28318
+    vec3 gradientHash(vec3 p){ p = vec3(dot(p, vec3(127.1,311.7,234.6)), dot(p, vec3(269.5,183.3,198.3)), dot(p, vec3(169.5,283.3,156.9)));
+      vec3 h = fract(sin(p)*43758.5453123); float phi = acos(2.0*h.x-1.0); float theta = TAU*h.y;
+      return vec3(cos(theta)*sin(phi), sin(theta)*cos(phi), cos(phi)); }
+    float quinticSmooth(float t){ float t2=t*t; float t3=t*t2; return 6.0*t3*t2 - 15.0*t2*t2 + 10.0*t3; }
+    vec3 cosineGradient(float t, vec3 a, vec3 b, vec3 c, vec3 d){ return a + b*cos(TAU*(c*t+d)); }
+    float perlin3D(float amplitude, float frequency, float px, float py, float pz){
+      float x=px*frequency; float y=py*frequency; float fx=floor(x); float fy=floor(y); float fz=floor(pz);
+      float cx=ceil(x); float cy=ceil(y); float cz=ceil(pz);
+      vec3 g000=gradientHash(vec3(fx,fy,fz)); vec3 g100=gradientHash(vec3(cx,fy,fz)); vec3 g010=gradientHash(vec3(fx,cy,fz)); vec3 g110=gradientHash(vec3(cx,cy,fz));
+      vec3 g001=gradientHash(vec3(fx,fy,cz)); vec3 g101=gradientHash(vec3(cx,fy,cz)); vec3 g011=gradientHash(vec3(fx,cy,cz)); vec3 g111=gradientHash(vec3(cx,cy,cz));
+      float d000=dot(g000,vec3(x-fx,y-fy,pz-fz)); float d100=dot(g100,vec3(x-cx,y-fy,pz-fz)); float d010=dot(g010,vec3(x-fx,y-cy,pz-fz)); float d110=dot(g110,vec3(x-cx,y-cy,pz-fz));
+      float d001=dot(g001,vec3(x-fx,y-fy,pz-cz)); float d101=dot(g101,vec3(x-cx,y-fy,pz-cz)); float d011=dot(g011,vec3(x-fx,y-cy,pz-cz)); float d111=dot(g111,vec3(x-cx,y-cy,pz-cz));
+      float sx=quinticSmooth(x-fx); float sy=quinticSmooth(y-fy); float sz=quinticSmooth(pz-fz);
+      float lx00=mix(d000,d100,sx); float lx10=mix(d010,d110,sx); float lx01=mix(d001,d101,sx); float lx11=mix(d011,d111,sx);
+      float ly0=mix(lx00,lx10,sy); float ly1=mix(lx01,lx11,sy); return amplitude*mix(ly0,ly1,sz); }
+    float auroraGlow(float t, vec2 shift){ vec2 uv = gl_FragCoord.xy/uResolution.y; uv += shift;
+      float noiseVal=0.0; float freq=uNoiseFreq; float amp=uNoiseAmp; vec2 samplePos = uv*uScale;
+      for(float i=0.0; i<3.0; i+=1.0){ noiseVal += perlin3D(amp, freq, samplePos.x, samplePos.y, t); amp *= uOctaveDecay; freq *= 2.0; }
+      float yBand = uv.y*10.0 - uBandHeight*10.0;
+      return 0.3*max(exp(uBandSpread*(1.0-1.1*abs(noiseVal+yBand))), 0.0); }
+    void main(){ vec2 uv = gl_FragCoord.xy/uResolution.xy; float t = uSpeed*0.4*uTime;
+      vec2 shift = vec2(0.0); if(uEnableMouse){ shift = (uMouse-0.5)*uMouseInfluence; }
+      vec3 col = vec3(0.0);
+      col += 0.99*auroraGlow(t, shift)*cosineGradient(uv.x+uTime*uSpeed*0.2*uColorSpeed, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.3,0.20,0.20))*uColor1;
+      col += 0.99*auroraGlow(t+uLayerOffset, shift)*cosineGradient(uv.x+uTime*uSpeed*0.1*uColorSpeed, vec3(0.5), vec3(0.5), vec3(2.0,1.0,0.0), vec3(0.5,0.20,0.25))*uColor2;
+      col *= uBrightness; float alpha = clamp(length(col), 0.0, 1.0); gl_FragColor = vec4(col, alpha); }
+  `;
+  function compile(type, src){ const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){ console.error('[Aurora]', gl.getShaderInfoLog(sh)); gl.deleteShader(sh); return null; } return sh; }
   const vs = compile(gl.VERTEX_SHADER, vertexSrc); const fs = compile(gl.FRAGMENT_SHADER, fragmentSrc);
-  if(!vs || !fs) return;
+  if(!vs || !fs){ container.removeChild(canvas); return; }
   const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
-  if(!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+  if(!gl.getProgramParameter(program, gl.LINK_STATUS)){ container.removeChild(canvas); return; }
   gl.useProgram(program);
   const positions = new Float32Array([-1,-1, 3,-1, -1,3]); const uvs = new Float32Array([0,0, 2,0, 0,2]);
   const posBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
   const posLoc = gl.getAttribLocation(program, 'position'); gl.enableVertexAttribArray(posLoc); gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
   const uvBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer); gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
   const uvLoc = gl.getAttribLocation(program, 'uv'); gl.enableVertexAttribArray(uvLoc); gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 0, 0);
-  const uniforms = { uTime: gl.getUniformLocation(program, 'uTime'), uResolution: gl.getUniformLocation(program, 'uResolution'), uColor1: gl.getUniformLocation(program, 'uColor1') };
-  gl.uniform3f(uniforms.uColor1, 0.12, 0.5, 0.33);
+  function hexToVec3(hex){ const h = hex.replace('#',''); return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255]; }
+  const config = { speed:0.4, scale:1.6, brightness:0.95, color1:'#037A4C', color2:'#1FA374', noiseFrequency:2.0, noiseAmplitude:1.0,
+    bandHeight:0.5, bandSpread:0.85, octaveDecay:0.1, layerOffset:1.2, colorSpeed:0.25, enableMouseInteraction:true, mouseInfluence:0.18 };
+  const uniforms = {};
+  ['uTime','uResolution','uSpeed','uScale','uBrightness','uColor1','uColor2','uNoiseFreq','uNoiseAmp','uBandHeight','uBandSpread','uOctaveDecay','uLayerOffset','uColorSpeed','uMouse','uMouseInfluence','uEnableMouse'].forEach(n => uniforms[n]=gl.getUniformLocation(program,n));
+  gl.uniform1f(uniforms.uSpeed, config.speed); gl.uniform1f(uniforms.uScale, config.scale); gl.uniform1f(uniforms.uBrightness, config.brightness);
+  gl.uniform3fv(uniforms.uColor1, hexToVec3(config.color1)); gl.uniform3fv(uniforms.uColor2, hexToVec3(config.color2));
+  gl.uniform1f(uniforms.uNoiseFreq, config.noiseFrequency); gl.uniform1f(uniforms.uNoiseAmp, config.noiseAmplitude);
+  gl.uniform1f(uniforms.uBandHeight, config.bandHeight); gl.uniform1f(uniforms.uBandSpread, config.bandSpread);
+  gl.uniform1f(uniforms.uOctaveDecay, config.octaveDecay); gl.uniform1f(uniforms.uLayerOffset, config.layerOffset);
+  gl.uniform1f(uniforms.uColorSpeed, config.colorSpeed); gl.uniform1f(uniforms.uMouseInfluence, config.mouseInfluence);
+  gl.uniform1i(uniforms.uEnableMouse, config.enableMouseInteraction?1:0);
+  let targetMouse=[0.5,0.5]; let currentMouse=[0.5,0.5];
+  canvas.addEventListener('mousemove', (e) => { const r = canvas.getBoundingClientRect(); targetMouse=[(e.clientX-r.left)/r.width, 1.0-(e.clientY-r.top)/r.height]; });
+  canvas.addEventListener('mouseleave', () => { targetMouse=[0.5,0.5]; });
   function resize(){ const dpr = Math.min(window.devicePixelRatio||1, 2); const w = Math.max(1, container.clientWidth); const h = Math.max(1, container.clientHeight);
     canvas.width = w*dpr; canvas.height = h*dpr; gl.viewport(0,0,canvas.width,canvas.height);
     gl.uniform3f(uniforms.uResolution, canvas.width, canvas.height, canvas.width/canvas.height); }
   resize();
-  if('ResizeObserver' in window){ new ResizeObserver(resize).observe(container); }
+  if('ResizeObserver' in window){ new ResizeObserver(resize).observe(container); } else { window.addEventListener('resize', resize); }
   const start = performance.now();
-  function render(now){ gl.uniform1f(uniforms.uTime, (now-start)*0.001); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); requestAnimationFrame(render); }
+  function render(now){ gl.uniform1f(uniforms.uTime, (now-start)*0.001);
+    currentMouse[0] += 0.05*(targetMouse[0]-currentMouse[0]); currentMouse[1] += 0.05*(targetMouse[1]-currentMouse[1]);
+    gl.uniform2f(uniforms.uMouse, currentMouse[0], currentMouse[1]);
+    gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); requestAnimationFrame(render); }
   requestAnimationFrame(render);
 })();
 </script>
