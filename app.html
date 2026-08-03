@@ -1663,9 +1663,8 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
     }
 
     await saveSnapshot({ cash, recvTotal, recv90, paySoon, revenue, netProfit, burn, gstLeak, gstPayable, source:'upload' });
-
-    let summaryHtml = '<b>Imported:</b> cash ' + inr(cash) + ', ' + recvInserts.length + ' receivable(s), ' + payInserts.length + ' payable(s), revenue ' + inr(revenue) + '.';
-    if(rzp.length) summaryHtml += '<br><b>Razorpay:</b> ' + inr(rzpGross) + ' gross across ' + rzp.length + ' settlement rows.';
+    renderPayments();
+    let summaryHtml = '<b>Imported:</b> cash ' + inr(cash) + ', ' + recvInserts.length + ' receivable(s), ' + payInserts.length + ' payable(s), revenue ' + inr(revenue) + '.';    if(rzp.length) summaryHtml += '<br><b>Razorpay:</b> ' + inr(rzpGross) + ' gross across ' + rzp.length + ' settlement rows.';
     if(shop.length) summaryHtml += '<br><b>Shopify:</b> ' + inr(shopRevenue) + ' across ' + shopOrders + ' orders (reference only for now).';
     summaryBox.innerHTML = summaryHtml; summaryBox.classList.remove('hidden');
     note.textContent = '';
