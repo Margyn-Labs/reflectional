@@ -1,29 +1,10 @@
-/**
- * GET /api/cron-sync-razorpay
- *
- * Triggered by Vercel Cron at 0 2 * * * (2 AM UTC — see note in vercel.json
- * about IST offset). Loops over every user with an active Razorpay
- * connection and runs a sync for each, sequentially (not parallel, to stay
- * well under Razorpay's 100 req/min rate limit across concurrent users).
- *
- * Vercel Cron requests are authenticated by comparing the incoming
- * Authorization header to the CRON_SECRET env var — Vercel automatically
- * sends `Authorization: Bearer <CRON_SECRET>` on cron-triggered invocations
- * when that env var is set. Reject anything else so this endpoint can't be
- * used to trigger mass syncs from outside.
- */
-
 const { selectRows } = require('./_lib/supabaseRest');
 const { syncRazorpayForUser, RazorpayAuthError } = require('./sync-razorpay');
 
 async function notifyFailures(failed) {
-  // Best-effort alert to VP. Wire up a transactional email provider (Resend,
-  // Postmark, etc.) by setting ALERT_EMAIL_WEBHOOK + ALERT_EMAIL_TO. No-ops
-  // silently if not configured, so a missing env var never breaks the cron.
   const webhook = process.env.ALERT_EMAIL_WEBHOOK;
   const to = process.env.ALERT_EMAIL_TO || 'varadpandey98@gmail.com';
   if (!webhook || failed.length === 0) return;
-
   try {
     await fetch(webhook, {
       method: 'POST',
@@ -41,15 +22,23 @@ async function notifyFailures(failed) {
 }
 
 module.exports = async (req, res) => {
+  // Accept cron_secret as either Authorization header (from Vercel Cron) or query param (for manual testing)
   const authHeader = req.headers['authorization'];
-  const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : null;
-  if (expected && authHeader !== expected) {
+  const querySecret = req.query.cron_secret;
+  const expected = process.env.CRON_SECRET;
+
+  if (!expected) {
+    res.status(500).json({ error: 'CRON_SECRET not configured' });
+    return;
+  }
+
+  const authValid = authHeader === `Bearer ${expected}` || querySecret === expected;
+  if (!authValid) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
 
   const startedAt = Date.now();
-
   let connections;
   try {
     connections = await selectRows(
@@ -61,9 +50,7 @@ module.exports = async (req, res) => {
     return;
   }
 
-  // De-dupe in case a user somehow has more than one active row.
   const userIds = [...new Set(connections.map((c) => c.user_id))];
-
   let succeeded = 0;
   let failed = [];
 
@@ -94,6 +81,5 @@ module.exports = async (req, res) => {
     duration_ms: Date.now() - startedAt,
     timestamp: new Date().toISOString()
   };
-
   res.status(200).json(summary);
 };
