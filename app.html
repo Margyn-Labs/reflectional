@@ -845,12 +845,19 @@ async function refreshAll(){
   receivables = await loadReceivables();
   payables = await loadPayables();
   await checkRazorpayConnection();
-  
-  // Restore paymentsData from latest snapshot if it exists
-  if(snapshots.length > 0 && snapshots[0].payments_data) {
-    paymentsData = snapshots[0].payments_data;
+
+  // Restore session-only Payments-tab state from the latest snapshot so it
+  // survives refresh/re-login instead of resetting to empty each load.
+  if(snapshots.length > 0){
+    const latest = snapshots[0];
+    paymentsData = latest.payments_data || null;
+    settlementRows = latest.settlement_rows || null;
+    settlementDailyTrend = latest.settlement_daily_trend || null;
+    shopifyOrdersData = latest.shopify_orders_data || null;
+  } else {
+    paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
-  
+
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
 }
 /* ============================================================
@@ -1732,7 +1739,8 @@ async function saveSnapshot(d){
   const { pulse, vitals } = computeVitals({ ...d, industry });
   const row = { user_id: currentUser.id, source: d.source || 'manual', cash: d.cash, recv_total: d.recvTotal, recv_90: d.recv90,
     pay_soon: d.paySoon, revenue: d.revenue, net_profit: d.netProfit, burn: d.burn, gst_leak: d.gstLeak, gst_payable: d.gstPayable,
-    pulse_score: pulse, vitals, payments_data: paymentsData };
+    pulse_score: pulse, vitals, payments_data: paymentsData,
+    settlement_rows: settlementRows, settlement_daily_trend: settlementDailyTrend, shopify_orders_data: shopifyOrdersData };
   const { error } = await withTimeout(sbClient.from('snapshots').insert(row), 20000, 'Saving snapshot');
   if(error) throw error;
 }
