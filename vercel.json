@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron-sync-razorpay",
+      "schedule": "30 20 * * *"
+    }
+  ]
+}
