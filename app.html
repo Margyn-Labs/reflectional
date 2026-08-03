@@ -1732,7 +1732,7 @@ async function saveSnapshot(d){
   const { pulse, vitals } = computeVitals({ ...d, industry });
   const row = { user_id: currentUser.id, source: d.source || 'manual', cash: d.cash, recv_total: d.recvTotal, recv_90: d.recv90,
     pay_soon: d.paySoon, revenue: d.revenue, net_profit: d.netProfit, burn: d.burn, gst_leak: d.gstLeak, gst_payable: d.gstPayable,
-    pulse_score: pulse, vitals };
+    pulse_score: pulse, vitals, payments_data: paymentsData };
   const { error } = await withTimeout(sbClient.from('snapshots').insert(row), 20000, 'Saving snapshot');
   if(error) throw error;
 }
