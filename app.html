@@ -117,11 +117,28 @@
   .app-sub{ margin-top:8px; font-size:14px; color:var(--text-2); }
 
   .pagenav{ display:flex; gap:4px; margin-bottom:30px; border:1px solid rgba(31,163,116,0.16); border-radius:999px; padding:4px; background:rgba(31,163,116,0.04); backdrop-filter:blur(14px); flex-wrap:wrap; }
-  .pagenav button{ flex:1; padding:12px 8px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .25s cubic-bezier(.22,1,.36,1); border:none; border-radius:999px; min-width:90px; position:relative; }
+  .pagenav button{ flex:1; padding:12px 8px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .25s cubic-bezier(.22,1,.36,1); border:none; border-radius:999px; min-width:90px; position:relative; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+  .pagenav button svg{ flex-shrink:0; opacity:.7; transition:opacity .2s ease; }
   .pagenav button:hover:not(.active){ color:var(--text-0); background:rgba(255,255,255,0.06); }
   .pagenav button.active{ background:var(--emerald); color:#fff; box-shadow:0 8px 18px -8px rgba(31,163,116,0.6); }
+  .pagenav button.active svg{ opacity:1; }
   .nav-badge{ position:absolute; top:4px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--rose); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; font-family:'IBM Plex Mono',monospace; }
   .nav-badge.hidden{ display:none; }
+
+  /* ---------- sidebar nav (desktop): tabs move to the left rail, content window shifts right ---------- */
+  .app-body{ display:flex; flex-direction:column; }
+  .app-body .sidebar{ order:2; }
+  .app-body .wrap{ order:1; }
+  @media (min-width:901px){
+    .app-body{ flex-direction:row; align-items:flex-start; gap:0; max-width:1720px; margin:0 auto; padding:0 40px; }
+    .app-body .sidebar{ order:0; position:sticky; top:132px; width:224px; flex-shrink:0; padding-top:132px; margin-right:36px; }
+    .app-body .wrap{ order:1; max-width:none; margin:0; padding:132px 0 96px; flex:1; min-width:0; }
+    .sidebar .pagenav{ flex-direction:column; align-items:stretch; gap:3px; padding:10px; border-radius:20px; margin-bottom:0; }
+    .sidebar .pagenav button{ flex:none; justify-content:flex-start; text-align:left; padding:12px 14px; border-radius:13px; min-width:0; }
+  }
+  @media (min-width:1400px){
+    .app-body{ padding:0 56px; }
+  }
 
   .card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.05), rgba(255,255,255,0.015)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:28px; margin-bottom:20px; box-shadow:0 0 0 1px rgba(255,255,255,0.02) inset, 0 20px 60px -34px rgba(31,163,116,0.25); transition:box-shadow .3s ease, transform .3s cubic-bezier(.22,1,.36,1), border-color .3s ease; }
   .card:hover{ box-shadow:0 0 0 1px rgba(255,255,255,0.03) inset, 0 26px 70px -30px rgba(31,163,116,0.4); transform:translateY(-2px); border-color:rgba(31,163,116,0.32); }
@@ -163,7 +180,8 @@
   .pulse-tap-hint{ margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,0.42); display:flex; align-items:center; gap:5px; }
 
   .vitals-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:30px 16px; margin-bottom:34px;}
-  .vital{ background:transparent; border:none; border-radius:0; padding:6px 4px 0; position:relative; box-shadow:none; text-align:center; cursor:pointer; transition:transform .25s cubic-bezier(.22,1,.36,1); }
+  .vital{ background:transparent; border:none; border-radius:0; padding:6px 4px 0; position:relative; box-shadow:none; text-align:center; cursor:pointer; transition:transform .25s cubic-bezier(.22,1,.36,1); animation:cardIn .6s cubic-bezier(.16,1,.3,1) backwards; }
+  .vitals-grid .vital:nth-child(1){ animation-delay:.02s; } .vitals-grid .vital:nth-child(2){ animation-delay:.08s; } .vitals-grid .vital:nth-child(3){ animation-delay:.14s; } .vitals-grid .vital:nth-child(4){ animation-delay:.2s; } .vitals-grid .vital:nth-child(5){ animation-delay:.26s; } .vitals-grid .vital:nth-child(6){ animation-delay:.32s; }
   .vital::before{ content:''; position:absolute; top:-4px; left:50%; width:150px; height:150px; margin-left:-75px; border-radius:50%; background:radial-gradient(circle, var(--v-accent, var(--steel)) 0%, transparent 68%); opacity:.08; filter:blur(3px); z-index:0; pointer-events:none; }
   .vital.is-zero::before{ opacity:0; }
   .vital:not(.is-zero):hover{ transform:scale(1.05); }
@@ -225,7 +243,8 @@
   .mock-banner::before{ content:''; width:6px; height:6px; border-radius:50%; background:#F2B662; flex-shrink:0; box-shadow:0 0 0 3px rgba(242,182,98,0.25); }
 
   .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
-  .pay-card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.06), rgba(255,255,255,0.01)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:20px; transition:border-color .25s ease, transform .25s ease; }
+  .pay-card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.06), rgba(255,255,255,0.01)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:20px; transition:border-color .25s ease, transform .25s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
+  .pay-grid .pay-card:nth-child(1){ animation-delay:.02s; } .pay-grid .pay-card:nth-child(2){ animation-delay:.07s; } .pay-grid .pay-card:nth-child(3){ animation-delay:.12s; } .pay-grid .pay-card:nth-child(4){ animation-delay:.17s; } .pay-grid .pay-card:nth-child(5){ animation-delay:.22s; } .pay-grid .pay-card:nth-child(6){ animation-delay:.27s; } .pay-grid .pay-card:nth-child(7){ animation-delay:.32s; }
   .pay-card:hover{ border-color:rgba(31,163,116,0.4); transform:translateY(-2px); }
   .pay-card.wide{ grid-column:span 2; }
   .pay-card .pc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
@@ -298,11 +317,73 @@
   .lr-tag.ok{ background:rgba(31,163,116,0.2); color:#5EE0AC; }
   .lr-tag.warn{ background:rgba(201,127,30,0.22); color:#F2B662; }
   .lr-tag.bad{ background:rgba(194,59,103,0.22); color:#FF8FA8; }
+  .lr-tag.type-recv{ background:rgba(255,143,168,0.18); color:#FF8FA8; }
+  .lr-tag.type-pay{ background:rgba(143,160,181,0.22); color:#B9C6D6; }
   .lr-actions{ display:flex; flex-direction:column; gap:5px; }
   .lr-btn{ font-family:'Manrope',sans-serif; font-size:10.5px; font-weight:700; padding:5px 9px; border-radius:999px; cursor:pointer; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.03); color:var(--text-1); white-space:nowrap; }
   .lr-btn:hover{ border-color:var(--emerald-bright); color:var(--emerald-bright); }
   .lr-btn.danger:hover{ border-color:#FF8FA8; color:#FF8FA8; }
   .ledger-empty{ font-size:12.5px; color:var(--text-2); padding:14px 0; text-align:center; }
+
+  /* ---------- summary overview (NEW — kpi strip / revenue trend / alerts) ---------- */
+  .summary-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:22px; flex-wrap:wrap; }
+  .summary-headline{ font-family:'Fraunces',serif; font-weight:500; font-size:26px; color:var(--text-0); letter-spacing:-0.01em; }
+  .summary-asof{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-2); display:flex; align-items:center; gap:6px; }
+  .summary-asof::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--emerald-bright); box-shadow:0 0 0 3px rgba(31,163,116,0.25); animation:navPulse 2s ease-in-out infinite; flex-shrink:0; }
+
+  .kpi-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:20px; margin-bottom:24px; }
+  .kpi-card{ position:relative; background:linear-gradient(165deg, rgba(255,255,255,0.045), rgba(255,255,255,0.008) 40%, rgba(0,0,0,0.12)); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.09); border-radius:16px; padding:20px 22px; overflow:hidden; box-shadow:0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 40px -26px rgba(0,0,0,0.7); transition:border-color .25s ease, transform .25s ease, box-shadow .25s ease; animation:cardIn .6s cubic-bezier(.16,1,.3,1) backwards; }
+  .kpi-card::before{ content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--k-accent, var(--emerald-bright)), transparent); opacity:.75; }
+  .kpi-card::after{ content:''; position:absolute; top:-40%; right:-30%; width:65%; height:80%; background:radial-gradient(circle, var(--k-accent, var(--emerald-bright)) 0%, transparent 70%); opacity:.10; pointer-events:none; }
+  .kpi-strip .kpi-card:nth-child(1){ animation-delay:.02s; } .kpi-strip .kpi-card:nth-child(2){ animation-delay:.09s; } .kpi-strip .kpi-card:nth-child(3){ animation-delay:.16s; } .kpi-strip .kpi-card:nth-child(4){ animation-delay:.23s; }
+  .kpi-card:hover{ border-color:color-mix(in srgb, var(--k-accent, var(--emerald-bright)) 55%, transparent); transform:translateY(-3px); box-shadow:0 1px 0 rgba(255,255,255,0.08) inset, 0 22px 46px -22px color-mix(in srgb, var(--k-accent, var(--emerald-bright)) 40%, transparent); }
+  .kpi-card .kc-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; position:relative; z-index:1; }
+  .kpi-card .kc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-2); font-weight:600; }
+  .kpi-card .kc-value{ font-family:'IBM Plex Mono',monospace; font-size:21px; font-weight:700; letter-spacing:-0.01em; color:var(--text-0); margin-bottom:6px; position:relative; z-index:1; text-shadow:0 1px 12px rgba(0,0,0,0.35); }
+  .kpi-card .kc-delta{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:700; display:inline-flex; align-items:center; gap:3px; padding:3px 8px; border-radius:999px; position:relative; z-index:1; }
+  .kpi-card .kc-delta.up{ color:#5EE0AC; background:rgba(31,163,116,0.16); }
+  .kpi-card .kc-delta.down{ color:#FF8FA8; background:rgba(194,59,103,0.16); }
+  .kpi-card .kc-delta.flat{ color:var(--text-2); font-weight:600; background:rgba(255,255,255,0.05); }
+  .kpi-card .kc-spark{ width:100%; height:46px; margin-top:10px; display:block; position:relative; z-index:1; }
+  .kpi-icon{ width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:color-mix(in srgb, var(--k-accent, var(--emerald-bright)) 22%, transparent); color:var(--k-accent, var(--emerald-bright)); flex-shrink:0; box-shadow:0 0 0 1px color-mix(in srgb, var(--k-accent, var(--emerald-bright)) 30%, transparent) inset; }
+  @keyframes cardIn{ from{ opacity:0; transform:translateY(14px) scale(.98); } to{ opacity:1; transform:translateY(0) scale(1); } }
+  .draw-line{ transition:stroke-dashoffset 1.15s cubic-bezier(.22,1,.36,1); }
+  .area-fill{ transition:opacity .9s ease .25s; opacity:0; }
+  .area-fill.in{ opacity:1; }
+  .ring-arc{ transition:stroke-dashoffset 1.05s cubic-bezier(.22,1,.36,1); }
+  #pulseArc{ transition:stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1), stroke .3s ease; }
+
+  .summary-split{ display:flex; gap:20px; margin-bottom:24px; align-items:stretch; }
+  .summary-split .rev-trend-card{ flex:1.7; display:flex; flex-direction:column; min-width:0; }
+  .summary-split .alerts-panel{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  .rev-trend-card #revenueTrendChart{ height:320px; display:flex; }
+  .rev-trend-card #revenueTrendChart svg{ width:100%; height:100%; }
+  .alerts-panel #alertsList{ flex:1; overflow-y:auto; min-height:0; max-height:320px; }
+  .alert-item{ display:flex; align-items:flex-start; gap:10px; padding:12px 0; border-bottom:1px solid var(--border-1); animation:cardIn .5s cubic-bezier(.16,1,.3,1) backwards; }
+  #alertsList .alert-item:nth-child(1){ animation-delay:.08s; } #alertsList .alert-item:nth-child(2){ animation-delay:.14s; } #alertsList .alert-item:nth-child(3){ animation-delay:.2s; } #alertsList .alert-item:nth-child(4){ animation-delay:.26s; } #alertsList .alert-item:nth-child(5){ animation-delay:.32s; }
+  .alert-item:last-child{ border-bottom:none; }
+  .alert-dot{ width:26px; height:26px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; margin-top:1px; font-family:'IBM Plex Mono',monospace; }
+  .alert-dot.ok{ background:rgba(31,163,116,0.18); color:#5EE0AC; }
+  .alert-dot.warn{ background:rgba(201,127,30,0.2); color:#F2B662; }
+  .alert-dot.bad{ background:rgba(194,59,103,0.2); color:#FF8FA8; }
+  .alert-body{ flex:1; min-width:0; }
+  .alert-title{ font-size:13px; font-weight:700; color:var(--text-0); margin-bottom:2px; }
+  .alert-desc{ font-size:12px; color:var(--text-2); line-height:1.5; }
+  .alert-empty{ font-size:13px; color:var(--text-2); padding:14px 0; text-align:center; }
+
+  .stat-strip{ display:grid; grid-template-columns:repeat(5,1fr); gap:18px; margin-bottom:0; }
+  .stat-chip{ background:linear-gradient(165deg, rgba(255,255,255,0.035), rgba(0,0,0,0.1)); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px 18px; box-shadow:0 1px 0 rgba(255,255,255,0.05) inset; transition:transform .25s ease, border-color .25s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
+  .stat-strip .stat-chip:nth-child(1){ animation-delay:.05s; } .stat-strip .stat-chip:nth-child(2){ animation-delay:.11s; } .stat-strip .stat-chip:nth-child(3){ animation-delay:.17s; } .stat-strip .stat-chip:nth-child(4){ animation-delay:.23s; } .stat-strip .stat-chip:nth-child(5){ animation-delay:.29s; }
+  .stat-chip:hover{ transform:translateY(-2px); border-color:var(--emerald-bright); }
+  .stat-chip .sc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:8px; }
+  .stat-chip .sc-value{ font-family:'IBM Plex Mono',monospace; font-size:16.5px; font-weight:700; letter-spacing:-.005em; color:var(--text-0); margin-bottom:6px; }
+  .stat-chip .sc-delta{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:999px; }
+  .stat-chip .sc-delta.up{ color:#5EE0AC; background:rgba(31,163,116,0.15); }
+  .stat-chip .sc-delta.down{ color:#FF8FA8; background:rgba(194,59,103,0.15); }
+  .stat-chip .sc-delta.flat{ color:var(--text-2); background:rgba(255,255,255,0.04); }
+
+  @media (max-width:900px){ .kpi-strip{ grid-template-columns:repeat(2,1fr); } .summary-split{ flex-direction:column; } .stat-strip{ grid-template-columns:repeat(3,1fr); } }
+
   @media (max-width:640px){
     .vitals-grid{grid-template-columns:1fr 1fr;}
     .facts{grid-template-columns:1fr;}
@@ -313,6 +394,9 @@
     .wrap{padding:112px 20px 72px;}
     .pagenav button{ font-size:12px; padding:11px 6px; }
     .hbar-label{ width:96px; font-size:10.5px; }
+    .kpi-strip{ grid-template-columns:1fr 1fr; }
+    .stat-strip{ grid-template-columns:1fr 1fr; }
+    .summary-head{ flex-direction:column; align-items:flex-start; }
   }
 </style>
 </head>
@@ -410,7 +494,22 @@
   </div>
 </nav>
 
-<div class="wrap">
+<div class="app-body">
+
+  <aside class="sidebar" id="sidebarNav">
+    <div class="pagenav">
+      <button data-view="summary" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Summary</span></button>
+      <button data-view="profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>Profile</span></button>
+      <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span></button>
+      <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
+      <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
+      <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
+      <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Connectors</span></button>
+      <button data-view="financing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
+    </div>
+  </aside>
+
+  <div class="wrap">
 
   <header class="app-head">
     <div class="app-eyebrow">Margyn 1.0</div>
@@ -418,25 +517,57 @@
     <div class="app-sub" id="headSub"></div>
   </header>
 
-  <div class="pagenav">
-    <button data-view="summary" class="active">Summary</button>
-    <button data-view="profile">Profile</button>
-    <button data-view="calculate">Upload &amp; calculate</button>
-    <button data-view="scores">Scores</button>
-    <button data-view="payments">Payments<span class="nav-badge hidden" id="paymentsBadge"></span></button>
-    <button data-view="financing">Financing</button>
-  </div>
-
   <!-- ---------- 0. SUMMARY (NEW) ---------- -->
   <div id="view-summary">
-    <div class="card">
-      <h2>Business summary</h2>
-      <div class="hint">The ten numbers that matter most — pulled from your latest snapshot, ledger, and payments data. Everything shows zero until you upload or enter real numbers.</div>
+    <div class="summary-head">
+      <div>
+        <div class="app-eyebrow" style="margin-bottom:6px;">Overview</div>
+        <div class="summary-headline" id="summaryHeadline">—</div>
+      </div>
+      <div class="summary-asof" id="summaryAsOf"></div>
     </div>
-    <div class="pay-grid summary-grid" id="summaryGrid"></div>
+
+    <div class="kpi-strip" id="kpiStrip"></div>
+
+    <div class="summary-split">
+      <div class="chart-card rev-trend-card">
+        <div class="cc-head"><h3>Revenue trend</h3><span class="cc-sub" id="revTrendSub">Last snapshots</span></div>
+        <div id="revenueTrendChart"></div>
+      </div>
+      <div class="chart-card alerts-panel">
+        <div class="cc-head"><h3>Alerts</h3><span class="cc-sub" id="alertsSub"></span></div>
+        <div id="alertsList"></div>
+      </div>
+    </div>
+
+    <div class="stat-strip" id="statStrip"></div>
+  </div>
+
+  <!-- ---------- 0b. LEDGER (NEW) — receivables, payables & cash, individually or consolidated ---------- -->
+  <div id="view-ledger" class="hidden">
     <div class="card">
-      <h2>What "last month" means here</h2>
-      <div class="hint">Revenue, spend, and net profit reflect whatever period you last uploaded or entered on the Upload &amp; calculate tab — Margyn doesn't yet auto-detect calendar months from your data (see the validation roadmap). Label each snapshot by the period it covers until that's automated.</div>
+      <h2>Receivables, payables &amp; cash</h2>
+      <div class="hint">Everything you're owed, everything you owe, and your recorded cash balance — view them individually or all together. Mark items received or paid the moment they clear.</div>
+    </div>
+    <div class="tabs" id="ledgerTabs">
+      <button class="tab active" data-ltab="all">All</button>
+      <button class="tab" data-ltab="receivables">Receivables</button>
+      <button class="tab" data-ltab="payables">Payables</button>
+      <button class="tab" data-ltab="cash">Cash</button>
+    </div>
+    <div class="facts" id="ledgerFacts"></div>
+    <div class="ledger-form hidden" id="ledgerAddForm">
+      <div class="lf-title" id="ledgerAddTitle">Add receivable</div>
+      <div class="lf-grid">
+        <input type="text" id="ledgerParty" placeholder="Name">
+        <input type="number" id="ledgerAmt" placeholder="Amount (₹)">
+      </div>
+      <div class="lf-grid"><input type="date" id="ledgerDue"><span></span></div>
+      <button id="ledgerAddBtn">Add to ledger</button>
+    </div>
+    <div class="card">
+      <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
+      <div id="ledgerListHost"></div>
     </div>
   </div>
 
@@ -446,11 +577,6 @@
       <div class="fact"><div class="f-label">Snapshots recorded</div><div class="f-value" id="pfCount">0</div></div>
       <div class="fact"><div class="f-label">Latest pulse</div><div class="f-value" id="pfPulse">0</div></div>
       <div class="fact"><div class="f-label">Tracking since</div><div class="f-value" id="pfSince">—</div></div>
-    </div>
-    <div class="card">
-      <h2>Connected data sources</h2>
-      <div class="hint">Optional automated connectors that supplement your uploads. Keep uploading your full monthly snapshot as usual — connectors add detail on top, they don't replace it.</div>
-      <div id="razorpayStatus"></div>
     </div>
     <div class="card">
       <h2>Account</h2>
@@ -490,6 +616,19 @@
           <span class="note" id="pfNote"></span>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ---------- 1b. CONNECTORS (NEW) — moved out of Profile into its own section ---------- -->
+  <div id="view-connectors" class="hidden">
+    <div class="card">
+      <h2>Connected data sources</h2>
+      <div class="hint">Optional automated connectors that supplement your uploads. Keep uploading your full monthly snapshot as usual — connectors add detail on top, they don't replace it.</div>
+      <div id="razorpayStatus"></div>
+    </div>
+    <div class="card">
+      <h2>More connectors, on the way</h2>
+      <div class="hint">Zoho Books is next up — it unlocks receivables aging, payables due, GST/ITC leakage, and working capital runway directly from your books. Tell us which data source would help most and we'll prioritize it.</div>
     </div>
   </div>
 
@@ -698,6 +837,7 @@
     </div>
   </div>
 
+  </div>
 </div>
 </div>
 
@@ -843,8 +983,9 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 
 function showView(name){
-  ['summary','profile','calculate','scores','payments','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  ['summary','profile','ledger','calculate','scores','payments','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  if(name === 'ledger') renderLedgerView();
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1102,13 +1243,17 @@ function renderVitals(vitals, hasData){
       '<div class="v-value">'+main+'</div>' +
       '<div class="v-ring"><svg viewBox="0 0 100 100" aria-hidden="true">' +
         '<circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.2"></circle>' +
-        '<circle cx="50" cy="50" r="46" fill="none" stroke="'+accent+'" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="'+RING_CIRC+'" stroke-dashoffset="'+offset.toFixed(2)+'"></circle>' +
+        '<circle class="ring-arc" data-target="'+offset.toFixed(2)+'" cx="50" cy="50" r="46" fill="none" stroke="'+accent+'" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="'+RING_CIRC+'" stroke-dashoffset="'+RING_CIRC+'"></circle>' +
       '</svg><div class="rv">'+Math.round(v.score)+'</div></div>' +
       '<div class="v-top"><span class="v-dot"></span><span class="v-label">'+v.label+'</span></div>' +
       '<div class="v-score">'+(suffix ? suffix+' • ' : '')+Math.round(v.score)+'/100</div>';
     if(hasData) el.addEventListener('click', () => openVitalDetail(v, accent));
     grid.appendChild(el);
   });
+  // draw the rings in from empty every time this renders, instead of snapping straight to value
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    grid.querySelectorAll('.ring-arc').forEach(c => c.setAttribute('stroke-dashoffset', c.dataset.target));
+  }));
   renderVitalsBarChart(vitals, hasData);
 }
 
@@ -1263,6 +1408,127 @@ function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'
 document.getElementById('detailClose').addEventListener('click', () => document.getElementById('detailOverlay').classList.add('hidden'));
 document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e.target.id === 'detailOverlay') e.currentTarget.classList.add('hidden'); });
 
+/* ============================================================
+   LEDGER (NEW) — receivables, payables & cash, toggleable
+   individually or consolidated, with inline mark-received /
+   mark-paid actions. Reuses the same receivables/payables tables
+   and recvBucket/payUrgency/ledgerAggregates logic as the vital
+   detail modals — this is just a dedicated, always-open page for it.
+   ============================================================ */
+let ledgerActiveTab = 'all';
+
+function renderLedgerFacts(){
+  const host = document.getElementById('ledgerFacts'); if(!host) return;
+  const { recvTotal } = ledgerAggregates();
+  const payTotal = payables.reduce((s,p) => s + Number(p.amount), 0);
+  const net = recvTotal - payTotal;
+  host.innerHTML =
+    '<div class="fact"><div class="f-label">Total receivable</div><div class="f-value" style="color:#FF8FA8;">'+inr(recvTotal)+'</div></div>' +
+    '<div class="fact"><div class="f-label">Total payable</div><div class="f-value" style="color:#B9C6D6;">'+inr(payTotal)+'</div></div>' +
+    '<div class="fact"><div class="f-label">Net position</div><div class="f-value" style="color:'+(net>=0?'#5EE0AC':'#FF8FA8')+';">'+inr(net)+'</div></div>';
+}
+
+function renderLedgerView(){
+  renderLedgerFacts();
+  document.querySelectorAll('#ledgerTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.ltab === ledgerActiveTab));
+  const addForm = document.getElementById('ledgerAddForm');
+  const addTitle = document.getElementById('ledgerAddTitle');
+  const listTitle = document.getElementById('ledgerListTitle');
+  const host = document.getElementById('ledgerListHost');
+
+  if(ledgerActiveTab === 'cash'){
+    addForm.classList.add('hidden');
+    listTitle.textContent = 'Cash balance readings';
+    if(!snapshots.length){ host.innerHTML = '<div class="ledger-empty">No cash readings yet — add one on Upload & calculate.</div>'; return; }
+    host.innerHTML = '';
+    snapshots.forEach((s, i) => {
+      const prev = snapshots[i+1];
+      const d = prev ? Number(s.cash) - Number(prev.cash) : null;
+      const row = document.createElement('div'); row.className = 'ledger-row';
+      row.innerHTML =
+        '<div class="lr-main"><div class="lr-party">'+fmtDate(s.created_at)+'</div>' +
+        '<div class="lr-meta">from a '+(s.source||'manual')+' snapshot'+(d===null?'':(d>0?'<span class="lr-tag ok">▲ '+inr(d)+'</span>':d<0?'<span class="lr-tag warn">▼ '+inr(Math.abs(d))+'</span>':''))+'</div></div>' +
+        '<div class="lr-amount">'+inr(s.cash)+'</div>';
+      host.appendChild(row);
+    });
+    return;
+  }
+
+  addForm.classList.remove('hidden');
+  addTitle.textContent = ledgerActiveTab === 'payables' ? 'Add payable' : 'Add receivable';
+  document.getElementById('ledgerParty').placeholder = ledgerActiveTab === 'payables' ? 'Vendor name' : 'Customer name';
+
+  let rows = [];
+  const farFuture = new Date(8640000000000000);
+  if(ledgerActiveTab === 'all'){
+    listTitle.textContent = 'All open entries (' + (receivables.length + payables.length) + ')';
+    rows = [ ...receivables.map(r => ({...r, kind:'recv'})), ...payables.map(p => ({...p, kind:'pay'})) ]
+      .sort((a,b) => (a.due_date?new Date(a.due_date):farFuture) - (b.due_date?new Date(b.due_date):farFuture));
+  } else if(ledgerActiveTab === 'receivables'){
+    listTitle.textContent = 'Open receivables (' + receivables.length + ')';
+    rows = receivables.map(r => ({...r, kind:'recv'}));
+  } else {
+    listTitle.textContent = 'Open payables (' + payables.length + ')';
+    rows = payables.map(p => ({...p, kind:'pay'}));
+  }
+
+  if(!rows.length){ host.innerHTML = '<div class="ledger-empty">Nothing open here. Add one above.</div>'; return; }
+  host.innerHTML = '';
+  rows.forEach(r => {
+    const isRecv = r.kind === 'recv';
+    const badge = isRecv ? recvBucket(r.due_date) : payUrgency(r.due_date);
+    const typeTag = ledgerActiveTab === 'all' ? '<span class="lr-tag '+(isRecv?'type-recv':'type-pay')+'">'+(isRecv?'Receivable':'Payable')+'</span>' : '';
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">'+escapeHtml(r.party_name)+typeTag+'</div>' +
+      '<div class="lr-meta">due '+(r.due_date?fmtDay(r.due_date):'—')+(badge.tag?'<span class="lr-tag '+badge.tag+'">'+badge.label+'</span>':'')+'</div></div>' +
+      '<div class="lr-amount">'+inr(r.amount)+'</div>' +
+      '<div class="lr-actions">' +
+        '<button class="lr-btn" data-act="settle">'+(isRecv?'Mark received':'Mark paid')+'</button>' +
+        '<button class="lr-btn danger" data-act="del">Delete</button>' +
+      '</div>';
+    row.querySelector('[data-act="settle"]').addEventListener('click', () => isRecv ? ledgerSettleReceivable(r) : ledgerSettlePayable(r));
+    row.querySelector('[data-act="del"]').addEventListener('click', () => isRecv ? ledgerRemoveReceivable(r) : ledgerRemovePayable(r));
+    host.appendChild(row);
+  });
+}
+document.querySelectorAll('#ledgerTabs .tab').forEach(t => t.addEventListener('click', () => { ledgerActiveTab = t.dataset.ltab; renderLedgerView(); }));
+document.getElementById('ledgerAddBtn').addEventListener('click', async () => {
+  const party = document.getElementById('ledgerParty').value.trim();
+  const amt = Number(document.getElementById('ledgerAmt').value);
+  const due = document.getElementById('ledgerDue').value || null;
+  if(!party || !amt) return;
+  try {
+    const table = ledgerActiveTab === 'payables' ? 'payables' : 'receivables';
+    const { error } = await sbClient.from(table).insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open' });
+    if(error) throw error;
+    receivables = await loadReceivables(); payables = await loadPayables();
+    await saveLedgerSnapshot();
+    document.getElementById('ledgerParty').value = ''; document.getElementById('ledgerAmt').value = ''; document.getElementById('ledgerDue').value = '';
+    renderLedgerView();
+  } catch(err){ alert('Could not add: ' + (err.message||'unknown error')); }
+});
+async function ledgerSettleReceivable(r){
+  try { const { error } = await sbClient.from('receivables').delete().eq('id', r.id); if(error) throw error;
+    receivables = await loadReceivables(); await saveLedgerSnapshot(); renderLedgerView();
+  } catch(err){ alert('Could not mark as received: ' + (err.message||'unknown error')); }
+}
+async function ledgerRemoveReceivable(r){
+  try { const { error } = await sbClient.from('receivables').delete().eq('id', r.id); if(error) throw error;
+    receivables = await loadReceivables(); await saveLedgerSnapshot(); renderLedgerView();
+  } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
+}
+async function ledgerSettlePayable(p){
+  try { const { error } = await sbClient.from('payables').delete().eq('id', p.id); if(error) throw error;
+    payables = await loadPayables(); await saveLedgerSnapshot(); renderLedgerView();
+  } catch(err){ alert('Could not mark as paid: ' + (err.message||'unknown error')); }
+}
+async function ledgerRemovePayable(p){
+  try { const { error } = await sbClient.from('payables').delete().eq('id', p.id); if(error) throw error;
+    payables = await loadPayables(); await saveLedgerSnapshot(); renderLedgerView();
+  } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
+}
+
 function renderVitalsBarChart(vitals, hasData){
   const host = document.getElementById('vitalsBarChart'); if(!host) return;
   host.innerHTML = '';
@@ -1279,6 +1545,23 @@ function renderVitalsBarChart(vitals, hasData){
   });
 }
 
+// Redraws any .draw-line polyline/path and fades in any .area-fill inside host
+// from empty, every time it's called — so charts visibly load in on every
+// render (fresh page load, tab switch, new snapshot), not just snap into place.
+function animateDrawLine(host){
+  if(!host) return;
+  requestAnimationFrame(() => {
+    host.querySelectorAll('.draw-line').forEach(line => {
+      const len = line.getTotalLength ? line.getTotalLength() : 0;
+      if(!len) return;
+      line.style.strokeDasharray = len;
+      line.style.strokeDashoffset = len;
+      line.getBoundingClientRect(); // force reflow so the start state registers before animating
+      requestAnimationFrame(() => { line.style.strokeDashoffset = '0'; });
+    });
+    host.querySelectorAll('.area-fill').forEach(area => area.classList.add('in'));
+  });
+}
 function renderPulseTrendChart(){
   const host = document.getElementById('pulseTrendChart'); if(!host) return;
   const rows = snapshots.slice(0, 10).slice().reverse();
@@ -1296,9 +1579,10 @@ function renderPulseTrendChart(){
   const dots = rows.map((r,i) => '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(r.pulse_score).toFixed(1)+'" r="3.4" fill="#1FA374" stroke="#04120B" stroke-width="1"><title>'+fmtDate(r.created_at)+': '+r.pulse_score+'</title></circle>').join('');
   host.innerHTML = '<svg class="trend-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' +
     '<defs><linearGradient id="pulseGlow" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1FA374" stop-opacity="0.35"/><stop offset="100%" stop-color="#1FA374" stop-opacity="0"/></linearGradient></defs>' +
-    '<path d="'+areaPts+'" fill="url(#pulseGlow)"/>' +
-    '<polyline points="'+pts+'" fill="none" stroke="#1FA374" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 0 6px rgba(31,163,116,0.6));"/>' +
+    '<path class="area-fill" d="'+areaPts+'" fill="url(#pulseGlow)"/>' +
+    '<polyline class="draw-line" points="'+pts+'" fill="none" stroke="#1FA374" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 0 6px rgba(31,163,116,0.6));"/>' +
     dots + '</svg>';
+  animateDrawLine(host);
 }
 function renderHistory(rows){
   const host = document.getElementById('historyList'); host.innerHTML = '';
@@ -1336,32 +1620,174 @@ document.getElementById('financingForm').addEventListener('submit', async (e) =>
 });
 
 /* ============================================================
-   SUMMARY (NEW) — the top-10 KPI overview. Every figure reads
-   real data only (latest snapshot / ledger / payments) — shows
-   zero, never a mock number, until you upload or enter something.
+   SUMMARY (NEW) — the top overview: KPI strip with sparklines,
+   a revenue trend chart, real rule-based alerts, and a stat strip.
+   Every figure reads real data only (latest snapshot / ledger /
+   payments) — shows zero, never a mock number, until you upload
+   or enter something.
    ============================================================ */
+const ICONS = {
+  wallet: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>',
+  inbox: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/></svg>',
+  percent: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+};
+function deltaBadge(curr, prev, opts){
+  opts = opts || {};
+  if(prev === null || prev === undefined) return { cls:'flat', text:'no prior reading' };
+  const diff = curr - prev;
+  if(Math.abs(diff) < 1e-6) return { cls:'flat', text:'no change vs prior' };
+  const invert = !!opts.invert; // true when a lower reading is the good direction (e.g. spend)
+  const good = invert ? diff < 0 : diff > 0;
+  const arrow = diff > 0 ? '▲' : '▼';
+  const pctText = prev !== 0 ? (Math.abs(diff/prev*100).toFixed(1) + '%') : inr(Math.abs(diff));
+  return { cls: good ? 'up' : 'down', text: arrow + ' ' + pctText + ' vs prior' };
+}
+function sparklineSvg(values, color){
+  color = color || '#1FA374';
+  const clean = (values||[]).map(v => Number(v)||0);
+  if(clean.length < 2) return '<svg class="kc-spark" viewBox="0 0 100 32" preserveAspectRatio="none"></svg>';
+  const min = Math.min(...clean), max = Math.max(...clean);
+  const range = (max - min) || 1;
+  const W=100, H=32, PAD=3;
+  const pts = clean.map((v,i) => {
+    const x = PAD + (i/(clean.length-1))*(W-2*PAD);
+    const y = H-PAD - ((v-min)/range)*(H-2*PAD);
+    return x.toFixed(1)+','+y.toFixed(1);
+  }).join(' ');
+  return '<svg class="kc-spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' +
+    '<polyline class="draw-line" points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
+function renderRevenueTrendChart(hist){
+  const host = document.getElementById('revenueTrendChart'); if(!host) return;
+  const sub = document.getElementById('revTrendSub'); if(!sub) return;
+  if(hist.length < 2){
+    sub.textContent = 'Add a second snapshot to see a trend line';
+    host.innerHTML = '<div class="trend-empty">Revenue trend appears once you have at least two snapshots.</div>';
+    return;
+  }
+  const vals = hist.map(r => Number(r.revenue)||0);
+  const first = vals[0], last = vals[vals.length-1];
+  const changePct = first !== 0 ? ((last-first)/first*100) : null;
+  sub.textContent = changePct===null ? 'vs first snapshot' : ((changePct>=0?'▲ +':'▼ ')+Math.abs(changePct).toFixed(1)+'% vs first snapshot');
+  const W = 640, H = 130, PAD = 10;
+  const max = Math.max(...vals, 1), min = 0;
+  const x = i => PAD + (i/(vals.length-1)) * (W-2*PAD);
+  const y = v => H-PAD - ((v-min)/(max-min||1)) * (H-2*PAD);
+  const pts = vals.map((v,i) => x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+  const areaPts = 'M'+pts.split(' ').map((p,i)=>(i===0?'':'L')+p).join(' ')+' L'+x(vals.length-1).toFixed(1)+','+(H-PAD)+' L'+x(0).toFixed(1)+','+(H-PAD)+' Z';
+  const dots = hist.map((r,i) => '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(vals[i]).toFixed(1)+'" r="3.4" fill="#1FA374" stroke="#04120B" stroke-width="1"><title>'+fmtDate(r.created_at)+': '+inr(vals[i])+'</title></circle>').join('');
+  host.innerHTML = '<svg class="trend-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">' +
+    '<defs><linearGradient id="revGlow" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1FA374" stop-opacity="0.32"/><stop offset="100%" stop-color="#1FA374" stop-opacity="0"/></linearGradient></defs>' +
+    '<path class="area-fill" d="'+areaPts+'" fill="url(#revGlow)"/>' +
+    '<polyline class="draw-line" points="'+pts+'" fill="none" stroke="#1FA374" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" style="filter:drop-shadow(0 0 6px rgba(31,163,116,0.55));"/>' +
+    dots + '</svg>';
+  animateDrawLine(host);
+}
+function renderAlerts(latest, recvTotal, recv90, paySoon, pay){
+  const host = document.getElementById('alertsList'); const sub = document.getElementById('alertsSub');
+  if(!host || !sub) return;
+  const items = [];
+  if(latest){
+    const vitalsMap = {}; (latest.vitals||[]).forEach(v => vitalsMap[v.label]=v);
+    const runwayV = vitalsMap['Working Capital Runway'];
+    if(runwayV){
+      const months = parseFloat(runwayV.value);
+      if(!isNaN(months)){
+        if(months < BENCH.runwayMin) items.push({ sev:'bad', title:'Runway is tight', desc:'Working capital runway is '+runwayV.value+' — below the '+BENCH.runwayMin+' month floor.' });
+        else if(months < BENCH.runwayMax) items.push({ sev:'warn', title:'Runway below target', desc:'Working capital runway is '+runwayV.value+', short of the '+BENCH.runwayMax+' month target.' });
+      }
+    }
+    if(recvTotal > 0){
+      const ratio = recv90/recvTotal;
+      if(ratio > 0.3) items.push({ sev:'bad', title:'Receivables aging out', desc: inr(recv90)+' ('+(ratio*100).toFixed(0)+'%) of receivables are over 90 days overdue.' });
+      else if(recv90 > 0) items.push({ sev:'warn', title:'Some receivables overdue', desc: inr(recv90)+' is over 90 days overdue — worth a nudge.' });
+    }
+    if(paySoon > 0 && Number(latest.cash) > 0 && paySoon > Number(latest.cash)*0.5){
+      items.push({ sev: paySoon > Number(latest.cash) ? 'bad' : 'warn', title:'Payables due soon', desc: inr(paySoon)+' is due in the next 30 days against '+inr(latest.cash)+' cash on hand.' });
+    }
+    if(Number(latest.gst_payable) > 0 && Number(latest.gst_leak) > 0){
+      const ratio = Number(latest.gst_leak)/Number(latest.gst_payable);
+      if(ratio > BENCH.gstBad) items.push({ sev:'bad', title:'ITC going unclaimed', desc: inr(latest.gst_leak)+' in input credit is unclaimed against '+inr(latest.gst_payable)+' payable.' });
+      else if(ratio > 0) items.push({ sev:'warn', title:'Some ITC unclaimed', desc: inr(latest.gst_leak)+' in input credit hasn\u2019t been reconciled yet.' });
+    }
+  }
+  if(pay){
+    const m = computePaymentsMetrics(pay);
+    const ff = flagFor('fail', m.failRate); if(ff.c==='bad'||ff.c==='warn') items.push({ sev:ff.c, title:'Failed payment rate '+ff.t.toLowerCase(), desc: m.failRate.toFixed(1)+'% of transactions failed this period.' });
+    const mf = flagFor('mdr', m.mdrPct); if(mf.c==='bad'||mf.c==='warn') items.push({ sev:mf.c, title:'MDR burden '+mf.t.toLowerCase(), desc: m.mdrPct.toFixed(2)+'% of gross is going to processing fees.' });
+    const lf = flagFor('lag', m.lag); if(lf.c==='bad') items.push({ sev:'bad', title:'Settlement lag slow', desc: m.lag.toFixed(1)+' days average, transaction capture to bank credit.' });
+  }
+  const order = { bad:0, warn:1 };
+  items.sort((a,b) => order[a.sev]-order[b.sev]);
+  if(!latest){ sub.textContent = 'no data yet'; host.innerHTML = '<div class="alert-empty">Add a snapshot to see alerts here.</div>'; return; }
+  sub.textContent = items.length ? (items.length + ' to review') : 'all clear';
+  if(!items.length){
+    host.innerHTML = '<div class="alert-item"><span class="alert-dot ok">✓</span><div class="alert-body"><div class="alert-title">All systems operational</div><div class="alert-desc">No thresholds breached on your latest snapshot.</div></div></div>';
+    return;
+  }
+  host.innerHTML = items.slice(0,5).map(it =>
+    '<div class="alert-item"><span class="alert-dot '+it.sev+'">'+(it.sev==='bad'?'!':'i')+'</span>' +
+    '<div class="alert-body"><div class="alert-title">'+it.title+'</div><div class="alert-desc">'+it.desc+'</div></div></div>'
+  ).join('');
+}
 function renderSummary(){
-  const host = document.getElementById('summaryGrid'); if(!host) return;
+  const strip = document.getElementById('kpiStrip'); if(!strip) return;
   const latest = snapshots[0] || null;
-  const { recvTotal, paySoon } = ledgerAggregates();
+  const prev = snapshots[1] || null;
+  const { recvTotal, recv90, paySoon } = ledgerAggregates();
   const pay = paymentsData;
-  const cards = [
-    { label:'Pulse score', value: latest ? String(latest.pulse_score) : '0', sub: latest ? scoreBand(latest.pulse_score).label : 'No data yet' },
-    { label:'Cash position', value: inr(latest ? latest.cash : 0), sub: 'Latest snapshot' },
-    { label:'Revenue, last period', value: inr(latest ? latest.revenue : 0), sub: 'From latest snapshot' },
-    { label:'Total spend, last period', value: inr(latest ? latest.burn : 0), sub: 'Monthly operating expenses' },
-    { label:'Net profit, last period', value: inr(latest ? latest.net_profit : 0), sub: 'Revenue minus spend' },
-    { label:'Receivables outstanding', value: inr(recvTotal), sub: receivables.length + ' open invoice' + (receivables.length===1?'':'s') },
-    { label:'Payables due (30d)', value: inr(paySoon), sub: payables.length + ' open bill' + (payables.length===1?'':'s') },
-    { label:'GST/ITC leakage', value: inr(latest ? latest.gst_leak : 0), sub: 'Unclaimed input credit' },
-    { label:'Gross payments processed', value: inr(pay ? pay.gross : 0), sub: pay ? 'From Razorpay data' : 'No payments data yet' },
-    { label:'Net settled to bank', value: inr(pay ? (pay.gross - pay.mdr) : 0), sub: pay ? 'After MDR + GST on MDR' : 'No payments data yet' }
+
+  document.getElementById('summaryHeadline').textContent = latest
+    ? (currentProfile ? currentProfile.company_name : 'Your business') + ' is running ' + scoreBand(latest.pulse_score).label.toLowerCase()
+    : 'Waiting on your first snapshot';
+  document.getElementById('summaryAsOf').textContent = latest ? ('as of ' + fmtDate(latest.created_at)) : 'no data yet';
+
+  const hist = snapshots.slice(0,10).slice().reverse();
+  const seriesOf = key => hist.map(r => Number(r[key])||0);
+  const marginSeries = hist.map(r => Number(r.revenue) ? (Number(r.net_profit)/Number(r.revenue))*100 : 0);
+
+  const kpis = [
+    { icon:'wallet', label:'Cash position', value: inr(latest?latest.cash:0), curr: latest?Number(latest.cash):0, prevVal: prev?Number(prev.cash):null, series: seriesOf('cash') },
+    { icon:'inbox', label:'Receivables', value: inr(recvTotal), curr: recvTotal, prevVal: null, series: seriesOf('recv_total') },
+    { icon:'percent', label:'Net margin', value: latest && Number(latest.revenue) ? ((Number(latest.net_profit)/Number(latest.revenue))*100).toFixed(1)+'%' : '0.0%', curr: latest && Number(latest.revenue) ? (Number(latest.net_profit)/Number(latest.revenue))*100 : 0, prevVal: prev && Number(prev.revenue) ? (Number(prev.net_profit)/Number(prev.revenue))*100 : null, series: marginSeries },
+    { icon:'clock', label:'Payables (30d)', value: inr(paySoon), curr: paySoon, prevVal: null, series: seriesOf('pay_soon'), invert:true }
   ];
-  host.innerHTML = '';
-  cards.forEach(c => {
-    const el = document.createElement('div'); el.className = 'pay-card';
-    el.innerHTML = '<div class="pc-label">'+c.label+'</div><div class="pc-value" style="font-size:19px;">'+c.value+'</div><div class="pc-sub">'+c.sub+'</div>';
-    host.appendChild(el);
+  const KPI_ACCENTS = { wallet:'#F2B662', inbox:'#FF8FA8', percent:'#1FA374', clock:'#6FA8DC' };
+  strip.innerHTML = '';
+  kpis.forEach(k => {
+    const hasPrior = k.prevVal !== null && k.prevVal !== undefined;
+    const d = hasPrior ? deltaBadge(k.curr, k.prevVal, { invert: !!k.invert }) : { cls:'flat', text: latest ? 'no prior reading' : 'no data yet' };
+    const el = document.createElement('div'); el.className = 'kpi-card';
+    el.style.setProperty('--k-accent', KPI_ACCENTS[k.icon] || '#1FA374');
+    el.innerHTML =
+      '<div class="kc-top"><span class="kc-label">'+k.label+'</span><span class="kpi-icon">'+(ICONS[k.icon]||'')+'</span></div>' +
+      '<div class="kc-value">'+k.value+'</div>' +
+      '<span class="kc-delta '+d.cls+'">'+d.text+'</span>' +
+      sparklineSvg(k.series, d.cls==='down' ? '#FF8FA8' : (KPI_ACCENTS[k.icon] || '#1FA374'));
+    strip.appendChild(el);
+  });
+  animateDrawLine(strip);
+
+  renderRevenueTrendChart(hist);
+  renderAlerts(latest, recvTotal, recv90, paySoon, pay);
+
+  const statStrip = document.getElementById('statStrip'); if(!statStrip) return;
+  const stats = [
+    { label:'Net profit, last period', value: inr(latest?latest.net_profit:0), curr: latest?Number(latest.net_profit):0, prevVal: prev?Number(prev.net_profit):null },
+    { label:'Total spend, last period', value: inr(latest?latest.burn:0), curr: latest?Number(latest.burn):0, prevVal: prev?Number(prev.burn):null, invert:true },
+    { label:'GST/ITC leakage', value: inr(latest?latest.gst_leak:0), curr: latest?Number(latest.gst_leak):0, prevVal: prev?Number(prev.gst_leak):null, invert:true },
+    { label:'Gross payments processed', value: inr(pay?pay.gross:0), curr: pay?Number(pay.gross):0, prevVal: null },
+    { label:'Net settled to bank', value: inr(pay?(pay.gross-pay.mdr):0), curr: pay?(Number(pay.gross)-Number(pay.mdr)):0, prevVal: null }
+  ];
+  statStrip.innerHTML = '';
+  stats.forEach(s => {
+    const hasPrior = s.prevVal !== null && s.prevVal !== undefined;
+    const d = hasPrior ? deltaBadge(s.curr, s.prevVal, { invert: !!s.invert }) : null;
+    const el = document.createElement('div'); el.className = 'stat-chip';
+    el.innerHTML = '<div class="sc-label">'+s.label+'</div><div class="sc-value">'+s.value+'</div>' +
+      (d ? '<span class="sc-delta '+d.cls+'">'+d.text+'</span>' : '<span class="sc-delta flat">'+(latest?'no prior reading':'no data yet')+'</span>');
+    statStrip.appendChild(el);
   });
 }
 
