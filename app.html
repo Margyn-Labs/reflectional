@@ -2029,12 +2029,20 @@ window.addEventListener('message', (ev) => {
   if(!ev.data || ev.data.source !== 'margyn-zoho-oauth') return;
   const p = ev.data.payload || {};
   if(!p.ok){
+    // The callback already tells us exactly which stage failed. Show it,
+    // instead of collapsing six distinct failures into one useless sentence.
+    console.error('[margyn] Zoho OAuth failed:', p);
     document.getElementById('zohoOverlay').classList.remove('hidden');
-    zohoShowError(
-      p.reason === 'no_books_organization'
-        ? 'That Zoho login has no Zoho Books organization. A Zoho Books plan (the free plan works) is required.'
-        : 'Could not complete the Zoho connection. Please try again.'
-    );
+    const ZOHO_FAIL = {
+      invalid_state: 'The connection link expired before Zoho sent you back. Try again and move through the Zoho screens without pausing.',
+      missing_code: 'Zoho did not return an authorization code.',
+      token_exchange_failed: 'Zoho rejected the token exchange — usually a data-centre mismatch or the client secret not being valid for that data centre.',
+      db_write_failed: 'Could not record the connection — the zoho_organizations write failed. Check the SQL migration ran.',
+      vault_write_failed: 'Could not store the Zoho token — the Supabase vault write failed. Check the supabase_vault extension is enabled.',
+      org_list_failed: 'Signed in to Zoho, but could not list your Books organizations.',
+      no_books_organization: 'That Zoho login has no Zoho Books organization. A Zoho Books plan (the free plan works) is required.'
+    };
+    zohoShowError((ZOHO_FAIL[p.reason] || 'Could not complete the Zoho connection.') + '  [' + (p.reason || 'unknown') + ']');
     return;
   }
   zohoPendingOrgRef = p.org_ref;
