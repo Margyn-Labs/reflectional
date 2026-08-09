@@ -51,6 +51,15 @@ module.exports = async (req, res) => {
   try {
     built = buildAuthorizeUrl({ userId: user.id, region });
   } catch (err) {
+    // The client-facing message stays generic so a misconfiguration can't
+    // leak which secret is absent. The real reason goes to the Vercel
+    // function log, where only you can see it.
+    console.error('[zoho-oauth-start] not configured:', err.message, JSON.stringify({
+      ZOHO_CLIENT_ID: !!process.env.ZOHO_CLIENT_ID,
+      ZOHO_CLIENT_SECRET: !!process.env.ZOHO_CLIENT_SECRET,
+      ZOHO_REDIRECT_URI: !!process.env.ZOHO_REDIRECT_URI,
+      ZOHO_STATE_SECRET: !!process.env.ZOHO_STATE_SECRET
+    }));
     res.status(500).json({ error: 'Zoho connector is not configured on the server' });
     return;
   }
