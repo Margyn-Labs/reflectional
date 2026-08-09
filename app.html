@@ -20,7 +20,6 @@
     --shadow-sm: 0 2px 10px rgba(18,128,90,0.05), 0 1px 2px rgba(11,18,32,0.05);
     --shadow-md: 0 14px 34px rgba(18,128,90,0.08), 0 2px 8px rgba(11,18,32,0.06);
     --shadow-lg: 0 30px 70px -20px rgba(11,18,32,0.26);
-
     --surf-0: #000000;
     --surf-1: rgba(16,23,38,0.70);
     --surf-1-solid: #101B2E;
@@ -40,10 +39,8 @@
   a{ color:inherit; text-decoration:none; }
   .wrap{max-width:960px; margin:0 auto; padding:132px 24px 96px; position:relative; z-index:2;}
   .hidden{ display:none !important; }
-
   .crescent{ position:relative; border-radius:50%; overflow:hidden; flex-shrink:0; background:var(--emerald-bright); }
   .crescent::after{ content:''; position:absolute; top:0; left:-42%; width:100%; height:100%; border-radius:50%; background:#fff; }
-
   /* ================= AURORA BACKGROUND (site-parity) ================= */
   .stage{ position:fixed; inset:0; background:#000; overflow:hidden; z-index:0; }
   .stars{ position:absolute; inset:-4%; z-index:1; }
@@ -72,7 +69,6 @@
   .aurora-bg{ position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; }
   .aurora-bg canvas{ display:block; width:100%; height:100%; }
   @media print{ .stage{ display:none; } }
-
   nav{ position:fixed; top:50px; left:50%; transform:translateX(-50%); z-index:100; background:rgba(16,23,38,0.72); backdrop-filter:blur(20px) saturate(1.5); border:1px solid var(--border-1); border-radius:999px; box-shadow:var(--shadow-md); max-width:calc(100% - 32px); transition:box-shadow .3s ease; }
   nav:hover{ box-shadow:0 18px 40px rgba(31,163,116,0.18), 0 2px 8px rgba(7,11,20,0.3); }
   .nav-inner{ padding:10px 10px 10px 22px; display:flex; align-items:center; gap:16px; }
@@ -85,7 +81,6 @@
   .nav-user{ display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-2); }
   .nav-logout{ background:transparent; border:1px solid var(--border-2); color:var(--text-2); padding:8px 14px; border-radius:999px; cursor:pointer; font-size:12.5px; font-weight:600; transition:all .22s cubic-bezier(.22,1,.36,1); }
   .nav-logout:hover{ border-color:var(--emerald-bright); color:var(--text-0); transform:translateY(-2px); box-shadow:var(--shadow-sm); background:var(--surf-2); }
-
   .gate{ position:fixed; inset:0; background:transparent; z-index:200; display:flex; align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
   .gate-col{ max-width:460px; width:100%; }
   .gate-back{ display:block; text-align:center; margin-top:20px; font-size:13px; font-weight:600; color:var(--text-2); transition:color .2s ease; }
@@ -110,12 +105,10 @@
   .auth-submit:disabled{ opacity:0.5; cursor:not-allowed; }
   .auth-error{ font-size:12px; color:#FF8FA8; margin-top:12px; display:none; }
   .auth-error.show{ display:block; }
-
   header.app-head{ margin-bottom:26px; }
   .app-eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--emerald-bright); margin-bottom:10px; font-weight:600; }
   .app-title{ font-family:'Fraunces',serif; font-weight:500; font-size:36px; letter-spacing:-0.01em; line-height:1.15; color:var(--text-0); }
   .app-sub{ margin-top:8px; font-size:14px; color:var(--text-2); }
-
   .pagenav{ display:flex; gap:4px; margin-bottom:30px; border:1px solid rgba(31,163,116,0.16); border-radius:999px; padding:4px; background:rgba(31,163,116,0.04); backdrop-filter:blur(14px); flex-wrap:wrap; }
   .pagenav button{ flex:1; padding:12px 8px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .25s cubic-bezier(.22,1,.36,1); border:none; border-radius:999px; min-width:90px; position:relative; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
   .pagenav button svg{ flex-shrink:0; opacity:.7; transition:opacity .2s ease; }
@@ -124,7 +117,6 @@
   .pagenav button.active svg{ opacity:1; }
   .nav-badge{ position:absolute; top:4px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--rose); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; font-family:'IBM Plex Mono',monospace; }
   .nav-badge.hidden{ display:none; }
-
   /* ---------- sidebar nav (desktop): tabs move to the left rail, content window shifts right ---------- */
   .app-body{ display:flex; flex-direction:column; }
   .app-body .sidebar{ order:2; }
@@ -139,24 +131,20 @@
   @media (min-width:1400px){
     .app-body{ padding:0 56px; }
   }
-
   .card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.05), rgba(255,255,255,0.015)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:28px; margin-bottom:20px; box-shadow:0 0 0 1px rgba(255,255,255,0.02) inset, 0 20px 60px -34px rgba(31,163,116,0.25); transition:box-shadow .3s ease, transform .3s cubic-bezier(.22,1,.36,1), border-color .3s ease; }
   .card:hover{ box-shadow:0 0 0 1px rgba(255,255,255,0.03) inset, 0 26px 70px -30px rgba(31,163,116,0.4); transform:translateY(-2px); border-color:rgba(31,163,116,0.32); }
   .card h2{font-family:'Fraunces',serif; font-weight:500; font-size:20px; margin-bottom:6px; color:var(--text-0);}
   .hint{font-size:13px; color:var(--text-2); margin-bottom:20px; line-height:1.6;}
-
   .facts{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:24px; }
   .fact{ background:rgba(31,163,116,0.04); backdrop-filter:blur(14px); border:1px solid rgba(31,163,116,0.14); border-radius:14px; padding:18px; transition:transform .3s cubic-bezier(.22,1,.36,1), border-color .3s ease, background .3s ease; }
   .fact:hover{ transform:translateY(-3px); border-color:var(--emerald-bright); background:rgba(31,163,116,0.08); }
   .fact .f-label{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:8px; }
   .fact .f-value{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; color:var(--text-0); transition:color .25s ease; }
   .fact:hover .f-value{ color:var(--emerald-bright); }
-
   .kv{ display:flex; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--border-1); font-size:14px; color:var(--text-1); }
   .kv:last-child{ border-bottom:none; }
   .kv .k{ font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; }
   .kv .v{ font-weight:600; text-align:right; color:var(--text-0); }
-
   .pulse-wrap{ margin-bottom:22px; }
   .pulse-score{
     position:relative; border-radius:18px; padding:22px 26px; border:1px solid rgba(31,163,116,0.3);
@@ -178,7 +166,6 @@
   .pulse-delta{ font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.72); }
   .pulse-asof{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:rgba(255,255,255,0.34); margin-top:0; }
   .pulse-tap-hint{ margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,0.42); display:flex; align-items:center; gap:5px; }
-
   .vitals-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:30px 16px; margin-bottom:34px;}
   .vital{ background:transparent; border:none; border-radius:0; padding:6px 4px 0; position:relative; box-shadow:none; text-align:center; cursor:pointer; transition:transform .25s cubic-bezier(.22,1,.36,1); animation:cardIn .6s cubic-bezier(.16,1,.3,1) backwards; }
   .vitals-grid .vital:nth-child(1){ animation-delay:.02s; } .vitals-grid .vital:nth-child(2){ animation-delay:.08s; } .vitals-grid .vital:nth-child(3){ animation-delay:.14s; } .vitals-grid .vital:nth-child(4){ animation-delay:.2s; } .vitals-grid .vital:nth-child(5){ animation-delay:.26s; } .vitals-grid .vital:nth-child(6){ animation-delay:.32s; }
@@ -199,13 +186,11 @@
   .vital:not(.is-zero):hover .v-label{ color:var(--v-accent); }
   .vital .v-score{font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:500; color:var(--text-2); position:relative; z-index:1;}
   .vital.is-zero{ cursor:default; }
-
   .tabs{display:flex; gap:4px; margin-bottom:24px; border:1px solid rgba(31,163,116,0.16); border-radius:999px; padding:4px; background:rgba(31,163,116,0.04); backdrop-filter:blur(14px);}
   .tab{ flex:1; padding:11px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .25s cubic-bezier(.22,1,.36,1); border:none; border-radius:999px; }
   .tab:hover:not(.active){ color:var(--text-0); background:rgba(255,255,255,0.06); }
   .tab.active{background:var(--emerald); color:var(--white); box-shadow:0 8px 18px -8px rgba(31,163,116,0.6);}
   .panel{display:none;} .panel.active{display:block;}
-
   .dropzone{ position:relative; border:1.5px dashed var(--border-2); border-radius:16px; padding:36px; text-align:center; cursor:pointer; transition:all .3s cubic-bezier(.22,1,.36,1); overflow:hidden; }
   .dropzone:hover{border-color:var(--gold); background:rgba(201,127,30,0.06); transform:translateY(-2px); box-shadow:var(--shadow-sm);}
   .dropzone input{display:none;}
@@ -214,34 +199,28 @@
   .dz-sub{font-size:12px; color:var(--text-2); margin-top:6px;}
   .file-name{margin-top:14px; font-size:13px; color:var(--emerald-bright); font-weight:600;}
   .template-link{display:inline-block; margin-top:18px; font-size:13px; color:#F2B662; cursor:pointer; font-weight:600; border-bottom:1px solid rgba(242,182,98,0.35);}
-
   .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;}
   label{display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--text-2); margin-bottom:7px; text-transform:uppercase; letter-spacing:.06em; font-weight:600;}
   input[type=number], input[type=text], select{ width:100%; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
   input::placeholder{ color:var(--text-3); }
   input:focus, select:focus{outline:none; border-color:var(--emerald-bright);}
   select option{ background:var(--surf-1-solid); color:var(--text-0); }
-
   .btn-row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
   button.primary{ background:var(--emerald); color:var(--white); border:none; padding:14px 28px; border-radius:999px; font-weight:700; font-size:14.5px; font-family:'Manrope',sans-serif; cursor:pointer; transition:all .25s cubic-bezier(.16,1,.3,1); }
   button.primary:hover{background:var(--emerald-bright); transform:translateY(-1px); box-shadow:0 14px 30px -14px rgba(31,163,116,0.5);}
   button.primary:disabled{opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none;}
   button.ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:13px 28px; border-radius:999px; font-size:14.5px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; }
   button.ghost:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
-
   #briefing-text{ white-space:pre-wrap; font-size:15px; line-height:1.75; color:var(--text-1); }
   .loading{color:var(--text-2); font-size:14px; font-style:italic;}
   .error-box{ border:1px solid rgba(194,59,103,0.4); background:rgba(194,59,103,0.14); color:#FF8FA8; padding:14px; border-radius:6px; font-size:13px; margin-top:14px; }
   .note{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-2); }
   .note.ok{ color:#5EE0AC; }
   .note.bad{ color:#FF8FA8; }
-
   footer{ border-top:1px solid var(--border-1); padding:32px 24px; text-align:center; font-size:12.5px; color:var(--text-2); position:relative; z-index:2; }
-
   /* ---------- payments tab (NEW) — transparent glass, neon green accents ---------- */
   .mock-banner{ display:flex; align-items:center; gap:10px; padding:10px 16px; border-radius:999px; background:rgba(201,127,30,0.1); border:1px solid rgba(201,127,30,0.3); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#F2B662; margin-bottom:20px; font-weight:600; }
   .mock-banner::before{ content:''; width:6px; height:6px; border-radius:50%; background:#F2B662; flex-shrink:0; box-shadow:0 0 0 3px rgba(242,182,98,0.25); }
-
   .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
   .pay-card{ position:relative; background:linear-gradient(180deg, rgba(31,163,116,0.06), rgba(255,255,255,0.01)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:20px; transition:border-color .25s ease, transform .25s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
   .pay-grid .pay-card:nth-child(1){ animation-delay:.02s; } .pay-grid .pay-card:nth-child(2){ animation-delay:.07s; } .pay-grid .pay-card:nth-child(3){ animation-delay:.12s; } .pay-grid .pay-card:nth-child(4){ animation-delay:.17s; } .pay-grid .pay-card:nth-child(5){ animation-delay:.22s; } .pay-grid .pay-card:nth-child(6){ animation-delay:.27s; } .pay-grid .pay-card:nth-child(7){ animation-delay:.32s; }
@@ -259,7 +238,6 @@
   .method-legend{ display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:12px; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-2); }
   .method-legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
   .pay-empty{ text-align:center; padding:40px 20px; color:var(--text-2); font-size:13.5px; line-height:1.7; }
-
   /* ---------- charts (SVG, neon green, transparent) ---------- */
   .chart-card{ background:linear-gradient(180deg, rgba(31,163,116,0.05), rgba(255,255,255,0.01)); backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.16); border-radius:16px; padding:24px; margin-bottom:20px; }
   .chart-card .cc-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px; }
@@ -279,7 +257,6 @@
   .hbar-val{ width:52px; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-0); font-weight:700; }
   .trend-svg{ width:100%; height:130px; display:block; }
   .trend-empty{ text-align:center; padding:30px 10px; color:var(--text-2); font-size:13px; line-height:1.6; }
-
   /* ---------- vital detail overlay ---------- */
   .detail-overlay{ position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:20px; }
   .detail-modal{ width:min(440px, 100%); background:linear-gradient(165deg, rgba(16,23,38,0.92), rgba(8,13,22,0.96)); backdrop-filter:blur(24px); border:1px solid rgba(31,163,116,0.3); border-radius:18px; padding:28px; box-shadow:0 0 60px -10px rgba(31,163,116,0.4); position:relative; animation:detailIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
@@ -294,10 +271,8 @@
   .detail-score-bar{ flex:1; height:8px; border-radius:6px; background:rgba(255,255,255,0.08); overflow:hidden; }
   .detail-score-fill{ height:100%; border-radius:6px; }
   .detail-body{ font-size:13.5px; color:var(--text-1); line-height:1.7; }
-
   @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
   .summary-grid{ grid-template-columns:repeat(5,1fr); margin-bottom:20px; }
-
   /* ---------- ledger UI (receivables / payables / settlements) ---------- */
   .ledger-form{ background:rgba(255,255,255,0.03); border:1px solid rgba(31,163,116,0.18); border-radius:14px; padding:16px; margin-bottom:18px; }
   .ledger-form .lf-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
@@ -324,13 +299,11 @@
   .lr-btn:hover{ border-color:var(--emerald-bright); color:var(--emerald-bright); }
   .lr-btn.danger:hover{ border-color:#FF8FA8; color:#FF8FA8; }
   .ledger-empty{ font-size:12.5px; color:var(--text-2); padding:14px 0; text-align:center; }
-
   /* ---------- summary overview (NEW — kpi strip / revenue trend / alerts) ---------- */
   .summary-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:22px; flex-wrap:wrap; }
   .summary-headline{ font-family:'Fraunces',serif; font-weight:500; font-size:26px; color:var(--text-0); letter-spacing:-0.01em; }
   .summary-asof{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-2); display:flex; align-items:center; gap:6px; }
   .summary-asof::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--emerald-bright); box-shadow:0 0 0 3px rgba(31,163,116,0.25); animation:navPulse 2s ease-in-out infinite; flex-shrink:0; }
-
   .kpi-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:20px; margin-bottom:24px; }
   .kpi-card{ position:relative; background:linear-gradient(165deg, rgba(255,255,255,0.045), rgba(255,255,255,0.008) 40%, rgba(0,0,0,0.12)); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.09); border-radius:16px; padding:20px 22px; overflow:hidden; box-shadow:0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 40px -26px rgba(0,0,0,0.7); transition:border-color .25s ease, transform .25s ease, box-shadow .25s ease; animation:cardIn .6s cubic-bezier(.16,1,.3,1) backwards; }
   .kpi-card::before{ content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, var(--k-accent, var(--emerald-bright)), transparent); opacity:.75; }
@@ -352,7 +325,6 @@
   .area-fill.in{ opacity:1; }
   .ring-arc{ transition:stroke-dashoffset 1.05s cubic-bezier(.22,1,.36,1); }
   #pulseArc{ transition:stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1), stroke .3s ease; }
-
   .summary-split{ display:flex; gap:20px; margin-bottom:24px; align-items:stretch; }
   .summary-split .rev-trend-card{ flex:1.7; display:flex; flex-direction:column; min-width:0; }
   .summary-split .alerts-panel{ flex:1; display:flex; flex-direction:column; min-width:0; }
@@ -370,7 +342,6 @@
   .alert-title{ font-size:13px; font-weight:700; color:var(--text-0); margin-bottom:2px; }
   .alert-desc{ font-size:12px; color:var(--text-2); line-height:1.5; }
   .alert-empty{ font-size:13px; color:var(--text-2); padding:14px 0; text-align:center; }
-
   .stat-strip{ display:grid; grid-template-columns:repeat(5,1fr); gap:18px; margin-bottom:0; }
   .stat-chip{ background:linear-gradient(165deg, rgba(255,255,255,0.035), rgba(0,0,0,0.1)); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px 18px; box-shadow:0 1px 0 rgba(255,255,255,0.05) inset; transition:transform .25s ease, border-color .25s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
   .stat-strip .stat-chip:nth-child(1){ animation-delay:.05s; } .stat-strip .stat-chip:nth-child(2){ animation-delay:.11s; } .stat-strip .stat-chip:nth-child(3){ animation-delay:.17s; } .stat-strip .stat-chip:nth-child(4){ animation-delay:.23s; } .stat-strip .stat-chip:nth-child(5){ animation-delay:.29s; }
@@ -381,9 +352,7 @@
   .stat-chip .sc-delta.up{ color:#5EE0AC; background:rgba(31,163,116,0.15); }
   .stat-chip .sc-delta.down{ color:#FF8FA8; background:rgba(194,59,103,0.15); }
   .stat-chip .sc-delta.flat{ color:var(--text-2); background:rgba(255,255,255,0.04); }
-
   @media (max-width:900px){ .kpi-strip{ grid-template-columns:repeat(2,1fr); } .summary-split{ flex-direction:column; } .stat-strip{ grid-template-columns:repeat(3,1fr); } }
-
   @media (max-width:640px){
     .vitals-grid{grid-template-columns:1fr 1fr;}
     .facts{grid-template-columns:1fr;}
@@ -398,15 +367,20 @@
     .stat-strip{ grid-template-columns:1fr 1fr; }
     .summary-head{ flex-direction:column; align-items:flex-start; }
   }
+  /* ---------- zoho books connector (NEW) — org picker + books tab ---------- */
+  .org-option{ display:flex; align-items:center; gap:11px; padding:12px 14px; border:1px solid rgba(255,255,255,0.14); border-radius:12px; margin-bottom:8px; cursor:pointer; transition:border-color .2s ease, background .2s ease; }
+  .org-option:hover{ border-color:var(--emerald-bright); background:rgba(31,163,116,0.06); }
+  .org-option input{ accent-color:var(--emerald-bright); width:16px; height:16px; margin:0; flex-shrink:0; }
+  .org-option .org-name{ font-size:13.5px; font-weight:700; color:var(--text-0); flex:1; min-width:0; }
+  .org-option .org-meta{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+  .zoho-scope-note{ display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:#5EE0AC; background:rgba(31,163,116,0.12); border:1px solid rgba(31,163,116,0.28); border-radius:999px; padding:7px 13px; margin-bottom:14px; }
 </style>
 </head>
 <body>
-
 <div class="stage">
   <div class="stars"><span class="st-3"></span><span class="st-2"></span><span class="st-1"></span></div>
   <div class="aurora-bg" id="auroraBg"></div>
 </div>
-
 <!-- ============ AUTH GATE ============ -->
 <div class="gate" id="authGate">
   <div class="gate-col">
@@ -438,7 +412,6 @@
   <a class="gate-back" href="/">&larr; Back to the website</a>
   </div>
 </div>
-
 <!-- ============ ONBOARDING GATE ============ -->
 <div class="gate hidden" id="onboardGate">
   <div class="gate-modal">
@@ -476,7 +449,6 @@
     </form>
   </div>
 </div>
-
 <div id="appShell" class="hidden">
 <div class="marquee-placeholder"></div>
 <nav>
@@ -493,9 +465,7 @@
     </div>
   </div>
 </nav>
-
 <div class="app-body">
-
   <aside class="sidebar" id="sidebarNav">
     <div class="pagenav">
       <button data-view="summary" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Summary</span></button>
@@ -504,19 +474,17 @@
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
       <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
+      <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
       <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Connectors</span></button>
       <button data-view="financing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
     </div>
   </aside>
-
   <div class="wrap">
-
   <header class="app-head">
     <div class="app-eyebrow">Margyn 1.0</div>
     <div class="app-title" id="headCompany">—</div>
     <div class="app-sub" id="headSub"></div>
   </header>
-
   <!-- ---------- 0. SUMMARY (NEW) ---------- -->
   <div id="view-summary">
     <div class="summary-head">
@@ -526,9 +494,7 @@
       </div>
       <div class="summary-asof" id="summaryAsOf"></div>
     </div>
-
     <div class="kpi-strip" id="kpiStrip"></div>
-
     <div class="summary-split">
       <div class="chart-card rev-trend-card">
         <div class="cc-head"><h3>Revenue trend</h3><span class="cc-sub" id="revTrendSub">Last snapshots</span></div>
@@ -539,10 +505,8 @@
         <div id="alertsList"></div>
       </div>
     </div>
-
     <div class="stat-strip" id="statStrip"></div>
   </div>
-
   <!-- ---------- 0b. LEDGER (NEW) — receivables, payables & cash, individually or consolidated ---------- -->
   <div id="view-ledger" class="hidden">
     <div class="card">
@@ -570,7 +534,6 @@
       <div id="ledgerListHost"></div>
     </div>
   </div>
-
   <!-- ---------- 1. PROFILE ---------- -->
   <div id="view-profile" class="hidden">
     <div class="facts">
@@ -618,27 +581,25 @@
       </form>
     </div>
   </div>
-
   <!-- ---------- 1b. CONNECTORS (NEW) — moved out of Profile into its own section ---------- -->
   <div id="view-connectors" class="hidden">
     <div class="card">
       <h2>Connected data sources</h2>
       <div class="hint">Optional automated connectors that supplement your uploads. Keep uploading your full monthly snapshot as usual — connectors add detail on top, they don't replace it.</div>
       <div id="razorpayStatus"></div>
+      <div id="zohoStatus"></div>
     </div>
     <div class="card">
       <h2>More connectors, on the way</h2>
       <div class="hint">Zoho Books is next up — it unlocks receivables aging, payables due, GST/ITC leakage, and working capital runway directly from your books. Tell us which data source would help most and we'll prioritize it.</div>
     </div>
   </div>
-
   <!-- ---------- 2. UPLOAD & CALCULATE ---------- -->
   <div id="view-calculate" class="hidden">
     <div class="tabs">
       <button class="tab active" data-tab="upload">Upload workbook</button>
       <button class="tab" data-tab="manual">Quick manual entry</button>
     </div>
-
     <div class="panel active" id="panel-upload">
       <div class="card">
         <h2>Upload your workbook</h2>
@@ -660,7 +621,6 @@
       </div>
       <div class="import-summary hidden" id="importSummaryUpload" style="background:rgba(31,163,116,0.16); border:1px solid rgba(31,163,116,0.32); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--text-1); line-height:1.6;"></div>
     </div>
-
     <div class="panel" id="panel-manual">
       <div class="card">
         <h2>Quick manual entry</h2>
@@ -692,7 +652,6 @@
       </div>
     </div>
   </div>
-
   <!-- ---------- 3. SCORES ---------- -->
   <div id="view-scores" class="hidden">
     <div class="pulse-wrap">
@@ -718,33 +677,27 @@
         </div>
       </div>
     </div>
-
     <div class="vitals-grid" id="vitalsGrid"></div>
-
     <div class="chart-card">
       <div class="cc-head"><h3>Pulse trend</h3><span class="cc-sub">Last 10 snapshots</span></div>
       <div id="pulseTrendChart"></div>
     </div>
-
     <div class="chart-card">
       <div class="cc-head"><h3>Vitals compared</h3><span class="cc-sub">Score out of 100</span></div>
       <div class="hbar-list" id="vitalsBarChart"></div>
     </div>
-
     <div class="card">
       <h2>Executive briefing</h2>
       <div class="hint" id="briefHint">Generated from your latest snapshot.</div>
       <div id="briefing-idle"><button class="primary" id="generateBriefing">Generate AI briefing</button></div>
       <div id="briefing-text"></div>
     </div>
-
     <div class="card">
       <h2>Previous scores</h2>
       <div class="hint">Every snapshot you've recorded.</div>
       <div id="historyList"></div>
     </div>
   </div>
-
   <!-- ---------- 3d. PAYMENTS (NEW) ---------- -->
   <div id="view-payments" class="hidden">
     <div class="card">
@@ -752,7 +705,6 @@
       <div class="hint">From Razorpay + Shopify data. See the validation roadmap doc for what's needed to make each of these production-grade.</div>
     </div>
     <div id="paymentsMockBanner" class="mock-banner hidden">No payments data yet — showing zero. Upload a Razorpay Settlements sheet or use Quick manual entry to see your real numbers.</div>
-
     <div class="pay-grid">
       <div class="pay-card">
         <div class="pc-label">Gross processed</div>
@@ -796,23 +748,82 @@
         <span class="pc-flag" id="payMethodFlag"></span>
       </div>
     </div>
-
     <div class="chart-card">
       <div class="cc-head"><h3>Gross settled, last 7 days</h3><span class="cc-sub" id="paySettleTrendSub">₹ per day</span></div>
       <div class="bar-chart" id="paySettleBarChart"></div>
     </div>
-
     <div class="chart-card">
       <div class="cc-head"><h3>Settlement batches</h3><span class="cc-sub" id="settleListSub">Toggle status</span></div>
       <div id="settlementList"></div>
     </div>
-
     <div class="chart-card">
       <div class="cc-head"><h3>Shopify orders</h3><span class="cc-sub">From last upload — reference only, not yet scored</span></div>
       <div class="hbar-list" id="shopifyBarChart"></div>
     </div>
   </div>
-
+  <!-- ---------- 3e. BOOKS (NEW) — Zoho Books connector ---------- -->
+  <div id="view-books" class="hidden">
+    <div class="card">
+      <h2>Books</h2>
+      <div class="hint">Straight from your Zoho Books ledger — receivables aging, payables due, GST input-credit risk and true margin. Synced nightly. These figures are computed from the ledger itself, so they should match what you see natively in Zoho Books.</div>
+    </div>
+    <div id="booksNotConnected" class="mock-banner hidden">Zoho Books isn't connected — connect it under Connectors to unlock receivables, payables, GST/ITC leakage and true net margin.</div>
+    <div id="booksBackfillBanner" class="mock-banner hidden">First sync in progress — Margyn is pulling your last 12 months. This can take a few minutes on a busy set of books.</div>
+    <div id="booksContent" class="hidden">
+      <div class="pay-grid">
+        <div class="pay-card">
+          <div class="pc-label">Receivables outstanding</div>
+          <div class="pc-value" id="zvRecvVal">—</div>
+          <div class="pc-sub">Unpaid invoices, all ages.</div>
+          <span class="pc-flag" id="zvRecvFlag"></span>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Payables due</div>
+          <div class="pc-value" id="zvPayVal">—</div>
+          <div class="pc-sub">Open vendor bills still owed.</div>
+          <span class="pc-flag" id="zvPayFlag"></span>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">ITC at risk</div>
+          <div class="pc-value" id="zvGstVal">—</div>
+          <div class="pc-sub">Input credit claimed but not vendor-confirmed in GSTR-2B.</div>
+          <span class="pc-flag" id="zvGstFlag"></span>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Net margin</div>
+          <div class="pc-value" id="zvMarginVal">—</div>
+          <div class="pc-sub">From real COGS and opex, not gateway fees.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Working capital runway</div>
+          <div class="pc-value" id="zvRunwayVal">—</div>
+          <div class="pc-sub">Cash plus near-term receivables, less payables due.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Cash position (books)</div>
+          <div class="pc-value" id="zvCashVal">—</div>
+          <div class="pc-sub">Bank balance per your books, cross-checked against gateway settlements.</div>
+          <span class="pc-flag" id="zvCashFlag"></span>
+        </div>
+      </div>
+      <div class="chart-card" id="zvInsightsCard">
+        <div class="cc-head"><h3>What needs attention</h3><span class="cc-sub">Named counterparties, not just totals</span></div>
+        <div id="zvInsights"></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Receivables aging</h3><span class="cc-sub" id="zvAgingSub">Outstanding by bucket</span></div>
+        <div class="hbar-list" id="zvAgingChart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Overdue customers</h3><span class="cc-sub">Largest first</span></div>
+        <div id="zvOverdueList"></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Vendors putting ITC at risk</h3><span class="cc-sub" id="zvVendorSub">Latest filing period</span></div>
+        <div id="zvVendorList"></div>
+      </div>
+    </div>
+  </div>
   <!-- ---------- 3c. FINANCING ---------- -->
   <div id="view-financing" class="hidden">
     <div class="card" style="background:linear-gradient(160deg, #16233A 0%, #0F1A2C 100%); backdrop-filter:none; -webkit-backdrop-filter:none;">
@@ -836,27 +847,28 @@
       </form>
     </div>
   </div>
-
   </div>
 </div>
 </div>
-
 <div class="detail-overlay hidden" id="detailOverlay">
   <div class="detail-modal">
     <button class="detail-close" id="detailClose">✕</button>
     <div id="detailContent"></div>
   </div>
 </div>
-
 <div class="detail-overlay hidden" id="razorpayOverlay">
   <div class="detail-modal">
     <button class="detail-close" id="razorpayClose">✕</button>
     <div id="razorpayContent"></div>
   </div>
 </div>
-
+<div class="detail-overlay hidden" id="zohoOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="zohoClose">✕</button>
+    <div id="zohoContent"></div>
+  </div>
+</div>
 <footer>Margyn 1.0 · Built for new-age Indian businesses</footer>
-
 <script>
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
@@ -871,7 +883,10 @@ let settlementRows = null; // itemized settlement batches — session-only, "Mar
 let settlementDailyTrend = null; // real per-day gross totals, last 7 uploaded days — null until upload
 let razorpayConnected = false; // optional connector — supplements manual upload, doesn't replace it
 let lastSyncedAt = null;
-
+let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker gated
+let zohoVitals = null;       // last /api/zoho-vitals payload
+let zohoPendingOrgRef = null;
+let zohoChosenOrgId = null;
 function inr(n){ return '₹' + Math.round(Number(n)||0).toLocaleString('en-IN'); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
 function fmtDate(iso){ 
@@ -891,7 +906,6 @@ function scoreBand(s){
   if(s >= 40) return { cls:'warn', color:'#C97F1E', label:'Caution' };
   return { cls:'bad', color:'#C23B67', label:'At risk' };
 }
-
 function withTimeout(p, ms, label){
   return Promise.race([ p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + ' timed out.')), ms)) ]);
 }
@@ -909,7 +923,6 @@ function showAuthError(msg){
   el.style.color = ''; el.textContent = msg; el.classList.add('show');
 }
 function clearAuthErrors(){ document.querySelectorAll('.auth-error').forEach(e => e.classList.remove('show')); }
-
 async function bootAuth(){
   const sources = ['/supabase.js', 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js', 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js'];
   for(const src of sources){
@@ -924,12 +937,12 @@ async function initSupabase(){
   await routeFor(session);
   sbClient.auth.onAuthStateChange((_e, s) => routeFor(s));
 }
-
 async function routeFor(session){
   if(!session){
     currentUser = null; currentProfile = null; snapshots = []; paymentsData = null;
     receivables = []; payables = []; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
     razorpayConnected = false; lastSyncedAt = null;
+    zohoConnected = false; zohoVitals = null; zohoPendingOrgRef = null; zohoChosenOrgId = null;
     document.getElementById('appShell').classList.add('hidden');
     document.getElementById('authGate').classList.remove('hidden');
     document.getElementById('onboardGate').classList.add('hidden');
@@ -961,7 +974,6 @@ async function loadSnapshots(){
   if(error){ console.error('[margyn] loadSnapshots:', error); return []; }
   return data || [];
 }
-
 document.getElementById('onboardForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('obSubmit'); const err = document.getElementById('obError');
@@ -979,23 +991,20 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
   } catch(e2){ err.textContent = e2.message || 'Could not save.'; err.classList.add('show'); }
   finally { btn.disabled = false; btn.textContent = 'Continue'; }
 });
-
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
-
 function showView(name){
-  ['summary','profile','ledger','calculate','scores','payments','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  ['summary','profile','ledger','calculate','scores','payments','books','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   if(name === 'ledger') renderLedgerView();
+  if(name === 'books') renderZohoBooksTab();
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
-
 async function refreshAll(){
   snapshots = await loadSnapshots();
   receivables = await loadReceivables();
   payables = await loadPayables();
   await checkRazorpayConnection();
-
   // Restore session-only Payments-tab state from the latest snapshot so it
   // survives refresh/re-login instead of resetting to empty each load.
   if(snapshots.length > 0){
@@ -1007,8 +1016,9 @@ async function refreshAll(){
   } else {
     paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
-
+  await loadZohoVitals();
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
+  handleZohoHashReturn();
 }
 /* ============================================================
    RAZORPAY CONNECTOR (optional, supplements manual upload)
@@ -1176,7 +1186,6 @@ document.getElementById('profileForm').addEventListener('submit', async (e) => {
   } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
   finally { btn.disabled = false; }
 });
-
 const VITAL_ACCENTS = { 'Cash Position':'#F2B662','Receivables Aging':'#FF8FA8','Payables Due (30d)':'#8FA0B5','GST/ITC Leakage':'#F2B662','Net Margin':'#1FA374','Working Capital Runway':'#1FA374' };
 const ZERO_VITALS = [
   { label:'Cash Position', value:'₹0', score:0 },
@@ -1187,7 +1196,6 @@ const ZERO_VITALS = [
   { label:'Working Capital Runway', value:'0.0 months', score:0 }
 ];
 const RING_CIRC = 289.03;
-
 function renderScores(){
   const hasData = snapshots.length > 0;
   const latest = hasData ? snapshots[0] : null;
@@ -1219,16 +1227,14 @@ function renderScores(){
   else { hint.textContent = 'Generated from your latest snapshot.'; idle.style.display = latest.briefing ? 'none' : 'block'; text.textContent = latest.briefing || ''; }
 }
 function splitValue(raw){ const i = String(raw).indexOf(' over '); return i === -1 ? { main:String(raw), suffix:'' } : { main:String(raw).slice(0,i), suffix:String(raw).slice(i+1) }; }
-
 const VITAL_EXPLAIN = {
   'Cash Position': 'How many months your current cash balance covers at your current monthly burn, mapped against a 3–6 month healthy range.',
-  'Receivables Aging': 'Share of outstanding receivables that are overdue by more than 90 days — the money you\u2019re least likely to collect without a push.',
+  'Receivables Aging': 'Share of outstanding receivables that are overdue by more than 90 days — the money you’re least likely to collect without a push.',
   'Payables Due (30d)': 'How much of your cash is already spoken for by bills due in the next 30 days.',
-  'GST/ITC Leakage': 'Input tax credit sitting unclaimed, as a share of your monthly GST payable — cash you\u2019re entitled to but haven\u2019t reconciled yet.',
+  'GST/ITC Leakage': 'Input tax credit sitting unclaimed, as a share of your monthly GST payable — cash you’re entitled to but haven’t reconciled yet.',
   'Net Margin': 'Net profit as a share of revenue, benchmarked against your industry.',
   'Working Capital Runway': 'Months of operating expenses covered by cash plus receivables, minus payables due.'
 };
-
 function renderVitals(vitals, hasData){
   const grid = document.getElementById('vitalsGrid'); grid.innerHTML = '';
   vitals.forEach(v => {
@@ -1256,7 +1262,6 @@ function renderVitals(vitals, hasData){
   }));
   renderVitalsBarChart(vitals, hasData);
 }
-
 function openVitalDetail(v, accent){
   const overlay = document.getElementById('detailOverlay');
   const modal = overlay.querySelector('.detail-modal');
@@ -1275,7 +1280,6 @@ function openVitalDetail(v, accent){
     '<div class="detail-body"><b style="color:var(--text-0);">Current reading: '+v.value+'</b><br><br>' + (VITAL_EXPLAIN[v.label] || '') + '</div>';
   overlay.classList.remove('hidden');
 }
-
 /* ---------- itemized receivables ledger ---------- */
 function renderReceivablesDetail(accent){
   const host = document.getElementById('detailContent');
@@ -1339,7 +1343,6 @@ async function deleteReceivable(r){
     renderReceivablesDetail('#FF8FA8');
   } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
 }
-
 /* ---------- itemized payables ledger ---------- */
 function renderPayablesDetail(accent){
   const host = document.getElementById('detailContent');
@@ -1407,7 +1410,6 @@ async function deletePayable(p){
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 document.getElementById('detailClose').addEventListener('click', () => document.getElementById('detailOverlay').classList.add('hidden'));
 document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e.target.id === 'detailOverlay') e.currentTarget.classList.add('hidden'); });
-
 /* ============================================================
    LEDGER (NEW) — receivables, payables & cash, toggleable
    individually or consolidated, with inline mark-received /
@@ -1416,7 +1418,6 @@ document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e
    detail modals — this is just a dedicated, always-open page for it.
    ============================================================ */
 let ledgerActiveTab = 'all';
-
 function renderLedgerFacts(){
   const host = document.getElementById('ledgerFacts'); if(!host) return;
   const { recvTotal } = ledgerAggregates();
@@ -1427,7 +1428,6 @@ function renderLedgerFacts(){
     '<div class="fact"><div class="f-label">Total payable</div><div class="f-value" style="color:#B9C6D6;">'+inr(payTotal)+'</div></div>' +
     '<div class="fact"><div class="f-label">Net position</div><div class="f-value" style="color:'+(net>=0?'#5EE0AC':'#FF8FA8')+';">'+inr(net)+'</div></div>';
 }
-
 function renderLedgerView(){
   renderLedgerFacts();
   document.querySelectorAll('#ledgerTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.ltab === ledgerActiveTab));
@@ -1435,7 +1435,6 @@ function renderLedgerView(){
   const addTitle = document.getElementById('ledgerAddTitle');
   const listTitle = document.getElementById('ledgerListTitle');
   const host = document.getElementById('ledgerListHost');
-
   if(ledgerActiveTab === 'cash'){
     addForm.classList.add('hidden');
     listTitle.textContent = 'Cash balance readings';
@@ -1453,11 +1452,9 @@ function renderLedgerView(){
     });
     return;
   }
-
   addForm.classList.remove('hidden');
   addTitle.textContent = ledgerActiveTab === 'payables' ? 'Add payable' : 'Add receivable';
   document.getElementById('ledgerParty').placeholder = ledgerActiveTab === 'payables' ? 'Vendor name' : 'Customer name';
-
   let rows = [];
   const farFuture = new Date(8640000000000000);
   if(ledgerActiveTab === 'all'){
@@ -1471,7 +1468,6 @@ function renderLedgerView(){
     listTitle.textContent = 'Open payables (' + payables.length + ')';
     rows = payables.map(p => ({...p, kind:'pay'}));
   }
-
   if(!rows.length){ host.innerHTML = '<div class="ledger-empty">Nothing open here. Add one above.</div>'; return; }
   host.innerHTML = '';
   rows.forEach(r => {
@@ -1528,7 +1524,6 @@ async function ledgerRemovePayable(p){
     payables = await loadPayables(); await saveLedgerSnapshot(); renderLedgerView();
   } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
 }
-
 function renderVitalsBarChart(vitals, hasData){
   const host = document.getElementById('vitalsBarChart'); if(!host) return;
   host.innerHTML = '';
@@ -1544,7 +1539,6 @@ function renderVitalsBarChart(vitals, hasData){
     requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = pct + '%'; });
   });
 }
-
 // Redraws any .draw-line polyline/path and fades in any .area-fill inside host
 // from empty, every time it's called — so charts visibly load in on every
 // render (fresh page load, tab switch, new snapshot), not just snap into place.
@@ -1596,7 +1590,6 @@ function renderHistory(rows){
     host.appendChild(row);
   });
 }
-
 function computeFinancingEligibility(){
   if(!snapshots.length) return null;
   const latest = snapshots[0]; const monthlyRevenue = Number(latest.revenue) || 0;
@@ -1616,9 +1609,8 @@ function renderFinancing(){
 document.getElementById('financingForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const note = document.getElementById('finFormNote');
-  note.className = 'note ok'; note.textContent = 'Interest recorded. We\u2019ll reach out once a lending partner is live.';
+  note.className = 'note ok'; note.textContent = 'Interest recorded. We’ll reach out once a lending partner is live.';
 });
-
 /* ============================================================
    SUMMARY (NEW) — the top overview: KPI strip with sparklines,
    a revenue trend chart, real rule-based alerts, and a stat strip.
@@ -1709,7 +1701,7 @@ function renderAlerts(latest, recvTotal, recv90, paySoon, pay){
     if(Number(latest.gst_payable) > 0 && Number(latest.gst_leak) > 0){
       const ratio = Number(latest.gst_leak)/Number(latest.gst_payable);
       if(ratio > BENCH.gstBad) items.push({ sev:'bad', title:'ITC going unclaimed', desc: inr(latest.gst_leak)+' in input credit is unclaimed against '+inr(latest.gst_payable)+' payable.' });
-      else if(ratio > 0) items.push({ sev:'warn', title:'Some ITC unclaimed', desc: inr(latest.gst_leak)+' in input credit hasn\u2019t been reconciled yet.' });
+      else if(ratio > 0) items.push({ sev:'warn', title:'Some ITC unclaimed', desc: inr(latest.gst_leak)+' in input credit hasn’t been reconciled yet.' });
     }
   }
   if(pay){
@@ -1737,16 +1729,13 @@ function renderSummary(){
   const prev = snapshots[1] || null;
   const { recvTotal, recv90, paySoon } = ledgerAggregates();
   const pay = paymentsData;
-
   document.getElementById('summaryHeadline').textContent = latest
     ? (currentProfile ? currentProfile.company_name : 'Your business') + ' is running ' + scoreBand(latest.pulse_score).label.toLowerCase()
     : 'Waiting on your first snapshot';
   document.getElementById('summaryAsOf').textContent = latest ? ('as of ' + fmtDate(latest.created_at)) : 'no data yet';
-
   const hist = snapshots.slice(0,10).slice().reverse();
   const seriesOf = key => hist.map(r => Number(r[key])||0);
   const marginSeries = hist.map(r => Number(r.revenue) ? (Number(r.net_profit)/Number(r.revenue))*100 : 0);
-
   const kpis = [
     { icon:'wallet', label:'Cash position', value: inr(latest?latest.cash:0), curr: latest?Number(latest.cash):0, prevVal: prev?Number(prev.cash):null, series: seriesOf('cash') },
     { icon:'inbox', label:'Receivables', value: inr(recvTotal), curr: recvTotal, prevVal: null, series: seriesOf('recv_total') },
@@ -1768,10 +1757,8 @@ function renderSummary(){
     strip.appendChild(el);
   });
   animateDrawLine(strip);
-
   renderRevenueTrendChart(hist);
   renderAlerts(latest, recvTotal, recv90, paySoon, pay);
-
   const statStrip = document.getElementById('statStrip'); if(!statStrip) return;
   const stats = [
     { label:'Net profit, last period', value: inr(latest?latest.net_profit:0), curr: latest?Number(latest.net_profit):0, prevVal: prev?Number(prev.net_profit):null },
@@ -1790,7 +1777,6 @@ function renderSummary(){
     statStrip.appendChild(el);
   });
 }
-
 /* ============================================================
    PAYMENTS (NEW) — simple, session-only placeholder logic.
    Not yet persisted to Supabase (no schema change made here).
@@ -1802,7 +1788,6 @@ function renderSummary(){
    ============================================================ */
 const ZERO_PAYMENTS = { gross:0, mdr:0, failed:0, total:0, lag:0, upiPct:0 };
 let shopifyOrdersData = null; // set on upload only — no mock fallback
-
 function computePaymentsMetrics(d){
   const gross = Number(d.gross) || 0;
   const mdr = Number(d.mdr) || 0;
@@ -1837,23 +1822,18 @@ function renderPayments(){
   banner.classList.toggle('hidden', hasData);
   const d = paymentsData || ZERO_PAYMENTS;
   const m = computePaymentsMetrics(d);
-
   document.getElementById('payGrossVal').textContent = inr(m.gross);
   document.getElementById('payNetVal').textContent = inr(m.netSettled);
   document.getElementById('payAtvVal').textContent = inr(m.avgTxn);
-
   document.getElementById('paySettleVal').textContent = hasData ? m.lag.toFixed(1) + ' days' : '—';
   const lf = hasData ? flagFor('lag', m.lag) : {c:'',t:''};
   const sf = document.getElementById('paySettleFlag'); sf.textContent = lf.t; sf.className = 'pc-flag ' + lf.c;
-
   document.getElementById('payMdrVal').textContent = hasData ? m.mdrPct.toFixed(2) + '%' : '—';
   const mf = hasData ? flagFor('mdr', m.mdrPct) : {c:'',t:''};
   const mfe = document.getElementById('payMdrFlag'); mfe.textContent = mf.t; mfe.className = 'pc-flag ' + mf.c;
-
   document.getElementById('payFailVal').textContent = hasData ? m.failRate.toFixed(1) + '%' : '—';
   const ff = hasData ? flagFor('fail', m.failRate) : {c:'',t:''};
   const ffe = document.getElementById('payFailFlag'); ffe.textContent = ff.t; ffe.className = 'pc-flag ' + ff.c;
-
   document.getElementById('payMethodVal').textContent = hasData ? (m.topMethodPct.toFixed(0) + '% ' + m.topMethodName) : '—';
   const bar = document.getElementById('payMethodBar'); bar.innerHTML = '';
   const legend = document.getElementById('payMethodLegend'); legend.innerHTML = '';
@@ -1873,12 +1853,10 @@ function renderPayments(){
   const cfe = document.getElementById('payMethodFlag'); cfe.textContent = cf.t; cfe.className = 'pc-flag ' + cf.c;
   badge.textContent = (hasData && (mf.c==='bad'||ff.c==='bad'||cf.c==='bad')) ? '!' : '';
   badge.classList.toggle('hidden', !hasData || !(mf.c==='bad'||ff.c==='bad'||cf.c==='bad'));
-
   renderSettleTrendChart();
   renderShopifyChart();
   renderSettlementList();
 }
-
 function renderSettlementList(){
   const host = document.getElementById('settlementList'); if(!host) return;
   const sub = document.getElementById('settleListSub');
@@ -1904,7 +1882,6 @@ function renderSettlementList(){
     host.appendChild(row);
   });
 }
-
 function renderSettleTrendChart(){
   const host = document.getElementById('paySettleBarChart'); if(!host) return;
   const sub = document.getElementById('paySettleTrendSub');
@@ -1939,7 +1916,338 @@ function renderShopifyChart(){
     requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = pct + '%'; });
   });
 }
+/* ============================================================
+   ZOHO BOOKS CONNECTOR (NEW) — OAuth 2.0, org-picker gated.
+   The only connector that can unlock receivables aging, payables
+   due, GST/ITC leakage and true net margin, because those live in
+   the books and nowhere else.
 
+   All arithmetic happens server-side in the zoho_vitals() SQL
+   function; this file only renders what /api/zoho-vitals returns,
+   so the app and the AI briefing always read identical numbers.
+   ============================================================ */
+async function zohoApi(path, opts){
+  opts = opts || {};
+  const { data:{ session } } = await sbClient.auth.getSession();
+  const token = session ? session.access_token : null;
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+    body: opts.body
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok) throw new Error(data.error || data.message || ('Request failed (' + res.status + ')'));
+  return data;
+}
+function zohoShowError(msg){
+  const el = document.getElementById('zohoError');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+/* ---------- status row inside Connectors ---------- */
+async function loadZohoVitals(){
+  try {
+    const v = await zohoApi('/api/zoho-vitals');
+    zohoConnected = v && v.connected === true;
+    zohoVitals = zohoConnected ? v : null;
+  } catch(e){ zohoConnected = false; zohoVitals = null; }
+  renderZohoStatus();
+  renderZohoBooksTab();
+}
+function renderZohoStatus(){
+  const host = document.getElementById('zohoStatus'); if(!host) return;
+  if(zohoConnected && zohoVitals){
+    const needsReauth = zohoVitals.status === 'needs_reauth';
+    const name = escapeHtml(zohoVitals.organization_name || zohoVitals.organization_id || 'your organization');
+    const meta = needsReauth
+      ? 'Needs re-authentication — reconnect to resume nightly syncing'
+      : (zohoVitals.backfill_completed_at
+          ? 'Connected to ' + name + ' — syncing nightly at 2:30 AM IST'
+          : 'Connected to ' + name + ' — first 12-month backfill in progress');
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">' + (needsReauth ? '' : '✓ ') + 'Zoho Books</div>' +
+        '<div class="lr-meta">' + meta + '</div>' +
+      '</div><span class="lr-tag ' + (needsReauth ? 'bad' : 'ok') + '">' + (needsReauth ? 'Reconnect' : 'Connected') + '</span>' +
+      '<div class="lr-actions">' +
+        (needsReauth ? '<button class="lr-btn" id="zohoReconnectBtn">Reconnect</button>'
+                     : '<button class="lr-btn" id="zohoSyncBtn">Sync now</button>') +
+        '<button class="lr-btn danger" id="zohoDisconnectBtn">Disconnect</button>' +
+      '</div></div>';
+    const s = document.getElementById('zohoSyncBtn'); if(s) s.addEventListener('click', syncZohoNow);
+    const r = document.getElementById('zohoReconnectBtn'); if(r) r.addEventListener('click', openZohoModal);
+    document.getElementById('zohoDisconnectBtn').addEventListener('click', disconnectZoho);
+  } else {
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Zoho Books</div>' +
+        '<div class="lr-meta">Not connected — unlocks receivables, payables, GST/ITC leakage and true margin</div>' +
+      '</div><div class="lr-actions"><button class="lr-btn" id="connectZohoBtn">Connect</button></div></div>';
+    const btn = document.getElementById('connectZohoBtn');
+    if(btn) btn.addEventListener('click', openZohoModal);
+  }
+}
+/* ---------- step 1: consent ---------- */
+const ZOHO_REGIONS = [
+  ['in','India (zoho.in)'], ['com','Global (zoho.com)'], ['eu','Europe (zoho.eu)'],
+  ['au','Australia (zoho.com.au)'], ['uk','UK (zoho.uk)'], ['ca','Canada (zohocloud.ca)'],
+  ['jp','Japan (zoho.jp)'], ['sa','Saudi Arabia (zoho.sa)']
+];
+function openZohoModal(){
+  const overlay = document.getElementById('zohoOverlay');
+  const host = document.getElementById('zohoContent');
+  const opts = ZOHO_REGIONS.map(r => '<option value="'+r[0]+'"'+(r[0]==='in'?' selected':'')+'>'+r[1]+'</option>').join('');
+  host.innerHTML =
+    '<div class="detail-eyebrow">Connect data</div>' +
+    '<div class="detail-title">Connect Zoho Books</div>' +
+    '<div class="zoho-scope-note">Read-only access</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">You will sign in on Zoho\'s own page — Margyn never sees your Zoho password. Margyn only ever reads your books and never creates, edits or deletes anything in them.</div>' +
+    '<div class="ledger-form">' +
+      '<div class="lf-title">Your Zoho data centre</div>' +
+      '<select id="zohoRegion" style="margin-bottom:8px;">' + opts + '</select>' +
+      '<div style="font-size:11px; color:var(--text-2); margin-bottom:10px;">Most Indian businesses are on zoho.in. If you sign in at a different Zoho domain, pick it here — Margyn will still auto-correct to the right one after you approve.</div>' +
+      '<div class="note bad" id="zohoError" style="display:none; margin-bottom:8px;"></div>' +
+      '<button id="zohoConnectBtn">Continue to Zoho</button>' +
+    '</div>';
+  document.getElementById('zohoConnectBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('zohoConnectBtn');
+    zohoShowError('');
+    btn.disabled = true; btn.textContent = 'Opening Zoho…';
+    try {
+      const region = document.getElementById('zohoRegion').value;
+      const out = await zohoApi('/api/zoho-oauth-start', { method:'POST', body: JSON.stringify({ region: region }) });
+      const w = window.open(out.authorize_url, 'zoho_oauth', 'width=560,height=720');
+      if(!w) zohoShowError('Your browser blocked the popup. Allow popups for this site and try again.');
+    } catch(e){ zohoShowError(e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Continue to Zoho'; }
+  });
+  overlay.classList.remove('hidden');
+}
+/* The callback page posts back here, then closes itself. */
+window.addEventListener('message', (ev) => {
+  if(!ev.data || ev.data.source !== 'margyn-zoho-oauth') return;
+  const p = ev.data.payload || {};
+  if(!p.ok){
+    document.getElementById('zohoOverlay').classList.remove('hidden');
+    zohoShowError(
+      p.reason === 'no_books_organization'
+        ? 'That Zoho login has no Zoho Books organization. A Zoho Books plan (the free plan works) is required.'
+        : 'Could not complete the Zoho connection. Please try again.'
+    );
+    return;
+  }
+  zohoPendingOrgRef = p.org_ref;
+  renderZohoOrgPicker(p.organizations || []);
+});
+/* Popup blocked? The callback falls back to a redirect carrying the org ref. */
+function handleZohoHashReturn(){
+  if(location.hash.indexOf('zoho=select-org') === -1) return;
+  const m = /org_ref=([^&]+)/.exec(location.hash);
+  if(!m) return;
+  zohoPendingOrgRef = decodeURIComponent(m[1]);
+  history.replaceState(null, '', location.pathname + location.search);
+  zohoApi('/api/zoho-select-org?org_ref=' + encodeURIComponent(zohoPendingOrgRef))
+    .then(d => renderZohoOrgPicker(d.organizations || []))
+    .catch(e => { document.getElementById('zohoOverlay').classList.remove('hidden'); zohoShowError(e.message); });
+}
+/* ---------- step 2: org picker — activation blocks until one is chosen ---------- */
+function renderZohoOrgPicker(orgs){
+  const overlay = document.getElementById('zohoOverlay');
+  const host = document.getElementById('zohoContent');
+  zohoChosenOrgId = null;
+  host.innerHTML =
+    '<div class="detail-eyebrow">Almost done</div>' +
+    '<div class="detail-title">Choose your organization</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">This is the entity Margyn calculates your vitals from. Choose carefully — connecting a second entity later is a separate connection, not a setting you can change afterwards.</div>' +
+    '<div id="zohoOrgList"></div>' +
+    '<div class="note bad" id="zohoError" style="display:none; margin:10px 0;"></div>' +
+    '<button class="auth-submit" id="zohoOrgConfirm" disabled style="margin-top:8px;">Confirm organization</button>';
+  const list = document.getElementById('zohoOrgList');
+  orgs.forEach(o => {
+    const row = document.createElement('label');
+    row.className = 'org-option';
+    row.innerHTML =
+      '<input type="radio" name="zohoOrg">' +
+      '<span class="org-name">' + escapeHtml(o.name || o.organization_id) + '</span>' +
+      '<span class="org-meta">' + escapeHtml(o.plan_type || 'plan n/a') + ' · ' + escapeHtml(o.currency_code || 'INR') + '</span>';
+    row.querySelector('input').addEventListener('change', () => {
+      zohoChosenOrgId = o.organization_id;
+      document.getElementById('zohoOrgConfirm').disabled = false;
+    });
+    list.appendChild(row);
+  });
+  document.getElementById('zohoOrgConfirm').addEventListener('click', confirmZohoOrg);
+  overlay.classList.remove('hidden');
+}
+async function confirmZohoOrg(){
+  if(!zohoChosenOrgId || !zohoPendingOrgRef) return;
+  const btn = document.getElementById('zohoOrgConfirm');
+  zohoShowError('');
+  btn.disabled = true; btn.textContent = 'Connecting…';
+  try {
+    const out = await zohoApi('/api/zoho-select-org', {
+      method: 'POST',
+      body: JSON.stringify({ org_ref: zohoPendingOrgRef, organization_id: zohoChosenOrgId })
+    });
+    document.getElementById('zohoOverlay').classList.add('hidden');
+    zohoPendingOrgRef = null; zohoChosenOrgId = null;
+    await loadZohoVitals();
+    if(out.multi_currency_detected){
+      alert('This organization uses a non-INR base currency. Those records are excluded from your vitals until currency conversion is available.');
+    }
+    // The 12-month backfill runs in the background; re-read once it has had a moment.
+    setTimeout(loadZohoVitals, 25000);
+  } catch(e){
+    zohoShowError(e.message);
+    btn.disabled = false;
+  } finally { btn.textContent = 'Confirm organization'; }
+}
+document.getElementById('zohoClose').addEventListener('click', () => document.getElementById('zohoOverlay').classList.add('hidden'));
+document.getElementById('zohoOverlay').addEventListener('click', (e) => { if(e.target.id === 'zohoOverlay') e.currentTarget.classList.add('hidden'); });
+/* ---------- sync / disconnect ---------- */
+async function syncZohoNow(){
+  const btn = document.getElementById('zohoSyncBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
+  try {
+    await zohoApi('/api/sync-zoho', { method:'POST', body: JSON.stringify({ mode:'delta' }) });
+    await loadZohoVitals();
+  } catch(e){
+    if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Sync now'; }
+}
+async function disconnectZoho(){
+  if(!confirm('Disconnect Zoho Books? Your historical figures stay visible in Margyn, but nothing new will sync until you reconnect.')) return;
+  const btn = document.getElementById('zohoDisconnectBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
+  try { await zohoApi('/api/disconnect-zoho', { method:'POST', body: JSON.stringify({}) }); }
+  catch(e){ alert('Could not disconnect: ' + e.message); }
+  await loadZohoVitals();
+}
+/* ---------- books tab ---------- */
+function zvSet(id, text){ const el = document.getElementById(id); if(el) el.textContent = text; }
+function zvFlag(id, cls, text){ const el = document.getElementById(id); if(!el) return; el.textContent = text || ''; el.className = 'pc-flag ' + (cls || ''); }
+function renderZohoBooksTab(){
+  const notConnected = document.getElementById('booksNotConnected');
+  const backfill = document.getElementById('booksBackfillBanner');
+  const content = document.getElementById('booksContent');
+  const badge = document.getElementById('booksBadge');
+  if(!notConnected || !content) return;
+
+  if(!zohoConnected || !zohoVitals){
+    notConnected.classList.remove('hidden');
+    backfill.classList.add('hidden');
+    content.classList.add('hidden');
+    if(badge){ badge.textContent = ''; badge.classList.add('hidden'); }
+    return;
+  }
+  notConnected.classList.add('hidden');
+  backfill.classList.toggle('hidden', !!zohoVitals.backfill_completed_at);
+  content.classList.remove('hidden');
+
+  const v = zohoVitals;
+  const r = v.receivables || {}, p = v.payables || {}, g = v.gst_leakage || {};
+  const m = v.net_margin || {}, w = v.working_capital_runway || {}, c = v.cash_position || {};
+  const flags = v.flags || [];
+
+  zvSet('zvRecvVal', inr(r.total));
+  zvFlag('zvRecvFlag', Number(r.days_90_plus) > 0 ? 'bad' : 'ok',
+         Number(r.days_90_plus) > 0 ? inr(r.days_90_plus) + ' over 90d' : 'None over 90d');
+
+  zvSet('zvPayVal', inr(p.total));
+  const crunch = Number(p.projected_cash_after_this_weeks_payables) < 0;
+  zvFlag('zvPayFlag', crunch ? 'bad' : (Number(p.overdue) > 0 ? 'warn' : 'ok'),
+         crunch ? 'Shortfall this week' : (Number(p.overdue) > 0 ? inr(p.overdue) + ' overdue' : inr(p.due_this_week) + ' due this week'));
+
+  zvSet('zvGstVal', inr(g.total_leakage));
+  const leakPct = Number(g.leakage_pct) || 0;
+  zvFlag('zvGstFlag', leakPct > 15 ? 'bad' : (leakPct > 0 ? 'warn' : 'ok'),
+         leakPct > 0 ? leakPct + '% of claimed ITC' : 'Nothing at risk');
+
+  zvSet('zvMarginVal', (m.net_margin_pct !== null && m.net_margin_pct !== undefined) ? m.net_margin_pct + '%' : '—');
+  zvSet('zvRunwayVal', (w.runway_days !== null && w.runway_days !== undefined) ? Math.round(w.runway_days) + ' days' : '—');
+
+  if(c.bank_data_available === false){
+    zvSet('zvCashVal', 'Not available');
+    zvFlag('zvCashFlag', 'warn', 'Needs Zoho Standard plan');
+  } else {
+    zvSet('zvCashVal', inr(c.zoho_reported_balance));
+    const div = Number(c.divergence_pct) || 0;
+    zvFlag('zvCashFlag', div > 10 ? 'bad' : 'ok', div + '% vs gateway settlements');
+  }
+
+  // Named-entity insight lines, generated server-side alongside the vitals.
+  const hints = (v.briefing_hints && v.briefing_hints.lines) || [];
+  const ins = document.getElementById('zvInsights');
+  const insCard = document.getElementById('zvInsightsCard');
+  if(hints.length){
+    insCard.classList.remove('hidden');
+    ins.innerHTML = hints.map(l =>
+      '<div class="alert-item"><span class="alert-dot warn">!</span>' +
+      '<div class="alert-body"><div class="alert-desc">' + escapeHtml(l) + '</div></div></div>').join('');
+  } else {
+    insCard.classList.remove('hidden');
+    ins.innerHTML = '<div class="alert-item"><span class="alert-dot ok">✓</span><div class="alert-body">' +
+      '<div class="alert-title">Nothing urgent in the books</div>' +
+      '<div class="alert-desc">No overdue customers, ITC risk or near-term cash crunch flagged on the latest sync.</div></div></div>';
+  }
+
+  // Receivables aging buckets
+  const aging = document.getElementById('zvAgingChart');
+  const buckets = [['Current', r.current], ['1–30 days', r.days_1_30], ['31–60 days', r.days_31_60],
+                   ['61–90 days', r.days_61_90], ['90+ days', r.days_90_plus]];
+  const maxB = Math.max.apply(null, buckets.map(b => Number(b[1]) || 0).concat([1]));
+  aging.innerHTML = '';
+  buckets.forEach(b => {
+    const val = Number(b[1]) || 0;
+    const pct = Math.max(2, (val / maxB) * 100);
+    const row = document.createElement('div'); row.className = 'hbar-row';
+    row.innerHTML = '<span class="hbar-label">' + b[0] + '</span>' +
+      '<div class="hbar-track"><div class="hbar-fill" style="width:0%;"></div></div>' +
+      '<span class="hbar-val">' + inr(val) + '</span>';
+    aging.appendChild(row);
+    requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = pct + '%'; });
+  });
+
+  // Overdue customers — the line the owner can act on same day
+  const od = document.getElementById('zvOverdueList');
+  const overdue = v.top_overdue_customers || [];
+  od.innerHTML = overdue.length ? '' : '<div class="ledger-empty">Nothing overdue right now.</div>';
+  overdue.forEach(x => {
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">' + escapeHtml(x.customer_name || 'Unnamed customer') + '</div>' +
+      '<div class="lr-meta">' + escapeHtml(x.invoice_number || '—') +
+      '<span class="lr-tag ' + (Number(x.days_overdue) > 90 ? 'bad' : 'warn') + '">' + x.days_overdue + 'd overdue</span></div></div>' +
+      '<div class="lr-amount">' + inr(x.balance) + '</div>';
+    od.appendChild(row);
+  });
+
+  // Vendors creating ITC risk — vendor-level, because that is who you chase
+  const vl = document.getElementById('zvVendorList');
+  const vendors = v.gst_top_at_risk_vendors || [];
+  const vsub = document.getElementById('zvVendorSub');
+  if(vsub) vsub.textContent = g.filing_period ? ('Period ' + g.filing_period) : 'Latest filing period';
+  vl.innerHTML = vendors.length ? '' : '<div class="ledger-empty">No input credit at risk this period.</div>';
+  vendors.forEach(x => {
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">' + escapeHtml(x.vendor_name || 'Unnamed vendor') + '</div>' +
+      '<div class="lr-meta">' + escapeHtml(x.vendor_gstin || 'GSTIN not recorded') + '</div></div>' +
+      '<div class="lr-amount">' + inr(x.at_risk) + '</div>';
+    vl.appendChild(row);
+  });
+
+  // Nav badge mirrors the Payments-tab convention: only fires on a real problem.
+  if(badge){
+    const urgent = flags.indexOf('gst_leakage_material') !== -1 ||
+                   flags.indexOf('cash_crunch_within_7_days') !== -1 ||
+                   flags.indexOf('needs_reauth') !== -1;
+    badge.textContent = urgent ? '!' : '';
+    badge.classList.toggle('hidden', !urgent);
+  }
+}
 /* ---------- auth ---------- */
 const authTabs = document.querySelectorAll('.auth-tab');
 const authForms = document.querySelectorAll('.auth-form');
@@ -1979,14 +2287,12 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   const btn = document.getElementById('logoutBtn'); btn.disabled = true;
   try { if(sbClient) await sbClient.auth.signOut(); } catch(e){} finally { btn.disabled = false; await routeFor(null); }
 });
-
 /* ---------- entry tabs ---------- */
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
   t.classList.add('active'); document.getElementById('panel-' + t.dataset.tab).classList.add('active');
 }));
-
 /* ---------- upload ---------- */
 let workbookData = null;
 const dropzone = document.getElementById('dropzone');
@@ -2015,7 +2321,6 @@ function sheetToRows(wb, name){
   const sheet = wb.Sheets[name];
   return sheet ? XLSX.utils.sheet_to_json(sheet, { range:4, defval:0 }) : [];
 }
-
 document.getElementById('computeFromFile').addEventListener('click', async () => {
   if(!workbookData) return;
   const note = document.getElementById('noteUpload'); const summaryBox = document.getElementById('importSummaryUpload');
@@ -2028,9 +2333,7 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
     const gst  = sheetToRows(workbookData, 'GST ITC');
     const rzp  = sheetToRows(workbookData, 'Razorpay Settlements');
     const shop = sheetToRows(workbookData, 'Shopify Orders');
-
     const cash = bank.reduce((s,r) => s + (Number(r['Balance'])||0), 0);
-
     // Insert into the itemized ledger tables (not just an aggregate) so uploaded
     // invoices/bills show up in the Receivables/Payables detail view with
     // Mark as received / Mark as paid actions, same as manually-added rows.
@@ -2049,15 +2352,12 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
     receivables = await loadReceivables();
     payables = await loadPayables();
     const { recvTotal, recv90, paySoon } = ledgerAggregates();
-
     const plMap = {}; pl.forEach(r => { plMap[r['Line Item']] = Number(r['Amount'])||0; });
     const revenue = plMap['Revenue'] || 0;
     const netProfit = plMap['Net Profit'] || 0;
     const burn = plMap['Monthly Operating Expenses'] || (revenue - netProfit) || 1;
-
     let gstLeak = 0, gstPayable = 0;
     gst.forEach(r => { gstLeak += (Number(r['ITC Available'])||0) - (Number(r['ITC Claimed'])||0); gstPayable += Number(r['GST Payable'])||0; });
-
     // NEW: Razorpay Settlements sheet — simple aggregate parsing.
     // Expected columns: Settlement Date, Gross Amount, MDR, GST on MDR, Net Settled, Txn Count, Failed Count, Settlement Lag (days), UPI %
     let rzpGross=0, rzpMdr=0, rzpFailed=0, rzpTotal=0, rzpLagSum=0, rzpLagCount=0, rzpUpiSum=0, rzpUpiCount=0;
@@ -2069,7 +2369,6 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
       if(r['Settlement Lag (days)'] !== undefined){ rzpLagSum += Number(r['Settlement Lag (days)'])||0; rzpLagCount++; }
       if(r['UPI %'] !== undefined){ rzpUpiSum += Number(r['UPI %'])||0; rzpUpiCount++; }
     });
-
     // Itemized settlement rows — feeds the "Mark as settled" list on the Payments tab.
     if(rzp.length){
       settlementRows = rzp.map(r => ({
@@ -2085,7 +2384,6 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
       settlementDailyTrend = (dateKeys.length ? dateKeys.map(k => byDate[k]) : settlementRows.map(r => r.gross)).slice(-7);
       while(settlementDailyTrend.length < 7) settlementDailyTrend.unshift(0);
     }
-
     // NEW: Shopify Orders sheet — aggregate revenue/orders for reference (not yet scored; see roadmap)
     let shopRevenue = 0, shopOrders = 0, shopPaid = 0, shopOther = 0;
     const seenOrders = new Set();
@@ -2103,12 +2401,10 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
         { label:'Revenue (₹)', value: shopRevenue, isCurrency:true }
       ];
     }
-
     if(rzp.length){
       paymentsData = { gross: rzpGross, mdr: rzpMdr, failed: rzpFailed, total: rzpTotal,
         lag: rzpLagCount ? rzpLagSum/rzpLagCount : 0, upiPct: rzpUpiCount ? rzpUpiSum/rzpUpiCount : 0 };
     }
-
     await saveSnapshot({ cash, recvTotal, recv90, paySoon, revenue, netProfit, burn, gstLeak, gstPayable, source:'upload' });
     renderPayments();
     let summaryHtml = '<b>Imported:</b> cash ' + inr(cash) + ', ' + recvInserts.length + ' receivable(s), ' + payInserts.length + ' payable(s), revenue ' + inr(revenue) + '.';    if(rzp.length) summaryHtml += '<br><b>Razorpay:</b> ' + inr(rzpGross) + ' gross across ' + rzp.length + ' settlement rows.';
@@ -2119,7 +2415,6 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
     showView('summary');
   } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
 });
-
 document.getElementById('computeFromManual').addEventListener('click', async () => {
   const v = id => Number(document.getElementById(id).value) || 0;
   const note = document.getElementById('noteManual');
@@ -2136,7 +2431,6 @@ document.getElementById('computeFromManual').addEventListener('click', async () 
     showView('summary');
   } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
 });
-
 /* ---------- scoring (same weighted model as v2.0, simplified receivables curve
    since this build doesn't carry a per-invoice ledger — see roadmap) ---------- */
 const BENCH = { cashMin:3, cashMax:6, gstBad:0.5, runwayMin:3, runwayMax:6 };
@@ -2144,7 +2438,6 @@ const WEIGHTS = { cash:0.15, runway:0.15, recv:0.175, pay:0.175, margin:0.20, gs
 const INDUSTRY_MARGIN_ANCHOR = { 'D2C / E-commerce':0.10, 'SaaS / Software':0.20, 'Agency / Services':0.15, 'Manufacturing (General)':0.10 };
 const UNIVERSAL_MARGIN_ANCHOR = 0.10;
 function runwayScore(months, minM, maxM){ const s = months <= minM ? (months/minM)*50 : 50 + Math.min(1,(months-minM)/(maxM-minM))*50; return clamp(s); }
-
 function computeVitals(d){
   const cashMonths = d.burn > 0 ? d.cash / d.burn : 0;
   const cashScore = runwayScore(cashMonths, BENCH.cashMin, BENCH.cashMax);
@@ -2179,7 +2472,6 @@ async function saveSnapshot(d){
   const { error } = await withTimeout(sbClient.from('snapshots').insert(row), 20000, 'Saving snapshot');
   if(error) throw error;
 }
-
 /* ---------- briefing ---------- */
 document.getElementById('generateBriefing').addEventListener('click', async () => {
   const btn = document.getElementById('generateBriefing'); const out = document.getElementById('briefing-text'); const latest = snapshots[0];
@@ -2197,10 +2489,8 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
   } catch(err){ out.innerHTML = '<div class="error-box">Could not generate briefing: ' + err.message + '</div>'; }
   finally { btn.disabled = false; }
 });
-
 renderVitals(ZERO_VITALS, false);
 bootAuth();
-
 /* ============================================================
    AURORA BACKGROUND SHADER — matches index.html exactly.
    ============================================================ */
