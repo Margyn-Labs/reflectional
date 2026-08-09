@@ -128,6 +128,13 @@ module.exports = async (req, res) => {
   try {
     tokens = await exchangeCodeForTokens(code, accountsDomain);
   } catch (err) {
+    // Surface the real reason in the Vercel log. The owner-facing copy stays
+    // vague; this line is what actually tells you whether it was a wrong
+    // data centre, a reused code, or bad client credentials.
+    console.error('[zoho-oauth-callback] token exchange failed at', accountsDomain,
+      '| location=', req.query && req.query.location,
+      '| accounts-server=', req.query && req.query['accounts-server'],
+      '|', err.message);
     await logConnectorEvent({
       userId, connectorType: 'zoho_books', operation: 'oauth_callback',
       status: 'error',
