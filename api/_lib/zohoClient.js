@@ -64,6 +64,14 @@ const ACCOUNTS_DOMAINS = {
 };
 const DEFAULT_REGION = 'in';
 
+/**
+ * Zoho's `location` callback param uses data-centre codes that don't all
+ * match the keys above — notably it returns `us` for the .com DC, not `com`.
+ * Mapping these is required for anyone whose Zoho account lives outside .in,
+ * which includes most accounts created via Google sign-in.
+ */
+const LOCATION_ALIASES = { us: 'com', usa: 'com', global: 'com', jp: 'jp', in: 'in', eu: 'eu', au: 'au', ca: 'ca', sa: 'sa', uk: 'uk' };
+
 const PER_PAGE = 200;             // Zoho max; minimises calls against the 100/min ceiling
 const MAX_PAGES = 200;            // safety cap (40,000 records per module per run)
 const PAGE_DELAY_MS = 700;        // ~85 req/min, comfortably under the 100/min per-org limit
@@ -112,8 +120,11 @@ function resolveAccountsDomain({ accountsServer, location, fallbackRegion }) {
     }
     // Unknown host: ignore it. Never fetch a domain we did not ship.
   }
-  if (location && ACCOUNTS_DOMAINS[String(location).toLowerCase()]) {
-    return ACCOUNTS_DOMAINS[String(location).toLowerCase()];
+  if (location) {
+    const loc = String(location).toLowerCase();
+    const key = LOCATION_ALIASES[loc] || loc;
+    if (ACCOUNTS_DOMAINS[key]) return ACCOUNTS_DOMAINS[key];
+    console.error('[zoho] unrecognised location param:', loc);
   }
   return accountsDomainForRegion(fallbackRegion);
 }
@@ -128,7 +139,21 @@ function b64urlDecode(str) {
   return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/') + pad, 'base64').toString('utf8');
 }
 
-/** HMAC-signed, 10-minute state param. Carries the user id + chosen region. */
+/**
+ * How long the signed `state` stays valid, measured from clicking "Continue
+ * to Zoho" to landing back on the callback.
+ *
+ * This is NOT the Zoho authorization-code lifetime (that's 2 minutes and
+ * starts when the owner clicks Accept). This clock covers the whole detour:
+ * signing in to Zoho, possibly via Google, clearing 2FA, picking an account,
+ * and reading the permission list. 10 minutes was too tight — a first-time
+ * connect on an unfamiliar login routinely takes longer, and the failure
+ * surfaced as a generic "could not complete", which is impossible for an
+ * owner to interpret.
+ */
+const STATE_TTL_MS = 30 * 60 * 1000;
+
+/** HMAC-signed state param. Carries the user id + chosen region. */
 function signState(payload) {
   if (!STATE_SECRET) throw new Error('ZOHO_STATE_SECRET is not configured');
   const body = b64url(JSON.stringify({ ...payload, ts: Date.now() }));
@@ -152,7 +177,10 @@ function verifyState(state) {
   } catch {
     return null;
   }
-  if (!parsed.ts || Date.now() - parsed.ts > 10 * 60 * 1000) return null;
+  if (!parsed.ts || Date.now() - parsed.ts > STATE_TTL_MS) {
+    console.error('[zoho] state expired after', Math.round((Date.now() - (parsed.ts || 0)) / 1000), 'seconds');
+    return null;
+  }
   return parsed;
 }
 
