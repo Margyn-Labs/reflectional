@@ -66,9 +66,33 @@
   @keyframes starDrift{ from{ transform:translate(0,0); } to{ transform:translate(-260px,180px); } }
   @keyframes starTwinkle{ 0%,100%{ opacity:0.5; } 50%{ opacity:1; } }
   @media (prefers-reduced-motion: reduce){ .stars span{ animation:none; } }
-  .aurora-bg{ position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; }
-  .aurora-bg canvas{ display:block; width:100%; height:100%; }
+  /* ---------- shooting stars (replaces the old WebGL aurora — black sky + stars stay constant) ---------- */
+  .shooting-stars{ position:absolute; inset:0; z-index:1; overflow:hidden; }
+  .shooting-star{ position:absolute; top:var(--sy,10%); left:var(--sx,0%); width:1.5px; height:1.5px; background:#fff; border-radius:50%; box-shadow:0 0 6px 0.5px rgba(255,255,255,0.75); opacity:0; animation:shootAcross var(--sdur,7s) cubic-bezier(.28,.65,.35,1) infinite; animation-delay:var(--sdelay,0s); }
+  .shooting-star::before{ content:''; position:absolute; top:50%; left:0; width:80px; height:1px; transform-origin:left center; transform:translateY(-50%) rotate(-26.5deg) scaleX(0); background:linear-gradient(90deg, rgba(255,255,255,0.85), rgba(255,255,255,0)); }
+  @keyframes shootAcross{
+    0%{ opacity:0; transform:translate(0,0); }
+    1%{ opacity:1; }
+    2%{ transform:translate(-6px,3px); }
+    9%{ opacity:0; transform:translate(-160px,80px); }
+    100%{ opacity:0; transform:translate(-160px,80px); }
+  }
+  .shooting-star::before{ animation:shootTail var(--sdur,7s) cubic-bezier(.28,.65,.35,1) infinite; animation-delay:var(--sdelay,0s); }
+  @keyframes shootTail{
+    0%{ transform:translateY(-50%) rotate(-26.5deg) scaleX(0); opacity:0; }
+    1%{ opacity:1; }
+    2%{ transform:translateY(-50%) rotate(-26.5deg) scaleX(1); }
+    9%{ transform:translateY(-50%) rotate(-26.5deg) scaleX(0.4); opacity:0; }
+    100%{ opacity:0; }
+  }
+  @media (prefers-reduced-motion: reduce){ .shooting-star, .shooting-star::before{ animation:none; display:none; } }
   @media print{ .stage{ display:none; } }
+  /* ---------- tier badges (FREE / PRO) on sidebar nav ---------- */
+  .tier-chip{ font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:800; letter-spacing:.04em; padding:2px 6px; border-radius:5px; margin-left:auto; flex-shrink:0; }
+  .tier-chip.free{ background:rgba(31,163,116,0.22); color:#5EE0AC; }
+  .tier-chip.pro{ background:rgba(242,182,98,0.22); color:#F2B662; }
+  @media (min-width:901px){ .sidebar .pagenav button{ justify-content:space-between; } }
+  @media (max-width:900px){ .tier-chip{ display:none; } }
   nav{ position:fixed; top:50px; left:50%; transform:translateX(-50%); z-index:100; background:rgba(16,23,38,0.72); backdrop-filter:blur(20px) saturate(1.5); border:1px solid var(--border-1); border-radius:999px; box-shadow:var(--shadow-md); max-width:calc(100% - 32px); transition:box-shadow .3s ease; }
   nav:hover{ box-shadow:0 18px 40px rgba(31,163,116,0.18), 0 2px 8px rgba(7,11,20,0.3); }
   .nav-inner{ padding:10px 10px 10px 22px; display:flex; align-items:center; gap:16px; }
@@ -122,11 +146,24 @@
   .app-body .sidebar{ order:2; }
   .app-body .wrap{ order:1; }
   @media (min-width:901px){
-    .app-body{ flex-direction:row; align-items:flex-start; gap:0; max-width:1720px; margin:0 auto; padding:0 40px; }
-    .app-body .sidebar{ order:0; position:sticky; top:132px; width:224px; flex-shrink:0; padding-top:132px; margin-right:36px; }
+    .app-body{ flex-direction:row; align-items:stretch; gap:0; max-width:1720px; margin:0 auto; padding:0 40px; }
+    .app-body .sidebar{ order:0; position:sticky; top:132px; align-self:flex-start; width:162px; flex-shrink:0; margin-right:24px; display:flex; flex-direction:column; }
     .app-body .wrap{ order:1; max-width:none; margin:0; padding:132px 0 96px; flex:1; min-width:0; }
-    .sidebar .pagenav{ flex-direction:column; align-items:stretch; gap:3px; padding:10px; border-radius:20px; margin-bottom:0; }
-    .sidebar .pagenav button{ flex:none; justify-content:flex-start; text-align:left; padding:12px 14px; border-radius:13px; min-width:0; }
+    .sidebar .pagenav{
+      flex-direction:column; align-items:stretch; gap:4px; padding:10px; border-radius:18px; margin-bottom:0;
+      background:linear-gradient(180deg, rgba(31,163,116,0.055), rgba(255,255,255,0.015));
+      backdrop-filter:blur(18px); border:1px solid rgba(31,163,116,0.18);
+      box-shadow:0 0 0 1px rgba(255,255,255,0.02) inset, 0 20px 60px -34px rgba(31,163,116,0.25);
+      justify-content:flex-start;
+    }
+    .sidebar .pagenav button{ flex:none; justify-content:flex-start; text-align:left; padding:10px 11px; border-radius:11px; min-width:0; font-size:11px; gap:8px; }
+    .sidebar .pagenav button svg{ width:14px; height:14px; }
+    .sidebar .tier-chip{ font-size:7px; padding:1px 4px; }
+  }
+  @media (min-width:1150px){
+    .app-body .sidebar{ width:174px; }
+    .sidebar .pagenav{ gap:5px; padding:12px; }
+    .sidebar .pagenav button{ padding:11px 12px; font-size:11.5px; }
   }
   @media (min-width:1400px){
     .app-body{ padding:0 56px; }
@@ -374,12 +411,77 @@
   .org-option .org-name{ font-size:13.5px; font-weight:700; color:var(--text-0); flex:1; min-width:0; }
   .org-option .org-meta{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
   .zoho-scope-note{ display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:#5EE0AC; background:rgba(31,163,116,0.12); border:1px solid rgba(31,163,116,0.28); border-radius:999px; padding:7px 13px; margin-bottom:14px; }
+  /* ---------- khata: customers/vendors + invoicing (NEW, free-tier ledger) ---------- */
+  .lsuper-panel{ display:none; } .lsuper-panel.active{ display:block; }
+  .khata-panel{ display:none; } .khata-panel.active{ display:block; }
+  .search-row{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .search-row input{ flex:1; min-width:180px; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'Manrope',sans-serif; font-size:14px; margin-bottom:0; }
+  .search-row select{ padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'Manrope',sans-serif; font-size:13px; margin-bottom:0; }
+  .btn-primary{ background:var(--emerald); color:#fff; border:none; padding:11px 20px; border-radius:999px; font-weight:700; font-size:13.5px; cursor:pointer; font-family:'Manrope',sans-serif; white-space:nowrap; }
+  .btn-primary:hover{ background:var(--emerald-bright); }
+  .btn-ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:10px 18px; border-radius:999px; font-size:13px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; white-space:nowrap; }
+  .btn-ghost:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
+  .cust-row{ display:flex; align-items:center; gap:14px; padding:14px 4px; border-bottom:1px solid var(--border-1); cursor:pointer; transition:background .15s ease; }
+  .cust-row:last-child{ border-bottom:none; }
+  .cust-row:hover{ background:rgba(31,163,116,0.05); border-radius:10px; }
+  .cust-avatar{ width:38px; height:38px; border-radius:10px; background:rgba(31,163,116,0.16); color:var(--emerald-bright); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0; }
+  .cust-main{ flex:1; min-width:0; }
+  .cust-name{ font-size:14px; font-weight:700; color:var(--text-0); }
+  .cust-meta{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-2); margin-top:2px; }
+  .cust-tag{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; padding:2px 7px; border-radius:4px; margin-left:6px; background:rgba(143,160,181,0.2); color:#B9C6D6; }
+  .cust-tag.customer{ background:rgba(255,143,168,0.18); color:#FF8FA8; }
+  .cust-tag.vendor{ background:rgba(143,160,181,0.22); color:#B9C6D6; }
+  .cust-balance{ text-align:right; }
+  .cust-balance .amt{ font-family:'IBM Plex Mono',monospace; font-size:14.5px; font-weight:700; }
+  .cust-balance .lbl{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; color:var(--text-2); }
+  .ledger-facts{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  table.ledger-table{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.ledger-table th{ text-align:left; font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-2); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--border-2); }
+  table.ledger-table td{ padding:11px 10px; border-bottom:1px solid var(--border-1); color:var(--text-1); }
+  table.ledger-table td.num, table.ledger-table th.num{ font-family:'IBM Plex Mono',monospace; text-align:right; }
+  .type-badge{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:999px; }
+  .type-badge.sale, .type-badge.debit_note{ background:rgba(255,143,168,0.18); color:#FF8FA8; }
+  .type-badge.receipt, .type-badge.credit_note{ background:rgba(31,163,116,0.2); color:#5EE0AC; }
+  .type-badge.purchase{ background:rgba(143,160,181,0.22); color:#B9C6D6; }
+  .type-badge.payment{ background:rgba(201,127,30,0.22); color:#F2B662; }
+  .aging-bars{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+  .aging-row{ display:flex; align-items:center; gap:12px; }
+  .aging-label{ width:96px; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-1); font-weight:600; }
+  .aging-track{ flex:1; height:14px; border-radius:7px; background:rgba(255,255,255,0.05); overflow:hidden; }
+  .aging-fill{ height:100%; border-radius:7px; background:linear-gradient(90deg,#0E5C3E,#1FA374 60%,#4FE3A8); transition:width .6s cubic-bezier(.22,1,.36,1); }
+  .aging-val{ width:70px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:700; color:var(--text-0); }
+  .line-items{ margin:16px 0; }
+  .li-head, .li-row{ display:grid; grid-template-columns:2.4fr 0.8fr 0.7fr 0.9fr 0.7fr 0.4fr; gap:8px; align-items:center; }
+  .li-head{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; color:var(--text-2); font-weight:600; padding-bottom:8px; }
+  .li-row{ margin-bottom:8px; }
+  .li-row input{ padding:8px 10px; font-size:12.5px; margin-bottom:0; }
+  .li-del{ background:transparent; border:none; color:var(--text-2); cursor:pointer; font-size:15px; }
+  .li-del:hover{ color:#FF8FA8; }
+  .totals-box{ margin-top:14px; margin-left:auto; width:280px; }
+  .tot-row{ display:flex; justify-content:space-between; padding:8px 0; font-size:13px; border-bottom:1px solid var(--border-1); }
+  .tot-row.grand{ font-weight:700; font-size:15px; color:var(--text-0); border-bottom:none; padding-top:12px; }
+  .tot-row .v{ font-family:'IBM Plex Mono',monospace; }
+  .pro-note{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); background:rgba(255,255,255,0.03); border:1px solid var(--border-1); border-radius:10px; padding:10px 14px; margin-top:14px; }
+  .inv-status{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; text-transform:uppercase; padding:3px 9px; border-radius:999px; }
+  .inv-status.draft{ background:rgba(143,160,181,0.22); color:#B9C6D6; }
+  .inv-status.sent{ background:rgba(201,127,30,0.22); color:#F2B662; }
+  .inv-status.paid{ background:rgba(31,163,116,0.2); color:#5EE0AC; }
+  .inv-status.overdue{ background:rgba(194,59,103,0.22); color:#FF8FA8; }
+  @media (max-width:640px){ .ledger-facts{ grid-template-columns:1fr 1fr; } .li-head{ display:none; } .li-row{ grid-template-columns:1fr 1fr; grid-auto-rows:auto; } }
+  @media print{
+    body *{ visibility:hidden; }
+    #printStatement, #printStatement *{ visibility:visible; }
+    #printStatement{ display:block !important; position:absolute; top:0; left:0; width:100%; padding:20px; background:#fff; color:#000; }
+    #printStatement table{ width:100%; border-collapse:collapse; }
+    #printStatement th, #printStatement td{ border-bottom:1px solid #ccc; padding:8px; text-align:left; font-size:12px; }
+    #printStatement .num{ text-align:right; }
+  }
 </style>
 </head>
 <body>
 <div class="stage">
   <div class="stars"><span class="st-3"></span><span class="st-2"></span><span class="st-1"></span></div>
-  <div class="aurora-bg" id="auroraBg"></div>
+  <div class="shooting-stars" id="shootingStars"></div>
 </div>
 <!-- ============ AUTH GATE ============ -->
 <div class="gate" id="authGate">
@@ -470,12 +572,12 @@
     <div class="pagenav">
       <button data-view="summary" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Summary</span></button>
       <button data-view="profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>Profile</span></button>
-      <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span></button>
+      <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span><span class="tier-chip free">FREE</span></button>
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
       <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
       <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
-      <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Connectors</span></button>
+      <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Connectors</span><span class="tier-chip pro">PRO</span></button>
       <button data-view="financing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
     </div>
   </aside>
@@ -507,33 +609,202 @@
     </div>
     <div class="stat-strip" id="statStrip"></div>
   </div>
-  <!-- ---------- 0b. LEDGER (NEW) — receivables, payables & cash, individually or consolidated ---------- -->
+  <!-- ---------- 0b. LEDGER (NEW) — quick ledger + full customers/invoicing khata ---------- -->
   <div id="view-ledger" class="hidden">
-    <div class="card">
-      <h2>Receivables, payables &amp; cash</h2>
-      <div class="hint">Everything you're owed, everything you owe, and your recorded cash balance — view them individually or all together. Mark items received or paid the moment they clear.</div>
+    <div class="tabs" id="ledgerSuperTabs">
+      <button class="tab active" data-lsuper="quick">Quick ledger</button>
+      <button class="tab" data-lsuper="khata">Customers &amp; Invoicing <span class="tier-chip free" style="margin-left:7px;">FREE</span></button>
     </div>
-    <div class="tabs" id="ledgerTabs">
-      <button class="tab active" data-ltab="all">All</button>
-      <button class="tab" data-ltab="receivables">Receivables</button>
-      <button class="tab" data-ltab="payables">Payables</button>
-      <button class="tab" data-ltab="cash">Cash</button>
-    </div>
-    <div class="facts" id="ledgerFacts"></div>
-    <div class="ledger-form hidden" id="ledgerAddForm">
-      <div class="lf-title" id="ledgerAddTitle">Add receivable</div>
-      <div class="lf-grid">
-        <input type="text" id="ledgerParty" placeholder="Name">
-        <input type="number" id="ledgerAmt" placeholder="Amount (₹)">
+    <!-- ===== quick ledger (existing) ===== -->
+    <div class="lsuper-panel active" id="lsuper-quick">
+      <div class="card">
+        <h2>Receivables, payables &amp; cash</h2>
+        <div class="hint">Everything you're owed, everything you owe, and your recorded cash balance — view them individually or all together. Mark items received or paid the moment they clear.</div>
       </div>
-      <div class="lf-grid"><input type="date" id="ledgerDue"><span></span></div>
-      <button id="ledgerAddBtn">Add to ledger</button>
+      <div class="tabs" id="ledgerTabs">
+        <button class="tab active" data-ltab="all">All</button>
+        <button class="tab" data-ltab="receivables">Receivables</button>
+        <button class="tab" data-ltab="payables">Payables</button>
+        <button class="tab" data-ltab="cash">Cash</button>
+      </div>
+      <div class="facts" id="ledgerFacts"></div>
+      <div class="ledger-form hidden" id="ledgerAddForm">
+        <div class="lf-title" id="ledgerAddTitle">Add receivable</div>
+        <div class="lf-grid">
+          <input type="text" id="ledgerParty" placeholder="Name">
+          <input type="number" id="ledgerAmt" placeholder="Amount (₹)">
+        </div>
+        <div class="lf-grid"><input type="date" id="ledgerDue"><span></span></div>
+        <button id="ledgerAddBtn">Add to ledger</button>
+      </div>
+      <div class="card">
+        <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
+        <div id="ledgerListHost"></div>
+      </div>
     </div>
-    <div class="card">
-      <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
-      <div id="ledgerListHost"></div>
+    <!-- ===== khata: customers/vendors, invoicing, printing — the free acquisition-hook ledger ===== -->
+    <div class="lsuper-panel" id="lsuper-khata">
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+          <span class="tier-chip free" style="margin-left:0;">FREE</span>
+          <h2 style="margin-bottom:0;">Ledger &amp; invoicing</h2>
+        </div>
+        <div class="hint">Customer &amp; vendor khata, GST invoicing and ageing — free, forever. AI narration on top of these numbers is a Pro feature.</div>
+      </div>
+      <div class="tabs" id="khataTabs">
+        <button class="tab active" data-ktab="parties">Parties</button>
+        <button class="tab" data-ktab="party-detail" id="khataPartyDetailTab" style="display:none;">Party ledger</button>
+        <button class="tab" data-ktab="invoice-new">New invoice</button>
+        <button class="tab" data-ktab="invoices">Invoices</button>
+        <button class="tab" data-ktab="printing">Printing &amp; reports</button>
+      </div>
+      <!-- parties list -->
+      <div class="khata-panel active" id="khata-parties">
+        <div class="card">
+          <div class="search-row">
+            <input type="text" id="khataSearch" placeholder="Search name, phone, or balance…">
+            <select id="khataFilter"><option value="all">All</option><option value="customer">Customers</option><option value="vendor">Vendors</option></select>
+            <button class="btn-primary" id="khataAddPartyBtn">+ Add party</button>
+          </div>
+          <div class="ledger-form hidden" id="khataPartyForm">
+            <div class="lf-title">New party</div>
+            <div class="lf-grid">
+              <input type="text" id="kpName" placeholder="Name">
+              <input type="text" id="kpPhone" placeholder="Phone">
+            </div>
+            <div class="lf-grid">
+              <input type="text" id="kpEmail" placeholder="Email (optional)">
+              <input type="text" id="kpGstin" placeholder="GSTIN (optional)" class="mono" style="text-transform:uppercase;">
+            </div>
+            <div class="lf-grid">
+              <input type="text" id="kpAddress" placeholder="Billing address (optional)">
+              <input type="number" id="kpOpening" placeholder="Opening balance (₹)">
+            </div>
+            <div class="lf-grid">
+              <select id="kpType"><option value="customer">Customer</option><option value="vendor">Vendor</option><option value="both">Both</option></select>
+              <span></span>
+            </div>
+            <button id="khataSavePartyBtn">Save party</button>
+          </div>
+          <div id="khataPartyList"></div>
+        </div>
+      </div>
+      <!-- single party ledger detail -->
+      <div class="khata-panel" id="khata-party-detail">
+        <div class="card">
+          <div class="ledger-head" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; margin-bottom:18px;">
+            <div>
+              <h2 id="kpdName" style="margin-bottom:2px;">—</h2>
+              <div class="hint" id="kpdMeta" style="margin-bottom:0;"></div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn-ghost" id="kpdRemindBtn">Send reminder</button>
+              <button class="btn-primary" id="kpdEntryBtn">+ New entry</button>
+            </div>
+          </div>
+          <div class="ledger-facts" id="kpdFacts"></div>
+          <div class="ledger-form hidden" id="kpdEntryForm">
+            <div class="lf-title">New ledger entry</div>
+            <div class="lf-grid">
+              <select id="keType">
+                <option value="sale">Sale (increases receivable)</option>
+                <option value="purchase">Purchase (increases payable)</option>
+                <option value="receipt">Receipt (payment received)</option>
+                <option value="payment">Payment (payment made)</option>
+                <option value="credit_note">Credit note</option>
+                <option value="debit_note">Debit note</option>
+              </select>
+              <input type="number" id="keAmount" placeholder="Amount (₹)">
+            </div>
+            <div class="lf-grid">
+              <input type="date" id="keDate">
+              <input type="text" id="keRef" placeholder="Reference / invoice #">
+            </div>
+            <div class="lf-grid">
+              <input type="text" id="keNotes" placeholder="Notes / reason (optional)">
+              <span></span>
+            </div>
+            <button id="keSaveBtn">Add entry</button>
+          </div>
+          <table class="ledger-table" id="kpdTable">
+            <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead>
+            <tbody id="kpdTableBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h2>Ageing</h2>
+          <div class="hint">Current entries against 30/60/90-day buckets, from due dates recorded on each entry.</div>
+          <div class="aging-bars" id="kpdAging"></div>
+          <div class="pro-note">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            AI insight on why this party is slipping — available on Pro
+          </div>
+        </div>
+      </div>
+      <!-- new invoice -->
+      <div class="khata-panel" id="khata-invoice-new">
+        <div class="card">
+          <h2>New sales invoice</h2>
+          <div class="hint">GST-compliant. CGST/SGST or IGST is applied automatically based on same-state vs. interstate. Creating an invoice adds a matching sale entry to that customer's ledger.</div>
+          <div class="grid-2">
+            <div><label>Customer</label><select id="invCustomer"></select></div>
+            <div><label>Invoice number</label><input type="text" id="invNumber" class="mono"></div>
+            <div><label>Issue date</label><input type="date" id="invIssueDate"></div>
+            <div><label>Due date</label><input type="date" id="invDueDate"></div>
+          </div>
+          <div class="line-items">
+            <div class="li-head"><span>Description</span><span>HSN/SAC</span><span>Qty</span><span>Rate</span><span>GST %</span><span></span></div>
+            <div id="invLineItems"></div>
+            <button class="btn-ghost" id="invAddLineBtn" type="button" style="margin-top:6px;">+ Add line item</button>
+          </div>
+          <div class="totals-box" id="invTotalsBox"></div>
+          <div style="margin-top:20px;"><label>Terms / notes</label><textarea id="invNotes" rows="2" placeholder="Payment due within 14 days."></textarea></div>
+          <div class="btn-row" style="justify-content:flex-start; margin-top:18px;">
+            <button class="btn-ghost" id="invSaveDraftBtn">Save as draft</button>
+            <button class="btn-primary" id="invCreateBtn">Create invoice &amp; add to ledger</button>
+            <span class="note" id="invNote"></span>
+          </div>
+        </div>
+      </div>
+      <!-- invoice list -->
+      <div class="khata-panel" id="khata-invoices">
+        <div class="card">
+          <div class="search-row">
+            <select id="invFilterStatus"><option value="all">All statuses</option><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
+            <select id="invFilterCustomer"><option value="all">All customers</option></select>
+          </div>
+          <div id="khataInvoiceList"></div>
+        </div>
+      </div>
+      <!-- printing / reports -->
+      <div class="khata-panel" id="khata-printing">
+        <div class="card">
+          <h2>Printing &amp; reports</h2>
+          <div class="hint">Print or download a ledger statement per party, or view the day book — every entry across every party, chronological.</div>
+          <div class="grid-2">
+            <div><label>Party statement</label><select id="reportPartySelect"></select></div>
+            <div style="display:flex; align-items:flex-end; gap:10px;">
+              <button class="btn-primary" id="printPartyStatementBtn">Print statement</button>
+              <button class="btn-ghost" id="csvPartyStatementBtn">Download CSV</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cc-head" style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px;">
+            <h2 style="margin-bottom:0;">Day book</h2>
+            <button class="btn-ghost" id="printDayBookBtn">Print day book</button>
+          </div>
+          <div class="hint">Every ledger entry across all parties, most recent first.</div>
+          <table class="ledger-table" id="dayBookTable">
+            <thead><tr><th>Date</th><th>Party</th><th>Type</th><th class="num">Amount</th></tr></thead>
+            <tbody id="dayBookTableBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
+  <!-- printable statement, off-screen except during window.print() -->
+  <div id="printStatement" class="hidden"></div>
   <!-- ---------- 1. PROFILE ---------- -->
   <div id="view-profile" class="hidden">
     <div class="facts">
@@ -878,6 +1149,16 @@ let currentProfile = null;
 let snapshots = [];
 let receivables = [];
 let payables = [];
+// khata (NEW) — free-tier customers/vendors ledger + invoicing
+let khataParties = [];
+let khataEntries = [];
+let khataInvoices = [];
+let khataInvoiceLineItems = [];
+let khataActivePartyId = null;
+let khataActiveInvoiceId = null;
+let khataSuperTab = 'quick';
+let khataTab = 'parties';
+let invoiceDraftLines = [];
 let paymentsData = null; // NEW — session-only, not yet persisted (see roadmap)
 let settlementRows = null; // itemized settlement batches — session-only, "Mark as settled" is local state (see roadmap)
 let settlementDailyTrend = null; // real per-day gross totals, last 7 uploaded days — null until upload
@@ -941,6 +1222,7 @@ async function routeFor(session){
   if(!session){
     currentUser = null; currentProfile = null; snapshots = []; paymentsData = null;
     receivables = []; payables = []; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
+    khataParties = []; khataEntries = []; khataInvoices = []; khataInvoiceLineItems = []; khataActivePartyId = null; khataActiveInvoiceId = null; invoiceDraftLines = [];
     razorpayConnected = false; lastSyncedAt = null;
     zohoConnected = false; zohoVitals = null; zohoPendingOrgRef = null; zohoChosenOrgId = null;
     document.getElementById('appShell').classList.add('hidden');
@@ -995,7 +1277,7 @@ const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr
 function showView(name){
   ['summary','profile','ledger','calculate','scores','payments','books','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  if(name === 'ledger') renderLedgerView();
+  if(name === 'ledger'){ renderLedgerView(); renderKhataParties(); }
   if(name === 'books') renderZohoBooksTab();
   window.scrollTo({ top:0, behavior:'smooth' });
 }
@@ -1004,6 +1286,9 @@ async function refreshAll(){
   snapshots = await loadSnapshots();
   receivables = await loadReceivables();
   payables = await loadPayables();
+  khataParties = await loadKhataParties();
+  khataEntries = await loadKhataEntries();
+  khataInvoices = await loadKhataInvoices();
   await checkRazorpayConnection();
   // Restore session-only Payments-tab state from the latest snapshot so it
   // survives refresh/re-login instead of resetting to empty each load.
@@ -1523,6 +1808,427 @@ async function ledgerRemovePayable(p){
   try { const { error } = await sbClient.from('payables').delete().eq('id', p.id); if(error) throw error;
     payables = await loadPayables(); await saveLedgerSnapshot(); renderLedgerView();
   } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
+}
+/* ============================================================
+   KHATA (NEW, FREE tier) — customers/vendors, running-balance
+   ledger, ageing, GST invoicing. Deterministic math only, no AI.
+   Mirrors the receivables/payables Supabase pattern above.
+   ============================================================ */
+async function loadKhataParties(){
+  const { data, error } = await sbClient.from('ledger_parties').select('*').eq('user_id', currentUser.id).order('name', { ascending:true });
+  if(error){ console.error('[margyn] loadKhataParties:', error); return []; }
+  return data || [];
+}
+async function loadKhataEntries(){
+  const { data, error } = await sbClient.from('ledger_entries').select('*').eq('user_id', currentUser.id).order('entry_date', { ascending:true });
+  if(error){ console.error('[margyn] loadKhataEntries:', error); return []; }
+  return data || [];
+}
+async function loadKhataInvoices(){
+  const { data, error } = await sbClient.from('invoices').select('*, invoice_line_items(*)').eq('user_id', currentUser.id).order('issue_date', { ascending:false });
+  if(error){ console.error('[margyn] loadKhataInvoices:', error); return []; }
+  return data || [];
+}
+function khataEntriesForParty(partyId){ return khataEntries.filter(e => e.party_id === partyId).sort((a,b) => new Date(a.entry_date) - new Date(b.entry_date)); }
+// sale/debit_note/purchase-inverse sign convention: sale & debit_note increase what's owed to us,
+// receipt & credit_note reduce it. purchase increases what we owe, payment reduces it.
+function entrySignedAmount(e){
+  const amt = Number(e.amount) || 0;
+  if(e.entry_type === 'sale' || e.entry_type === 'debit_note') return amt;
+  if(e.entry_type === 'receipt' || e.entry_type === 'credit_note') return -amt;
+  if(e.entry_type === 'purchase') return amt;
+  if(e.entry_type === 'payment') return -amt;
+  return amt;
+}
+function khataPartyBalance(partyId){
+  const party = khataParties.find(p => p.id === partyId);
+  const opening = party ? (Number(party.opening_balance) || 0) : 0;
+  return khataEntriesForParty(partyId).reduce((s,e) => s + entrySignedAmount(e), opening);
+}
+function khataAgeingBuckets(partyId){
+  const buckets = { current:0, d1_30:0, d31_60:0, d61_90:0, d90plus:0 };
+  const today = new Date(new Date().toDateString());
+  khataEntriesForParty(partyId).forEach(e => {
+    if(e.entry_type !== 'sale' && e.entry_type !== 'purchase') return;
+    const days = Math.round((today - new Date(e.entry_date)) / 86400000);
+    const amt = Number(e.amount) || 0;
+    if(days <= 0) buckets.current += amt;
+    else if(days <= 30) buckets.d1_30 += amt;
+    else if(days <= 60) buckets.d31_60 += amt;
+    else if(days <= 90) buckets.d61_90 += amt;
+    else buckets.d90plus += amt;
+  });
+  return buckets;
+}
+function khataInitials(name){ return String(name||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase(); }
+/* ---------- super tabs: Quick ledger vs Customers & Invoicing ---------- */
+document.querySelectorAll('#ledgerSuperTabs .tab').forEach(t => t.addEventListener('click', () => {
+  khataSuperTab = t.dataset.lsuper;
+  document.querySelectorAll('#ledgerSuperTabs .tab').forEach(x => x.classList.toggle('active', x.dataset.lsuper === khataSuperTab));
+  document.getElementById('lsuper-quick').classList.toggle('active', khataSuperTab === 'quick');
+  document.getElementById('lsuper-khata').classList.toggle('active', khataSuperTab === 'khata');
+  if(khataSuperTab === 'khata') renderKhataParties();
+}));
+function showKhataTab(tab){
+  khataTab = tab;
+  document.querySelectorAll('#khataTabs .tab').forEach(x => x.classList.toggle('active', x.dataset.ktab === tab));
+  ['parties','party-detail','invoice-new','invoices','printing'].forEach(t => {
+    const el = document.getElementById('khata-' + t); if(el) el.classList.toggle('active', t === tab);
+  });
+  if(tab === 'parties') renderKhataParties();
+  if(tab === 'invoice-new') renderInvoiceForm();
+  if(tab === 'invoices') renderKhataInvoiceList();
+  if(tab === 'printing') renderPrintingTab();
+}
+document.querySelectorAll('#khataTabs .tab').forEach(t => t.addEventListener('click', () => showKhataTab(t.dataset.ktab)));
+/* ---------- parties list ---------- */
+function renderKhataParties(){
+  const host = document.getElementById('khataPartyList'); if(!host) return;
+  const q = (document.getElementById('khataSearch').value || '').toLowerCase();
+  const filter = document.getElementById('khataFilter').value;
+  let rows = khataParties.filter(p => {
+    if(filter !== 'all' && p.type !== filter && p.type !== 'both') return false;
+    if(!q) return true;
+    return (p.name||'').toLowerCase().includes(q) || (p.phone||'').includes(q);
+  });
+  if(!rows.length){ host.innerHTML = '<div class="ledger-empty">No parties yet. Add your first customer or vendor above.</div>'; return; }
+  host.innerHTML = '';
+  rows.forEach(p => {
+    const bal = khataPartyBalance(p.id);
+    const isPayable = (p.type === 'vendor') || (p.type === 'both' && bal < 0);
+    const row = document.createElement('div'); row.className = 'cust-row';
+    const tags = p.type === 'both' ? '<span class="cust-tag customer">Customer</span><span class="cust-tag vendor">Vendor</span>' : '<span class="cust-tag ' + p.type + '">' + (p.type === 'customer' ? 'Customer' : 'Vendor') + '</span>';
+    row.innerHTML =
+      '<div class="cust-avatar">' + khataInitials(p.name) + '</div>' +
+      '<div class="cust-main"><div class="cust-name">' + escapeHtml(p.name) + tags + '</div>' +
+      '<div class="cust-meta">' + escapeHtml(p.phone||'no phone') + (p.gstin ? ' · ' + escapeHtml(p.gstin) : ' · no GSTIN') + '</div></div>' +
+      '<div class="cust-balance"><div class="amt" style="color:' + (bal===0?'#5EE0AC':(isPayable?'#B9C6D6':'#FF8FA8')) + ';">' + inr(Math.abs(bal)) + '</div>' +
+      '<div class="lbl">' + (bal===0?'settled':(isPayable?'payable':'receivable')) + '</div></div>';
+    row.addEventListener('click', () => openKhataPartyDetail(p.id));
+    host.appendChild(row);
+  });
+}
+document.getElementById('khataSearch').addEventListener('input', renderKhataParties);
+document.getElementById('khataFilter').addEventListener('change', renderKhataParties);
+document.getElementById('khataAddPartyBtn').addEventListener('click', () => document.getElementById('khataPartyForm').classList.toggle('hidden'));
+document.getElementById('khataSavePartyBtn').addEventListener('click', async () => {
+  const name = document.getElementById('kpName').value.trim();
+  if(!name){ return; }
+  const row = {
+    user_id: currentUser.id, name,
+    phone: document.getElementById('kpPhone').value.trim() || null,
+    email: document.getElementById('kpEmail').value.trim() || null,
+    gstin: document.getElementById('kpGstin').value.trim().toUpperCase() || null,
+    address: document.getElementById('kpAddress').value.trim() || null,
+    opening_balance: Number(document.getElementById('kpOpening').value) || 0,
+    type: document.getElementById('kpType').value
+  };
+  try {
+    const { error } = await sbClient.from('ledger_parties').insert(row);
+    if(error) throw error;
+    khataParties = await loadKhataParties();
+    ['kpName','kpPhone','kpEmail','kpGstin','kpAddress','kpOpening'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('khataPartyForm').classList.add('hidden');
+    renderKhataParties(); populateInvoiceCustomerSelect(); populateReportPartySelect();
+  } catch(err){ alert('Could not add party: ' + (err.message||'unknown error')); }
+});
+/* ---------- single party ledger detail ---------- */
+function openKhataPartyDetail(partyId){
+  khataActivePartyId = partyId;
+  document.getElementById('khataPartyDetailTab').style.display = '';
+  showKhataTab('party-detail');
+  renderKhataPartyDetail();
+}
+function renderKhataPartyDetail(){
+  const party = khataParties.find(p => p.id === khataActivePartyId); if(!party) return;
+  const bal = khataPartyBalance(party.id);
+  document.getElementById('kpdName').textContent = party.name;
+  document.getElementById('kpdMeta').textContent = (party.type === 'both' ? 'Customer & vendor' : (party.type === 'customer' ? 'Customer' : 'Vendor')) + ' · ' + (party.phone || 'no phone') + (party.gstin ? ' · ' + party.gstin : '');
+  const entries = khataEntriesForParty(party.id);
+  const over90 = entries.filter(e => (e.entry_type==='sale') && Math.round((new Date(new Date().toDateString()) - new Date(e.entry_date))/86400000) > 90).reduce((s,e)=>s+Number(e.amount||0),0);
+  document.getElementById('kpdFacts').innerHTML =
+    '<div class="fact"><div class="f-label">Running balance</div><div class="f-value" style="color:'+(bal===0?'#5EE0AC':(bal>0?'#FF8FA8':'#B9C6D6'))+';">'+inr(Math.abs(bal))+'</div></div>' +
+    '<div class="fact"><div class="f-label">Opening balance</div><div class="f-value">'+inr(party.opening_balance||0)+'</div></div>' +
+    '<div class="fact"><div class="f-label">Over 90 days</div><div class="f-value" style="color:#FF8FA8;">'+inr(over90)+'</div></div>' +
+    '<div class="fact"><div class="f-label">Last activity</div><div class="f-value" style="font-size:14px;">'+(entries.length?fmtDay(entries[entries.length-1].entry_date):'—')+'</div></div>';
+  let running = Number(party.opening_balance) || 0;
+  const body = document.getElementById('kpdTableBody'); body.innerHTML = '';
+  if(!entries.length){ body.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-2); padding:16px;">No entries yet.</td></tr>'; }
+  entries.forEach(e => {
+    running += entrySignedAmount(e);
+    const tr = document.createElement('tr');
+    const sign = entrySignedAmount(e) >= 0 ? '+' : '-';
+    tr.innerHTML = '<td>'+fmtDay(e.entry_date)+'</td><td><span class="type-badge '+e.entry_type+'">'+e.entry_type.replace('_',' ')+'</span></td>' +
+      '<td>'+escapeHtml(e.reference_number||'—')+'</td><td class="num">'+sign+inr(e.amount)+'</td><td class="num">'+inr(Math.abs(running))+'</td>';
+    body.appendChild(tr);
+  });
+  const buckets = khataAgeingBuckets(party.id);
+  const maxB = Math.max(buckets.current, buckets.d1_30, buckets.d31_60, buckets.d61_90, buckets.d90plus, 1);
+  const rows = [['Current', buckets.current], ['1–30 days', buckets.d1_30], ['31–60 days', buckets.d31_60], ['61–90 days', buckets.d61_90], ['90+ days', buckets.d90plus]];
+  document.getElementById('kpdAging').innerHTML = rows.map(r =>
+    '<div class="aging-row"><span class="aging-label">'+r[0]+'</span><div class="aging-track"><div class="aging-fill" style="width:'+Math.max(2,(r[1]/maxB)*100)+'%;'+(r[0]==='90+ days'?'background:linear-gradient(90deg,#7A1F3B,#C23B67);':'')+'"></div></div><span class="aging-val" style="'+(r[0]==='90+ days'?'color:#FF8FA8;':'')+'">'+inr(r[1])+'</span></div>'
+  ).join('');
+}
+document.getElementById('kpdEntryBtn').addEventListener('click', () => {
+  document.getElementById('keDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('kpdEntryForm').classList.toggle('hidden');
+});
+document.getElementById('keSaveBtn').addEventListener('click', async () => {
+  const amount = Number(document.getElementById('keAmount').value);
+  if(!amount){ return; }
+  const row = {
+    user_id: currentUser.id, party_id: khataActivePartyId,
+    entry_type: document.getElementById('keType').value, amount,
+    entry_date: document.getElementById('keDate').value || new Date().toISOString().slice(0,10),
+    reference_number: document.getElementById('keRef').value.trim() || null,
+    notes: document.getElementById('keNotes').value.trim() || null
+  };
+  try {
+    const { error } = await sbClient.from('ledger_entries').insert(row);
+    if(error) throw error;
+    khataEntries = await loadKhataEntries();
+    ['keAmount','keRef','keNotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('kpdEntryForm').classList.add('hidden');
+    renderKhataPartyDetail(); renderKhataParties();
+  } catch(err){ alert('Could not add entry: ' + (err.message||'unknown error')); }
+});
+document.getElementById('kpdRemindBtn').addEventListener('click', () => {
+  const party = khataParties.find(p => p.id === khataActivePartyId); if(!party) return;
+  const bal = khataPartyBalance(party.id);
+  const msg = 'Hi ' + party.name + ', a friendly reminder that ' + inr(Math.abs(bal)) + ' is outstanding on your account. Please let us know when we can expect payment. Thank you!';
+  if(party.phone){
+    const digits = party.phone.replace(/[^0-9]/g,'');
+    window.open('https://wa.me/' + digits + '?text=' + encodeURIComponent(msg), '_blank');
+  } else {
+    navigator.clipboard && navigator.clipboard.writeText(msg);
+    alert('No phone on file — reminder text copied to clipboard instead.');
+  }
+});
+/* ---------- invoicing ---------- */
+function populateInvoiceCustomerSelect(){
+  const sel = document.getElementById('invCustomer'); if(!sel) return;
+  const customers = khataParties.filter(p => p.type === 'customer' || p.type === 'both');
+  sel.innerHTML = customers.length ? customers.map(p => '<option value="'+p.id+'">'+escapeHtml(p.name)+'</option>').join('') : '<option value="">Add a customer first</option>';
+  const filt = document.getElementById('invFilterCustomer');
+  if(filt) filt.innerHTML = '<option value="all">All customers</option>' + customers.map(p => '<option value="'+p.id+'">'+escapeHtml(p.name)+'</option>').join('');
+}
+function addInvoiceLine(){
+  invoiceDraftLines.push({ description:'', hsn:'', qty:1, rate:0, gst:18 });
+  renderInvoiceLines();
+}
+function renderInvoiceLines(){
+  const host = document.getElementById('invLineItems'); if(!host) return;
+  host.innerHTML = '';
+  invoiceDraftLines.forEach((li, i) => {
+    const row = document.createElement('div'); row.className = 'li-row';
+    row.innerHTML =
+      '<input type="text" data-f="description" placeholder="Description" value="'+escapeHtml(li.description)+'">' +
+      '<input type="text" data-f="hsn" class="mono" placeholder="HSN/SAC" value="'+escapeHtml(li.hsn)+'">' +
+      '<input type="number" data-f="qty" class="mono" value="'+li.qty+'">' +
+      '<input type="number" data-f="rate" class="mono" value="'+li.rate+'">' +
+      '<input type="number" data-f="gst" class="mono" value="'+li.gst+'">' +
+      '<button class="li-del" type="button">✕</button>';
+    row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
+      const f = inp.dataset.f; li[f] = (f==='description'||f==='hsn') ? inp.value : Number(inp.value)||0;
+      renderInvoiceTotals();
+    }));
+    row.querySelector('.li-del').addEventListener('click', () => { invoiceDraftLines.splice(i,1); renderInvoiceLines(); renderInvoiceTotals(); });
+    host.appendChild(row);
+  });
+  renderInvoiceTotals();
+}
+function isInterstateInvoice(customer){
+  const bizGst = (currentProfile && currentProfile.gst_number) || '';
+  const custGst = (customer && customer.gstin) || '';
+  if(bizGst.length >= 2 && custGst.length >= 2) return bizGst.slice(0,2) !== custGst.slice(0,2);
+  return false; // default to intra-state (CGST+SGST) when GSTIN is unknown on either side
+}
+function computeInvoiceTotals(){
+  const custId = document.getElementById('invCustomer').value;
+  const customer = khataParties.find(p => p.id === custId);
+  const interstate = isInterstateInvoice(customer);
+  let subtotal = 0, gstTotal = 0;
+  invoiceDraftLines.forEach(li => {
+    const line = (Number(li.qty)||0) * (Number(li.rate)||0);
+    subtotal += line;
+    gstTotal += line * ((Number(li.gst)||0)/100);
+  });
+  return { subtotal, gstTotal, cgst: interstate?0:gstTotal/2, sgst: interstate?0:gstTotal/2, igst: interstate?gstTotal:0, total: subtotal+gstTotal, interstate };
+}
+function renderInvoiceTotals(){
+  const box = document.getElementById('invTotalsBox'); if(!box) return;
+  const t = computeInvoiceTotals();
+  box.innerHTML = t.interstate
+    ? '<div class="tot-row"><span>Subtotal</span><span class="v">'+inr(t.subtotal)+'</span></div><div class="tot-row"><span>IGST</span><span class="v">'+inr(t.igst)+'</span></div><div class="tot-row grand"><span>Total</span><span class="v">'+inr(t.total)+'</span></div>'
+    : '<div class="tot-row"><span>Subtotal</span><span class="v">'+inr(t.subtotal)+'</span></div><div class="tot-row"><span>CGST</span><span class="v">'+inr(t.cgst)+'</span></div><div class="tot-row"><span>SGST</span><span class="v">'+inr(t.sgst)+'</span></div><div class="tot-row grand"><span>Total</span><span class="v">'+inr(t.total)+'</span></div>';
+}
+function nextInvoiceNumber(){
+  const n = khataInvoices.length + 1;
+  return 'INV-' + String(n).padStart(4,'0');
+}
+function renderInvoiceForm(){
+  populateInvoiceCustomerSelect();
+  document.getElementById('invNumber').value = nextInvoiceNumber();
+  document.getElementById('invIssueDate').value = new Date().toISOString().slice(0,10);
+  const due = new Date(); due.setDate(due.getDate()+14);
+  document.getElementById('invDueDate').value = due.toISOString().slice(0,10);
+  invoiceDraftLines = [{ description:'', hsn:'', qty:1, rate:0, gst:18 }];
+  renderInvoiceLines();
+  document.getElementById('invCustomer').addEventListener('change', renderInvoiceTotals);
+}
+document.getElementById('invAddLineBtn').addEventListener('click', addInvoiceLine);
+async function saveInvoice(status){
+  const custId = document.getElementById('invCustomer').value;
+  const note = document.getElementById('invNote');
+  if(!custId){ note.className='note bad'; note.textContent='Add a customer first.'; return; }
+  const validLines = invoiceDraftLines.filter(li => li.description && Number(li.rate) > 0);
+  if(!validLines.length){ note.className='note bad'; note.textContent='Add at least one line item.'; return; }
+  const t = computeInvoiceTotals();
+  note.className='note'; note.textContent='Saving…';
+  try {
+    const invRow = {
+      user_id: currentUser.id, party_id: custId, invoice_number: document.getElementById('invNumber').value,
+      issue_date: document.getElementById('invIssueDate').value, due_date: document.getElementById('invDueDate').value,
+      status, subtotal: t.subtotal, gst_breakup: { cgst:t.cgst, sgst:t.sgst, igst:t.igst }, total: t.total,
+      notes: document.getElementById('invNotes').value.trim() || null
+    };
+    const { data: invData, error: invErr } = await sbClient.from('invoices').insert(invRow).select().single();
+    if(invErr) throw invErr;
+    const lineRows = validLines.map(li => ({ invoice_id: invData.id, description: li.description, hsn_sac: li.hsn||null, quantity: li.qty, rate: li.rate, gst_rate: li.gst, line_total: (li.qty*li.rate) }));
+    const { error: liErr } = await sbClient.from('invoice_line_items').insert(lineRows);
+    if(liErr) throw liErr;
+    if(status !== 'draft'){
+      const { error: entErr } = await sbClient.from('ledger_entries').insert({
+        user_id: currentUser.id, party_id: custId, entry_type:'sale', amount: t.total,
+        entry_date: invRow.issue_date, reference_number: invRow.invoice_number, notes: 'Auto-created from invoice'
+      });
+      if(entErr) throw entErr;
+    }
+    khataInvoices = await loadKhataInvoices(); khataEntries = await loadKhataEntries();
+    note.className='note ok'; note.textContent='Saved.';
+    setTimeout(() => { showKhataTab('invoices'); }, 500);
+  } catch(err){ note.className='note bad'; note.textContent = 'Could not save: ' + (err.message||'unknown error'); }
+}
+document.getElementById('invSaveDraftBtn').addEventListener('click', () => saveInvoice('draft'));
+document.getElementById('invCreateBtn').addEventListener('click', () => saveInvoice('sent'));
+function invoiceDerivedStatus(inv){
+  if(inv.status === 'paid') return 'paid';
+  if(inv.status === 'draft') return 'draft';
+  const days = Math.round((new Date(new Date().toDateString()) - new Date(inv.due_date)) / 86400000);
+  return days > 0 ? 'overdue' : 'sent';
+}
+function renderKhataInvoiceList(){
+  const host = document.getElementById('khataInvoiceList'); if(!host) return;
+  populateInvoiceCustomerSelect();
+  const statusFilter = document.getElementById('invFilterStatus').value;
+  const custFilter = document.getElementById('invFilterCustomer').value;
+  let rows = khataInvoices.filter(inv => {
+    const st = invoiceDerivedStatus(inv);
+    if(statusFilter !== 'all' && st !== statusFilter) return false;
+    if(custFilter !== 'all' && inv.party_id !== custFilter) return false;
+    return true;
+  });
+  if(!rows.length){ host.innerHTML = '<div class="ledger-empty">No invoices yet. Create one under New invoice.</div>'; return; }
+  host.innerHTML = '';
+  rows.forEach(inv => {
+    const party = khataParties.find(p => p.id === inv.party_id);
+    const st = invoiceDerivedStatus(inv);
+    const row = document.createElement('div'); row.className = 'ledger-row';
+    row.innerHTML =
+      '<div class="lr-main"><div class="lr-party">'+escapeHtml(inv.invoice_number)+' · '+escapeHtml(party?party.name:'Unknown')+'<span class="inv-status '+st+'" style="margin-left:8px;">'+st+'</span></div>' +
+      '<div class="lr-meta">issued '+fmtDay(inv.issue_date)+' · due '+fmtDay(inv.due_date)+'</div></div>' +
+      '<div class="lr-amount">'+inr(inv.total)+'</div>' +
+      '<div class="lr-actions"><button class="lr-btn" data-act="print">Print</button>'+(st!=='paid'?'<button class="lr-btn" data-act="paid">Mark paid</button>':'')+'</div>';
+    row.querySelector('[data-act="print"]').addEventListener('click', () => printInvoice(inv));
+    const paidBtn = row.querySelector('[data-act="paid"]'); if(paidBtn) paidBtn.addEventListener('click', () => markInvoicePaid(inv));
+    host.appendChild(row);
+  });
+}
+document.getElementById('invFilterStatus').addEventListener('change', renderKhataInvoiceList);
+document.getElementById('invFilterCustomer').addEventListener('change', renderKhataInvoiceList);
+async function markInvoicePaid(inv){
+  try {
+    const { error } = await sbClient.from('invoices').update({ status:'paid' }).eq('id', inv.id); if(error) throw error;
+    // Book the offsetting receipt so the party's running balance actually reflects the payment,
+    // instead of the invoice status changing while the khata still shows it outstanding.
+    const { error: entErr } = await sbClient.from('ledger_entries').insert({
+      user_id: currentUser.id, party_id: inv.party_id, entry_type:'receipt', amount: inv.total,
+      entry_date: new Date().toISOString().slice(0,10), reference_number: inv.invoice_number, notes: 'Payment against invoice'
+    });
+    if(entErr) throw entErr;
+    khataInvoices = await loadKhataInvoices(); khataEntries = await loadKhataEntries();
+    renderKhataInvoiceList();
+  } catch(err){ alert('Could not update: ' + (err.message||'unknown error')); }
+}
+/* ---------- printing / reports ---------- */
+function populateReportPartySelect(){
+  const sel = document.getElementById('reportPartySelect'); if(!sel) return;
+  sel.innerHTML = khataParties.map(p => '<option value="'+p.id+'">'+escapeHtml(p.name)+'</option>').join('');
+}
+function renderPrintingTab(){
+  populateReportPartySelect();
+  const body = document.getElementById('dayBookTableBody'); if(!body) return;
+  const rows = khataEntries.slice().sort((a,b) => new Date(b.entry_date) - new Date(a.entry_date));
+  body.innerHTML = rows.length ? '' : '<tr><td colspan="4" style="text-align:center; color:var(--text-2); padding:16px;">No ledger activity yet.</td></tr>';
+  rows.forEach(e => {
+    const party = khataParties.find(p => p.id === e.party_id);
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>'+fmtDay(e.entry_date)+'</td><td>'+escapeHtml(party?party.name:'—')+'</td><td><span class="type-badge '+e.entry_type+'">'+e.entry_type.replace('_',' ')+'</span></td><td class="num">'+inr(e.amount)+'</td>';
+    body.appendChild(tr);
+  });
+}
+function printHtmlAndFire(html){
+  document.getElementById('printStatement').innerHTML = html;
+  document.getElementById('printStatement').classList.remove('hidden');
+  window.print();
+  setTimeout(() => document.getElementById('printStatement').classList.add('hidden'), 300);
+}
+document.getElementById('printPartyStatementBtn').addEventListener('click', () => {
+  const partyId = document.getElementById('reportPartySelect').value;
+  const party = khataParties.find(p => p.id === partyId); if(!party) return;
+  let running = Number(party.opening_balance)||0;
+  const rowsHtml = khataEntriesForParty(party.id).map(e => {
+    running += entrySignedAmount(e);
+    return '<tr><td>'+fmtDay(e.entry_date)+'</td><td>'+e.entry_type.replace('_',' ')+'</td><td>'+(e.reference_number||'—')+'</td><td class="num">'+inr(e.amount)+'</td><td class="num">'+inr(Math.abs(running))+'</td></tr>';
+  }).join('');
+  printHtmlAndFire('<h2>'+party.name+' — statement</h2><p>'+(party.phone||'')+' '+(party.gstin?'· '+party.gstin:'')+'</p>' +
+    '<table><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>');
+});
+document.getElementById('csvPartyStatementBtn').addEventListener('click', () => {
+  const partyId = document.getElementById('reportPartySelect').value;
+  const party = khataParties.find(p => p.id === partyId); if(!party) return;
+  let running = Number(party.opening_balance)||0;
+  const lines = ['Date,Type,Reference,Amount,Balance'];
+  khataEntriesForParty(party.id).forEach(e => {
+    running += entrySignedAmount(e);
+    lines.push([fmtDay(e.entry_date), e.entry_type, e.reference_number||'', e.amount, Math.abs(running)].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type:'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = party.name.replace(/\s+/g,'_') + '_statement.csv'; a.click();
+});
+document.getElementById('printDayBookBtn').addEventListener('click', () => {
+  const rows = khataEntries.slice().sort((a,b) => new Date(b.entry_date) - new Date(a.entry_date));
+  const rowsHtml = rows.map(e => {
+    const party = khataParties.find(p => p.id === e.party_id);
+    return '<tr><td>'+fmtDay(e.entry_date)+'</td><td>'+(party?party.name:'—')+'</td><td>'+e.entry_type.replace('_',' ')+'</td><td class="num">'+inr(e.amount)+'</td></tr>';
+  }).join('');
+  printHtmlAndFire('<h2>Day book</h2><table><thead><tr><th>Date</th><th>Party</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>');
+});
+function printInvoice(inv){
+  const party = khataParties.find(p => p.id === inv.party_id);
+  const lines = (inv.invoice_line_items || []).map(li =>
+    '<tr><td>'+li.description+'</td><td>'+(li.hsn_sac||'—')+'</td><td>'+li.quantity+'</td><td class="num">'+inr(li.rate)+'</td><td>'+li.gst_rate+'%</td><td class="num">'+inr(li.line_total)+'</td></tr>').join('');
+  const gb = inv.gst_breakup || {};
+  printHtmlAndFire(
+    '<h2>Invoice '+inv.invoice_number+'</h2>' +
+    '<p>'+(currentProfile?currentProfile.company_name:'')+' — billed to '+(party?party.name:'—')+'</p>' +
+    '<p>Issued '+fmtDay(inv.issue_date)+' · Due '+fmtDay(inv.due_date)+'</p>' +
+    '<table><thead><tr><th>Description</th><th>HSN</th><th>Qty</th><th class="num">Rate</th><th>GST</th><th class="num">Amount</th></tr></thead><tbody>'+lines+'</tbody></table>' +
+    '<table style="margin-top:14px; max-width:280px; margin-left:auto;"><tbody>' +
+    (gb.igst ? '<tr><td>IGST</td><td class="num">'+inr(gb.igst)+'</td></tr>' : '<tr><td>CGST</td><td class="num">'+inr(gb.cgst)+'</td></tr><tr><td>SGST</td><td class="num">'+inr(gb.sgst)+'</td></tr>') +
+    '<tr><td><b>Total</b></td><td class="num"><b>'+inr(inv.total)+'</b></td></tr></tbody></table>' +
+    (inv.notes ? '<p style="margin-top:14px;">'+inv.notes+'</p>' : '')
+  );
 }
 function renderVitalsBarChart(vitals, hasData){
   const host = document.getElementById('vitalsBarChart'); if(!host) return;
@@ -2500,91 +3206,24 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
 renderVitals(ZERO_VITALS, false);
 bootAuth();
 /* ============================================================
-   AURORA BACKGROUND SHADER — matches index.html exactly.
+   SHOOTING STARS — replaces the old green WebGL aurora. Sky stays
+   black with the existing twinkling star layers; this just spawns
+   a handful of streaking stars on top, on a loop.
    ============================================================ */
 (function(){
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const container = document.getElementById('auroraBg');
-  if(!container || reduceMotion) return;
-  const canvas = document.createElement('canvas');
-  canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.display = 'block';
-  container.appendChild(canvas);
-  const gl = canvas.getContext('webgl', { alpha:true, premultipliedAlpha:false }) || canvas.getContext('experimental-webgl', { alpha:true, premultipliedAlpha:false });
-  if(!gl){ container.removeChild(canvas); return; }
-  gl.clearColor(0,0,0,0);
-  const vertexSrc = 'attribute vec2 position; attribute vec2 uv; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position, 0.0, 1.0); }';
-  const fragmentSrc = `
-    precision highp float;
-    uniform float uTime; uniform vec3 uResolution; uniform float uSpeed; uniform float uScale; uniform float uBrightness;
-    uniform vec3 uColor1; uniform vec3 uColor2; uniform float uNoiseFreq; uniform float uNoiseAmp; uniform float uBandHeight;
-    uniform float uBandSpread; uniform float uOctaveDecay; uniform float uLayerOffset; uniform float uColorSpeed;
-    uniform vec2 uMouse; uniform float uMouseInfluence; uniform bool uEnableMouse;
-    #define TAU 6.28318
-    vec3 gradientHash(vec3 p){ p = vec3(dot(p, vec3(127.1,311.7,234.6)), dot(p, vec3(269.5,183.3,198.3)), dot(p, vec3(169.5,283.3,156.9)));
-      vec3 h = fract(sin(p)*43758.5453123); float phi = acos(2.0*h.x-1.0); float theta = TAU*h.y;
-      return vec3(cos(theta)*sin(phi), sin(theta)*cos(phi), cos(phi)); }
-    float quinticSmooth(float t){ float t2=t*t; float t3=t*t2; return 6.0*t3*t2 - 15.0*t2*t2 + 10.0*t3; }
-    vec3 cosineGradient(float t, vec3 a, vec3 b, vec3 c, vec3 d){ return a + b*cos(TAU*(c*t+d)); }
-    float perlin3D(float amplitude, float frequency, float px, float py, float pz){
-      float x=px*frequency; float y=py*frequency; float fx=floor(x); float fy=floor(y); float fz=floor(pz);
-      float cx=ceil(x); float cy=ceil(y); float cz=ceil(pz);
-      vec3 g000=gradientHash(vec3(fx,fy,fz)); vec3 g100=gradientHash(vec3(cx,fy,fz)); vec3 g010=gradientHash(vec3(fx,cy,fz)); vec3 g110=gradientHash(vec3(cx,cy,fz));
-      vec3 g001=gradientHash(vec3(fx,fy,cz)); vec3 g101=gradientHash(vec3(cx,fy,cz)); vec3 g011=gradientHash(vec3(fx,cy,cz)); vec3 g111=gradientHash(vec3(cx,cy,cz));
-      float d000=dot(g000,vec3(x-fx,y-fy,pz-fz)); float d100=dot(g100,vec3(x-cx,y-fy,pz-fz)); float d010=dot(g010,vec3(x-fx,y-cy,pz-fz)); float d110=dot(g110,vec3(x-cx,y-cy,pz-fz));
-      float d001=dot(g001,vec3(x-fx,y-fy,pz-cz)); float d101=dot(g101,vec3(x-cx,y-fy,pz-cz)); float d011=dot(g011,vec3(x-fx,y-cy,pz-cz)); float d111=dot(g111,vec3(x-cx,y-cy,pz-cz));
-      float sx=quinticSmooth(x-fx); float sy=quinticSmooth(y-fy); float sz=quinticSmooth(pz-fz);
-      float lx00=mix(d000,d100,sx); float lx10=mix(d010,d110,sx); float lx01=mix(d001,d101,sx); float lx11=mix(d011,d111,sx);
-      float ly0=mix(lx00,lx10,sy); float ly1=mix(lx01,lx11,sy); return amplitude*mix(ly0,ly1,sz); }
-    float auroraGlow(float t, vec2 shift){ vec2 uv = gl_FragCoord.xy/uResolution.y; uv += shift;
-      float noiseVal=0.0; float freq=uNoiseFreq; float amp=uNoiseAmp; vec2 samplePos = uv*uScale;
-      for(float i=0.0; i<3.0; i+=1.0){ noiseVal += perlin3D(amp, freq, samplePos.x, samplePos.y, t); amp *= uOctaveDecay; freq *= 2.0; }
-      float yBand = uv.y*10.0 - uBandHeight*10.0;
-      return 0.3*max(exp(uBandSpread*(1.0-1.1*abs(noiseVal+yBand))), 0.0); }
-    void main(){ vec2 uv = gl_FragCoord.xy/uResolution.xy; float t = uSpeed*0.4*uTime;
-      vec2 shift = vec2(0.0); if(uEnableMouse){ shift = (uMouse-0.5)*uMouseInfluence; }
-      vec3 col = vec3(0.0);
-      col += 0.99*auroraGlow(t, shift)*cosineGradient(uv.x+uTime*uSpeed*0.2*uColorSpeed, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.3,0.20,0.20))*uColor1;
-      col += 0.99*auroraGlow(t+uLayerOffset, shift)*cosineGradient(uv.x+uTime*uSpeed*0.1*uColorSpeed, vec3(0.5), vec3(0.5), vec3(2.0,1.0,0.0), vec3(0.5,0.20,0.25))*uColor2;
-      col *= uBrightness; float alpha = clamp(length(col), 0.0, 1.0); gl_FragColor = vec4(col, alpha); }
-  `;
-  function compile(type, src){ const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
-    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){ console.error('[Aurora]', gl.getShaderInfoLog(sh)); gl.deleteShader(sh); return null; } return sh; }
-  const vs = compile(gl.VERTEX_SHADER, vertexSrc); const fs = compile(gl.FRAGMENT_SHADER, fragmentSrc);
-  if(!vs || !fs){ container.removeChild(canvas); return; }
-  const program = gl.createProgram(); gl.attachShader(program, vs); gl.attachShader(program, fs); gl.linkProgram(program);
-  if(!gl.getProgramParameter(program, gl.LINK_STATUS)){ container.removeChild(canvas); return; }
-  gl.useProgram(program);
-  const positions = new Float32Array([-1,-1, 3,-1, -1,3]); const uvs = new Float32Array([0,0, 2,0, 0,2]);
-  const posBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-  const posLoc = gl.getAttribLocation(program, 'position'); gl.enableVertexAttribArray(posLoc); gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-  const uvBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer); gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
-  const uvLoc = gl.getAttribLocation(program, 'uv'); gl.enableVertexAttribArray(uvLoc); gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 0, 0);
-  function hexToVec3(hex){ const h = hex.replace('#',''); return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255]; }
-  const config = { speed:0.4, scale:1.6, brightness:0.95, color1:'#037A4C', color2:'#1FA374', noiseFrequency:2.0, noiseAmplitude:1.0,
-    bandHeight:0.5, bandSpread:0.85, octaveDecay:0.1, layerOffset:1.2, colorSpeed:0.25, enableMouseInteraction:true, mouseInfluence:0.18 };
-  const uniforms = {};
-  ['uTime','uResolution','uSpeed','uScale','uBrightness','uColor1','uColor2','uNoiseFreq','uNoiseAmp','uBandHeight','uBandSpread','uOctaveDecay','uLayerOffset','uColorSpeed','uMouse','uMouseInfluence','uEnableMouse'].forEach(n => uniforms[n]=gl.getUniformLocation(program,n));
-  gl.uniform1f(uniforms.uSpeed, config.speed); gl.uniform1f(uniforms.uScale, config.scale); gl.uniform1f(uniforms.uBrightness, config.brightness);
-  gl.uniform3fv(uniforms.uColor1, hexToVec3(config.color1)); gl.uniform3fv(uniforms.uColor2, hexToVec3(config.color2));
-  gl.uniform1f(uniforms.uNoiseFreq, config.noiseFrequency); gl.uniform1f(uniforms.uNoiseAmp, config.noiseAmplitude);
-  gl.uniform1f(uniforms.uBandHeight, config.bandHeight); gl.uniform1f(uniforms.uBandSpread, config.bandSpread);
-  gl.uniform1f(uniforms.uOctaveDecay, config.octaveDecay); gl.uniform1f(uniforms.uLayerOffset, config.layerOffset);
-  gl.uniform1f(uniforms.uColorSpeed, config.colorSpeed); gl.uniform1f(uniforms.uMouseInfluence, config.mouseInfluence);
-  gl.uniform1i(uniforms.uEnableMouse, config.enableMouseInteraction?1:0);
-  let targetMouse=[0.5,0.5]; let currentMouse=[0.5,0.5];
-  canvas.addEventListener('mousemove', (e) => { const r = canvas.getBoundingClientRect(); targetMouse=[(e.clientX-r.left)/r.width, 1.0-(e.clientY-r.top)/r.height]; });
-  canvas.addEventListener('mouseleave', () => { targetMouse=[0.5,0.5]; });
-  function resize(){ const dpr = Math.min(window.devicePixelRatio||1, 2); const w = Math.max(1, container.clientWidth); const h = Math.max(1, container.clientHeight);
-    canvas.width = w*dpr; canvas.height = h*dpr; gl.viewport(0,0,canvas.width,canvas.height);
-    gl.uniform3f(uniforms.uResolution, canvas.width, canvas.height, canvas.width/canvas.height); }
-  resize();
-  if('ResizeObserver' in window){ new ResizeObserver(resize).observe(container); } else { window.addEventListener('resize', resize); }
-  const start = performance.now();
-  function render(now){ gl.uniform1f(uniforms.uTime, (now-start)*0.001);
-    currentMouse[0] += 0.05*(targetMouse[0]-currentMouse[0]); currentMouse[1] += 0.05*(targetMouse[1]-currentMouse[1]);
-    gl.uniform2f(uniforms.uMouse, currentMouse[0], currentMouse[1]);
-    gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); requestAnimationFrame(render); }
-  requestAnimationFrame(render);
+  const host = document.getElementById('shootingStars');
+  if(!host || reduceMotion) return;
+  const COUNT = 5;
+  for(let i=0; i<COUNT; i++){
+    const s = document.createElement('span');
+    s.className = 'shooting-star';
+    s.style.setProperty('--sx', (10 + Math.random()*70) + '%');
+    s.style.setProperty('--sy', (Math.random()*45) + '%');
+    s.style.setProperty('--sdur', (5 + Math.random()*5) + 's');
+    s.style.setProperty('--sdelay', (Math.random()*14) + 's');
+    host.appendChild(s);
+  }
 })();
 </script>
 </body>
