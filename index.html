@@ -44,7 +44,7 @@
   .nav-brand{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
   .crescent{ position:relative; width:20px; height:20px; border-radius:50%; overflow:hidden; flex-shrink:0; background:var(--emerald-bright); }
   .crescent::after{ content:''; position:absolute; top:0; left:-42%; width:100%; height:100%; border-radius:50%; background:var(--bg-page); }
-  .nav-logo{ font-family:'Manrope', sans-serif; font-size:19px; font-weight:800; letter-spacing:-0.01em; color:var(--charcoal); }
+  .nav-logo-mark{ display:block; height:34px; width:auto; }
   .nav-links{ display:flex; align-items:center; gap:36px; font-size:14px; color:var(--charcoal-1); font-weight:600; }
   .nav-links a{ display:flex; align-items:center; white-space:nowrap; }
   .nav-links a:not(.nav-cta):hover{ color:var(--charcoal); }
@@ -405,7 +405,7 @@
     .hero-grid{ padding:0 16px; }
     .hero-ctas{ gap:12px; }
     .btn-primary{ padding:14px 24px; font-size:14px; min-height:44px; }
-    .nav-logo{ font-size:16px; }
+    .nav-logo-mark{ height:26px; }
   }
 </style>
 </head>
@@ -415,8 +415,7 @@
 <nav>
   <div class="nav-inner">
     <div class="nav-brand">
-      <div class="crescent"></div>
-      <div class="nav-logo">margyn</div>
+      <img src="images/margyn-logo-mark.png" alt="Margyn" class="nav-logo-mark">
     </div>
     <div class="nav-links">
       <a href="#market">How it works</a>
