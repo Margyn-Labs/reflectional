@@ -75,12 +75,12 @@
   .source-chip{ display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono', monospace; font-size:11px; font-weight:600; color:var(--charcoal-1); background:rgba(14,143,92,0.09); border:1px solid rgba(14,143,92,0.28); border-radius:999px; padding:6px 13px; }
 
   /* ================= PRODUCT PANEL — hero photo ================= */
-  .product-panel{ position:relative; z-index:1; display:flex; align-items:center; height:100%; animation:fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .product-panel{ position:relative; z-index:1; height:100%; animation:fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
   @keyframes fadeUp{ from{ opacity:0; transform:translateY(18px); } to{ opacity:1; transform:translateY(0); } }
 
-  .hero-photo-frame{ position:relative; width:100%; border-radius:14px; overflow:hidden; border:1px solid var(--charcoal-border); box-shadow:0 40px 80px -30px rgba(11,18,32,0.35); background:#E9E7E1; }
-  .hero-photo{ display:block; width:100%; height:auto; aspect-ratio:4/3.3; object-fit:cover; object-position:50% 22%; }
-  @media (max-width:960px){ .hero-photo{ aspect-ratio:16/10; object-position:50% 16%; } }
+  .hero-photo-frame{ position:relative; width:100%; height:100%; border-radius:14px; overflow:hidden; border:1px solid var(--charcoal-border); box-shadow:0 40px 80px -30px rgba(11,18,32,0.35); background:#E9E7E1; }
+  .hero-photo{ display:block; width:100%; height:100%; object-fit:cover; object-position:50% 22%; }
+  @media (max-width:960px){ .product-panel{ height:auto; } .hero-photo-frame{ height:auto; } .hero-photo{ height:auto; aspect-ratio:16/10; object-position:50% 16%; } }
 
   /* ================= CONTENT SECTIONS (page background, charcoal text) ================= */
   section{ position:relative; z-index:2; padding:104px 0 84px; }
