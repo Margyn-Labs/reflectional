@@ -10,13 +10,21 @@
  *   POST /api/shopify?action=connect     (was api/store-shopify-credentials.js)
  *   POST /api/shopify?action=sync        (was api/sync-shopify.js)
  *   POST /api/shopify?action=disconnect  (was api/disconnect-shopify.js)
+ *   GET  /api/shopify?action=cron        (was api/cron-sync-shopify.js;
+ *                                          internal Vercel Cron target, still
+ *                                          gated by CRON_SECRET inside the
+ *                                          handler itself)
  *
  * Behavior of each action is unchanged from the original standalone
- * files — only the entry point and routing are new.
+ * files — only the entry point and routing are new. Folding the cron in
+ * here (rather than keeping it as its own file) frees another slot under
+ * the Vercel Hobby plan's 12-function cap.
  */
 
 const H = require('./_lib/shopify');
 const { runStoreSync } = require('./_lib/shopifySync');
+
+const CRON_MAX_CONSECUTIVE_FAILURES = 3;
 
 module.exports = async function handler(req, res) {
   var action = (req.query && req.query.action) || '';
@@ -33,9 +41,66 @@ module.exports = async function handler(req, res) {
   if (req.method === 'POST' && action === 'disconnect') {
     return handleDisconnect(req, res);
   }
+  if (req.method === 'GET' && action === 'cron') {
+    return handleCron(req, res);
+  }
 
-  return H.json(res, 400, { error: 'unknown_action', message: 'Expected ?action= one of status, connect, sync, disconnect.' });
+  return H.json(res, 400, { error: 'unknown_action', message: 'Expected ?action= one of status, connect, sync, disconnect, cron.' });
 };
+
+/* ------------------------------------------------------------------ */
+/* cron — GET ?action=cron (Vercel Cron target)                       */
+/* Nightly sync across every active store. Same logic as the former   */
+/* standalone cron-sync-shopify.js, unchanged.                        */
+/* ------------------------------------------------------------------ */
+async function handleCron(req, res) {
+  var auth = req.headers['authorization'] || '';
+  var expected = 'Bearer ' + (process.env.CRON_SECRET || '');
+  if (!process.env.CRON_SECRET || auth !== expected) {
+    return H.json(res, 401, { error: 'unauthorized' });
+  }
+
+  var stores;
+  try {
+    stores = await H.sbSelect(
+      'shopify_stores',
+      'status=eq.active&select=*&order=last_synced_at.asc.nullsfirst&limit=50'
+    );
+  } catch (e) {
+    return H.json(res, 500, { error: 'lookup_failed', detail: String(e.message).slice(0, 200) });
+  }
+
+  var isSunday = new Date().getUTCDay() === 0;
+  var deadline = Date.now() + 280000; // stay inside a 300s maxDuration
+  var results = [];
+  var alerts = [];
+
+  for (var i = 0; i < stores.length; i++) {
+    if (Date.now() > deadline) break;
+    var store = stores[i];
+    var r = await runStoreSync(store, {
+      deadlineMs: Math.min(deadline, Date.now() + 60000),
+      forceVariants: isSunday
+    });
+    results.push(r);
+
+    if (r.error && (store.consecutive_failures || 0) + 1 >= CRON_MAX_CONSECUTIVE_FAILURES) {
+      alerts.push({ shop: store.shop_domain, user_id: store.user_id, error: r.error });
+    }
+  }
+
+  if (alerts.length) {
+    await H.logEvent(null, 'cron_alert', 'failed', { alerts: alerts });
+  }
+
+  return H.json(res, 200, {
+    ran_at: new Date().toISOString(),
+    stores_processed: results.length,
+    variants_refreshed: isSunday,
+    alerts: alerts.length,
+    results: results
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* status — GET ?action=status                                        */
