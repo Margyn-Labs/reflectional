@@ -813,10 +813,11 @@
       <div class="hint">Optional automated connectors that supplement your uploads. Keep uploading your full monthly snapshot as usual — connectors add detail on top, they don't replace it.</div>
       <div id="razorpayStatus"></div>
       <div id="zohoStatus"></div>
+      <div id="shopifyStatus"></div>
     </div>
     <div class="card">
       <h2>More connectors, on the way</h2>
-      <div class="hint">Zoho Books is next up — it unlocks receivables aging, payables due, GST/ITC leakage, and working capital runway directly from your books. Tell us which data source would help most and we'll prioritize it.</div>
+      <div class="hint">GST is next up — it unlocks input-credit reconciliation against your vendors' filings, cross-checked with your books. Bank data via the Account Aggregator framework follows. Tell us what you want to see and we'll prioritize it.</div>
     </div>
   </div>
   <!-- ---------- 2. UPLOAD & CALCULATE ---------- -->
@@ -983,7 +984,7 @@
       <div id="settlementList"></div>
     </div>
     <div class="chart-card">
-      <div class="cc-head"><h3>Shopify orders</h3><span class="cc-sub">From last upload — reference only, not yet scored</span></div>
+      <div class="cc-head"><h3>Shopify orders</h3><span class="cc-sub" id="shopifyChartSub">From last upload — reference only, not yet scored</span></div>
       <div class="hbar-list" id="shopifyBarChart"></div>
     </div>
   </div>
@@ -1094,6 +1095,12 @@
     <div id="zohoContent"></div>
   </div>
 </div>
+<div class="detail-overlay hidden" id="shopifyOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="shopifyClose">✕</button>
+    <div id="shopifyContent"></div>
+  </div>
+</div>
 <footer>Margyn 1.0 · Built for new-age Indian businesses</footer>
 <script>
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
@@ -1123,6 +1130,9 @@ let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker g
 let zohoVitals = null;       // last /api/zoho-vitals payload
 let zohoPendingOrgRef = null;
 let zohoChosenOrgId = null;
+let shopifyConnected = false;  // Shopify connector — Custom App token, read-only
+let shopifyStore = null;       // last /api/shopify-status store row
+let shopifyPollTimer = null;   // nudges the resumable 90-day backfill along
 function inr(n){ return '₹' + Math.round(Number(n)||0).toLocaleString('en-IN'); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
 function fmtDate(iso){ 
@@ -1180,6 +1190,8 @@ async function routeFor(session){
     khataParties = []; khataEntries = []; khataInvoices = []; khataInvoiceLineItems = []; khataActivePartyId = null; khataActiveInvoiceId = null; invoiceDraftLines = [];
     razorpayConnected = false; lastSyncedAt = null;
     zohoConnected = false; zohoVitals = null; zohoPendingOrgRef = null; zohoChosenOrgId = null;
+    shopifyConnected = false; shopifyStore = null;
+    if(shopifyPollTimer){ clearInterval(shopifyPollTimer); shopifyPollTimer = null; }
     document.getElementById('appShell').classList.add('hidden');
     document.getElementById('authGate').classList.remove('hidden');
     document.getElementById('onboardGate').classList.add('hidden');
@@ -1257,6 +1269,7 @@ async function refreshAll(){
     paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
   await loadZohoVitals();
+  await loadShopifyStatus();
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
   handleZohoHashReturn();
 }
@@ -2608,8 +2621,23 @@ function renderSettleTrendChart(){
 }
 function renderShopifyChart(){
   const host = document.getElementById('shopifyBarChart'); if(!host) return;
-  const rows = shopifyOrdersData;
-  if(!rows){ host.innerHTML = '<div class="ledger-empty">Upload a Shopify Orders sheet to see paid/pending order counts and revenue here.</div>'; return; }
+  const sub = document.getElementById('shopifyChartSub');
+  // Uploaded sheet wins when present. Otherwise fall back to live counts from
+  // the Shopify connector, so a connected store isn't told to go upload a file.
+  let rows = shopifyOrdersData;
+  let subText = 'From last upload — reference only, not yet scored';
+  if(!rows && shopifyConnected && shopifyStore && shopifyStore.counts){
+    const c = shopifyStore.counts;
+    rows = [
+      { label:'Orders synced', value: c.orders||0 },
+      { label:'Refunds', value: c.refunds||0 },
+      { label:'SKUs with cost', value: Math.max(0, (c.variants||0) - (c.variants_missing_cost||0)) },
+      { label:'SKUs missing cost', value: c.variants_missing_cost||0 }
+    ];
+    subText = 'Live from the Shopify connector — ' + (shopifyStore.backfill_complete ? 'synced nightly' : 'backfill in progress');
+  }
+  if(sub) sub.textContent = rows ? subText : 'Not connected';
+  if(!rows){ host.innerHTML = '<div class="ledger-empty">Connect Shopify under Connectors, or upload a Shopify Orders sheet, to see order and SKU counts here.</div>'; return; }
   host.innerHTML = '';
   const max = Math.max(...rows.map(r => r.value), 1);
   rows.forEach(r => {
@@ -2622,6 +2650,185 @@ function renderShopifyChart(){
     host.appendChild(row);
     requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = pct + '%'; });
   });
+}
+/* ============================================================
+   SHOPIFY CONNECTOR (NEW) — Custom App token, read-only.
+   Third connector after Razorpay and Zoho Books. For a store
+   running Shopify + Razorpay with no Zoho Books, this is the
+   primary margin source, not a supplement.
+
+   Same rule as the Zoho connector: all counting and flagging
+   happens server-side in /api/shopify-status, this file only
+   renders what comes back, so the app and the AI briefing can
+   never disagree on a number.
+   ============================================================ */
+async function shopifyApi(path, opts){
+  opts = opts || {};
+  const { data:{ session } } = await sbClient.auth.getSession();
+  const token = session ? session.access_token : null;
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+    body: opts.body
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok) throw new Error(data.message || data.error || ('Request failed (' + res.status + ')'));
+  return data;
+}
+function shopifyShowError(msg){
+  const el = document.getElementById('shopifyError');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+function normalizeShopDomain(raw){
+  const d = String(raw || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(d) ? d : null;
+}
+/* ---------- status row inside Connectors ---------- */
+async function loadShopifyStatus(){
+  try {
+    const d = await shopifyApi('/api/shopify?action=status');
+    shopifyStore = (d.stores && d.stores.length) ? d.stores[0] : null;
+    shopifyConnected = !!(shopifyStore && shopifyStore.status !== 'disconnected');
+  } catch(e){ shopifyStore = null; shopifyConnected = false; }
+  renderShopifyStatus();
+  manageShopifyBackfillPolling();
+  renderShopifyChart();
+}
+function renderShopifyStatus(){
+  const host = document.getElementById('shopifyStatus'); if(!host) return;
+  if(shopifyConnected && shopifyStore){
+    const s = shopifyStore;
+    const c = s.counts || {};
+    const needsReauth = s.status === 'needs_reauthentication';
+    const backfilling = !needsReauth && !s.backfill_complete;
+    let meta;
+    if(needsReauth){
+      meta = escapeHtml(s.shop_domain) + ' — app uninstalled or token regenerated in Shopify, reconnect to resume';
+    } else if(backfilling){
+      meta = escapeHtml(s.shop_domain) + ' — first 90-day backfill in progress, ' + (c.orders||0).toLocaleString('en-IN') + ' orders so far';
+    } else {
+      meta = escapeHtml(s.shop_domain) + ' — ' + (c.orders||0).toLocaleString('en-IN') + ' orders synced' +
+             (s.last_synced_at ? ', last synced ' + fmtDate(s.last_synced_at) : '');
+      if((s.flags||[]).indexOf('cogs_data_incomplete') !== -1){
+        meta += ' · cost per item missing on ' + s.cogs_missing_pct + '% of SKUs, margin shown as an estimate';
+      }
+    }
+    const tagCls = needsReauth ? 'bad' : (backfilling ? 'warn' : 'ok');
+    const tagTxt = needsReauth ? 'Reconnect' : (backfilling ? 'Backfilling' : 'Connected');
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">' + (needsReauth || backfilling ? '' : '✓ ') + 'Shopify</div>' +
+        '<div class="lr-meta">' + meta + '</div>' +
+      '</div><span class="lr-tag ' + tagCls + '">' + tagTxt + '</span>' +
+      '<div class="lr-actions">' +
+        (needsReauth ? '<button class="lr-btn" id="shopifyReconnectBtn">Reconnect</button>'
+                     : '<button class="lr-btn" id="shopifySyncBtn">Sync now</button>') +
+        '<button class="lr-btn danger" id="shopifyDisconnectBtn">Disconnect</button>' +
+      '</div></div>';
+    const sy = document.getElementById('shopifySyncBtn'); if(sy) sy.addEventListener('click', syncShopifyNow);
+    const rc = document.getElementById('shopifyReconnectBtn'); if(rc) rc.addEventListener('click', openShopifyModal);
+    document.getElementById('shopifyDisconnectBtn').addEventListener('click', disconnectShopify);
+  } else {
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Shopify</div>' +
+        '<div class="lr-meta">Not connected — unlocks SKU-level COGS, true net margin and COD receivables for D2C stores</div>' +
+      '</div><div class="lr-actions"><button class="lr-btn" id="connectShopifyBtn" style="border-color:#0B4B8C; color:#0B4B8C;">Connect</button></div></div>';
+    const btn = document.getElementById('connectShopifyBtn');
+    if(btn) btn.addEventListener('click', openShopifyModal);
+  }
+}
+/* The 90-day backfill is resumable server-side. Keep nudging it until it
+   finishes rather than making the owner wait on the nightly cron. */
+function manageShopifyBackfillPolling(){
+  const needs = shopifyConnected && shopifyStore && shopifyStore.status === 'active' && !shopifyStore.backfill_complete;
+  if(needs && !shopifyPollTimer){
+    shopifyPollTimer = setInterval(async () => {
+      try { await shopifyApi('/api/shopify?action=sync', { method:'POST', body: JSON.stringify({}) }); } catch(e){}
+      await loadShopifyStatus();
+    }, 20000);
+  } else if(!needs && shopifyPollTimer){
+    clearInterval(shopifyPollTimer); shopifyPollTimer = null;
+  }
+}
+/* ---------- connect modal ---------- */
+function openShopifyModal(){
+  const overlay = document.getElementById('shopifyOverlay');
+  const host = document.getElementById('shopifyContent');
+  host.innerHTML =
+    '<div class="detail-eyebrow">Connect data</div>' +
+    '<div class="detail-title">Connect Shopify</div>' +
+    '<div class="zoho-scope-note">Read-only access</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Margyn never places orders, edits products or changes anything in your store. It only reads orders, refunds and product cost.</div>' +
+    '<div class="ledger-form">' +
+      '<div class="lf-title">Store domain</div>' +
+      '<input type="text" id="shopDomainInput" placeholder="mystore.myshopify.com" autocomplete="off" spellcheck="false" style="margin-bottom:10px;">' +
+      '<div class="lf-title">Admin API access token</div>' +
+      '<input type="password" id="shopTokenInput" placeholder="shpat_…" autocomplete="off" spellcheck="false">' +
+      '<div style="font-size:11px; color:var(--text-2); margin:10px 0 0; line-height:1.7;">' +
+        'In your Shopify admin:<br>' +
+        '1. Settings → Apps and sales channels → Develop apps<br>' +
+        '2. Create an app, name it Margyn<br>' +
+        '3. Under Admin API integration enable <span class="mono">read_orders</span>, <span class="mono">read_products</span>, <span class="mono">read_inventory</span><br>' +
+        '4. Save, Install app, then reveal and copy the access token' +
+      '</div>' +
+      '<div class="note bad" id="shopifyError" style="display:none; margin:10px 0 8px;"></div>' +
+      '<div class="note ok" id="shopifySuccess" style="display:none; margin:10px 0 8px;"></div>' +
+      '<button id="shopifyConnectBtn" style="margin-top:10px;">Connect</button>' +
+    '</div>';
+  document.getElementById('shopifyConnectBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('shopifyConnectBtn');
+    const successEl = document.getElementById('shopifySuccess');
+    shopifyShowError(''); successEl.style.display = 'none';
+    const domain = normalizeShopDomain(document.getElementById('shopDomainInput').value);
+    const token = document.getElementById('shopTokenInput').value.trim();
+    if(!domain){ shopifyShowError('Enter your store domain in the form mystore.myshopify.com'); return; }
+    if(!token){ shopifyShowError('Paste the Admin API access token from your Custom App.'); return; }
+    btn.disabled = true; btn.textContent = 'Connecting…';
+    try {
+      const out = await shopifyApi('/api/shopify?action=connect', {
+        method: 'POST',
+        body: JSON.stringify({ shopDomain: domain, accessToken: token })
+      });
+      document.getElementById('shopTokenInput').value = '';
+      successEl.textContent = out.backfill_complete
+        ? '✓ Connected — ' + (out.synced ? out.synced.orders : 0) + ' orders pulled.'
+        : '✓ Connected — pulling your last 90 days now.';
+      successEl.style.display = 'block';
+      setTimeout(async () => {
+        await loadShopifyStatus();
+        document.getElementById('shopifyOverlay').classList.add('hidden');
+      }, 1400);
+    } catch(e){ shopifyShowError(e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Connect'; }
+  });
+  overlay.classList.remove('hidden');
+}
+document.getElementById('shopifyClose').addEventListener('click', () => document.getElementById('shopifyOverlay').classList.add('hidden'));
+document.getElementById('shopifyOverlay').addEventListener('click', (e) => { if(e.target.id === 'shopifyOverlay') e.currentTarget.classList.add('hidden'); });
+/* ---------- sync / disconnect ---------- */
+async function syncShopifyNow(){
+  const btn = document.getElementById('shopifySyncBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
+  try {
+    await shopifyApi('/api/shopify?action=sync', { method:'POST', body: JSON.stringify({}) });
+    await loadShopifyStatus();
+  } catch(e){
+    if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
+  }
+  const b2 = document.getElementById('shopifySyncBtn');
+  if(b2){ b2.disabled = false; b2.textContent = 'Sync now'; }
+}
+async function disconnectShopify(){
+  if(!shopifyStore) return;
+  if(!confirm('Disconnect Shopify? Your historical order and margin data stays visible in Margyn, but nothing new will sync until you reconnect.')) return;
+  const btn = document.getElementById('shopifyDisconnectBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
+  try { await shopifyApi('/api/shopify?action=disconnect', { method:'POST', body: JSON.stringify({ storeId: shopifyStore.id }) }); }
+  catch(e){ alert('Could not disconnect: ' + e.message); }
+  await loadShopifyStatus();
 }
 /* ============================================================
    ZOHO BOOKS CONNECTOR (NEW) — OAuth 2.0, org-picker gated.
@@ -2655,7 +2862,7 @@ function zohoShowError(msg){
 /* ---------- status row inside Connectors ---------- */
 async function loadZohoVitals(){
   try {
-    const v = await zohoApi('/api/zoho-vitals');
+    const v = await zohoApi('/api/zoho?action=vitals');
     zohoConnected = v && v.connected === true;
     zohoVitals = zohoConnected ? v : null;
   } catch(e){ zohoConnected = false; zohoVitals = null; }
@@ -2723,7 +2930,7 @@ function openZohoModal(){
     btn.disabled = true; btn.textContent = 'Opening Zoho…';
     try {
       const region = document.getElementById('zohoRegion').value;
-      const out = await zohoApi('/api/zoho-oauth-start', { method:'POST', body: JSON.stringify({ region: region }) });
+      const out = await zohoApi('/api/zoho?action=oauth-start', { method:'POST', body: JSON.stringify({ region: region }) });
       const w = window.open(out.authorize_url, 'zoho_oauth', 'width=560,height=720');
       if(!w) zohoShowError('Your browser blocked the popup. Allow popups for this site and try again.');
     } catch(e){ zohoShowError(e.message); }
@@ -2762,7 +2969,7 @@ function handleZohoHashReturn(){
   if(!m) return;
   zohoPendingOrgRef = decodeURIComponent(m[1]);
   history.replaceState(null, '', location.pathname + location.search);
-  zohoApi('/api/zoho-select-org?org_ref=' + encodeURIComponent(zohoPendingOrgRef))
+  zohoApi('/api/zoho?action=select-org&org_ref=' + encodeURIComponent(zohoPendingOrgRef))
     .then(d => renderZohoOrgPicker(d.organizations || []))
     .catch(e => { document.getElementById('zohoOverlay').classList.remove('hidden'); zohoShowError(e.message); });
 }
@@ -2801,7 +3008,7 @@ async function confirmZohoOrg(){
   zohoShowError('');
   btn.disabled = true; btn.textContent = 'Connecting…';
   try {
-    const out = await zohoApi('/api/zoho-select-org', {
+    const out = await zohoApi('/api/zoho?action=select-org', {
       method: 'POST',
       body: JSON.stringify({ org_ref: zohoPendingOrgRef, organization_id: zohoChosenOrgId })
     });
@@ -2825,7 +3032,7 @@ async function syncZohoNow(){
   const btn = document.getElementById('zohoSyncBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
   try {
-    await zohoApi('/api/sync-zoho', { method:'POST', body: JSON.stringify({ mode:'delta' }) });
+    await zohoApi('/api/zoho?action=sync', { method:'POST', body: JSON.stringify({ mode:'delta' }) });
     await loadZohoVitals();
   } catch(e){
     if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
@@ -2836,7 +3043,7 @@ async function disconnectZoho(){
   if(!confirm('Disconnect Zoho Books? Your historical figures stay visible in Margyn, but nothing new will sync until you reconnect.')) return;
   const btn = document.getElementById('zohoDisconnectBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
-  try { await zohoApi('/api/disconnect-zoho', { method:'POST', body: JSON.stringify({}) }); }
+  try { await zohoApi('/api/zoho?action=disconnect', { method:'POST', body: JSON.stringify({}) }); }
   catch(e){ alert('Could not disconnect: ' + e.message); }
   await loadZohoVitals();
 }
