@@ -5,12 +5,20 @@
       "schedule": "30 20 * * *"
     },
     {
-      "path": "/api/cron-sync-zoho",
+      "path": "/api/zoho?action=cron",
       "schedule": "0 21 * * *"
     },
     {
-      "path": "/api/cron-sync-zoho-gstr2b",
+      "path": "/api/zoho?action=cron-gstr2b",
       "schedule": "0 22 * * 6"
+    },
+    {
+      "path": "/api/shopify?action=cron",
+      "schedule": "40 20 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/zoho.js": { "maxDuration": 300 },
+    "api/shopify.js": { "maxDuration": 300 }
+  }
 }
