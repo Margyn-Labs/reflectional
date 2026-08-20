@@ -99,6 +99,7 @@ function buildSystemPrompt(context) {
   const rp = ctx.receivablesPayables || null;
   const connectors = ctx.connectors || {};
   const provenance = ctx.dataProvenance || null;
+  const razorpayLive = ctx.razorpayLive || null;
 
   const vitalsLines = vitals.length
     ? vitals.map(v => `- ${v.label}: ${v.value} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
@@ -119,6 +120,18 @@ function buildSystemPrompt(context) {
   let shopifyBlock = 'Not connected / no Shopify data uploaded yet.';
   if (shopify && shopify.length) {
     shopifyBlock = shopify.map(r => `- ${r.label}: ${r.value}${r.trend ? ' (' + r.trend + ')' : ''}`).join('\n');
+  }
+
+  let razorpayLiveBlock = 'No real per-transaction Razorpay data yet — either Razorpay isn\'t connected, or fewer than 4 transactions have synced so far. Do not estimate an average transaction value from anything else (like Shopify order counts) — say plainly you don\'t have real transaction-level data yet.';
+  if (razorpayLive) {
+    razorpayLiveBlock = [
+      `Real transactions synced: ${razorpayLive.txnCount}`,
+      razorpayLive.avgTicket !== null ? `Average transaction value: ₹${Math.round(razorpayLive.avgTicket)}${razorpayLive.avgTicketTrendPct !== null ? ' (' + (razorpayLive.avgTicketTrendPct >= 0 ? '+' : '') + razorpayLive.avgTicketTrendPct.toFixed(1) + '% vs the earlier half of the synced window)' : ''}` : null,
+      razorpayLive.failRate !== null ? `Failed-payment rate: ${razorpayLive.failRate.toFixed(1)}%${razorpayLive.failRateTrendPct !== null ? ' (' + (razorpayLive.failRateTrendPct >= 0 ? '+' : '') + razorpayLive.failRateTrendPct.toFixed(1) + '%)' : ''}` : null,
+      razorpayLive.refundRate !== null ? `Refund rate: ${razorpayLive.refundRate.toFixed(1)}% of captured payments` : null,
+      razorpayLive.topMethod ? `Top payment method: ${razorpayLive.topMethod}` : null,
+      razorpayLive.avgSettlementLagDays !== null ? `Average settlement lag: ${razorpayLive.avgSettlementLagDays.toFixed(1)} days` : null
+    ].filter(Boolean).join('\n');
   }
 
   let rpBlock = '';
@@ -166,6 +179,9 @@ ${focusLine}${tierLine}${provenanceLine}
 
 Razorpay payments data (connected: ${!!connectors.razorpay}):
 ${paymentsBlock}
+
+Real per-transaction Razorpay data (independent of the summary above — this comes directly from individual synced transactions, never typed by hand, so it's a genuine second source even when the summary above is self-reported):
+${razorpayLiveBlock}
 
 Shopify data (connected: ${!!connectors.shopify}):
 ${shopifyBlock}
