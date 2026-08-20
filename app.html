@@ -2333,6 +2333,23 @@ function buildMargynContext(focusLabel){
   const prev = hasData ? snapshots[1] : null;
   const vitals = hasData ? (latest.vitals || ZERO_VITALS) : ZERO_VITALS;
 
+  // Raw P&L inputs behind the vitals — "Net Margin: 16%" alone doesn't
+  // tell Margyn the actual revenue/profit figures that produced it. This
+  // is what's usually meant by "the P&L" in casual use: top-line revenue,
+  // net profit, spend, GST. It's still not a category-level breakdown
+  // (no COGS vs opex split, no per-line-item detail) — that distinction
+  // matters for what Margyn is honest about not having.
+  const pnl = hasData ? {
+    cash: Number(latest.cash) || 0,
+    revenue: Number(latest.revenue) || 0,
+    netProfit: Number(latest.net_profit) || 0,
+    burn: Number(latest.burn) || 0,
+    gstLeak: Number(latest.gst_leak) || 0,
+    gstPayable: Number(latest.gst_payable) || 0,
+    revenueTrend: prev ? numDelta(Number(latest.revenue)||0, Number(prev.revenue)||0).text : null,
+    netProfitTrend: prev ? numDelta(Number(latest.net_profit)||0, Number(prev.net_profit)||0).text : null
+  } : null;
+
   const vitalsOut = vitals.map(v => {
     const prevV = (prev && Array.isArray(prev.vitals)) ? prev.vitals.find(pv => pv.label === v.label) : null;
     const scoreDelta = prevV ? Math.round((v.score||0) - (prevV.score||0)) : null;
@@ -2401,6 +2418,7 @@ function buildMargynContext(focusLabel){
       topPayables
     },
     findingsHistory,
+    pnl,
     dataProvenance: hasData ? {
       source: latest.source,
       label: sourceLabel(latest.source),
