@@ -1248,6 +1248,7 @@ let currentUser = null;
 let currentProfile = null;
 let snapshots = [];
 let receivables = [];
+let razorpayLiveSummary = null; // real per-transaction aggregates, mirrors generate-findings.js's aggregateRazorpayLive
 let payables = [];
 let findings = []; // server-computed, confidence-tiered — see api/generate-findings.js
 // khata (NEW) — free-tier customers/vendors ledger + invoicing
@@ -1398,6 +1399,7 @@ async function refreshAll(){
   khataEntries = await loadKhataEntries();
   khataInvoices = await loadKhataInvoices();
   await checkRazorpayConnection();
+  razorpayLiveSummary = await loadRazorpayLiveSummary();
   // Restore session-only Payments-tab state from the latest snapshot so it
   // survives refresh/re-login instead of resetting to empty each load.
   if(snapshots.length > 0){
@@ -1505,6 +1507,58 @@ async function loadReceivables(){
   const { data, error } = await sbClient.from('receivables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
   if(error){ console.error('[margyn] loadReceivables:', error); return []; }
   return data || [];
+}
+/* Real, itemized Razorpay data for free-text chat — mirrors
+   aggregateRazorpayLive() in api/generate-findings.js exactly (same math,
+   same field names) so a Finding card and a chat answer can never
+   disagree about what the real transaction data shows. Kept as two
+   copies rather than one shared module because app.html and the
+   serverless functions can't import from each other — if the aggregation
+   logic ever changes, it has to change in both places together. */
+async function loadRazorpayLiveSummary(){
+  try {
+    const [txRes, setRes, refRes] = await Promise.all([
+      sbClient.from('razorpay_transactions').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(1000),
+      sbClient.from('razorpay_settlements').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(300),
+      sbClient.from('razorpay_refunds').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(300)
+    ]);
+    const transactions = txRes.data || [];
+    const settlements = setRes.data || [];
+    const refunds = refRes.data || [];
+    if(transactions.length < 4) return null; // too little real volume to say anything meaningful yet
+
+    const mid = Math.floor(transactions.length / 2);
+    const newerHalf = transactions.slice(0, mid);
+    const olderHalf = transactions.slice(mid);
+    function statsFor(txns){
+      const cap = txns.filter(t => t.status === 'captured');
+      const avgTicket = cap.length ? cap.reduce((s,t) => s + Number(t.amount||0), 0) / cap.length / 100 : null;
+      const failRate = txns.length ? (txns.filter(t => t.status === 'failed').length / txns.length) * 100 : null;
+      return { avgTicket, failRate };
+    }
+    const newer = statsFor(newerHalf), older = statsFor(olderHalf);
+    const captured = transactions.filter(t => t.status === 'captured');
+
+    const methodCounts = {};
+    transactions.forEach(t => { const m = t.method || 'unknown'; methodCounts[m] = (methodCounts[m]||0) + 1; });
+    const topMethod = Object.entries(methodCounts).sort((a,b) => b[1]-a[1])[0];
+
+    const refundRate = captured.length ? (refunds.length / captured.length) * 100 : null;
+    const lagDays = settlements.filter(s => s.created_at && s.processed_at)
+      .map(s => (new Date(s.processed_at) - new Date(s.created_at)) / (1000*60*60*24));
+    const avgLag = lagDays.length ? lagDays.reduce((a,b)=>a+b,0)/lagDays.length : null;
+
+    return {
+      txnCount: transactions.length,
+      avgTicket: newer.avgTicket,
+      avgTicketTrendPct: (newer.avgTicket!==null && older.avgTicket!==null && older.avgTicket!==0) ? ((newer.avgTicket-older.avgTicket)/Math.abs(older.avgTicket))*100 : null,
+      failRate: newer.failRate,
+      failRateTrendPct: (newer.failRate!==null && older.failRate!==null && older.failRate!==0) ? ((newer.failRate-older.failRate)/Math.abs(older.failRate))*100 : null,
+      refundRate,
+      topMethod: topMethod ? topMethod[0] + ' ' + Math.round((topMethod[1]/transactions.length)*100) + '%' : null,
+      avgSettlementLagDays: avgLag
+    };
+  } catch(e){ console.error('[margyn] loadRazorpayLiveSummary:', e); return null; }
 }
 async function loadPayables(){
   const { data, error } = await sbClient.from('payables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
@@ -2352,6 +2406,7 @@ function buildMargynContext(focusLabel){
       label: sourceLabel(latest.source),
       selfReported: SELF_REPORTED_SOURCES.includes(latest.source)
     } : null,
+    razorpayLive: razorpayLiveSummary,
     connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected }
   };
 }
