@@ -31,6 +31,11 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Model is configurable via Vercel env var so it can be changed without
+  // touching code — set ASK_MARGYN_MODEL and redeploy to switch it.
+  // e.g. 'claude-haiku-4-5-20251001' for a cheaper/faster narration model.
+  const model = process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5';
+
   // Keep only the last 8 turns of history to bound cost/latency —
   // this is a chat about a handful of numbers, not a long-running thread.
   const trimmedHistory = Array.isArray(history) ? history.slice(-8) : [];
@@ -52,7 +57,7 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        model,
         max_tokens: 500,
         system: systemPrompt,
         messages
@@ -125,6 +130,14 @@ function buildSystemPrompt(context) {
     }
   }
 
+  let historyBlock = 'No past findings recorded yet.';
+  if (Array.isArray(ctx.findingsHistory) && ctx.findingsHistory.length) {
+    historyBlock = ctx.findingsHistory.map(f => {
+      const d = new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      return `- ${d} · ${f.vital} (${f.tier}): ${f.summary}`;
+    }).join('\n');
+  }
+
   const focusLine = focusVital
     ? `\nThe user is looking at "${focusVital}" specifically — assume that's what they mean unless they clearly ask about something else.`
     : '';
@@ -154,6 +167,9 @@ ${shopifyBlock}
 Receivables / payables ledger (Zoho Books connected: ${!!connectors.zoho}):
 ${rpBlock || 'No ledger data yet.'}
 
+Past findings, most recent first (up to the last 10, across all snapshots — use this if the user references "before," "last time," or asks to compare to an earlier period; cite the date; if nothing here is relevant to what they're asking, say plainly you don't have that in view rather than guessing):
+${historyBlock}
+
 Rules you must always follow:
 1. Only reason about the numbers given above. Never invent a figure, percentage, or trend that wasn't provided to you.
 2. Every trend and delta figure above is pre-computed in plain JS before it reaches you — never recompute or contradict them, and never do your own arithmetic to produce a different percentage.
@@ -161,5 +177,6 @@ Rules you must always follow:
 4. If the user asks something none of this data can answer (a number not shown, a prediction, something outside their connected sources), say plainly you don't have that yet, and mention what connecting or logging would surface it.
 5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
 6. Keep replies under ~120 words unless the user explicitly asks for more detail.
-7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."`;
+7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
+8. The "Past findings" list above is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back than what's listed, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.`;
 }
