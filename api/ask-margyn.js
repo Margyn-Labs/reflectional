@@ -100,10 +100,22 @@ function buildSystemPrompt(context) {
   const connectors = ctx.connectors || {};
   const provenance = ctx.dataProvenance || null;
   const razorpayLive = ctx.razorpayLive || null;
+  const pnl = ctx.pnl || null;
 
   const vitalsLines = vitals.length
     ? vitals.map(v => `- ${v.label}: ${v.value} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
     : 'No vitals calculated yet for this business — no data has been synced or uploaded.';
+
+  let pnlBlock = 'No P&L figures recorded yet.';
+  if (pnl) {
+    pnlBlock = [
+      `Revenue: ₹${pnl.revenue.toLocaleString('en-IN')}${pnl.revenueTrend ? ' (' + pnl.revenueTrend + ')' : ''}`,
+      `Net profit: ₹${pnl.netProfit.toLocaleString('en-IN')}${pnl.netProfitTrend ? ' (' + pnl.netProfitTrend + ')' : ''}`,
+      `Total spend/burn: ₹${pnl.burn.toLocaleString('en-IN')}`,
+      `Cash on hand: ₹${pnl.cash.toLocaleString('en-IN')}`,
+      `GST payable: ₹${pnl.gstPayable.toLocaleString('en-IN')}, ITC unclaimed: ₹${pnl.gstLeak.toLocaleString('en-IN')}`
+    ].join('\n');
+  }
 
   let paymentsBlock = 'Not connected / no payments data uploaded yet.';
   if (payments) {
@@ -176,6 +188,10 @@ Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pul
 Current financial vitals (each with trend vs the prior snapshot where available):
 ${vitalsLines}
 ${focusLine}${tierLine}${provenanceLine}
+
+Top-line P&L figures (the actual rupee numbers behind the vitals above — e.g. Net Margin is netProfit ÷ revenue from these):
+${pnlBlock}
+Note: this is top-line only — no cost-of-goods-sold vs operating-expense split, no per-line-item or per-category breakdown. If asked for a category-level P&L (COGS, opex by type, gross margin specifically), say plainly you have the top-line numbers but not that breakdown yet, rather than implying you have no P&L data at all.
 
 Razorpay payments data (connected: ${!!connectors.razorpay}):
 ${paymentsBlock}
