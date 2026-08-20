@@ -31,6 +31,23 @@ const SNAPSHOT_WINDOW = 5;          // how many past snapshots feed the evidence
 const VITAL_MATERIALITY_PTS = 8;    // min |score delta| (out of 100) for a vital to become a candidate finding
 const CORROBORATOR_MATERIALITY_PCT = 10; // min |% change| for a Razorpay/Shopify metric to count as real movement
 const INDEPENDENT_SOURCES = ['razorpay', 'shopify']; // the only sources that count as a genuine second source today
+// Separate from ASK_MARGYN_MODEL on purpose — this endpoint does harder
+// work (scanning the whole evidence menu, discovering real correlations,
+// producing valid structured JSON), so it's worth being able to keep
+// this one on a stronger model even if the chat narration is switched
+// to something cheaper. Set FINDINGS_MODEL in Vercel to override.
+const FINDINGS_MODEL = process.env.FINDINGS_MODEL || 'claude-sonnet-5';
+
+// These are the only three `snapshots.source` values that exist in the
+// schema today — every one of them is a human typing or uploading a
+// number, never a live API sync. A future connector-sync path would
+// write some other value here; until one exists, EVERY snapshot is
+// self-reported, and no finding should ever be allowed to claim
+// "Verified" on the strength of two numbers the same person typed into
+// the same form in the same sitting. This is a real, load-bearing
+// distinction, not a cosmetic label — see the deploy notes.
+const SELF_REPORTED_SOURCES = ['manual', 'upload', 'ledger'];
+function isSelfReported(source) { return SELF_REPORTED_SOURCES.includes(source); }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
@@ -98,7 +115,7 @@ async function insertFindings(userId, snapshotId, accessToken, findings) {
   // context both read the full table. Nothing is ever deleted here.
   if (!findings.length) return [];
   const rows = findings.map(f => ({
-    user_id: userId, snapshot_id: snapshotId, vital: f.vital, tier: f.tier,
+    user_id: userId, snapshot_id: snapshotId, vital: f.vital, tier: f.tier, self_reported: !!f.selfReported,
     headline: f.headline, summary: f.summary, narration: f.narration,
     suggested_action: f.suggestedAction || null, evidence: f.evidenceUsed || null
   }));
@@ -124,7 +141,7 @@ function buildEvidenceSheet(snapshots, receivables, payables) {
   vitalLabels.forEach(label => {
     const series = ordered.map(s => {
       const v = (s.vitals || []).find(x => x.label === label);
-      return v ? { score: Math.round(v.score || 0), value: v.value, numeric: numericFromVitalValue(v.value) } : null;
+      return v ? { score: Math.round(v.score || 0), value: v.value, numeric: numericFromVitalValue(v.value), selfReported: isSelfReported(s.source) } : null;
     }).filter(Boolean);
     if (series.length < 2) return;
     const first = series[0], last = series[series.length - 1];
@@ -134,21 +151,24 @@ function buildEvidenceSheet(snapshots, receivables, payables) {
       key: 'vital:' + label, label, source: 'vitals',
       delta: scoreDelta, pctChange: nd.pctChange,
       material: Math.abs(scoreDelta) >= VITAL_MATERIALITY_PTS,
+      selfReported: first.selfReported || last.selfReported,
       valueText: last.value + ' now, was ' + first.value + ' ' + (ordered.length - 1) + ' snapshot(s) ago (score ' + (scoreDelta >= 0 ? '+' : '') + scoreDelta + ' pts' + (nd.pctChange !== null ? ', ' + (nd.pctChange >= 0 ? '+' : '') + nd.pctChange.toFixed(1) + '%' : '') + ')'
     });
   });
 
-  const paySeries = ordered.map(s => s.payments_data ? computePaymentsMetrics(s.payments_data) : null);
+  const paySeries = ordered.map(s => s.payments_data ? { m: computePaymentsMetrics(s.payments_data), selfReported: isSelfReported(s.source) } : null);
   const payPairs = [['failRate', 'Razorpay failed-payment rate'], ['mdrPct', 'Razorpay MDR'], ['lag', 'Razorpay settlement lag'], ['gross', 'Razorpay gross processed']];
   payPairs.forEach(([field, label]) => {
-    const series = paySeries.filter(Boolean).map(m => m[field]);
-    if (series.length < 2) return;
+    const points = paySeries.filter(Boolean);
+    if (points.length < 2) return;
+    const series = points.map(p => p.m[field]);
     const nd = numDelta(series[series.length - 1], series[0]);
     if (nd.pctChange === null) return;
     metrics.push({
       key: 'razorpay:' + field, label, source: 'razorpay',
       delta: nd.delta, pctChange: nd.pctChange,
       material: Math.abs(nd.pctChange) >= CORROBORATOR_MATERIALITY_PCT,
+      selfReported: points[0].selfReported || points[points.length - 1].selfReported,
       valueText: label + ' ' + (nd.pctChange >= 0 ? 'up' : 'down') + ' ' + Math.abs(nd.pctChange).toFixed(1) + '% over the last ' + (ordered.length - 1) + ' snapshot(s)'
     });
   });
@@ -158,15 +178,16 @@ function buildEvidenceSheet(snapshots, receivables, payables) {
   shopLabels.forEach(label => {
     const series = ordered.map(s => {
       const row = (s.shopify_orders_data || []).find(r => r.label === label);
-      return row ? Number(row.value) : null;
+      return row ? { value: Number(row.value), selfReported: isSelfReported(s.source) } : null;
     }).filter(v => v !== null);
     if (series.length < 2) return;
-    const nd = numDelta(series[series.length - 1], series[0]);
+    const nd = numDelta(series[series.length - 1].value, series[0].value);
     if (nd.pctChange === null) return;
     metrics.push({
       key: 'shopify:' + label, label: 'Shopify — ' + label, source: 'shopify',
       delta: nd.delta, pctChange: nd.pctChange,
       material: Math.abs(nd.pctChange) >= CORROBORATOR_MATERIALITY_PCT,
+      selfReported: series[0].selfReported || series[series.length - 1].selfReported,
       valueText: 'Shopify ' + label + ' ' + (nd.pctChange >= 0 ? 'up' : 'down') + ' ' + Math.abs(nd.pctChange).toFixed(1) + '% over the last ' + (ordered.length - 1) + ' snapshot(s)'
     });
   });
@@ -197,12 +218,14 @@ function buildEvidenceSheet(snapshots, receivables, payables) {
 
 async function askClaudeForFindings(evidence, apiKey) {
   const menu = evidence.metrics
-    .map(m => `- key: "${m.key}" | label: ${m.label} | source: ${m.source} | ${m.valueText}${m.material ? ' [MATERIAL MOVE]' : ''}`)
+    .map(m => `- key: "${m.key}" | label: ${m.label} | source: ${m.source} | ${m.valueText}${m.material ? ' [MATERIAL MOVE]' : ''}${m.selfReported ? ' [SELF-REPORTED]' : ''}`)
     .join('\n');
 
-  const system = `You are Margyn's Findings analyst. You will be given a menu of financial metrics for one business, each tagged with a "source" (vitals, razorpay, shopify, or ledger) and marked [MATERIAL MOVE] if it changed enough to matter.
+  const system = `You are Margyn's Findings analyst. You will be given a menu of financial metrics for one business, each tagged with a "source" (vitals, razorpay, shopify, or ledger), marked [MATERIAL MOVE] if it changed enough to matter, and marked [SELF-REPORTED] if the number came from someone typing or uploading it by hand rather than a live, independently-operated data sync.
 
 Your job: identify up to 3 findings. A finding's primaryMetric MUST be a vital (source: "vitals") marked [MATERIAL MOVE] — never propose a finding whose primary metric isn't in that list. For each finding, look across the ENTIRE menu for other metrics that plausibly explain or corroborate the move — a corroborator is only meaningful if it comes from a DIFFERENT source than "vitals" (i.e. source "razorpay" or "shopify") and is itself a real, cited entry from the menu. Never invent a metric key that isn't on the menu. If nothing on the menu plausibly corroborates a material vital move, still report the finding with an empty corroborators array — don't force a connection that isn't there.
+
+Important honesty rule: if the primary metric or any corroborator you cite is marked [SELF-REPORTED], your narration must say plainly that this reading (or that part of it) comes from manually entered or uploaded data, not a live connector sync — even if you still think it's worth flagging. Never describe two self-reported numbers as independently confirming each other; a person typing two numbers into the same form isn't two sources agreeing, it's one source twice.
 
 Output ONLY valid JSON, no prose before or after, matching exactly:
 {"findings":[{"primaryMetric":"<exact key from menu>","corroborators":["<exact key from menu>", ...],"summary":"<one line, under 20 words, plain language>","narration":"<2-4 sentences, plain language, explaining the likely mechanism>","suggestedAction":"<one concrete, specific next step>"}]}
@@ -214,7 +237,7 @@ If there is truly nothing worth flagging, output {"findings":[]}.`;
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 900, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: FINDINGS_MODEL, max_tokens: 900, system, messages: [{ role: 'user', content: user }] })
   });
   if (!r.ok) { console.error('Anthropic error:', r.status, await r.text()); return []; }
   const data = await r.json();
@@ -239,7 +262,12 @@ function validateFinding(claim, evidence) {
   const corroboratorKeys = Array.isArray(claim.corroborators) ? claim.corroborators : [];
   const validCorroborators = corroboratorKeys
     .map(k => evidence.metrics.find(m => m.key === k))
-    .filter(m => m && INDEPENDENT_SOURCES.includes(m.source) && m.material);
+    // The core fix: a self-reported number can never count as independent
+    // corroboration, no matter how well it lines up. Someone typing two
+    // figures into the same form isn't two sources agreeing — it's one
+    // source, twice. Until a real connector-sync path exists, this
+    // correctly means every finding lands on Signal, not Verified.
+    .filter(m => m && INDEPENDENT_SOURCES.includes(m.source) && m.material && !m.selfReported);
 
   const direction = primary.delta >= 0 ? 'up' : 'down';
   const headline = primary.label + ' ' + direction + (primary.pctChange !== null ? ' ' + Math.abs(primary.pctChange).toFixed(1) + '%' : '');
@@ -247,6 +275,7 @@ function validateFinding(claim, evidence) {
   return {
     vital: primary.label,
     tier: validCorroborators.length > 0 ? 'verified' : 'signal',
+    selfReported: primary.selfReported,
     headline,
     summary: typeof claim.summary === 'string' && claim.summary.trim() ? claim.summary.trim().slice(0, 200) : primary.valueText,
     narration: typeof claim.narration === 'string' && claim.narration.trim() ? claim.narration.trim().slice(0, 800) : primary.valueText,
