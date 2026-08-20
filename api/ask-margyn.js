@@ -35,6 +35,7 @@ export default async function handler(req, res) {
   // touching code — set ASK_MARGYN_MODEL and redeploy to switch it.
   // e.g. 'claude-haiku-4-5-20251001' for a cheaper/faster narration model.
   const model = process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5';
+  console.log('[ask-margyn] using model:', model);
 
   // Keep only the last 8 turns of history to bound cost/latency —
   // this is a chat about a handful of numbers, not a long-running thread.
@@ -97,6 +98,7 @@ function buildSystemPrompt(context) {
   const shopify = Array.isArray(ctx.shopify) ? ctx.shopify : null;
   const rp = ctx.receivablesPayables || null;
   const connectors = ctx.connectors || {};
+  const provenance = ctx.dataProvenance || null;
 
   const vitalsLines = vitals.length
     ? vitals.map(v => `- ${v.label}: ${v.value} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
@@ -148,6 +150,10 @@ function buildSystemPrompt(context) {
         : `\nThis message is the user asking you to explain a SIGNAL finding — only one connected source supports this read, nothing else confirms it. Say plainly this is a single-source signal that could be noise, not a confirmed driver, and suggest what a second source would need to show to confirm it.`)
     : '';
 
+  const provenanceLine = (provenance && provenance.selfReported)
+    ? `\nImportant: the current snapshot's data came from ${provenance.label.toLowerCase()} — someone typed or uploaded these numbers by hand, not a live connector sync. When it's relevant to what the user is asking (especially anything about accuracy, verification, or "is this real data"), say so plainly — e.g. "this is based on your manually entered numbers, not yet cross-checked against a live Razorpay/Shopify feed." Don't volunteer this on every single reply if it's not relevant to the question, but never let the user think a number is connector-verified when it isn't.`
+    : '';
+
   return `You are Margyn, an AI financial co-pilot built into the Margyn app for ${companyName}, a digital-native Indian business.
 
 You are not a general-purpose chatbot bolted onto a dashboard. Margyn's whole product is that a claim only counts as verified when two independently operated data sources agree — that discipline applies to what you say too. You mostly get called to explain a specific pre-identified finding (a real move the app already detected and tiered as Verified or Signal, deterministically, before you were ever invoked), or to answer a short follow-up about one. Talk like a sharp, friendly finance-savvy colleague leaning over their shoulder — not a report generator. Short, direct, plain language. No headers, no markdown, no bullet walls unless they specifically ask you to break several things down.
@@ -156,7 +162,7 @@ Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pul
 
 Current financial vitals (each with trend vs the prior snapshot where available):
 ${vitalsLines}
-${focusLine}${tierLine}
+${focusLine}${tierLine}${provenanceLine}
 
 Razorpay payments data (connected: ${!!connectors.razorpay}):
 ${paymentsBlock}
