@@ -1196,6 +1196,24 @@
     </div>
   </div>
   </div>
+  <button class="ask-margyn-fab" id="askMargynFab" title="Ask Margyn" aria-label="Ask Margyn">💬</button>
+  <div class="ask-margyn-panel hidden" id="askMargynPanel">
+    <div class="ask-margyn-head">
+      <div class="amh-title">Ask Margyn</div>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <button id="askMargynNewChat" title="New chat" aria-label="New chat">＋</button>
+        <button id="askMargynHistoryToggle" title="Previous chats" aria-label="Previous chats">🕐</button>
+        <button id="askMargynClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="ask-margyn-body" id="askMargynThread"></div>
+    <div class="ask-margyn-foot">
+      <form class="margyn-chat-form" id="askMargynForm">
+        <input type="text" id="askMargynInput" placeholder="Ask about your numbers..." autocomplete="off">
+        <button type="submit">Ask</button>
+      </form>
+    </div>
+  </div>
 </div>
 </div>
 <div class="detail-overlay hidden" id="detailOverlay">
@@ -1220,23 +1238,6 @@
   <div class="detail-modal">
     <button class="detail-close" id="shopifyClose">✕</button>
     <div id="shopifyContent"></div>
-  </div>
-</div>
-<button class="ask-margyn-fab" id="askMargynFab" title="Ask Margyn" aria-label="Ask Margyn">💬</button>
-<div class="ask-margyn-panel hidden" id="askMargynPanel">
-  <div class="ask-margyn-head">
-    <div class="amh-title">Ask Margyn</div>
-    <div style="display:flex; gap:12px; align-items:center;">
-      <button id="askMargynHistoryToggle" title="Previous chats" aria-label="Previous chats">🕐</button>
-      <button id="askMargynClose" aria-label="Close">✕</button>
-    </div>
-  </div>
-  <div class="ask-margyn-body" id="askMargynThread"></div>
-  <div class="ask-margyn-foot">
-    <form class="margyn-chat-form" id="askMargynForm">
-      <input type="text" id="askMargynInput" placeholder="Ask about your numbers..." autocomplete="off">
-      <button type="submit">Ask</button>
-    </form>
   </div>
 </div>
 <footer>Margyn 1.0 · Built for new-age Indian businesses</footer>
@@ -1956,8 +1957,14 @@ async function loadChatThread(threadKey, limit){
 }
 
 async function loadAllThreadSummaries(){
+  // Scans recent messages across every thread and keeps the latest one per
+  // thread_key. Raised well above what a normal session would produce —
+  // 200 was silently dropping quieter threads once a couple of busier
+  // ones ate most of that window. Not a perfect fix (a proper one would
+  // be a small Postgres view doing DISTINCT ON thread_key server-side),
+  // but comfortably covers real usage without a new migration.
   const { data, error } = await sbClient.from('chat_messages')
-    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(200);
+    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(3000);
   if(error){ console.error('[margyn] loadAllThreadSummaries:', error); return []; }
   const seen = new Map();
   data.forEach(m => { if(!seen.has(m.thread_key)) seen.set(m.thread_key, m); });
@@ -1968,6 +1975,7 @@ let askMargynGlobalHistory = [];
 let currentGlobalThreadKey = 'global';
 let currentGlobalFocusLabel = null;
 function resolveThreadKey(tk){ return typeof tk === 'function' ? tk() : tk; }
+function newGlobalThreadKey(){ return 'global:' + Date.now() + '-' + Math.random().toString(36).slice(2, 8); }
 
 /* Deterministic topic → view lookup, used to offer a "Go to X" chip
    after a reply in the global panel. This is plain JS pattern-matching
@@ -2181,7 +2189,7 @@ async function renderChatHistoryList(thread){
   summaries.forEach(m => {
     const row = document.createElement('div');
     row.className = 'chat-history-row';
-    const label = m.thread_key === 'global' ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
+    const label = (m.thread_key === 'global' || m.thread_key.startsWith('global:')) ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
     row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,70)) + '</div>';
     row.addEventListener('click', async () => {
       thread.innerHTML = '';
@@ -2201,6 +2209,7 @@ function initAskMargynGlobal(){
   const panel = document.getElementById('askMargynPanel');
   if(!fab || !panel) return;
   const closeBtn = document.getElementById('askMargynClose');
+  const newChatBtn = document.getElementById('askMargynNewChat');
   const historyToggle = document.getElementById('askMargynHistoryToggle');
   const form = document.getElementById('askMargynForm');
   const input = document.getElementById('askMargynInput');
@@ -2210,11 +2219,28 @@ function initAskMargynGlobal(){
     if(!panel.classList.contains('hidden') && !thread.dataset.inited){
       thread.dataset.inited = '1';
       await renderGlobalFindings(thread);
-      const past = await loadChatThread('global');
+      // Continue the most recent general conversation, not always the
+      // same fixed key — otherwise "General" threads started via New
+      // Chat would never get picked back up on a normal reopen.
+      const summaries = await loadAllThreadSummaries();
+      const generalThreads = summaries.filter(m => m.thread_key === 'global' || m.thread_key.startsWith('global:'));
+      const mostRecent = generalThreads.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      if(mostRecent) currentGlobalThreadKey = mostRecent.thread_key;
+      const past = await loadChatThread(currentGlobalThreadKey);
       past.forEach(m => { appendChatBubble(thread, m.role, m.content); askMargynGlobalHistory.push({ role:m.role, content:m.content }); });
     }
   });
   closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+  newChatBtn.addEventListener('click', async () => {
+    currentGlobalThreadKey = newGlobalThreadKey();
+    currentGlobalFocusLabel = null;
+    askMargynGlobalHistory.length = 0;
+    thread.innerHTML = '';
+    await renderGlobalFindings(thread);
+    input.value = '';
+    input.placeholder = 'Ask about your numbers...';
+    input.focus();
+  });
   historyToggle.addEventListener('click', () => renderChatHistoryList(thread));
   wireChatForm(form, input, thread, askMargynGlobalHistory, () => currentGlobalFocusLabel, () => currentGlobalThreadKey, true);
 }
@@ -2250,7 +2276,7 @@ async function renderHistoryThreadList(){
   summaries.forEach(m => {
     const row = document.createElement('div');
     row.className = 'chat-history-row';
-    const label = m.thread_key === 'global' ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
+    const label = (m.thread_key === 'global' || m.thread_key.startsWith('global:')) ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
     const when = new Date(m.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
     row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,90)) + '</div>';
     row.addEventListener('click', () => openHistoryThread(m.thread_key, label));
