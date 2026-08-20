@@ -270,6 +270,42 @@
   .detail-score-bar{ flex:1; height:8px; border-radius:6px; background:var(--surf-2); overflow:hidden; }
   .detail-score-fill{ height:100%; border-radius:6px; }
   .detail-body{ font-size:13.5px; color:var(--text-1); line-height:1.7; }
+  /* ---------- Ask Margyn (AI chat) ---------- */
+  .margyn-chat{ margin-top:18px; padding-top:16px; border-top:1px solid var(--border-1); }
+  .margyn-chat-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--orange); font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+  .margyn-chat-label::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--orange); flex-shrink:0; }
+  .finding-card{ border:1px solid var(--border-1); border-left:3px solid var(--border-2); border-radius:10px; padding:13px 15px; margin-bottom:12px; background:var(--surf-2); }
+  .finding-card.verified{ border-left-color:var(--emerald-bright); }
+  .finding-card.signal{ border-left-color:var(--orange); }
+  .finding-tier{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; margin-bottom:6px; }
+  .finding-card.verified .finding-tier{ color:var(--emerald); }
+  .finding-card.signal .finding-tier{ color:var(--orange); }
+  .finding-summary{ font-size:13px; line-height:1.55; color:var(--text-0); margin-bottom:10px; }
+  .finding-explain{ background:transparent; border:1px solid var(--border-2); color:var(--text-0); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
+  .finding-explain:hover{ border-color:var(--emerald-bright); color:var(--emerald); }
+  .finding-explain:disabled{ opacity:.5; cursor:default; }
+  .margyn-chat-thread{ display:flex; flex-direction:column; gap:10px; margin-bottom:12px; max-height:320px; overflow-y:auto; }
+  .margyn-msg{ font-size:13px; line-height:1.55; padding:10px 13px; border-radius:12px; max-width:88%; word-wrap:break-word; }
+  .margyn-msg.user{ align-self:flex-end; background:var(--surf-2); color:var(--text-0); border-bottom-right-radius:4px; }
+  .margyn-msg.assistant{ align-self:flex-start; background:var(--peach); color:var(--text-0); border-bottom-left-radius:4px; }
+  .margyn-msg.assistant.loading{ color:var(--text-2); font-style:italic; }
+  .margyn-chat-form{ display:flex; gap:8px; }
+  .margyn-chat-form input{ flex:1; padding:10px 12px; border:1px solid var(--border-2); border-radius:9px; font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
+  .margyn-chat-form input:focus{ outline:none; border-color:var(--orange); }
+  .margyn-chat-form button{ background:var(--orange); color:#fff; border:none; padding:0 16px; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; flex-shrink:0; }
+  .margyn-chat-form button:hover{ opacity:.9; }
+  .margyn-chat-form button:disabled{ opacity:.5; cursor:default; }
+  .ask-margyn-fab{ position:fixed; right:24px; bottom:24px; z-index:250; width:54px; height:54px; border-radius:50%; background:var(--orange); color:#fff; border:none; box-shadow:0 10px 24px -8px rgba(204,91,52,0.55); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:21px; transition:transform .2s ease; }
+  .ask-margyn-fab:hover{ transform:scale(1.06); }
+  .ask-margyn-panel{ position:fixed; right:24px; bottom:92px; z-index:250; width:min(380px, calc(100vw - 48px)); max-height:min(560px, calc(100vh - 140px)); background:var(--surf-1); border:1px solid var(--border-1); border-radius:16px; box-shadow:0 24px 60px -20px rgba(20,24,31,0.3); display:flex; flex-direction:column; overflow:hidden; }
+  .ask-margyn-panel.hidden{ display:none; }
+  .ask-margyn-head{ padding:16px 18px; border-bottom:1px solid var(--border-1); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+  .ask-margyn-head .amh-title{ font-family:'Manrope',sans-serif; font-weight:800; font-size:14.5px; color:var(--text-0); display:flex; align-items:center; gap:7px; }
+  .ask-margyn-head .amh-title::before{ content:''; width:7px; height:7px; border-radius:50%; background:var(--orange); }
+  .ask-margyn-head button{ background:transparent; border:none; color:var(--text-2); cursor:pointer; font-size:16px; line-height:1; }
+  .ask-margyn-body{ padding:16px 18px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+  .ask-margyn-foot{ padding:12px 14px; border-top:1px solid var(--border-1); flex-shrink:0; }
+  @media (max-width:640px){ .ask-margyn-panel{ right:12px; left:12px; width:auto; bottom:84px; } .ask-margyn-fab{ right:16px; bottom:16px; } }
   @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
   .summary-grid{ grid-template-columns:repeat(5,1fr); margin-bottom:20px; }
   /* ---------- ledger UI (receivables / payables / settlements) ---------- */
@@ -1141,6 +1177,20 @@
     <div id="shopifyContent"></div>
   </div>
 </div>
+<button class="ask-margyn-fab" id="askMargynFab" title="Ask Margyn" aria-label="Ask Margyn">💬</button>
+<div class="ask-margyn-panel hidden" id="askMargynPanel">
+  <div class="ask-margyn-head">
+    <div class="amh-title">Ask Margyn</div>
+    <button id="askMargynClose" aria-label="Close">✕</button>
+  </div>
+  <div class="ask-margyn-body" id="askMargynThread"></div>
+  <div class="ask-margyn-foot">
+    <form class="margyn-chat-form" id="askMargynForm">
+      <input type="text" id="askMargynInput" placeholder="Ask about your numbers..." autocomplete="off">
+      <button type="submit">Ask</button>
+    </form>
+  </div>
+</div>
 <footer>Margyn 1.0 · Built for new-age Indian businesses</footer>
 <script>
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
@@ -1151,6 +1201,7 @@ let currentProfile = null;
 let snapshots = [];
 let receivables = [];
 let payables = [];
+let findings = []; // server-computed, confidence-tiered — see api/generate-findings.js
 // khata (NEW) — free-tier customers/vendors ledger + invoicing
 let khataParties = [];
 let khataEntries = [];
@@ -1293,6 +1344,7 @@ async function refreshAll(){
   snapshots = await loadSnapshots();
   receivables = await loadReceivables();
   payables = await loadPayables();
+  findings = await loadFindings();
   khataParties = await loadKhataParties();
   khataEntries = await loadKhataEntries();
   khataInvoices = await loadKhataInvoices();
@@ -1409,6 +1461,28 @@ async function loadPayables(){
   const { data, error } = await sbClient.from('payables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
   if(error){ console.error('[margyn] loadPayables:', error); return []; }
   return data || [];
+}
+async function loadFindings(){
+  const { data, error } = await sbClient.from('findings').select('*').eq('user_id', currentUser.id).order('generated_at', { ascending:false });
+  if(error){ console.error('[margyn] loadFindings:', error); return []; }
+  return data || [];
+}
+/* Fire-and-forget trigger for the server-side Findings pipeline
+   (api/generate-findings.js) — called right after a snapshot is saved so
+   findings are already computed and persisted by the time anyone opens
+   the panel. Non-blocking: never awaited by the save flow itself, and
+   failures here should never surface as an error to the user — the app
+   works fine without fresh findings, it just won't have new ones yet. */
+async function triggerFindingsGeneration(){
+  try {
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(!session) return;
+    const res = await fetch('/api/generate-findings', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer ' + session.access_token }
+    });
+    if(res.ok) findings = await loadFindings();
+  } catch(e){ console.error('[margyn] triggerFindingsGeneration:', e); }
 }
 function daysFromToday(dateStr){
   if(!dateStr) return null;
@@ -1554,8 +1628,8 @@ function renderVitals(vitals, hasData){
 function openVitalDetail(v, accent){
   const overlay = document.getElementById('detailOverlay');
   const modal = overlay.querySelector('.detail-modal');
-  if(v.label === 'Receivables Aging'){ modal.classList.add('wide'); renderReceivablesDetail(accent); overlay.classList.remove('hidden'); return; }
-  if(v.label === 'Payables Due (30d)'){ modal.classList.add('wide'); renderPayablesDetail(accent); overlay.classList.remove('hidden'); return; }
+  if(v.label === 'Receivables Aging'){ modal.classList.add('wide'); renderReceivablesDetail(accent); overlay.classList.remove('hidden'); renderVitalChatBlock(v.label); return; }
+  if(v.label === 'Payables Due (30d)'){ modal.classList.add('wide'); renderPayablesDetail(accent); overlay.classList.remove('hidden'); renderVitalChatBlock(v.label); return; }
   modal.classList.remove('wide');
   const host = document.getElementById('detailContent');
   const pct = Math.max(0, Math.min(100, v.score || 0));
@@ -1568,6 +1642,7 @@ function openVitalDetail(v, accent){
     '</div>' +
     '<div class="detail-body"><b style="color:var(--text-0);">Current reading: '+v.value+'</b><br><br>' + (VITAL_EXPLAIN[v.label] || '') + '</div>';
   overlay.classList.remove('hidden');
+  renderVitalChatBlock(v.label);
 }
 /* ---------- itemized receivables ledger ---------- */
 function renderReceivablesDetail(accent){
@@ -1699,6 +1774,265 @@ async function deletePayable(p){
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 document.getElementById('detailClose').addEventListener('click', () => document.getElementById('detailOverlay').classList.add('hidden'));
 document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e.target.id === 'detailOverlay') e.currentTarget.classList.add('hidden'); });
+
+/* ---------- Margyn Findings ----------
+   Detection and narration both now happen server-side, in
+   api/generate-findings.js, triggered right after a snapshot is saved
+   (see triggerFindingsGeneration). By the time anyone opens a vital or
+   the global panel, findings are already sitting in the `findings`
+   table with their narration pre-written — this code only reads and
+   renders them. No client-side detection, no click-triggered API call
+   to reveal a finding; "Explain why" is an instant local reveal.
+
+   Server-side, Claude looks at the WHOLE evidence sheet (multiple past
+   snapshots across all three connectors) and proposes candidate
+   findings + corroborating metrics — real correlation discovery, not a
+   hardcoded lookup table. A deterministic validator then re-checks every
+   claim against the actual numbers before anything is allowed to be
+   tiered VERIFIED: the cited corroborator must be real, must come from
+   an independently operated source (Razorpay or Shopify — never another
+   vital derived from the same inputs), and must show an actual move.
+   Anything that fails is downgraded to SIGNAL or dropped. See
+   api/generate-findings.js for the full pipeline.
+
+   Free-text chat remains — for "what does this number mean" questions,
+   or a follow-up after a finding's been read — but stays the secondary
+   control beneath the findings, never the first thing shown. */
+let askMargynGlobalHistory = [];
+
+function numericFromVitalValue(raw){
+  const { main } = splitValue(raw);
+  const cleaned = String(main).replace(/[₹,%\s]/g,'');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
+}
+
+/* Shared delta helper for the optional free-text context builder below —
+   the model narrates pre-computed deltas, it never re-derives them. */
+function numDelta(cur, prev){
+  if(cur === null || cur === undefined || prev === null || prev === undefined) return { delta:null, pctChange:null, text:null };
+  const delta = cur - prev;
+  const pctChange = prev !== 0 ? (delta/Math.abs(prev))*100 : null;
+  const text = pctChange !== null ? ((pctChange >= 0 ? '+' : '') + pctChange.toFixed(1) + '% vs last snapshot') : null;
+  return { delta, pctChange, text };
+}
+
+function vitalTrendText(nd, scoreDelta, curVal, prevVal){
+  if(scoreDelta === null) return null;
+  const scoreText = scoreDelta === 0 ? 'score unchanged' : (scoreDelta > 0 ? 'score up ' + scoreDelta + ' pts' : 'score down ' + Math.abs(scoreDelta) + ' pts');
+  return curVal + ' now, was ' + prevVal + (nd.text ? ' (' + nd.text + ')' : '') + ' — ' + scoreText + ' vs last snapshot.';
+}
+
+/* Context for the optional free-text follow-up only (/api/ask-margyn) —
+   findings themselves no longer come from this path. Kept close to the
+   original design: six vitals + Razorpay + Shopify + ledger digest, all
+   arithmetic done here in plain JS. */
+function buildMargynContext(focusLabel){
+  const hasData = snapshots.length > 0;
+  const latest = hasData ? snapshots[0] : null;
+  const prev = hasData ? snapshots[1] : null;
+  const vitals = hasData ? (latest.vitals || ZERO_VITALS) : ZERO_VITALS;
+
+  const vitalsOut = vitals.map(v => {
+    const prevV = (prev && Array.isArray(prev.vitals)) ? prev.vitals.find(pv => pv.label === v.label) : null;
+    const scoreDelta = prevV ? Math.round((v.score||0) - (prevV.score||0)) : null;
+    const nd = prevV ? numDelta(numericFromVitalValue(v.value), numericFromVitalValue(prevV.value)) : { delta:null, pctChange:null, text:null };
+    return {
+      label: v.label, value: v.value, score: Math.round(v.score || 0),
+      scoreDelta, pctChange: nd.pctChange,
+      trend: prevV ? vitalTrendText(nd, scoreDelta, v.value, prevV.value) : null
+    };
+  });
+
+  let payments = null;
+  if(latest && latest.payments_data){
+    const cur = computePaymentsMetrics(latest.payments_data);
+    const prevMetrics = (prev && prev.payments_data) ? computePaymentsMetrics(prev.payments_data) : null;
+    const failNd = prevMetrics ? numDelta(cur.failRate, prevMetrics.failRate) : { delta:null, text:null };
+    const mdrNd = prevMetrics ? numDelta(cur.mdrPct, prevMetrics.mdrPct) : { delta:null, text:null };
+    const lagNd = prevMetrics ? numDelta(cur.lag, prevMetrics.lag) : { delta:null, text:null };
+    const grossNd = prevMetrics ? numDelta(cur.gross, prevMetrics.gross) : { delta:null, text:null };
+    payments = {
+      grossProcessed: Math.round(cur.gross), netSettled: Math.round(cur.netSettled),
+      mdrPct: +cur.mdrPct.toFixed(2), failRatePct: +cur.failRate.toFixed(1),
+      settlementLagDays: +cur.lag.toFixed(1), topPaymentMethod: cur.topMethodName + ' ' + Math.round(cur.topMethodPct) + '%',
+      failRateTrend: failNd.text, mdrTrend: mdrNd.text, lagTrend: lagNd.text, grossTrend: grossNd.text
+    };
+  }
+
+  let shopify = null;
+  if(latest && latest.shopify_orders_data){
+    const prevRows = (prev && prev.shopify_orders_data) ? prev.shopify_orders_data : null;
+    shopify = latest.shopify_orders_data.map(r => {
+      const prevR = prevRows ? prevRows.find(pr => pr.label === r.label) : null;
+      return { label: r.label, value: r.value, trend: prevR ? numDelta(Number(r.value), Number(prevR.value)).text : null };
+    });
+  }
+
+  const { recvTotal, recv90, paySoon } = ledgerAggregates();
+  const topReceivables = receivables.slice().sort((a,b) => Number(b.amount) - Number(a.amount)).slice(0,5)
+    .map(r => ({ party: r.party_name, amount: Number(r.amount), overdueDays: Math.max(0, -(daysFromToday(r.due_date)||0)) }));
+  const topPayables = payables.slice().sort((a,b) => Number(b.amount) - Number(a.amount)).slice(0,5)
+    .map(p => ({ party: p.party_name, amount: Number(p.amount), dueInDays: daysFromToday(p.due_date) }));
+
+  return {
+    companyName: (currentProfile && currentProfile.company_name) || null,
+    pulseScore: hasData ? latest.pulse_score : null,
+    pulseScoreTrend: (hasData && prev) ? numDelta(latest.pulse_score, prev.pulse_score).text : null,
+    vitals: vitalsOut,
+    focusVital: focusLabel || null,
+    payments,
+    shopify,
+    receivablesPayables: {
+      totalOutstandingReceivables: Math.round(recvTotal),
+      receivablesOver90d: Math.round(recv90),
+      payablesDueNext30d: Math.round(paySoon),
+      topReceivables,
+      topPayables
+    },
+    connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected }
+  };
+}
+
+async function callAskMargyn(message, history, focusLabel, findingTier){
+  const context = buildMargynContext(focusLabel);
+  if(findingTier) context.focusFindingTier = findingTier;
+  const res = await fetch('/api/ask-margyn', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ message, history, context })
+  });
+  if(!res.ok) throw new Error('Ask Margyn request failed: ' + res.status);
+  const data = await res.json();
+  return data.reply;
+}
+
+function appendChatBubble(threadEl, role, text){
+  const b = document.createElement('div');
+  b.className = 'margyn-msg ' + role;
+  b.textContent = text;
+  threadEl.appendChild(b);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return b;
+}
+
+function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel){
+  formEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = inputEl.value.trim();
+    if(!msg) return;
+    inputEl.value = '';
+    appendChatBubble(threadEl, 'user', msg);
+    const historySnapshot = historyRef.slice();
+    historyRef.push({ role:'user', content: msg });
+    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', 'Thinking…');
+    const submitBtn = formEl.querySelector('button');
+    submitBtn.disabled = true;
+    try {
+      const reply = await callAskMargyn(msg, historySnapshot, focusLabel);
+      loadingBubble.textContent = reply;
+      loadingBubble.classList.remove('loading');
+      historyRef.push({ role:'assistant', content: reply });
+    } catch(err){
+      loadingBubble.textContent = "Couldn't reach Margyn just now — try again in a moment.";
+      loadingBubble.classList.remove('loading');
+    } finally {
+      submitBtn.disabled = false;
+      threadEl.scrollTop = threadEl.scrollHeight;
+    }
+  });
+}
+
+function findingCardHtml(f){
+  return '<div class="finding-card ' + f.tier + '">' +
+    '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified · 2 sources agree' : 'Signal · single source, unconfirmed') + '</div>' +
+    '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>' +
+    '<button class="finding-explain">Explain why →</button>' +
+  '</div>';
+}
+
+/* Narration was already written server-side when the finding was
+   generated — this is an instant local reveal, not an API call. */
+function wireFindingExplain(cardEl, f, threadEl){
+  const btn = cardEl.querySelector('.finding-explain');
+  btn.addEventListener('click', () => {
+    let text = f.narration || f.summary;
+    if(f.suggested_action) text += '\n\n→ ' + f.suggested_action;
+    appendChatBubble(threadEl, 'assistant', text);
+    threadEl.scrollTop = threadEl.scrollHeight;
+    btn.remove();
+  });
+}
+
+/* per-vital finding + fallback ask, injected at the bottom of the open detail modal */
+function renderVitalChatBlock(focusLabel){
+  const host = document.getElementById('detailContent');
+  if(!host) return;
+  const existing = host.querySelector('.margyn-chat'); if(existing) existing.remove();
+  const match = findings.find(f => f.vital === focusLabel);
+  const vitalChatHistory = [];
+  const block = document.createElement('div');
+  block.className = 'margyn-chat';
+  block.innerHTML =
+    '<div class="margyn-chat-label">Margyn</div>' +
+    (match ? findingCardHtml(match) : '') +
+    '<div class="margyn-chat-thread" id="vitalChatThread"></div>' +
+    '<form class="margyn-chat-form" id="vitalChatForm">' +
+      '<input type="text" id="vitalChatInput" placeholder="e.g. what does this number mean?" autocomplete="off">' +
+      '<button type="submit">Ask</button>' +
+    '</form>';
+  host.appendChild(block);
+  const thread = document.getElementById('vitalChatThread');
+  wireChatForm(document.getElementById('vitalChatForm'), document.getElementById('vitalChatInput'), thread, vitalChatHistory, focusLabel);
+  const findingCard = block.querySelector('.finding-card');
+  if(findingCard) wireFindingExplain(findingCard, match, thread);
+}
+
+/* global panel: leads with cross-vital findings, not a blank greeting */
+function renderGlobalFindings(thread){
+  const sorted = findings.slice().sort((a,b) => (a.tier === b.tier) ? 0 : (a.tier === 'verified' ? -1 : 1)).slice(0,3);
+  if(!sorted.length){
+    appendChatBubble(thread, 'assistant', snapshots.length > 1
+      ? "Nothing's moved enough to flag since your last snapshot — or I'm still crunching it, check back in a moment. Ask me anything about your numbers below."
+      : "Add another snapshot and I'll start flagging what's actually changed — cross-checked against Razorpay and Shopify where you're connected, not just a single number.");
+    return;
+  }
+  sorted.forEach(f => {
+    const card = document.createElement('div');
+    card.innerHTML = findingCardHtml(f);
+    const cardEl = card.firstElementChild;
+    thread.appendChild(cardEl);
+    wireFindingExplain(cardEl, f, thread);
+  });
+}
+
+/* global Ask Margyn floating panel — available on every tab */
+function initAskMargynGlobal(){
+  const fab = document.getElementById('askMargynFab');
+  const panel = document.getElementById('askMargynPanel');
+  if(!fab || !panel) return;
+  const closeBtn = document.getElementById('askMargynClose');
+  const form = document.getElementById('askMargynForm');
+  const input = document.getElementById('askMargynInput');
+  const thread = document.getElementById('askMargynThread');
+  fab.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+    if(!panel.classList.contains('hidden') && !thread.dataset.inited){
+      thread.dataset.inited = '1';
+      renderGlobalFindings(thread);
+    }
+  });
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+  wireChatForm(form, input, thread, askMargynGlobalHistory, null);
+}
+initAskMargynGlobal();
+document.getElementById('pulseCard').addEventListener('click', (e) => {
+  if(snapshots.length === 0) return;
+  if(e.target.closest('.vital')) return;
+  document.getElementById('askMargynPanel').classList.remove('hidden');
+  const thread = document.getElementById('askMargynThread');
+  if(!thread.dataset.inited){ thread.dataset.inited = '1'; renderGlobalFindings(thread); }
+});
 /* ============================================================
    LEDGER (NEW) — receivables, payables & cash, toggleable
    individually or consolidated, with inline mark-received /
@@ -3418,6 +3752,7 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
     summaryBox.innerHTML = summaryHtml; summaryBox.classList.remove('hidden');
     note.textContent = '';
     await refreshAll();
+    triggerFindingsGeneration(); // fire-and-forget — findings populate in the background, ready by the time the panel's opened
     showView('summary');
   } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
 });
@@ -3434,6 +3769,7 @@ document.getElementById('computeFromManual').addEventListener('click', async () 
     await saveSnapshot({ cash: v('m-cash'), recvTotal, recv90, paySoon, revenue: v('m-rev'), netProfit: v('m-profit'), burn: v('m-burn')||1, gstLeak: v('m-gst'), gstPayable: v('m-gstpay'), source:'manual' });
     note.textContent = '';
     await refreshAll();
+    triggerFindingsGeneration(); // fire-and-forget, same as the upload path
     showView('summary');
   } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
 });
