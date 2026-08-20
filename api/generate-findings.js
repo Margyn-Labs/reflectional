@@ -30,7 +30,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
 const SNAPSHOT_WINDOW = 5;          // how many past snapshots feed the evidence sheet
 const VITAL_MATERIALITY_PTS = 8;    // min |score delta| (out of 100) for a vital to become a candidate finding
 const CORROBORATOR_MATERIALITY_PCT = 10; // min |% change| for a Razorpay/Shopify metric to count as real movement
-const INDEPENDENT_SOURCES = ['razorpay', 'shopify']; // the only sources that count as a genuine second source today
+const INDEPENDENT_SOURCES = ['razorpay', 'shopify', 'razorpay_live']; // razorpay_live is real per-transaction data — the only one of these that's never self-reported
 // Separate from ASK_MARGYN_MODEL on purpose — this endpoint does harder
 // work (scanning the whole evidence menu, discovering real correlations,
 // producing valid structured JSON), so it's worth being able to keep
@@ -72,7 +72,19 @@ export default async function handler(req, res) {
       sbGet(`/rest/v1/payables?select=*&status=eq.open`, accessToken)
     ]);
 
-    const evidence = buildEvidenceSheet(snapshots, receivables, payables);
+    // Real, itemized Razorpay data — a genuinely independent source, not a
+    // self-reported rollup. Capped at the last 1000 transactions / 300
+    // settlements / 300 refunds so this stays a bounded read even on an
+    // account with real volume; empty on a sandbox with no transactions
+    // yet, which the aggregator below handles without erroring.
+    const [rpTransactions, rpSettlements, rpRefunds] = await Promise.all([
+      sbGet(`/rest/v1/razorpay_transactions?select=*&order=created_at.desc&limit=1000`, accessToken).catch(() => []),
+      sbGet(`/rest/v1/razorpay_settlements?select=*&order=created_at.desc&limit=300`, accessToken).catch(() => []),
+      sbGet(`/rest/v1/razorpay_refunds?select=*&order=created_at.desc&limit=300`, accessToken).catch(() => [])
+    ]);
+    const razorpayLive = aggregateRazorpayLive(rpTransactions, rpSettlements, rpRefunds);
+
+    const evidence = buildEvidenceSheet(snapshots, receivables, payables, razorpayLive);
     if (!evidence.metrics.some(m => m.material)) {
       // Nothing moved enough to be worth asking the model at all — save the round trip.
       await insertFindings(userId, snapshots[0].id, accessToken, []);
@@ -130,7 +142,58 @@ async function insertFindings(userId, snapshotId, accessToken, findings) {
 
 /* ---------- evidence sheet: every number the model is allowed to reference, tagged with its source ---------- */
 
-function buildEvidenceSheet(snapshots, receivables, payables) {
+/* ---------- real Razorpay data, from razorpay_transactions/settlements/refunds ----------
+   Unlike the snapshot-derived "razorpay" rollup (which can be typed by
+   hand in the manual entry form — see SELF_REPORTED_SOURCES above), this
+   comes exclusively from sync-razorpay.js's actual calls to the Razorpay
+   API. It is never self-reported, by construction — so once an account
+   has real transaction volume, this is a genuine second source and can
+   support a real "Verified" tier on its own, independent of whatever the
+   snapshot's own provenance says. Empty on an account with no synced
+   transactions yet (a fresh connection, or a sandbox key with no
+   activity) — every reducer below is written to produce nothing rather
+   than throw when the arrays are empty. */
+function aggregateRazorpayLive(transactions, settlements, refunds) {
+  const captured = transactions.filter(t => t.status === 'captured');
+  if (transactions.length < 4) return null; // too little real volume to say anything meaningful yet
+
+  const mid = Math.floor(transactions.length / 2);
+  // transactions are already ordered newest-first from the query
+  const newerHalf = transactions.slice(0, mid);
+  const olderHalf = transactions.slice(mid);
+
+  function statsFor(txns) {
+    const cap = txns.filter(t => t.status === 'captured');
+    const avgTicket = cap.length ? cap.reduce((s, t) => s + Number(t.amount || 0), 0) / cap.length / 100 : null;
+    const failRate = txns.length ? (txns.filter(t => t.status === 'failed').length / txns.length) * 100 : null;
+    return { avgTicket, failRate, count: txns.length };
+  }
+  const newer = statsFor(newerHalf), older = statsFor(olderHalf);
+
+  const methodCounts = {};
+  transactions.forEach(t => { const m = t.method || 'unknown'; methodCounts[m] = (methodCounts[m] || 0) + 1; });
+  const topMethod = Object.entries(methodCounts).sort((a, b) => b[1] - a[1])[0];
+
+  const refundRate = captured.length ? (refunds.length / captured.length) * 100 : null;
+
+  const lagDays = settlements
+    .filter(s => s.created_at && s.processed_at)
+    .map(s => (new Date(s.processed_at) - new Date(s.created_at)) / (1000 * 60 * 60 * 24));
+  const avgLag = lagDays.length ? lagDays.reduce((a, b) => a + b, 0) / lagDays.length : null;
+
+  return {
+    txnCount: transactions.length,
+    avgTicket: newer.avgTicket,
+    avgTicketTrend: (newer.avgTicket !== null && older.avgTicket !== null) ? numDelta(newer.avgTicket, older.avgTicket) : null,
+    failRate: newer.failRate,
+    failRateTrend: (newer.failRate !== null && older.failRate !== null) ? numDelta(newer.failRate, older.failRate) : null,
+    refundRate,
+    topMethod: topMethod ? topMethod[0] + ' ' + Math.round((topMethod[1] / transactions.length) * 100) + '%' : null,
+    avgSettlementLagDays: avgLag
+  };
+}
+
+function buildEvidenceSheet(snapshots, receivables, payables, razorpayLive) {
   // snapshots[0] is newest. Build a per-vital series across the window,
   // plus a Razorpay series (only where payments_data exists) and a
   // Shopify series (only where shopify_orders_data exists).
@@ -192,6 +255,25 @@ function buildEvidenceSheet(snapshots, receivables, payables) {
     });
   });
 
+  if (razorpayLive) {
+    if (razorpayLive.avgTicketTrend && razorpayLive.avgTicketTrend.pctChange !== null) {
+      metrics.push({
+        key: 'razorpay_live:avgTicket', label: 'Razorpay avg. transaction value (real data)', source: 'razorpay_live',
+        delta: razorpayLive.avgTicketTrend.delta, pctChange: razorpayLive.avgTicketTrend.pctChange,
+        material: Math.abs(razorpayLive.avgTicketTrend.pctChange) >= CORROBORATOR_MATERIALITY_PCT, selfReported: false,
+        valueText: 'Avg. transaction ₹' + Math.round(razorpayLive.avgTicket) + ', ' + (razorpayLive.avgTicketTrend.pctChange >= 0 ? 'up' : 'down') + ' ' + Math.abs(razorpayLive.avgTicketTrend.pctChange).toFixed(1) + '% vs the earlier half of the synced window (from ' + razorpayLive.txnCount + ' real transactions)'
+      });
+    }
+    if (razorpayLive.failRateTrend && razorpayLive.failRateTrend.pctChange !== null) {
+      metrics.push({
+        key: 'razorpay_live:failRate', label: 'Razorpay failed-payment rate (real data)', source: 'razorpay_live',
+        delta: razorpayLive.failRateTrend.delta, pctChange: razorpayLive.failRateTrend.pctChange,
+        material: Math.abs(razorpayLive.failRateTrend.pctChange) >= CORROBORATOR_MATERIALITY_PCT, selfReported: false,
+        valueText: 'Failed-payment rate ' + razorpayLive.failRate.toFixed(1) + '%, ' + (razorpayLive.failRateTrend.pctChange >= 0 ? 'up' : 'down') + ' ' + Math.abs(razorpayLive.failRateTrend.pctChange).toFixed(1) + '% vs the earlier half of the synced window (from ' + razorpayLive.txnCount + ' real transactions)'
+      });
+    }
+  }
+
   const ledgerPairs = [['recv_total', 'Total receivables'], ['recv_90', 'Receivables over 90 days'], ['pay_soon', 'Payables due in 30 days']];
   ledgerPairs.forEach(([field, label]) => {
     const series = ordered.map(s => Number(s[field])).filter(v => !isNaN(v));
@@ -221,9 +303,9 @@ async function askClaudeForFindings(evidence, apiKey) {
     .map(m => `- key: "${m.key}" | label: ${m.label} | source: ${m.source} | ${m.valueText}${m.material ? ' [MATERIAL MOVE]' : ''}${m.selfReported ? ' [SELF-REPORTED]' : ''}`)
     .join('\n');
 
-  const system = `You are Margyn's Findings analyst. You will be given a menu of financial metrics for one business, each tagged with a "source" (vitals, razorpay, shopify, or ledger), marked [MATERIAL MOVE] if it changed enough to matter, and marked [SELF-REPORTED] if the number came from someone typing or uploading it by hand rather than a live, independently-operated data sync.
+  const system = `You are Margyn's Findings analyst. You will be given a menu of financial metrics for one business, each tagged with a "source" (vitals, razorpay, shopify, razorpay_live, or ledger), marked [MATERIAL MOVE] if it changed enough to matter, and marked [SELF-REPORTED] if the number came from someone typing or uploading it by hand rather than a live, independently-operated data sync. "razorpay_live" specifically means real per-transaction Razorpay data — always genuinely independent, never self-reported.
 
-Your job: identify up to 3 findings. A finding's primaryMetric MUST be a vital (source: "vitals") marked [MATERIAL MOVE] — never propose a finding whose primary metric isn't in that list. For each finding, look across the ENTIRE menu for other metrics that plausibly explain or corroborate the move — a corroborator is only meaningful if it comes from a DIFFERENT source than "vitals" (i.e. source "razorpay" or "shopify") and is itself a real, cited entry from the menu. Never invent a metric key that isn't on the menu. If nothing on the menu plausibly corroborates a material vital move, still report the finding with an empty corroborators array — don't force a connection that isn't there.
+Your job: identify up to 3 findings. A finding's primaryMetric MUST be a vital (source: "vitals") marked [MATERIAL MOVE] — never propose a finding whose primary metric isn't in that list. For each finding, look across the ENTIRE menu for other metrics that plausibly explain or corroborate the move — a corroborator is only meaningful if it comes from a DIFFERENT source than "vitals" (i.e. source "razorpay", "shopify", or "razorpay_live") and is itself a real, cited entry from the menu. Never invent a metric key that isn't on the menu. If nothing on the menu plausibly corroborates a material vital move, still report the finding with an empty corroborators array — don't force a connection that isn't there.
 
 Important honesty rule: if the primary metric or any corroborator you cite is marked [SELF-REPORTED], your narration must say plainly that this reading (or that part of it) comes from manually entered or uploaded data, not a live connector sync — even if you still think it's worth flagging. Never describe two self-reported numbers as independently confirming each other; a person typing two numbers into the same form isn't two sources agreeing, it's one source twice.
 
