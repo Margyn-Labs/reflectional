@@ -58,14 +58,14 @@ export default async function handler(req, res) {
     const evidence = buildEvidenceSheet(snapshots, receivables, payables);
     if (!evidence.metrics.some(m => m.material)) {
       // Nothing moved enough to be worth asking the model at all — save the round trip.
-      await replaceFindings(userId, snapshots[0].id, accessToken, []);
+      await insertFindings(userId, snapshots[0].id, accessToken, []);
       res.status(200).json({ findings: [] });
       return;
     }
 
     const claims = await askClaudeForFindings(evidence, apiKey);
     const validated = claims.map(c => validateFinding(c, evidence)).filter(Boolean).slice(0, 3);
-    const rows = await replaceFindings(userId, snapshots[0].id, accessToken, validated);
+    const rows = await insertFindings(userId, snapshots[0].id, accessToken, validated);
     res.status(200).json({ findings: rows });
   } catch (err) {
     console.error('generate-findings error:', err);
@@ -91,13 +91,11 @@ async function sbAuthGet(path, accessToken) {
   return r.json();
 }
 
-async function replaceFindings(userId, snapshotId, accessToken, findings) {
-  // Delete-then-insert rather than update-in-place: each generation pass
-  // is a full, self-consistent batch, not a patch on top of stale rows.
-  await fetch(SUPABASE_URL + '/rest/v1/findings?user_id=eq.' + userId, {
-    method: 'DELETE',
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + accessToken }
-  });
+async function insertFindings(userId, snapshotId, accessToken, findings) {
+  // Append-only: past findings stay in the table, tagged by the snapshot
+  // that produced them. The live cards UI filters to the latest
+  // snapshot's batch; the History tab and Margyn's own historical
+  // context both read the full table. Nothing is ever deleted here.
   if (!findings.length) return [];
   const rows = findings.map(f => ({
     user_id: userId, snapshot_id: snapshotId, vital: f.vital, tier: f.tier,
