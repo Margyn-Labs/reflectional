@@ -284,6 +284,17 @@
   .finding-explain{ background:transparent; border:1px solid var(--border-2); color:var(--text-0); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
   .finding-explain:hover{ border-color:var(--emerald-bright); color:var(--emerald); }
   .finding-explain:disabled{ opacity:.5; cursor:default; }
+  .chat-history-row{ padding:9px 11px; border:1px solid var(--border-1); border-radius:9px; margin-bottom:8px; cursor:pointer; }
+  .chat-history-row:hover{ border-color:var(--emerald-bright); }
+  .chr-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin-bottom:3px; }
+  .chr-preview{ font-size:12.5px; color:var(--text-0); }
+  /* Universal click-to-chat: any element with data-margyn-topic opens a
+     focused Ask Margyn thread about it, via one delegated listener. */
+  [data-margyn-topic]{ cursor:pointer; }
+  [data-margyn-topic]:hover{ box-shadow:0 0 0 1.5px var(--orange) inset; }
+  .margyn-ask-icon{ position:absolute; top:12px; right:12px; width:24px; height:24px; border-radius:50%; background:var(--surf-1); border:1px solid var(--border-2); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--text-3); opacity:0; transition:opacity .15s ease, border-color .15s ease, color .15s ease; z-index:2; }
+  .kpi-card:hover .margyn-ask-icon, .pay-card:hover .margyn-ask-icon{ opacity:1; }
+  .margyn-ask-icon:hover{ border-color:var(--orange); color:var(--orange); }
   .margyn-chat-thread{ display:flex; flex-direction:column; gap:10px; margin-bottom:12px; max-height:320px; overflow-y:auto; }
   .margyn-msg{ font-size:13px; line-height:1.55; padding:10px 13px; border-radius:12px; max-width:88%; word-wrap:break-word; }
   .margyn-msg.user{ align-self:flex-end; background:var(--surf-2); color:var(--text-0); border-bottom-right-radius:4px; }
@@ -583,6 +594,7 @@
       <div class="nav-group-label">Overview</div>
       <button data-view="summary" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Summary</span></button>
       <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
+      <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg><span>History</span></button>
       <div class="nav-group-label">Money</div>
       <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span><span class="tier-chip free">FREE</span></button>
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
@@ -1001,6 +1013,31 @@
       <div id="historyList"></div>
     </div>
   </div>
+  <!-- ---------- 3c. HISTORY (NEW) — chat threads + findings, all of it ---------- -->
+  <div id="view-history" class="hidden">
+    <div class="section-head">
+      <h1>History</h1>
+      <div class="hint">Every finding Margyn has surfaced, and every conversation you've had about them — nothing here disappears on refresh.</div>
+    </div>
+    <div class="card">
+      <h2>Conversations</h2>
+      <div class="hint">Pick one up where you left off — same context, capped the same way a live chat is.</div>
+      <div id="historyThreadList" style="margin-top:14px;"></div>
+      <div id="historyThreadOpen" class="hidden" style="margin-top:18px; border-top:1px solid var(--border-1); padding-top:16px;">
+        <button id="historyThreadBack" style="background:transparent; border:none; color:var(--text-2); font-size:12.5px; cursor:pointer; margin-bottom:12px; padding:0;">← All conversations</button>
+        <div class="margyn-chat-thread" id="historyThreadMessages" style="max-height:420px;"></div>
+        <form class="margyn-chat-form" id="historyThreadForm">
+          <input type="text" id="historyThreadInput" placeholder="Continue this conversation..." autocomplete="off">
+          <button type="submit">Ask</button>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Findings history</h2>
+      <div class="hint">Every Verified and Signal finding across every snapshot, most recent first.</div>
+      <div id="historyFindingsList" style="margin-top:14px;"></div>
+    </div>
+  </div>
   <!-- ---------- 3d. PAYMENTS (NEW) ---------- -->
   <div id="view-payments" class="hidden">
     <div class="section-head">
@@ -1009,40 +1046,40 @@
     </div>
     <div id="paymentsMockBanner" class="mock-banner hidden">No payments data yet — showing zero. Upload a Razorpay Settlements sheet or use Quick manual entry to see your real numbers.</div>
     <div class="pay-grid">
-      <div class="pay-card">
+      <div class="pay-card" data-margyn-topic="Gross processed">
         <div class="pc-label">Gross processed</div>
         <div class="pc-value" id="payGrossVal">—</div>
         <div class="pc-sub">Total payments processed this period.</div>
       </div>
-      <div class="pay-card">
+      <div class="pay-card" data-margyn-topic="Net settled to bank">
         <div class="pc-label">Net settled to bank</div>
         <div class="pc-value" id="payNetVal">—</div>
         <div class="pc-sub">After MDR, GST on MDR, and refunds.</div>
       </div>
-      <div class="pay-card">
+      <div class="pay-card" data-margyn-topic="Settlement velocity">
         <div class="pc-label">Settlement velocity</div>
         <div class="pc-value" id="paySettleVal">—</div>
         <div class="pc-sub">Avg. days, transaction capture → bank credit.</div>
         <span class="pc-flag" id="paySettleFlag"></span>
       </div>
-      <div class="pay-card">
+      <div class="pay-card" data-margyn-topic="MDR burden">
         <div class="pc-label">MDR burden</div>
         <div class="pc-value" id="payMdrVal">—</div>
         <div class="pc-sub">MDR + GST on MDR, as % of gross.</div>
         <span class="pc-flag" id="payMdrFlag"></span>
       </div>
-      <div class="pay-card">
+      <div class="pay-card" data-margyn-topic="Failed payment rate">
         <div class="pc-label">Failed payment rate</div>
         <div class="pc-value" id="payFailVal">—</div>
         <div class="pc-sub">Share of attempted transactions that failed.</div>
         <span class="pc-flag" id="payFailFlag"></span>
       </div>
-      <div class="pay-card">
+      <div class="pay-card" data-margyn-topic="Average transaction value">
         <div class="pc-label">Avg. transaction value</div>
         <div class="pc-value" id="payAtvVal">—</div>
         <div class="pc-sub">Gross processed ÷ transaction count.</div>
       </div>
-      <div class="pay-card wide">
+      <div class="pay-card wide" data-margyn-topic="Payment method mix">
         <div class="pc-label">Payment method mix</div>
         <div class="pc-value" id="payMethodVal">—</div>
         <div class="pc-sub">Concentration risk if your top rail goes down.</div>
@@ -1181,7 +1218,10 @@
 <div class="ask-margyn-panel hidden" id="askMargynPanel">
   <div class="ask-margyn-head">
     <div class="amh-title">Ask Margyn</div>
-    <button id="askMargynClose" aria-label="Close">✕</button>
+    <div style="display:flex; gap:12px; align-items:center;">
+      <button id="askMargynHistoryToggle" title="Previous chats" aria-label="Previous chats">🕐</button>
+      <button id="askMargynClose" aria-label="Close">✕</button>
+    </div>
   </div>
   <div class="ask-margyn-body" id="askMargynThread"></div>
   <div class="ask-margyn-foot">
@@ -1333,10 +1373,11 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
 });
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 function showView(name){
-  ['summary','profile','ledger','calculate','scores','payments','books','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  ['summary','profile','ledger','calculate','scores','history','payments','books','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   if(name === 'ledger'){ renderLedgerView(); renderKhataParties(); }
   if(name === 'books') renderZohoBooksTab();
+  if(name === 'history') renderHistoryView();
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1798,7 +1839,380 @@ document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e
    Free-text chat remains — for "what does this number mean" questions,
    or a follow-up after a finding's been read — but stays the secondary
    control beneath the findings, never the first thing shown. */
+/* ---------- Chat persistence ----------
+   Every exchange (a finding's "Explain why" reveal, and free-text
+   follow-ups) is saved to chat_messages, keyed by thread_key:
+   - 'finding:<finding id>'  — anchored to one specific Finding
+   - 'vital:<label>'         — a per-vital ask with no active finding
+   - 'global'                — the floating panel's general thread
+   Reopening the same vital/finding/panel automatically replays its saved
+   thread — that's "access previous chats" for the natural entry points.
+   The history browser (🕐 in the panel header) additionally lists every
+   thread across the account for jumping back into an older one.
+
+   CHAT_CONTEXT_CAP bounds how many past turns get sent to the model on
+   each call — the saved thread can grow indefinitely for the user to
+   read, but only the last few turns are ever replayed into the prompt,
+   matching the cap ask-margyn.js already enforces server-side. */
+const CHAT_CONTEXT_CAP = 8;
+
+async function saveChatMessage(threadKey, vital, role, content){
+  try {
+    await sbClient.from('chat_messages').insert({ user_id: currentUser.id, thread_key: threadKey, vital: vital || null, role, content });
+  } catch(e){ console.error('[margyn] saveChatMessage:', e); }
+}
+
+async function loadChatThread(threadKey, limit){
+  const { data, error } = await sbClient.from('chat_messages')
+    .select('*').eq('user_id', currentUser.id).eq('thread_key', threadKey)
+    .order('created_at', { ascending:false }).limit(limit || (CHAT_CONTEXT_CAP * 2));
+  if(error){ console.error('[margyn] loadChatThread:', error); return []; }
+  return data.reverse(); // oldest first, for natural replay order
+}
+
+async function loadAllThreadSummaries(){
+  const { data, error } = await sbClient.from('chat_messages')
+    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(200);
+  if(error){ console.error('[margyn] loadAllThreadSummaries:', error); return []; }
+  const seen = new Map();
+  data.forEach(m => { if(!seen.has(m.thread_key)) seen.set(m.thread_key, m); });
+  return Array.from(seen.values());
+}
+
 let askMargynGlobalHistory = [];
+let currentGlobalThreadKey = 'global';
+let currentGlobalFocusLabel = null;
+function resolveThreadKey(tk){ return typeof tk === 'function' ? tk() : tk; }
+
+/* Deterministic topic → view lookup, used to offer a "Go to X" chip
+   after a reply in the global panel. This is plain JS pattern-matching
+   on the topic string, not the model choosing where to send someone —
+   keeps navigation predictable and impossible for a reply to get wrong. */
+const MARGYN_VIEW_HINTS = [
+  { test: /receivable|customer|invoice/i, view:'ledger', ltab:'receivables', label:'Ledger — Receivables' },
+  { test: /payable|vendor|bill/i, view:'ledger', ltab:'payables', label:'Ledger — Payables' },
+  { test: /cash/i, view:'ledger', ltab:'cash', label:'Ledger — Cash' },
+  { test: /gst|itc/i, view:'scores', label:'Scores' },
+  { test: /razorpay|settlement|mdr|fail|gross processed|transaction value|method mix/i, view:'payments', label:'Payments' },
+  { test: /shopify/i, view:'payments', label:'Payments' },
+  { test: /zoho|books/i, view:'books', label:'Books' },
+  { test: /financing|loan/i, view:'financing', label:'Financing' },
+  { test: /connector/i, view:'connectors', label:'Connectors' },
+  { test: /net margin|working capital|runway/i, view:'scores', label:'Scores' }
+];
+function findViewHint(topic){ return topic ? (MARGYN_VIEW_HINTS.find(h => h.test.test(topic)) || null) : null; }
+function appendGoToChip(threadEl, hint){
+  if(!hint) return;
+  const viewEl = document.getElementById('view-' + hint.view);
+  if(viewEl && !viewEl.classList.contains('hidden')) return; // already there
+  const chip = document.createElement('button');
+  chip.className = 'finding-explain';
+  chip.style.marginTop = '2px';
+  chip.textContent = '→ Go to ' + hint.label;
+  chip.addEventListener('click', () => {
+    if(hint.ltab) ledgerActiveTab = hint.ltab;
+    showView(hint.view);
+    document.getElementById('askMargynPanel').classList.add('hidden');
+  });
+  threadEl.appendChild(chip);
+}
+
+/* Universal click-to-chat entry point. Any tile with data-margyn-topic
+   (or the small 💬 icon on tiles that keep a navigate-on-click primary
+   action, like the Summary KPIs) calls this instead of opening a whole
+   detail modal — it reuses the same global panel and the same
+   'vital:<topic>' thread-key convention as everywhere else, so it's
+   saved, reopenable from the History tab, and capped the same way. */
+async function openMargynFocused(topic, valueText){
+  const panel = document.getElementById('askMargynPanel');
+  const thread = document.getElementById('askMargynThread');
+  const input = document.getElementById('askMargynInput');
+  panel.classList.remove('hidden');
+  thread.innerHTML = '';
+  thread.dataset.inited = '1';
+  const threadKey = 'vital:' + topic;
+  currentGlobalThreadKey = threadKey;
+  currentGlobalFocusLabel = topic;
+  askMargynGlobalHistory.length = 0;
+  const chip = document.createElement('div');
+  chip.className = 'finding-card';
+  chip.style.borderLeftColor = 'var(--blue)';
+  chip.innerHTML = '<div class="finding-tier" style="color:var(--blue);">Talking about</div><div class="finding-summary">' + escapeHtml(topic) + (valueText ? ' — ' + escapeHtml(String(valueText)) : '') + '</div>';
+  thread.appendChild(chip);
+  const past = await loadChatThread(threadKey);
+  past.forEach(m => { appendChatBubble(thread, m.role, m.content); askMargynGlobalHistory.push({ role:m.role, content:m.content }); });
+  input.value = '';
+  input.placeholder = 'Ask about ' + topic + '...';
+  input.focus();
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-margyn-topic]');
+  if(!el) return;
+  const valueEl = el.querySelector('.pc-value, .f-value, .v-value');
+  openMargynFocused(el.dataset.margynTopic, valueEl ? valueEl.textContent : null);
+});
+
+function appendChatBubble(threadEl, role, text){
+  const b = document.createElement('div');
+  b.className = 'margyn-msg ' + role;
+  b.textContent = text;
+  threadEl.appendChild(b);
+  threadEl.scrollTop = threadEl.scrollHeight;
+  return b;
+}
+
+function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadKey, showNavHint){
+  formEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = inputEl.value.trim();
+    if(!msg) return;
+    const tk = resolveThreadKey(threadKey);
+    const fl = resolveThreadKey(focusLabel);
+    inputEl.value = '';
+    appendChatBubble(threadEl, 'user', msg);
+    const historySnapshot = historyRef.slice(-CHAT_CONTEXT_CAP);
+    historyRef.push({ role:'user', content: msg });
+    if(tk) saveChatMessage(tk, fl, 'user', msg);
+    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', 'Thinking…');
+    const submitBtn = formEl.querySelector('button');
+    submitBtn.disabled = true;
+    try {
+      const reply = await callAskMargyn(msg, historySnapshot, fl);
+      loadingBubble.textContent = reply;
+      loadingBubble.classList.remove('loading');
+      historyRef.push({ role:'assistant', content: reply });
+      if(tk) saveChatMessage(tk, fl, 'assistant', reply);
+      if(showNavHint) appendGoToChip(threadEl, findViewHint(fl));
+    } catch(err){
+      loadingBubble.textContent = "Couldn't reach Margyn just now — try again in a moment.";
+      loadingBubble.classList.remove('loading');
+    } finally {
+      submitBtn.disabled = false;
+      threadEl.scrollTop = threadEl.scrollHeight;
+    }
+  });
+}
+
+function findingCardHtml(f){
+  return '<div class="finding-card ' + f.tier + '">' +
+    '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified · 2 sources agree' : 'Signal · single source, unconfirmed') + '</div>' +
+    '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>' +
+    '<button class="finding-explain">Explain why →</button>' +
+  '</div>';
+}
+
+/* Narration was already written server-side when the finding was
+   generated — this is an instant local reveal, not an API call. Saved as
+   the first message of that finding's own thread so it's there on reopen. */
+function wireFindingExplain(cardEl, f, threadEl, historyRef){
+  const btn = cardEl.querySelector('.finding-explain');
+  btn.addEventListener('click', () => {
+    let text = f.narration || f.summary;
+    if(f.suggested_action) text += '\n\n→ ' + f.suggested_action;
+    appendChatBubble(threadEl, 'assistant', text);
+    threadEl.scrollTop = threadEl.scrollHeight;
+    if(historyRef) historyRef.push({ role:'assistant', content: text });
+    saveChatMessage('finding:' + f.id, f.vital, 'assistant', text);
+    btn.remove();
+  });
+}
+
+/* per-vital finding + fallback ask, injected at the bottom of the open detail modal.
+   Async: replays that vital's (or that finding's) saved thread if one exists. */
+async function renderVitalChatBlock(focusLabel){
+  const host = document.getElementById('detailContent');
+  if(!host) return;
+  const existing = host.querySelector('.margyn-chat'); if(existing) existing.remove();
+  const match = findings.find(f => f.vital === focusLabel && snapshots[0] && f.snapshot_id === snapshots[0].id);
+  const threadKey = match ? ('finding:' + match.id) : ('vital:' + focusLabel);
+  const vitalChatHistory = [];
+  const block = document.createElement('div');
+  block.className = 'margyn-chat';
+  block.innerHTML =
+    '<div class="margyn-chat-label">Margyn</div>' +
+    (match ? findingCardHtml(match) : '') +
+    '<div class="margyn-chat-thread" id="vitalChatThread"></div>' +
+    '<form class="margyn-chat-form" id="vitalChatForm">' +
+      '<input type="text" id="vitalChatInput" placeholder="e.g. what does this number mean?" autocomplete="off">' +
+      '<button type="submit">Ask</button>' +
+    '</form>';
+  host.appendChild(block);
+  const thread = document.getElementById('vitalChatThread');
+  wireChatForm(document.getElementById('vitalChatForm'), document.getElementById('vitalChatInput'), thread, vitalChatHistory, focusLabel, threadKey);
+  const findingCard = block.querySelector('.finding-card');
+  const past = await loadChatThread(threadKey);
+  if(past.length){
+    past.forEach(m => { appendChatBubble(thread, m.role, m.content); vitalChatHistory.push({ role:m.role, content:m.content }); });
+    if(findingCard) findingCard.querySelector('.finding-explain')?.remove();
+  } else if(findingCard){
+    wireFindingExplain(findingCard, match, thread, vitalChatHistory);
+  }
+}
+
+/* global panel: leads with cross-vital findings, not a blank greeting.
+   Each finding card replays its own saved thread if it's already been asked about. */
+async function renderGlobalFindings(thread){
+  const latestBatch = snapshots[0] ? findings.filter(f => f.snapshot_id === snapshots[0].id) : [];
+  const sorted = latestBatch.slice().sort((a,b) => (a.tier === b.tier) ? 0 : (a.tier === 'verified' ? -1 : 1)).slice(0,3);
+  if(!sorted.length){
+    appendChatBubble(thread, 'assistant', snapshots.length > 1
+      ? "Nothing's moved enough to flag since your last snapshot — or I'm still crunching it, check back in a moment. Ask me anything about your numbers below."
+      : "Add another snapshot and I'll start flagging what's actually changed — cross-checked against Razorpay and Shopify where you're connected, not just a single number.");
+    return;
+  }
+  for(const f of sorted){
+    const card = document.createElement('div');
+    card.innerHTML = findingCardHtml(f);
+    const cardEl = card.firstElementChild;
+    thread.appendChild(cardEl);
+    const threadKey = 'finding:' + f.id;
+    const past = await loadChatThread(threadKey);
+    if(past.length){
+      cardEl.querySelector('.finding-explain')?.remove();
+      past.forEach(m => { appendChatBubble(thread, m.role, m.content); askMargynGlobalHistory.push({ role:m.role, content:m.content }); });
+    } else {
+      wireFindingExplain(cardEl, f, thread, askMargynGlobalHistory);
+    }
+  }
+}
+
+/* 🕐 history browser — lists every thread on the account, click one to
+   reopen and continue it (the free-text form below switches to that
+   thread's key via currentGlobalThreadKey). */
+async function renderChatHistoryList(thread){
+  thread.innerHTML = '';
+  const back = document.createElement('div');
+  back.className = 'chat-history-row';
+  back.innerHTML = '<div class="chr-label">← Back</div><div class="chr-preview">Return to current findings</div>';
+  back.addEventListener('click', () => { currentGlobalThreadKey = 'global'; currentGlobalFocusLabel = null; thread.innerHTML = ''; renderGlobalFindings(thread); });
+  thread.appendChild(back);
+
+  const summaries = await loadAllThreadSummaries();
+  if(!summaries.length){
+    appendChatBubble(thread, 'assistant', 'No past conversations yet.');
+    return;
+  }
+  summaries.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'chat-history-row';
+    const label = m.thread_key === 'global' ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
+    row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,70)) + '</div>';
+    row.addEventListener('click', async () => {
+      thread.innerHTML = '';
+      currentGlobalThreadKey = m.thread_key;
+      currentGlobalFocusLabel = m.thread_key === 'global' ? null : (m.vital || label);
+      askMargynGlobalHistory.length = 0;
+      const past = await loadChatThread(m.thread_key, CHAT_CONTEXT_CAP * 2);
+      past.forEach(pm => { appendChatBubble(thread, pm.role, pm.content); askMargynGlobalHistory.push({ role:pm.role, content:pm.content }); });
+    });
+    thread.appendChild(row);
+  });
+}
+
+/* global Ask Margyn floating panel — available on every tab */
+function initAskMargynGlobal(){
+  const fab = document.getElementById('askMargynFab');
+  const panel = document.getElementById('askMargynPanel');
+  if(!fab || !panel) return;
+  const closeBtn = document.getElementById('askMargynClose');
+  const historyToggle = document.getElementById('askMargynHistoryToggle');
+  const form = document.getElementById('askMargynForm');
+  const input = document.getElementById('askMargynInput');
+  const thread = document.getElementById('askMargynThread');
+  fab.addEventListener('click', async () => {
+    panel.classList.toggle('hidden');
+    if(!panel.classList.contains('hidden') && !thread.dataset.inited){
+      thread.dataset.inited = '1';
+      await renderGlobalFindings(thread);
+      const past = await loadChatThread('global');
+      past.forEach(m => { appendChatBubble(thread, m.role, m.content); askMargynGlobalHistory.push({ role:m.role, content:m.content }); });
+    }
+  });
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+  historyToggle.addEventListener('click', () => renderChatHistoryList(thread));
+  wireChatForm(form, input, thread, askMargynGlobalHistory, () => currentGlobalFocusLabel, () => currentGlobalThreadKey, true);
+}
+initAskMargynGlobal();
+document.getElementById('pulseCard').addEventListener('click', (e) => {
+  if(snapshots.length === 0) return;
+  if(e.target.closest('.vital')) return;
+  document.getElementById('askMargynPanel').classList.remove('hidden');
+  const thread = document.getElementById('askMargynThread');
+  if(!thread.dataset.inited){ thread.dataset.inited = '1'; renderGlobalFindings(thread); }
+});
+
+/* ---------- History tab ----------
+   Full-page version of the same data the panel's 🕐 browser shows —
+   every chat thread (reopenable and continuable) and every finding
+   Margyn has ever surfaced, not just the latest batch. */
+async function renderHistoryView(){
+  document.getElementById('historyThreadOpen').classList.add('hidden');
+  document.getElementById('historyThreadList').classList.remove('hidden');
+  await renderHistoryThreadList();
+  renderHistoryFindingsList();
+}
+
+async function renderHistoryThreadList(){
+  const listEl = document.getElementById('historyThreadList');
+  listEl.innerHTML = '<div class="hint">Loading…</div>';
+  const summaries = await loadAllThreadSummaries();
+  if(!summaries.length){
+    listEl.innerHTML = '<div class="hint">No conversations yet — ask Margyn something from any vital, or the floating panel.</div>';
+    return;
+  }
+  listEl.innerHTML = '';
+  summaries.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'chat-history-row';
+    const label = m.thread_key === 'global' ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
+    const when = new Date(m.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,90)) + '</div>';
+    row.addEventListener('click', () => openHistoryThread(m.thread_key, label));
+    listEl.appendChild(row);
+  });
+}
+
+async function openHistoryThread(threadKey, label){
+  document.getElementById('historyThreadList').classList.add('hidden');
+  const openEl = document.getElementById('historyThreadOpen');
+  openEl.classList.remove('hidden');
+  const messagesEl = document.getElementById('historyThreadMessages');
+  messagesEl.innerHTML = '';
+  const historyRef = [];
+  const past = await loadChatThread(threadKey, 200); // full read for browsing — API calls still cap at CHAT_CONTEXT_CAP
+  past.forEach(m => { appendChatBubble(messagesEl, m.role, m.content); historyRef.push({ role:m.role, content:m.content }); });
+  const focusVital = threadKey.startsWith('vital:') ? threadKey.slice(6)
+    : (threadKey.startsWith('finding:') ? (findings.find(f => ('finding:' + f.id) === threadKey) || {}).vital : null);
+  // Clone-and-replace the form to drop any listener from a previously opened thread.
+  const oldForm = document.getElementById('historyThreadForm');
+  const newForm = oldForm.cloneNode(true);
+  oldForm.replaceWith(newForm);
+  wireChatForm(newForm, document.getElementById('historyThreadInput'), messagesEl, historyRef, focusVital, threadKey, true);
+}
+document.getElementById('historyThreadBack').addEventListener('click', () => {
+  document.getElementById('historyThreadOpen').classList.add('hidden');
+  document.getElementById('historyThreadList').classList.remove('hidden');
+});
+
+function renderHistoryFindingsList(){
+  const listEl = document.getElementById('historyFindingsList');
+  if(!findings.length){
+    listEl.innerHTML = '<div class="hint">No findings yet — save a couple of snapshots to get started.</div>';
+    return;
+  }
+  const sorted = findings.slice().sort((a,b) => new Date(b.generated_at) - new Date(a.generated_at));
+  listEl.innerHTML = '';
+  sorted.forEach(f => {
+    const when = new Date(f.generated_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+    const row = document.createElement('div');
+    row.className = 'finding-card ' + f.tier;
+    row.style.marginBottom = '10px';
+    row.innerHTML =
+      '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified' : 'Signal') + ' · ' + escapeHtml(f.vital) + ' · ' + when + '</div>' +
+      '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>';
+    listEl.appendChild(row);
+  });
+}
 
 function numericFromVitalValue(raw){
   const { main } = splitValue(raw);
@@ -1875,6 +2289,16 @@ function buildMargynContext(focusLabel){
   const topPayables = payables.slice().sort((a,b) => Number(b.amount) - Number(a.amount)).slice(0,5)
     .map(p => ({ party: p.party_name, amount: Number(p.amount), dueInDays: daysFromToday(p.due_date) }));
 
+  // Last 10 findings across ALL past snapshots (not just the current
+  // batch) so a question like "compare this to last month" has real
+  // dated history to draw on instead of only the two most recent
+  // snapshots. This is recency-based grounding, not full search — the
+  // model sees a short dated list, it doesn't query the database itself.
+  const findingsHistory = findings.slice()
+    .sort((a,b) => new Date(b.generated_at) - new Date(a.generated_at))
+    .slice(0, 10)
+    .map(f => ({ date: f.generated_at, vital: f.vital, tier: f.tier, summary: f.summary }));
+
   return {
     companyName: (currentProfile && currentProfile.company_name) || null,
     pulseScore: hasData ? latest.pulse_score : null,
@@ -1890,6 +2314,7 @@ function buildMargynContext(focusLabel){
       topReceivables,
       topPayables
     },
+    findingsHistory,
     connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected }
   };
 }
@@ -1907,132 +2332,6 @@ async function callAskMargyn(message, history, focusLabel, findingTier){
   return data.reply;
 }
 
-function appendChatBubble(threadEl, role, text){
-  const b = document.createElement('div');
-  b.className = 'margyn-msg ' + role;
-  b.textContent = text;
-  threadEl.appendChild(b);
-  threadEl.scrollTop = threadEl.scrollHeight;
-  return b;
-}
-
-function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel){
-  formEl.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const msg = inputEl.value.trim();
-    if(!msg) return;
-    inputEl.value = '';
-    appendChatBubble(threadEl, 'user', msg);
-    const historySnapshot = historyRef.slice();
-    historyRef.push({ role:'user', content: msg });
-    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', 'Thinking…');
-    const submitBtn = formEl.querySelector('button');
-    submitBtn.disabled = true;
-    try {
-      const reply = await callAskMargyn(msg, historySnapshot, focusLabel);
-      loadingBubble.textContent = reply;
-      loadingBubble.classList.remove('loading');
-      historyRef.push({ role:'assistant', content: reply });
-    } catch(err){
-      loadingBubble.textContent = "Couldn't reach Margyn just now — try again in a moment.";
-      loadingBubble.classList.remove('loading');
-    } finally {
-      submitBtn.disabled = false;
-      threadEl.scrollTop = threadEl.scrollHeight;
-    }
-  });
-}
-
-function findingCardHtml(f){
-  return '<div class="finding-card ' + f.tier + '">' +
-    '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified · 2 sources agree' : 'Signal · single source, unconfirmed') + '</div>' +
-    '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>' +
-    '<button class="finding-explain">Explain why →</button>' +
-  '</div>';
-}
-
-/* Narration was already written server-side when the finding was
-   generated — this is an instant local reveal, not an API call. */
-function wireFindingExplain(cardEl, f, threadEl){
-  const btn = cardEl.querySelector('.finding-explain');
-  btn.addEventListener('click', () => {
-    let text = f.narration || f.summary;
-    if(f.suggested_action) text += '\n\n→ ' + f.suggested_action;
-    appendChatBubble(threadEl, 'assistant', text);
-    threadEl.scrollTop = threadEl.scrollHeight;
-    btn.remove();
-  });
-}
-
-/* per-vital finding + fallback ask, injected at the bottom of the open detail modal */
-function renderVitalChatBlock(focusLabel){
-  const host = document.getElementById('detailContent');
-  if(!host) return;
-  const existing = host.querySelector('.margyn-chat'); if(existing) existing.remove();
-  const match = findings.find(f => f.vital === focusLabel);
-  const vitalChatHistory = [];
-  const block = document.createElement('div');
-  block.className = 'margyn-chat';
-  block.innerHTML =
-    '<div class="margyn-chat-label">Margyn</div>' +
-    (match ? findingCardHtml(match) : '') +
-    '<div class="margyn-chat-thread" id="vitalChatThread"></div>' +
-    '<form class="margyn-chat-form" id="vitalChatForm">' +
-      '<input type="text" id="vitalChatInput" placeholder="e.g. what does this number mean?" autocomplete="off">' +
-      '<button type="submit">Ask</button>' +
-    '</form>';
-  host.appendChild(block);
-  const thread = document.getElementById('vitalChatThread');
-  wireChatForm(document.getElementById('vitalChatForm'), document.getElementById('vitalChatInput'), thread, vitalChatHistory, focusLabel);
-  const findingCard = block.querySelector('.finding-card');
-  if(findingCard) wireFindingExplain(findingCard, match, thread);
-}
-
-/* global panel: leads with cross-vital findings, not a blank greeting */
-function renderGlobalFindings(thread){
-  const sorted = findings.slice().sort((a,b) => (a.tier === b.tier) ? 0 : (a.tier === 'verified' ? -1 : 1)).slice(0,3);
-  if(!sorted.length){
-    appendChatBubble(thread, 'assistant', snapshots.length > 1
-      ? "Nothing's moved enough to flag since your last snapshot — or I'm still crunching it, check back in a moment. Ask me anything about your numbers below."
-      : "Add another snapshot and I'll start flagging what's actually changed — cross-checked against Razorpay and Shopify where you're connected, not just a single number.");
-    return;
-  }
-  sorted.forEach(f => {
-    const card = document.createElement('div');
-    card.innerHTML = findingCardHtml(f);
-    const cardEl = card.firstElementChild;
-    thread.appendChild(cardEl);
-    wireFindingExplain(cardEl, f, thread);
-  });
-}
-
-/* global Ask Margyn floating panel — available on every tab */
-function initAskMargynGlobal(){
-  const fab = document.getElementById('askMargynFab');
-  const panel = document.getElementById('askMargynPanel');
-  if(!fab || !panel) return;
-  const closeBtn = document.getElementById('askMargynClose');
-  const form = document.getElementById('askMargynForm');
-  const input = document.getElementById('askMargynInput');
-  const thread = document.getElementById('askMargynThread');
-  fab.addEventListener('click', () => {
-    panel.classList.toggle('hidden');
-    if(!panel.classList.contains('hidden') && !thread.dataset.inited){
-      thread.dataset.inited = '1';
-      renderGlobalFindings(thread);
-    }
-  });
-  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
-  wireChatForm(form, input, thread, askMargynGlobalHistory, null);
-}
-initAskMargynGlobal();
-document.getElementById('pulseCard').addEventListener('click', (e) => {
-  if(snapshots.length === 0) return;
-  if(e.target.closest('.vital')) return;
-  document.getElementById('askMargynPanel').classList.remove('hidden');
-  const thread = document.getElementById('askMargynThread');
-  if(!thread.dataset.inited){ thread.dataset.inited = '1'; renderGlobalFindings(thread); }
-});
 /* ============================================================
    LEDGER (NEW) — receivables, payables & cash, toggleable
    individually or consolidated, with inline mark-received /
@@ -2047,9 +2346,9 @@ function renderLedgerFacts(){
   const payTotal = payables.reduce((s,p) => s + Number(p.amount), 0);
   const net = recvTotal - payTotal;
   host.innerHTML =
-    '<div class="fact"><div class="f-label">Total receivable</div><div class="f-value" style="color:#B3432E;">'+inr(recvTotal)+'</div></div>' +
-    '<div class="fact"><div class="f-label">Total payable</div><div class="f-value" style="color:#5B6472;">'+inr(payTotal)+'</div></div>' +
-    '<div class="fact"><div class="f-label">Net position</div><div class="f-value" style="color:'+(net>=0?'#0E8F5C':'#B3432E')+';">'+inr(net)+'</div></div>';
+    '<div class="fact" data-margyn-topic="Total receivable"><div class="f-label">Total receivable</div><div class="f-value" style="color:#B3432E;">'+inr(recvTotal)+'</div></div>' +
+    '<div class="fact" data-margyn-topic="Total payable"><div class="f-label">Total payable</div><div class="f-value" style="color:#5B6472;">'+inr(payTotal)+'</div></div>' +
+    '<div class="fact" data-margyn-topic="Net position"><div class="f-label">Net position</div><div class="f-value" style="color:'+(net>=0?'#0E8F5C':'#B3432E')+';">'+inr(net)+'</div></div>';
 }
 function renderLedgerView(){
   renderLedgerFacts();
@@ -2885,10 +3184,12 @@ function renderSummary(){
       '<div class="kc-top"><span class="kpi-icon">'+(ICONS[k.icon]||'')+'</span><span class="kc-label">'+k.label+'</span></div>' +
       '<div class="kc-value">'+k.value+'</div>' +
       '<span class="kc-delta '+d.cls+'">'+d.text+'</span>' +
-      sparklineSvg(k.series, d.cls==='down' ? '#B3432E' : k.accent);
+      sparklineSvg(k.series, d.cls==='down' ? '#B3432E' : k.accent) +
+      '<button class="margyn-ask-icon" title="Ask Margyn about this" aria-label="Ask Margyn about this">💬</button>';
     const go = () => { if(k.nav.ltab) ledgerActiveTab = k.nav.ltab; showView(k.nav.view); };
     el.addEventListener('click', go);
     el.addEventListener('keydown', e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); go(); } });
+    el.querySelector('.margyn-ask-icon').addEventListener('click', (e) => { e.stopPropagation(); openMargynFocused(k.label, k.value); });
     strip.appendChild(el);
   });
   animateDrawLine(strip);
