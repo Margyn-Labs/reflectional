@@ -1,0 +1,165 @@
+// api/ask-margyn.js
+// Conversational layer behind "Ask Margyn" — the per-vital mini chat and
+// the global floating chat panel both call this one endpoint.
+//
+// AI narrates, never calculates: this function never recomputes a vital
+// or the Pulse Score. It only receives numbers already computed elsewhere
+// (computeVitals() client-side / zoho_vitals() SQL server-side) and talks
+// about them. Zero-npm: plain fetch() only, matching api/briefing.js.
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  const { message, history, context } = req.body || {};
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    res.status(400).json({ error: 'message is required' });
+    return;
+  }
+  if (message.length > 2000) {
+    res.status(400).json({ error: 'message too long' });
+    return;
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error('ANTHROPIC_API_KEY not set');
+    res.status(500).json({ error: 'Server not configured' });
+    return;
+  }
+
+  // Keep only the last 8 turns of history to bound cost/latency —
+  // this is a chat about a handful of numbers, not a long-running thread.
+  const trimmedHistory = Array.isArray(history) ? history.slice(-8) : [];
+  const messages = [
+    ...trimmedHistory
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
+    { role: 'user', content: message.trim().slice(0, 2000) }
+  ];
+
+  const systemPrompt = buildSystemPrompt(context);
+
+  try {
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 500,
+        system: systemPrompt,
+        messages
+      })
+    });
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text();
+      console.error('Anthropic API error:', anthropicRes.status, errText);
+      res.status(502).json({ error: 'AI service error' });
+      return;
+    }
+
+    const data = await anthropicRes.json();
+    const reply = (data.content || [])
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('\n')
+      .trim();
+
+    res.status(200).json({ reply: reply || "I couldn't generate a response there — try rephrasing that." });
+  } catch (err) {
+    console.error('ask-margyn error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+}
+
+function buildSystemPrompt(context) {
+  const ctx = context || {};
+  const companyName = ctx.companyName || 'this business';
+  const pulseScore = (ctx.pulseScore === 0 || ctx.pulseScore) ? ctx.pulseScore : 'not yet calculated';
+  const pulseTrend = ctx.pulseScoreTrend ? ` (${ctx.pulseScoreTrend})` : '';
+  const vitals = Array.isArray(ctx.vitals) ? ctx.vitals : [];
+  const focusVital = ctx.focusVital || null;
+  const focusFindingTier = ctx.focusFindingTier || null;
+  const payments = ctx.payments || null;
+  const shopify = Array.isArray(ctx.shopify) ? ctx.shopify : null;
+  const rp = ctx.receivablesPayables || null;
+  const connectors = ctx.connectors || {};
+
+  const vitalsLines = vitals.length
+    ? vitals.map(v => `- ${v.label}: ${v.value} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
+    : 'No vitals calculated yet for this business — no data has been synced or uploaded.';
+
+  let paymentsBlock = 'Not connected / no payments data uploaded yet.';
+  if (payments) {
+    paymentsBlock = [
+      `Gross processed: ₹${payments.grossProcessed}${payments.grossTrend ? ' (' + payments.grossTrend + ')' : ''}`,
+      `Net settled: ₹${payments.netSettled}`,
+      `MDR: ${payments.mdrPct}%${payments.mdrTrend ? ' (' + payments.mdrTrend + ')' : ''}`,
+      `Failed transaction rate: ${payments.failRatePct}%${payments.failRateTrend ? ' (' + payments.failRateTrend + ')' : ''}`,
+      `Settlement lag: ${payments.settlementLagDays} days${payments.lagTrend ? ' (' + payments.lagTrend + ')' : ''}`,
+      `Top payment method: ${payments.topPaymentMethod}`
+    ].join('\n');
+  }
+
+  let shopifyBlock = 'Not connected / no Shopify data uploaded yet.';
+  if (shopify && shopify.length) {
+    shopifyBlock = shopify.map(r => `- ${r.label}: ${r.value}${r.trend ? ' (' + r.trend + ')' : ''}`).join('\n');
+  }
+
+  let rpBlock = '';
+  if (rp) {
+    rpBlock = `Total outstanding receivables: ₹${rp.totalOutstandingReceivables} (₹${rp.receivablesOver90d} over 90 days)\nPayables due in next 30 days: ₹${rp.payablesDueNext30d}`;
+    if (rp.topReceivables && rp.topReceivables.length) {
+      rpBlock += `\nLargest open receivables: ${rp.topReceivables.map(r => `${r.party} ₹${r.amount} (${r.overdueDays}d overdue)`).join('; ')}`;
+    }
+    if (rp.topPayables && rp.topPayables.length) {
+      rpBlock += `\nLargest open payables: ${rp.topPayables.map(p => `${p.party} ₹${p.amount} (due in ${p.dueInDays}d)`).join('; ')}`;
+    }
+  }
+
+  const focusLine = focusVital
+    ? `\nThe user is looking at "${focusVital}" specifically — assume that's what they mean unless they clearly ask about something else.`
+    : '';
+
+  const tierLine = focusFindingTier
+    ? (focusFindingTier === 'verified'
+        ? `\nThis message is the user asking you to explain a VERIFIED finding — two independent connected sources moved together, so you can state the causal read with real confidence, though still avoid absolute certainty language like "definitely."`
+        : `\nThis message is the user asking you to explain a SIGNAL finding — only one connected source supports this read, nothing else confirms it. Say plainly this is a single-source signal that could be noise, not a confirmed driver, and suggest what a second source would need to show to confirm it.`)
+    : '';
+
+  return `You are Margyn, an AI financial co-pilot built into the Margyn app for ${companyName}, a digital-native Indian business.
+
+You are not a general-purpose chatbot bolted onto a dashboard. Margyn's whole product is that a claim only counts as verified when two independently operated data sources agree — that discipline applies to what you say too. You mostly get called to explain a specific pre-identified finding (a real move the app already detected and tiered as Verified or Signal, deterministically, before you were ever invoked), or to answer a short follow-up about one. Talk like a sharp, friendly finance-savvy colleague leaning over their shoulder — not a report generator. Short, direct, plain language. No headers, no markdown, no bullet walls unless they specifically ask you to break several things down.
+
+Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pulseTrend}
+
+Current financial vitals (each with trend vs the prior snapshot where available):
+${vitalsLines}
+${focusLine}${tierLine}
+
+Razorpay payments data (connected: ${!!connectors.razorpay}):
+${paymentsBlock}
+
+Shopify data (connected: ${!!connectors.shopify}):
+${shopifyBlock}
+
+Receivables / payables ledger (Zoho Books connected: ${!!connectors.zoho}):
+${rpBlock || 'No ledger data yet.'}
+
+Rules you must always follow:
+1. Only reason about the numbers given above. Never invent a figure, percentage, or trend that wasn't provided to you.
+2. Every trend and delta figure above is pre-computed in plain JS before it reaches you — never recompute or contradict them, and never do your own arithmetic to produce a different percentage.
+3. Respect the Verified vs Signal distinction above (see the tier note if present). Never state a Signal-tier read with the same confidence as a Verified one — that distinction is the whole point of the product.
+4. If the user asks something none of this data can answer (a number not shown, a prediction, something outside their connected sources), say plainly you don't have that yet, and mention what connecting or logging would surface it.
+5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
+6. Keep replies under ~120 words unless the user explicitly asks for more detail.
+7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."`;
+}
