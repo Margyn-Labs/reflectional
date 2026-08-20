@@ -387,8 +387,11 @@
   .summary-split .alerts-panel{ flex:1; display:flex; flex-direction:column; min-width:0; }
   .rev-trend-card #revenueTrendChart{ height:190px; display:flex; }
   .rev-trend-card #revenueTrendChart svg{ width:100%; height:100%; }
-  .alerts-panel #alertsList{ flex:1; overflow-y:auto; min-height:0; max-height:190px; }
-  .alert-item{ display:flex; align-items:flex-start; gap:10px; padding:12px 4px; margin:0 -4px; border-bottom:1px solid var(--border-1); border-radius:8px; animation:cardIn .5s cubic-bezier(.16,1,.3,1) backwards; cursor:pointer; transition:background .15s ease; }
+  .alerts-panel #alertsList{ flex:1; overflow-y:auto; min-height:0; max-height:260px; }
+  .alert-item{ display:flex; align-items:flex-start; gap:10px; padding:12px 4px; margin:0 -4px; border-bottom:1px solid var(--border-1); border-radius:8px; animation:cardIn .5s cubic-bezier(.16,1,.3,1) backwards; cursor:default; transition:background .15s ease; }
+  .alert-item.is-clickable{ cursor:pointer; }
+  .alert-item.is-clickable:hover{ background:var(--surf-2); }
+  .alert-chevron{ align-self:center; color:var(--text-3); font-size:14px; flex-shrink:0; }
   .alert-item:hover{ background:var(--surf-2); }
   #alertsList .alert-item:nth-child(1){ animation-delay:.08s; } #alertsList .alert-item:nth-child(2){ animation-delay:.14s; } #alertsList .alert-item:nth-child(3){ animation-delay:.2s; } #alertsList .alert-item:nth-child(4){ animation-delay:.26s; } #alertsList .alert-item:nth-child(5){ animation-delay:.32s; }
   .alert-item:last-child{ border-bottom:none; }
@@ -643,7 +646,7 @@
         <div id="revenueTrendChart"></div>
       </div>
       <div class="chart-card alerts-panel">
-        <div class="cc-head"><h3>Alerts</h3><span class="cc-sub" id="alertsSub"></span></div>
+        <div class="cc-head"><h3>Notifications</h3><span class="cc-sub" id="alertsSub"></span></div>
         <div id="alertsList"></div>
       </div>
     </div>
@@ -3134,16 +3137,21 @@ function renderAlerts(latest, recvTotal, recv90, paySoon, pay){
   const order = { bad:0, warn:1 };
   items.sort((a,b) => order[a.sev]-order[b.sev]);
   if(!latest){ sub.textContent = 'no data yet'; host.innerHTML = '<div class="alert-empty">Add a snapshot to see alerts here.</div>'; return; }
-  sub.textContent = items.length ? (items.length + ' to review') : 'all clear';
+  sub.textContent = items.length ? (items.length + (items.length === 1 ? ' to review' : ' to review')) : 'all clear';
   if(!items.length){
-    host.innerHTML = '<div class="alert-item"><span class="alert-dot ok">✓</span><div class="alert-body"><div class="alert-title">Nothing needs attention</div><div class="alert-desc">No issues found on your latest snapshot.</div></div></div>';
+    host.innerHTML = '<div class="alert-item" style="cursor:default;"><span class="alert-dot ok">✓</span><div class="alert-body"><div class="alert-title">Nothing needs attention</div><div class="alert-desc">No issues found on your latest snapshot.</div></div></div>';
     return;
   }
-  const SHOWN = 3;
-  host.innerHTML = items.slice(0,SHOWN).map((it, i) =>
-    '<div class="alert-item" data-idx="'+i+'"><span class="alert-dot '+it.sev+'">'+(it.sev==='bad'?'!':'i')+'</span>' +
-    '<div class="alert-body"><div class="alert-title">'+it.title+'</div><div class="alert-desc">'+it.desc+'</div></div></div>'
-  ).join('') + (items.length > SHOWN ? '<div class="alert-item" style="border-bottom:none; padding-bottom:0; color:var(--text-2); font-size:12.5px; font-weight:600;">+'+(items.length-SHOWN)+' more</div>' : '');
+  // Every real alert renders — no artificial cap. #alertsList already
+  // scrolls (max-height set in CSS) so a long list doesn't blow out the
+  // card; capping at 3 and appending a fake "+N more" row that looked
+  // clickable but did nothing was the actual bug, not the count itself.
+  host.innerHTML = items.map((it, i) =>
+    '<div class="alert-item' + (it.nav ? ' is-clickable' : '') + '" data-idx="'+i+'"><span class="alert-dot '+it.sev+'">'+(it.sev==='bad'?'!':'i')+'</span>' +
+    '<div class="alert-body"><div class="alert-title">'+it.title+'</div><div class="alert-desc">'+it.desc+'</div></div>' +
+    (it.nav ? '<span class="alert-chevron">→</span>' : '') +
+    '</div>'
+  ).join('');
   host.querySelectorAll('.alert-item[data-idx]').forEach(el => {
     const it = items[Number(el.dataset.idx)];
     if(!it.nav) return;
