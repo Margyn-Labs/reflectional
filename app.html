@@ -284,6 +284,10 @@
   .finding-explain{ background:transparent; border:1px solid var(--border-2); color:var(--text-0); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
   .finding-explain:hover{ border-color:var(--emerald-bright); color:var(--emerald); }
   .finding-explain:disabled{ opacity:.5; cursor:default; }
+  .finding-provenance{ font-size:11px; color:var(--text-3); margin-top:8px; line-height:1.4; }
+  .source-badge{ display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; padding:3px 9px; border-radius:6px; background:var(--surf-2); color:var(--text-3); border:1px solid var(--border-1); }
+  .source-badge.self-reported{ color:var(--orange); border-color:var(--orange); }
+  .source-badge.connector{ color:var(--emerald); border-color:var(--emerald-bright); }
   .chat-history-row{ padding:9px 11px; border:1px solid var(--border-1); border-radius:9px; margin-bottom:8px; cursor:pointer; }
   .chat-history-row:hover{ border-color:var(--emerald-bright); }
   .chr-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin-bottom:3px; }
@@ -985,6 +989,7 @@
               <span class="pulse-band-badge" id="pulseBandBadge"></span>
               <span class="pulse-delta" id="pulseDelta"></span>
               <span class="pulse-asof" id="pulseAsOf"></span>
+              <span class="source-badge" id="pulseSourceBadge" style="display:none;"></span>
             </div>
             <div class="pulse-tap-hint">Six vitals below, new payment metrics live under the Payments tab</div>
           </div>
@@ -1041,7 +1046,7 @@
   <!-- ---------- 3d. PAYMENTS (NEW) ---------- -->
   <div id="view-payments" class="hidden">
     <div class="section-head">
-      <h2>Payment health</h2>
+      <h2>Payment health <span class="source-badge" id="paymentsSourceBadge" style="display:none; vertical-align:middle; margin-left:8px;"></span></h2>
       <div class="hint">From Razorpay + Shopify data. See the validation roadmap doc for what's needed to make each of these production-grade.</div>
     </div>
     <div id="paymentsMockBanner" class="mock-banner hidden">No payments data yet — showing zero. Upload a Razorpay Settlements sheet or use Quick manual entry to see your real numbers.</div>
@@ -1603,6 +1608,19 @@ const ZERO_VITALS = [
   { label:'Net Margin', value:'0.0%', score:0 },
   { label:'Working Capital Runway', value:'0.0 months', score:0 }
 ];
+// Mirrors generate-findings.js's SELF_REPORTED_SOURCES exactly — these are
+// the only snapshots.source values that exist in the schema today, and all
+// three mean a human typed or uploaded the number. Kept as one small
+// constant in both places rather than a shared import, since app.html and
+// the serverless functions can't share a module — if this list ever
+// changes, it has to change in both files together.
+const SELF_REPORTED_SOURCES = ['manual', 'upload', 'ledger'];
+function sourceLabel(source){
+  if(source === 'manual') return 'Manual entry';
+  if(source === 'upload') return 'CSV upload';
+  if(source === 'ledger') return 'Ledger entry';
+  return 'Connector-synced';
+}
 const RING_CIRC = 238.76; // semicircle arc length of the Pulse Score gauge (r=76)
 function renderScores(){
   const hasData = snapshots.length > 0;
@@ -1616,6 +1634,16 @@ function renderScores(){
   card.style.setProperty('--band-color', band.color);
   const badge = document.getElementById('pulseBandBadge');
   badge.textContent = band.label; badge.style.display = hasData ? 'inline-block' : 'none';
+  const srcBadge = document.getElementById('pulseSourceBadge');
+  if(hasData){
+    const selfReported = SELF_REPORTED_SOURCES.includes(latest.source);
+    srcBadge.textContent = selfReported ? (sourceLabel(latest.source)) : 'Connector-synced';
+    srcBadge.className = 'source-badge ' + (selfReported ? 'self-reported' : 'connector');
+    srcBadge.style.display = 'inline-flex';
+    srcBadge.title = selfReported ? 'This snapshot was entered or uploaded by hand, not pulled from a live connector.' : 'This snapshot was synced from a connected data source.';
+  } else {
+    srcBadge.style.display = 'none';
+  }
   const arc = document.getElementById('pulseArc');
   const pct = Math.max(0, Math.min(100, pulseVal));
   arc.setAttribute('stroke-dashoffset', (RING_CIRC * (1 - pct/100)).toFixed(2));
@@ -1997,6 +2025,7 @@ function findingCardHtml(f){
   return '<div class="finding-card ' + f.tier + '">' +
     '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified · 2 sources agree' : 'Signal · single source, unconfirmed') + '</div>' +
     '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>' +
+    (f.self_reported ? '<div class="finding-provenance">📝 Based on manually entered / uploaded data — not yet cross-checked against a live connector.</div>' : '') +
     '<button class="finding-explain">Explain why →</button>' +
   '</div>';
 }
@@ -2315,6 +2344,11 @@ function buildMargynContext(focusLabel){
       topPayables
     },
     findingsHistory,
+    dataProvenance: hasData ? {
+      source: latest.source,
+      label: sourceLabel(latest.source),
+      selfReported: SELF_REPORTED_SOURCES.includes(latest.source)
+    } : null,
     connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected }
   };
 }
@@ -3259,6 +3293,16 @@ function renderPayments(){
   const badge = document.getElementById('paymentsBadge');
   const hasData = !!paymentsData;
   banner.classList.toggle('hidden', hasData);
+  const srcBadge = document.getElementById('paymentsSourceBadge');
+  if(hasData && snapshots[0]){
+    const selfReported = SELF_REPORTED_SOURCES.includes(snapshots[0].source);
+    srcBadge.textContent = selfReported ? sourceLabel(snapshots[0].source) : 'Connector-synced';
+    srcBadge.className = 'source-badge ' + (selfReported ? 'self-reported' : 'connector');
+    srcBadge.style.display = 'inline-flex';
+    srcBadge.title = selfReported ? 'These numbers were entered or uploaded by hand, not pulled live from Razorpay.' : 'These numbers were synced live from Razorpay.';
+  } else {
+    srcBadge.style.display = 'none';
+  }
   const d = paymentsData || ZERO_PAYMENTS;
   const m = computePaymentsMetrics(d);
   document.getElementById('payGrossVal').textContent = inr(m.gross);
