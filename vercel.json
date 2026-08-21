@@ -15,6 +15,10 @@
     {
       "path": "/api/shopify?action=cron",
       "schedule": "40 20 * * *"
+    },
+    {
+      "path": "/api/reconcile?action=run",
+      "schedule": "15 21 * * *"
     }
   ],
   "functions": {
