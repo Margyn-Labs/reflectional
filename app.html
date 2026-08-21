@@ -1026,6 +1026,10 @@
       <div class="hint" id="briefHint">Generated from your latest snapshot.</div>
       <div id="briefing-idle"><button class="primary" id="generateBriefing">Generate AI briefing</button></div>
       <div id="briefing-text"></div>
+      <div id="briefing-meta" class="hint" style="display:none; margin-top:14px; align-items:center; justify-content:space-between; gap:12px;">
+        <span id="briefing-timestamp"></span>
+        <button class="btn-ghost" id="regenerateBriefing">Regenerate</button>
+      </div>
     </div>
     <div class="card">
       <h2>Previous scores</h2>
@@ -1729,8 +1733,13 @@ function renderScores(){
   renderHistory(snapshots);
   renderPulseTrendChart();
   const idle = document.getElementById('briefing-idle'); const text = document.getElementById('briefing-text'); const hint = document.getElementById('briefHint');
-  if(!hasData){ idle.style.display = 'none'; text.textContent = ''; hint.textContent = 'Add a snapshot on the Upload & calculate tab to generate your first briefing.'; }
-  else { hint.textContent = 'Generated from your latest snapshot.'; idle.style.display = latest.briefing ? 'none' : 'block'; text.textContent = latest.briefing || ''; }
+  const meta = document.getElementById('briefing-meta'); const timestamp = document.getElementById('briefing-timestamp');
+  if(!hasData){ idle.style.display = 'none'; text.textContent = ''; hint.textContent = 'Add a snapshot on the Upload & calculate tab to generate your first briefing.'; meta.style.display = 'none'; }
+  else {
+    hint.textContent = 'Generated from your latest snapshot.'; idle.style.display = latest.briefing ? 'none' : 'block'; text.textContent = latest.briefing || '';
+    if(latest.briefing){ meta.style.display = 'flex'; timestamp.textContent = latest.briefing_generated_at ? 'Generated ' + fmtDate(latest.briefing_generated_at) : ''; }
+    else { meta.style.display = 'none'; }
+  }
 }
 function splitValue(raw){ const i = String(raw).indexOf(' over '); return i === -1 ? { main:String(raw), suffix:'' } : { main:String(raw).slice(0,i), suffix:String(raw).slice(i+1) }; }
 const VITAL_EXPLAIN = {
@@ -4297,10 +4306,11 @@ async function saveSnapshot(d){
   if(error) throw error;
 }
 /* ---------- briefing ---------- */
-document.getElementById('generateBriefing').addEventListener('click', async () => {
-  const btn = document.getElementById('generateBriefing'); const out = document.getElementById('briefing-text'); const latest = snapshots[0];
+async function runBriefingGeneration(triggerBtn){
+  const out = document.getElementById('briefing-text'); const latest = snapshots[0];
+  const meta = document.getElementById('briefing-meta'); const timestamp = document.getElementById('briefing-timestamp');
   if(!latest) return;
-  btn.disabled = true; out.innerHTML = '<div class="loading">Generating briefing…</div>';
+  triggerBtn.disabled = true; out.innerHTML = '<div class="loading">Generating briefing…</div>'; meta.style.display = 'none';
   try {
     const vitalsObj = {}; (latest.vitals||[]).forEach(v => vitalsObj[v.label]=v.value);
     const res = await fetch('/api/briefing', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ vitals:vitalsObj, pulseScore:latest.pulse_score, companyName:currentProfile.company_name }) });
@@ -4308,11 +4318,15 @@ document.getElementById('generateBriefing').addEventListener('click', async () =
     if(!res.ok) throw new Error(data.error || 'Unknown error');
     out.textContent = data.briefing;
     document.getElementById('briefing-idle').style.display = 'none';
-    await sbClient.from('snapshots').update({ briefing:data.briefing }).eq('id', latest.id);
-    latest.briefing = data.briefing;
+    const generatedAt = new Date().toISOString();
+    await sbClient.from('snapshots').update({ briefing:data.briefing, briefing_generated_at:generatedAt }).eq('id', latest.id);
+    latest.briefing = data.briefing; latest.briefing_generated_at = generatedAt;
+    meta.style.display = 'flex'; timestamp.textContent = 'Generated ' + fmtDate(generatedAt);
   } catch(err){ out.innerHTML = '<div class="error-box">Could not generate briefing: ' + err.message + '</div>'; }
-  finally { btn.disabled = false; }
-});
+  finally { triggerBtn.disabled = false; }
+}
+document.getElementById('generateBriefing').addEventListener('click', (e) => runBriefingGeneration(e.currentTarget));
+document.getElementById('regenerateBriefing').addEventListener('click', (e) => runBriefingGeneration(e.currentTarget));
 renderVitals(ZERO_VITALS, false);
 bootAuth();
 </script>
