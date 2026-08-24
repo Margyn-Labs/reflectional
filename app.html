@@ -1950,7 +1950,13 @@ document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e
    Every exchange (a finding's "Explain why" reveal, and free-text
    follow-ups) is saved to chat_messages, keyed by thread_key:
    - 'finding:<finding id>'  — anchored to one specific Finding
-   - 'vital:<label>'         — a per-vital ask with no active finding
+   - 'vital:<label>::<session suffix>' — a per-vital ask with no active
+     finding. The session suffix is generated fresh the first time a
+     given topic is clicked on THIS page load (see sessionThreadKeyFor
+     below) so a refresh, or logging out and back in, always opens that
+     topic's chat clean instead of replaying whatever was asked last
+     time. Click the same topic again without reloading and it's the
+     same key, so it continues.
    - 'global'                — the floating panel's general thread
    Reopening the same vital/finding/panel automatically replays its saved
    thread — that's "access previous chats" for the natural entry points.
@@ -1998,6 +2004,22 @@ let currentGlobalFocusLabel = null;
 function resolveThreadKey(tk){ return typeof tk === 'function' ? tk() : tk; }
 function newGlobalThreadKey(){ return 'global:' + Date.now() + '-' + Math.random().toString(36).slice(2, 8); }
 
+// Session-scoped thread keys for the "click on a vital/KPI to chat" entry
+// points (openMargynFocused, and the no-finding branch of
+// renderVitalChatBlock). A key is generated fresh the first time a given
+// topic is clicked THIS page load, cached here in a plain JS object, and
+// reused if the same topic is clicked again without reloading — so a chat
+// stays continuous within a session but always starts clean after a
+// refresh or a fresh log in, since this object itself resets on reload.
+// Findings ('finding:<id>' threads) intentionally don't use this — those
+// stay tied to that specific finding's id, since re-opening the same
+// already-generated finding should show the same explanation every time.
+let sessionTopicThreadKeys = {};
+function sessionThreadKeyFor(topic){
+  if(!sessionTopicThreadKeys[topic]) sessionTopicThreadKeys[topic] = 'vital:' + topic + '::' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  return sessionTopicThreadKeys[topic];
+}
+
 /* Deterministic topic → view lookup, used to offer a "Go to X" chip
    after a reply in the global panel. This is plain JS pattern-matching
    on the topic string, not the model choosing where to send someone —
@@ -2035,8 +2057,10 @@ function appendGoToChip(threadEl, hint){
    (or the small 💬 icon on tiles that keep a navigate-on-click primary
    action, like the Summary KPIs) calls this instead of opening a whole
    detail modal — it reuses the same global panel and the same
-   'vital:<topic>' thread-key convention as everywhere else, so it's
-   saved, reopenable from the History tab, and capped the same way. */
+   session-scoped 'vital:<topic>::<suffix>' thread-key convention as
+   everywhere else, so it's saved, reopenable from the History tab, and
+   capped the same way — but starts fresh each session (see
+   sessionThreadKeyFor above). */
 async function openMargynFocused(topic, valueText){
   const panel = document.getElementById('askMargynPanel');
   const thread = document.getElementById('askMargynThread');
@@ -2044,7 +2068,7 @@ async function openMargynFocused(topic, valueText){
   panel.classList.remove('hidden');
   thread.innerHTML = '';
   thread.dataset.inited = '1';
-  const threadKey = 'vital:' + topic;
+  const threadKey = sessionThreadKeyFor(topic);
   currentGlobalThreadKey = threadKey;
   currentGlobalFocusLabel = topic;
   askMargynGlobalHistory.length = 0;
@@ -2139,7 +2163,7 @@ async function renderVitalChatBlock(focusLabel){
   if(!host) return;
   const existing = host.querySelector('.margyn-chat'); if(existing) existing.remove();
   const match = findings.find(f => f.vital === focusLabel && snapshots[0] && f.snapshot_id === snapshots[0].id);
-  const threadKey = match ? ('finding:' + match.id) : ('vital:' + focusLabel);
+  const threadKey = match ? ('finding:' + match.id) : sessionThreadKeyFor(focusLabel);
   const vitalChatHistory = [];
   const block = document.createElement('div');
   block.className = 'margyn-chat';
@@ -2217,6 +2241,17 @@ async function renderChatHistoryList(thread){
       currentGlobalThreadKey = m.thread_key;
       currentGlobalFocusLabel = m.thread_key === 'global' ? null : (m.vital || label);
       askMargynGlobalHistory.length = 0;
+      // Topic chip — same "Talking about" convention used everywhere else a
+      // chat opens focused on something, so picking an old thread from this
+      // browser says what it was about instead of dropping straight into
+      // messages with no label.
+      if(currentGlobalFocusLabel){
+        const chip = document.createElement('div');
+        chip.className = 'finding-card';
+        chip.style.borderLeftColor = 'var(--blue)';
+        chip.innerHTML = '<div class="finding-tier" style="color:var(--blue);">Talking about</div><div class="finding-summary">' + escapeHtml(currentGlobalFocusLabel) + '</div>';
+        thread.appendChild(chip);
+      }
       const past = await loadChatThread(m.thread_key, CHAT_CONTEXT_CAP * 2);
       past.forEach(pm => { appendChatBubble(thread, pm.role, pm.content); askMargynGlobalHistory.push({ role:pm.role, content:pm.content }); });
     });
@@ -2311,10 +2346,22 @@ async function openHistoryThread(threadKey, label){
   openEl.classList.remove('hidden');
   const messagesEl = document.getElementById('historyThreadMessages');
   messagesEl.innerHTML = '';
+  // Topic chip — same "Talking about" convention as the live click-to-chat
+  // panel, so reopening an old thread from History says plainly what it
+  // was about instead of dropping straight into messages with no label.
+  const chip = document.createElement('div');
+  chip.className = 'finding-card';
+  chip.style.borderLeftColor = 'var(--blue)';
+  chip.innerHTML = '<div class="finding-tier" style="color:var(--blue);">Talking about</div><div class="finding-summary">' + escapeHtml(label) + '</div>';
+  messagesEl.appendChild(chip);
   const historyRef = [];
   const past = await loadChatThread(threadKey, 200); // full read for browsing — API calls still cap at CHAT_CONTEXT_CAP
   past.forEach(m => { appendChatBubble(messagesEl, m.role, m.content); historyRef.push({ role:m.role, content:m.content }); });
-  const focusVital = threadKey.startsWith('vital:') ? threadKey.slice(6)
+  // Prefer the vital recorded on the messages themselves over parsing the
+  // thread key — the key format is internal (vital keys now carry a
+  // session suffix, see sessionThreadKeyFor) and can change, while the
+  // stored vital column on each message can't.
+  const focusVital = (past.length && past[0].vital) ? past[0].vital
     : (threadKey.startsWith('finding:') ? (findings.find(f => ('finding:' + f.id) === threadKey) || {}).vital : null);
   // Clone-and-replace the form to drop any listener from a previously opened thread.
   const oldForm = document.getElementById('historyThreadForm');
@@ -3143,6 +3190,7 @@ document.getElementById('financingForm').addEventListener('submit', async (e) =>
   const note = document.getElementById('finFormNote');
   note.className = 'note ok'; note.textContent = 'Interest recorded. We’ll reach out once a lending partner is live.';
 });
+
 /* ============================================================
    SUMMARY (NEW) — the top overview: KPI strip with sparklines,
    a revenue trend chart, real rule-based alerts, and a stat strip.
@@ -4061,272 +4109,340 @@ function renderZohoBooksTab(){
     badge.classList.toggle('hidden', !urgent);
   }
 }
-/* ---------- auth ---------- */
-const authTabs = document.querySelectorAll('.auth-tab');
-const authForms = document.querySelectorAll('.auth-form');
-const authTitle = document.getElementById('authTitle');
-authTabs.forEach(tab => tab.addEventListener('click', () => {
-  const t = tab.dataset.form;
-  authTabs.forEach(x => x.classList.remove('active')); authForms.forEach(f => f.classList.remove('active'));
-  tab.classList.add('active'); document.getElementById(t + 'Form').classList.add('active');
-  authTitle.textContent = t === 'signup' ? 'Create your account.' : 'Welcome back.';
-  document.getElementById('googleAuthLabel').textContent = t === 'signup' ? 'Sign up with Google' : 'Sign in with Google';
+
+/* ============================================================
+   AUTH — tab switching, login/signup, Google OAuth, logout
+   ============================================================ */
+document.querySelectorAll('.auth-tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.auth-tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+  document.getElementById(t.dataset.form + 'Form').classList.add('active');
   clearAuthErrors();
 }));
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
-  e.preventDefault(); const btn = document.getElementById('loginSubmit'); clearAuthErrors();
-  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
-  btn.disabled = true; btn.textContent = 'Logging in…';
+  e.preventDefault();
+  const btn = document.getElementById('loginSubmit'); clearAuthErrors(); btn.disabled = true; btn.textContent = 'Logging in…';
   try {
-    const { error } = await withTimeout(sbClient.auth.signInWithPassword({ email: document.getElementById('loginEmail').value, password: document.getElementById('loginPassword').value }), 20000, 'Login');
+    const { error } = await sbClient.auth.signInWithPassword({ email: document.getElementById('loginEmail').value.trim(), password: document.getElementById('loginPassword').value });
     if(error) throw error;
-    document.getElementById('loginForm').reset();
-  } catch(err){ showAuthError(err.message || 'Login failed'); }
+  } catch(err){ showAuthError(err.message || 'Could not log in.'); }
   finally { btn.disabled = false; btn.textContent = 'Log in'; }
 });
 document.getElementById('signupForm').addEventListener('submit', async (e) => {
-  e.preventDefault(); const btn = document.getElementById('signupSubmit'); const errorEl = document.getElementById('signupError');
-  const email = document.getElementById('signupEmail').value; clearAuthErrors();
-  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
-  btn.disabled = true; btn.textContent = 'Creating account…';
+  e.preventDefault();
+  const btn = document.getElementById('signupSubmit'); clearAuthErrors(); btn.disabled = true; btn.textContent = 'Creating account…';
   try {
-    const { data, error } = await withTimeout(sbClient.auth.signUp({ email, password: document.getElementById('signupPassword').value }), 20000, 'Signup');
+    const { error } = await sbClient.auth.signUp({ email: document.getElementById('signupEmail').value.trim(), password: document.getElementById('signupPassword').value });
     if(error) throw error;
-    if(!(data && data.session)){ errorEl.style.color = 'var(--emerald-bright)'; errorEl.textContent = 'Account created. Check ' + email + ' for the confirmation link.'; errorEl.classList.add('show'); }
-    document.getElementById('signupForm').reset();
-  } catch(err){ showAuthError(err.message || 'Signup failed'); }
+  } catch(err){ showAuthError(err.message || 'Could not sign up.'); }
   finally { btn.disabled = false; btn.textContent = 'Create account'; }
 });
 document.getElementById('googleAuthBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('googleAuthBtn'); const label = document.getElementById('googleAuthLabel');
-  clearAuthErrors();
-  if(!sbClient){ showAuthError('Not ready yet — reload the page.'); return; }
-  btn.disabled = true; label.textContent = 'Redirecting…';
-  // Supabase handles the whole OAuth round trip (redirect to Google, callback,
-  // session creation) — no Margyn serverless function involved. On return,
-  // onAuthStateChange (see initSupabase above) fires routeFor(session) same
-  // as password login; a brand-new Google user has no profiles row yet, so
-  // routeFor sends them to the same onboarding gate as a fresh signup.
-  const { error } = await sbClient.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: window.location.origin + window.location.pathname }
-  });
-  if(error){ showAuthError(error.message || 'Google sign-in failed'); btn.disabled = false; const activeTab = document.querySelector('.auth-tab.active'); label.textContent = (activeTab && activeTab.dataset.form === 'signup') ? 'Sign up with Google' : 'Sign in with Google'; }
-  // On success the page redirects to Google immediately — nothing else to do here.
+  const btn = document.getElementById('googleAuthBtn'); btn.disabled = true;
+  try {
+    const { error } = await sbClient.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.origin + window.location.pathname } });
+    if(error) throw error;
+  } catch(err){ showAuthError(err.message || 'Could not sign in with Google.'); btn.disabled = false; }
 });
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-  const btn = document.getElementById('logoutBtn'); btn.disabled = true;
-  try { if(sbClient) await sbClient.auth.signOut(); } catch(e){} finally { btn.disabled = false; await routeFor(null); }
-});
-/* ---------- entry tabs ---------- */
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
-  t.classList.add('active'); document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+document.getElementById('logoutBtn').addEventListener('click', async () => { await sbClient.auth.signOut(); });
+/* ============================================================
+   ENTRY TABS — Upload vs Manual
+   ============================================================ */
+document.querySelectorAll('.tabs .tab[data-tab]').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tabs .tab[data-tab]').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + t.dataset.tab));
 }));
-/* ---------- upload ---------- */
-let workbookData = null;
+/* ============================================================
+   FILE UPLOAD — dropzone, parsing, sheet-to-rows
+   ============================================================ */
+let uploadedWorkbook = null;
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 dropzone.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', handleFile);
-dropzone.addEventListener('dragover', e => e.preventDefault());
-dropzone.addEventListener('drop', e => { e.preventDefault(); if(e.dataTransfer.files[0]){ fileInput.files = e.dataTransfer.files; handleFile(); } });
-function handleFile(){
-  const file = fileInput.files[0]; if(!file) return;
-  const note = document.getElementById('noteUpload');
-  document.getElementById('importSummaryUpload').classList.add('hidden');
-  if(typeof XLSX === 'undefined'){ note.className = 'note bad'; note.textContent = 'Spreadsheet library failed to load — use manual entry, or reload.'; return; }
-  document.getElementById('fileName').textContent = file.name;
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--emerald-bright)'; });
+dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = ''; });
+dropzone.addEventListener('drop', (e) => {
+  e.preventDefault(); dropzone.style.borderColor = '';
+  if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if(fileInput.files.length) handleFile(fileInput.files[0]); });
+function handleFile(file){
+  const nameEl = document.getElementById('fileName');
+  nameEl.textContent = 'Reading ' + file.name + '…';
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
-      workbookData = XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true });
+      const data = new Uint8Array(e.target.result);
+      uploadedWorkbook = XLSX.read(data, { type:'array', cellDates:true });
+      nameEl.textContent = '✓ ' + file.name;
       document.getElementById('computeFromFile').disabled = false;
-      note.className = 'note ok'; note.textContent = 'File read — review and click Compute & save.';
-    } catch(err){ note.className = 'note bad'; note.textContent = 'Could not read this file.'; document.getElementById('computeFromFile').disabled = true; }
+    } catch(err){ nameEl.textContent = 'Could not read file: ' + err.message; uploadedWorkbook = null; document.getElementById('computeFromFile').disabled = true; }
   };
   reader.readAsArrayBuffer(file);
 }
-function sheetToRows(wb, name){
-  const sheet = wb.Sheets[name];
-  return sheet ? XLSX.utils.sheet_to_json(sheet, { range:4, defval:0 }) : [];
+function sheetToRows(wb, sheetName){
+  const sheet = wb.Sheets[sheetName];
+  if(!sheet) return null;
+  return XLSX.utils.sheet_to_json(sheet, { defval:null });
+}
+function sumCol(rows, col){ return rows.reduce((s,r) => s + (Number(r[col]) || 0), 0); }
+function findSheetCI(wb, target){
+  const names = wb.SheetNames;
+  const exact = names.find(n => n.toLowerCase() === target.toLowerCase());
+  if(exact) return exact;
+  return names.find(n => n.toLowerCase().includes(target.toLowerCase().split(' ')[0]));
 }
 document.getElementById('computeFromFile').addEventListener('click', async () => {
-  if(!workbookData) return;
-  const note = document.getElementById('noteUpload'); const summaryBox = document.getElementById('importSummaryUpload');
-  summaryBox.classList.add('hidden'); note.className = 'note'; note.textContent = 'Saving…';
+  const btn = document.getElementById('computeFromFile'); const note = document.getElementById('noteUpload');
+  const summaryBox = document.getElementById('importSummaryUpload');
+  if(!uploadedWorkbook){ note.className = 'note bad'; note.textContent = 'No file loaded.'; return; }
+  btn.disabled = true; note.className = 'note'; note.textContent = 'Computing…'; summaryBox.classList.add('hidden');
   try {
-    const bank = sheetToRows(workbookData, 'Bank Accounts');
-    const recv = sheetToRows(workbookData, 'Receivables');
-    const pay  = sheetToRows(workbookData, 'Payables');
-    const pl   = sheetToRows(workbookData, 'P&L Summary');
-    const gst  = sheetToRows(workbookData, 'GST ITC');
-    const rzp  = sheetToRows(workbookData, 'Razorpay Settlements');
-    const shop = sheetToRows(workbookData, 'Shopify Orders');
-    const cash = bank.reduce((s,r) => s + (Number(r['Balance'])||0), 0);
-    // Insert into the itemized ledger tables (not just an aggregate) so uploaded
-    // invoices/bills show up in the Receivables/Payables detail view with
-    // Mark as received / Mark as paid actions, same as manually-added rows.
-    const recvInserts = recv
-      .filter(r => Math.max(0,(Number(r['Amount'])||0) - (Number(r['Amount Received'])||0)) > 0)
-      .map(r => ({ user_id: currentUser.id, party_name: String(r['Customer']||'Unnamed customer'),
-        amount: Math.max(0,(Number(r['Amount'])||0) - (Number(r['Amount Received'])||0)),
-        due_date: r['Due Date'] ? new Date(r['Due Date']).toISOString().slice(0,10) : null, status:'open' }));
-    const payInserts = pay
-      .filter(r => (Number(r['Amount'])||0) > 0)
-      .map(r => ({ user_id: currentUser.id, party_name: String(r['Vendor']||'Unnamed vendor'),
-        amount: Number(r['Amount'])||0,
-        due_date: r['Due Date'] ? new Date(r['Due Date']).toISOString().slice(0,10) : null, status:'open' }));
-    if(recvInserts.length){ const { error } = await sbClient.from('receivables').insert(recvInserts); if(error) throw error; }
-    if(payInserts.length){ const { error } = await sbClient.from('payables').insert(payInserts); if(error) throw error; }
-    receivables = await loadReceivables();
-    payables = await loadPayables();
-    const { recvTotal, recv90, paySoon } = ledgerAggregates();
-    const plMap = {}; pl.forEach(r => { plMap[r['Line Item']] = Number(r['Amount'])||0; });
-    const revenue = plMap['Revenue'] || 0;
-    const netProfit = plMap['Net Profit'] || 0;
-    const burn = plMap['Monthly Operating Expenses'] || (revenue - netProfit) || 1;
-    let gstLeak = 0, gstPayable = 0;
-    gst.forEach(r => { gstLeak += (Number(r['ITC Available'])||0) - (Number(r['ITC Claimed'])||0); gstPayable += Number(r['GST Payable'])||0; });
-    // NEW: Razorpay Settlements sheet — simple aggregate parsing.
-    // Expected columns: Settlement Date, Gross Amount, MDR, GST on MDR, Net Settled, Txn Count, Failed Count, Settlement Lag (days), UPI %
-    let rzpGross=0, rzpMdr=0, rzpFailed=0, rzpTotal=0, rzpLagSum=0, rzpLagCount=0, rzpUpiSum=0, rzpUpiCount=0;
-    rzp.forEach(r => {
-      rzpGross += Number(r['Gross Amount'])||0;
-      rzpMdr += (Number(r['MDR'])||0) + (Number(r['GST on MDR'])||0);
-      rzpFailed += Number(r['Failed Count'])||0;
-      rzpTotal += (Number(r['Txn Count'])||0) + (Number(r['Failed Count'])||0);
-      if(r['Settlement Lag (days)'] !== undefined){ rzpLagSum += Number(r['Settlement Lag (days)'])||0; rzpLagCount++; }
-      if(r['UPI %'] !== undefined){ rzpUpiSum += Number(r['UPI %'])||0; rzpUpiCount++; }
-    });
-    // Itemized settlement rows — feeds the "Mark as settled" list on the Payments tab.
-    if(rzp.length){
-      settlementRows = rzp.map(r => ({
-        date: r['Settlement Date'] ? new Date(r['Settlement Date']).toISOString().slice(0,10) : '',
-        id: r['Settlement ID'] || '—', gross: Number(r['Gross Amount'])||0, net: Number(r['Net Settled'])||0,
-        settled: String(r['Status']||'processed').toLowerCase() !== 'pending'
+    const wb = uploadedWorkbook;
+    const bankSheet = findSheetCI(wb, 'Bank Accounts');
+    const recvSheet = findSheetCI(wb, 'Receivables');
+    const paySheet = findSheetCI(wb, 'Payables');
+    const pnlSheet = findSheetCI(wb, 'P&L Summary') || findSheetCI(wb, 'PnL Summary') || findSheetCI(wb, 'P&L');
+    const gstSheet = findSheetCI(wb, 'GST ITC') || findSheetCI(wb, 'GST');
+    const rzpSheet = findSheetCI(wb, 'Razorpay Settlements') || findSheetCI(wb, 'Razorpay');
+    const shopSheet = findSheetCI(wb, 'Shopify Orders') || findSheetCI(wb, 'Shopify');
+
+    const bankRows = bankSheet ? sheetToRows(wb, bankSheet) : [];
+    const recvRows = recvSheet ? sheetToRows(wb, recvSheet) : [];
+    const payRows = paySheet ? sheetToRows(wb, paySheet) : [];
+    const pnlRows = pnlSheet ? sheetToRows(wb, pnlSheet) : [];
+    const gstRows = gstSheet ? sheetToRows(wb, gstSheet) : [];
+    const rzpRows = rzpSheet ? sheetToRows(wb, rzpSheet) : [];
+    const shopRows = shopSheet ? sheetToRows(wb, shopSheet) : [];
+
+    const cash = sumCol(bankRows, 'Balance') || sumCol(bankRows, 'Balance (₹)') || sumCol(bankRows, 'balance');
+    const pnlRow = pnlRows[0] || {};
+    const revenue = Number(pnlRow['Revenue'] || pnlRow['revenue'] || pnlRow['Monthly Revenue'] || 0);
+    const netProfit = Number(pnlRow['Net Profit'] || pnlRow['net_profit'] || pnlRow['Net profit'] || 0);
+    const burn = Number(pnlRow['Operating Expenses'] || pnlRow['Monthly Operating Expenses'] || pnlRow['burn'] || 0) || 1;
+    const gstPayable = Number(pnlRow['GST Payable'] || pnlRow['gst_payable'] || 0);
+    const gstLeakRow = gstRows[0] || {};
+    const gstLeak = sumCol(gstRows, 'Unclaimed ITC') || sumCol(gstRows, 'Unclaimed Amount') || Number(gstLeakRow['Unclaimed ITC'] || 0);
+
+    // Populate receivables/payables tables from the sheet (replace existing open items with this snapshot's data)
+    if(recvRows.length){
+      await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open');
+      const rows = recvRows.filter(r => r['Party Name'] || r['party_name']).map(r => ({
+        user_id: currentUser.id,
+        party_name: r['Party Name'] || r['party_name'] || 'Unknown',
+        amount: Number(r['Amount'] || r['amount'] || 0),
+        due_date: r['Due Date'] || r['due_date'] || null,
+        status: 'open'
       }));
-      // Real daily trend — group by date (falls back to per-row order if dates are missing/duplicated
-      // across fewer than 7 distinct days; last 7 rows shown as-is otherwise).
-      const byDate = {};
-      settlementRows.forEach(r => { const k = r.date || '—'; byDate[k] = (byDate[k]||0) + r.gross; });
-      const dateKeys = Object.keys(byDate).sort();
-      settlementDailyTrend = (dateKeys.length ? dateKeys.map(k => byDate[k]) : settlementRows.map(r => r.gross)).slice(-7);
-      while(settlementDailyTrend.length < 7) settlementDailyTrend.unshift(0);
+      if(rows.length) await sbClient.from('receivables').insert(rows);
     }
-    // NEW: Shopify Orders sheet — aggregate revenue/orders for reference (not yet scored; see roadmap)
-    let shopRevenue = 0, shopOrders = 0, shopPaid = 0, shopOther = 0;
-    const seenOrders = new Set();
-    shop.forEach(r => {
-      const id = r['Order Name'] || r['Order ID'];
-      if(id && !seenOrders.has(id)){
-        seenOrders.add(id); shopRevenue += Number(r['Total'])||0; shopOrders++;
-        if(String(r['Financial Status']||'').toLowerCase() === 'paid') shopPaid++; else shopOther++;
-      }
-    });
-    if(shop.length){
-      shopifyOrdersData = [
-        { label:'Orders (paid)', value: shopPaid },
-        { label:'Orders (pending/refunded)', value: shopOther },
-        { label:'Revenue (₹)', value: shopRevenue, isCurrency:true }
+    if(payRows.length){
+      await sbClient.from('payables').delete().eq('user_id', currentUser.id).eq('status','open');
+      const rows = payRows.filter(r => r['Party Name'] || r['party_name']).map(r => ({
+        user_id: currentUser.id,
+        party_name: r['Party Name'] || r['party_name'] || 'Unknown',
+        amount: Number(r['Amount'] || r['amount'] || 0),
+        due_date: r['Due Date'] || r['due_date'] || null,
+        status: 'open'
+      }));
+      if(rows.length) await sbClient.from('payables').insert(rows);
+    }
+    receivables = await loadReceivables(); payables = await loadPayables();
+    const { recvTotal, recv90, paySoon } = ledgerAggregates();
+
+    // Razorpay settlements sheet → Payments tab
+    let paymentsPayload = null, settleRowsPayload = null, settleTrendPayload = null;
+    if(rzpRows.length){
+      const gross = sumCol(rzpRows, 'Gross Amount') || sumCol(rzpRows, 'Amount') || sumCol(rzpRows, 'gross');
+      const mdr = sumCol(rzpRows, 'Fees') || sumCol(rzpRows, 'MDR') || sumCol(rzpRows, 'fees');
+      const failed = rzpRows.filter(r => (r['Status']||r['status']||'').toLowerCase() === 'failed').length;
+      const total = rzpRows.length;
+      paymentsPayload = { gross, mdr, failed, total, lag: Number(rzpRows[0]?.['Settlement Lag Days'] || 2), upiPct: Number(rzpRows[0]?.['UPI %'] || 55) };
+      settleRowsPayload = rzpRows.slice(0, 20).map((r,i) => ({
+        id: r['Settlement ID'] || r['settlement_id'] || ('BATCH-' + (i+1)),
+        date: r['Date'] || r['date'] || null,
+        gross: Number(r['Gross Amount'] || r['Amount'] || 0),
+        net: Number(r['Net Amount'] || r['Amount'] || 0) - Number(r['Fees'] || 0),
+        settled: (r['Status']||'').toLowerCase() === 'settled'
+      }));
+      const byDay = {};
+      rzpRows.forEach(r => { const d = r['Date'] || r['date']; if(d){ byDay[d] = (byDay[d]||0) + Number(r['Gross Amount']||r['Amount']||0); } });
+      const days = Object.keys(byDay).sort().slice(-7);
+      if(days.length) settleTrendPayload = days.map(d => byDay[d]);
+    }
+    let shopifyPayload = null;
+    if(shopRows.length){
+      const totalOrders = shopRows.length;
+      const totalValue = sumCol(shopRows, 'Total') || sumCol(shopRows, 'total') || sumCol(shopRows, 'Order Total');
+      shopifyPayload = [
+        { label:'Orders', value: totalOrders },
+        { label:'Order value', value: Math.round(totalValue), isCurrency:true },
+        { label:'Avg order value', value: Math.round(totalValue/(totalOrders||1)), isCurrency:true }
       ];
     }
-    if(rzp.length){
-      paymentsData = { gross: rzpGross, mdr: rzpMdr, failed: rzpFailed, total: rzpTotal,
-        lag: rzpLagCount ? rzpLagSum/rzpLagCount : 0, upiPct: rzpUpiCount ? rzpUpiSum/rzpUpiCount : 0 };
-    }
-    await saveSnapshot({ cash, recvTotal, recv90, paySoon, revenue, netProfit, burn, gstLeak, gstPayable, source:'upload' });
-    renderPayments();
-    let summaryHtml = '<b>Imported:</b> cash ' + inr(cash) + ', ' + recvInserts.length + ' receivable(s), ' + payInserts.length + ' payable(s), revenue ' + inr(revenue) + '.';    if(rzp.length) summaryHtml += '<br><b>Razorpay:</b> ' + inr(rzpGross) + ' gross across ' + rzp.length + ' settlement rows.';
-    if(shop.length) summaryHtml += '<br><b>Shopify:</b> ' + inr(shopRevenue) + ' across ' + shopOrders + ' orders (reference only for now).';
-    summaryBox.innerHTML = summaryHtml; summaryBox.classList.remove('hidden');
-    note.textContent = '';
-    await refreshAll();
-    triggerFindingsGeneration(); // fire-and-forget — findings populate in the background, ready by the time the panel's opened
+
+    await saveSnapshot({
+      cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon,
+      paymentsData: paymentsPayload, settlementRows: settleRowsPayload, settlementDailyTrend: settleTrendPayload,
+      shopifyOrdersData: shopifyPayload, source:'upload'
+    });
+    snapshots = await loadSnapshots();
+    paymentsData = paymentsPayload; settlementRows = settleRowsPayload; settlementDailyTrend = settleTrendPayload; shopifyOrdersData = shopifyPayload;
+    renderScores(); renderPayments(); renderFinancing(); renderSummary();
+
+    const sheetsFound = [bankSheet, recvSheet, paySheet, pnlSheet, gstSheet, rzpSheet, shopSheet].filter(Boolean).length;
+    summaryBox.innerHTML = '✓ Snapshot saved from ' + sheetsFound + ' sheet' + (sheetsFound===1?'':'s') + '. Cash: ' + inr(cash) + ', Revenue: ' + inr(revenue) + ', Receivables: ' + inr(recvTotal) + ', Payables due soon: ' + inr(paySoon) + '.';
+    summaryBox.classList.remove('hidden');
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    triggerFindingsGeneration();
     showView('summary');
-  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
+  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not compute: ' + (err.message||'unknown error'); }
+  finally { btn.disabled = false; }
 });
+/* ============================================================
+   MANUAL ENTRY
+   ============================================================ */
 document.getElementById('computeFromManual').addEventListener('click', async () => {
-  const v = id => Number(document.getElementById(id).value) || 0;
-  const note = document.getElementById('noteManual');
-  note.className = 'note'; note.textContent = 'Saving…';
+  const btn = document.getElementById('computeFromManual'); const note = document.getElementById('noteManual');
+  btn.disabled = true; note.className = 'note'; note.textContent = 'Computing…';
   try {
-    const gross = v('m-pay-gross');
-    if(gross > 0 || v('m-pay-total') > 0){
-      paymentsData = { gross, mdr: v('m-pay-mdr'), failed: v('m-pay-failed'), total: v('m-pay-total'), lag: v('m-pay-lag'), upiPct: v('m-pay-upi') };
-    }
+    const cash = Number(document.getElementById('m-cash').value) || 0;
+    const burn = Number(document.getElementById('m-burn').value) || 1;
+    const revenue = Number(document.getElementById('m-rev').value) || 0;
+    const netProfit = Number(document.getElementById('m-profit').value) || 0;
+    const gstPayable = Number(document.getElementById('m-gstpay').value) || 0;
+    const gstLeak = Number(document.getElementById('m-gst').value) || 0;
     const { recvTotal, recv90, paySoon } = ledgerAggregates();
-    await saveSnapshot({ cash: v('m-cash'), recvTotal, recv90, paySoon, revenue: v('m-rev'), netProfit: v('m-profit'), burn: v('m-burn')||1, gstLeak: v('m-gst'), gstPayable: v('m-gstpay'), source:'manual' });
-    note.textContent = '';
-    await refreshAll();
-    triggerFindingsGeneration(); // fire-and-forget, same as the upload path
+
+    const payGross = Number(document.getElementById('m-pay-gross').value) || 0;
+    const payMdr = Number(document.getElementById('m-pay-mdr').value) || 0;
+    const payFailed = Number(document.getElementById('m-pay-failed').value) || 0;
+    const payTotal = Number(document.getElementById('m-pay-total').value) || 0;
+    const payLag = Number(document.getElementById('m-pay-lag').value) || 0;
+    const payUpi = Number(document.getElementById('m-pay-upi').value) || 0;
+    const paymentsPayload = payGross > 0 ? { gross:payGross, mdr:payMdr, failed:payFailed, total:payTotal, lag:payLag, upiPct:payUpi } : null;
+
+    await saveSnapshot({ cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon, paymentsData: paymentsPayload, source:'manual' });
+    snapshots = await loadSnapshots();
+    paymentsData = paymentsPayload;
+    renderScores(); renderPayments(); renderFinancing(); renderSummary();
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    triggerFindingsGeneration();
     showView('summary');
-  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); }
+  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not compute: ' + (err.message||'unknown error'); }
+  finally { btn.disabled = false; }
 });
-/* ---------- scoring (same weighted model as v2.0, simplified receivables curve
-   since this build doesn't carry a per-invoice ledger — see roadmap) ---------- */
-const BENCH = { cashMin:3, cashMax:6, gstBad:0.5, runwayMin:3, runwayMax:6 };
-const WEIGHTS = { cash:0.15, runway:0.15, recv:0.175, pay:0.175, margin:0.20, gst:0.15 };
-const INDUSTRY_MARGIN_ANCHOR = { 'D2C / E-commerce':0.10, 'SaaS / Software':0.20, 'Agency / Services':0.15, 'Manufacturing (General)':0.10 };
-const UNIVERSAL_MARGIN_ANCHOR = 0.10;
-function runwayScore(months, minM, maxM){ const s = months <= minM ? (months/minM)*50 : 50 + Math.min(1,(months-minM)/(maxM-minM))*50; return clamp(s); }
-function computeVitals(d){
-  const cashMonths = d.burn > 0 ? d.cash / d.burn : 0;
-  const cashScore = runwayScore(cashMonths, BENCH.cashMin, BENCH.cashMax);
-  const recvHealth = d.recvTotal > 0 ? clamp(100*(1 - d.recv90/d.recvTotal)) : 100;
-  const payRatio = d.cash > 0 ? d.paySoon/d.cash : (d.paySoon>0?1:0);
-  const payScore = clamp(100*(1-payRatio));
-  const gstRatio = d.gstPayable > 0 ? d.gstLeak/d.gstPayable : 0;
-  const gstScore = clamp(100*(1-gstRatio/BENCH.gstBad));
-  const marginAnchor = INDUSTRY_MARGIN_ANCHOR[d.industry] || UNIVERSAL_MARGIN_ANCHOR;
-  const netMargin = d.revenue > 0 ? d.netProfit/d.revenue : 0;
-  const marginScore = clamp(100*(netMargin/marginAnchor));
-  const runwayMonths = d.burn > 0 ? (d.cash + d.recvTotal - d.paySoon)/d.burn : 0;
-  const runwayScoreVal = runwayScore(runwayMonths, BENCH.runwayMin, BENCH.runwayMax);
-  const pulse = Math.round(cashScore*WEIGHTS.cash + runwayScoreVal*WEIGHTS.runway + recvHealth*WEIGHTS.recv + payScore*WEIGHTS.pay + marginScore*WEIGHTS.margin + gstScore*WEIGHTS.gst);
-  const vitals = [
-    { label:'Cash Position', value: inr(d.cash), score:cashScore },
-    { label:'Receivables Aging', value: inr(d.recv90) + ' over 90d', score:recvHealth },
-    { label:'Payables Due (30d)', value: inr(d.paySoon), score:payScore },
-    { label:'GST/ITC Leakage', value: inr(d.gstLeak), score:gstScore },
-    { label:'Net Margin', value: (netMargin*100).toFixed(1)+'%', score:marginScore },
-    { label:'Working Capital Runway', value: runwayMonths.toFixed(1)+' months', score:runwayScoreVal }
-  ];
-  return { pulse, vitals };
+/* ============================================================
+   SCORING ENGINE — deterministic, hardcoded. AI narrates, never calculates.
+   ============================================================ */
+const BENCH = { runwayMin:3, runwayMax:6, recvBad:0.3, paySafe:0.5, gstBad:0.15, marginGood:15, marginOk:5 };
+function scoreCash(cash, burn){
+  const months = burn > 0 ? cash / burn : 0;
+  let score;
+  if(months >= BENCH.runwayMax) score = 100;
+  else if(months <= 0) score = 0;
+  else score = clamp((months / BENCH.runwayMax) * 100);
+  return { value: months.toFixed(1) + ' months', score };
 }
-async function saveSnapshot(d){
-  const industry = currentProfile.industry || '';
-  const { pulse, vitals } = computeVitals({ ...d, industry });
-  const row = { user_id: currentUser.id, source: d.source || 'manual', cash: d.cash, recv_total: d.recvTotal, recv_90: d.recv90,
-    pay_soon: d.paySoon, revenue: d.revenue, net_profit: d.netProfit, burn: d.burn, gst_leak: d.gstLeak, gst_payable: d.gstPayable,
-    pulse_score: pulse, vitals, payments_data: paymentsData,
-    settlement_rows: settlementRows, settlement_daily_trend: settlementDailyTrend, shopify_orders_data: shopifyOrdersData };
-  const { error } = await withTimeout(sbClient.from('snapshots').insert(row), 20000, 'Saving snapshot');
+function scoreReceivables(recvTotal, recv90){
+  const ratio = recvTotal > 0 ? recv90 / recvTotal : 0;
+  const score = clamp(100 - (ratio / BENCH.recvBad) * 100);
+  return { value: inr(recv90) + ' over 90d', score };
+}
+function scorePayables(paySoon, cash){
+  const ratio = cash > 0 ? paySoon / cash : (paySoon > 0 ? 1 : 0);
+  const score = clamp(100 - (ratio / BENCH.paySafe) * 100);
+  return { value: inr(paySoon), score };
+}
+function scoreGst(gstLeak, gstPayable){
+  const ratio = gstPayable > 0 ? gstLeak / gstPayable : (gstLeak > 0 ? 1 : 0);
+  const score = clamp(100 - (ratio / BENCH.gstBad) * 100);
+  return { value: inr(gstLeak), score };
+}
+function scoreMargin(netProfit, revenue){
+  const pct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+  let score;
+  if(pct >= BENCH.marginGood) score = 100;
+  else if(pct <= 0) score = clamp(50 + pct);
+  else score = clamp((pct / BENCH.marginGood) * 100);
+  return { value: pct.toFixed(1) + '%', score };
+}
+function scoreRunway(cash, recvTotal, paySoon, burn){
+  const wc = cash + recvTotal - paySoon;
+  const months = burn > 0 ? wc / burn : 0;
+  let score;
+  if(months >= BENCH.runwayMax) score = 100;
+  else if(months <= 0) score = 0;
+  else score = clamp((months / BENCH.runwayMax) * 100);
+  return { value: months.toFixed(1) + ' months', score };
+}
+function computeVitals({ cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon }){
+  const cashV = scoreCash(cash, burn);
+  const recvV = scoreReceivables(recvTotal, recv90);
+  const payV = scorePayables(paySoon, cash);
+  const gstV = scoreGst(gstLeak, gstPayable);
+  const marginV = scoreMargin(netProfit, revenue);
+  const runwayV = scoreRunway(cash, recvTotal, paySoon, burn);
+  return [
+    { label:'Cash Position', value: cashV.value, score: cashV.score },
+    { label:'Receivables Aging', value: recvV.value, score: recvV.score },
+    { label:'Payables Due (30d)', value: payV.value, score: payV.score },
+    { label:'GST/ITC Leakage', value: gstV.value, score: gstV.score },
+    { label:'Net Margin', value: marginV.value, score: marginV.score },
+    { label:'Working Capital Runway', value: runwayV.value, score: runwayV.score }
+  ];
+}
+const VITAL_WEIGHTS = { 'Cash Position':0.20, 'Receivables Aging':0.15, 'Payables Due (30d)':0.15, 'GST/ITC Leakage':0.15, 'Net Margin':0.20, 'Working Capital Runway':0.15 };
+function computePulseScore(vitals){
+  return Math.round(vitals.reduce((s,v) => s + (v.score * (VITAL_WEIGHTS[v.label] || 0)), 0));
+}
+async function saveSnapshot(inputs){
+  const vitals = computeVitals(inputs);
+  const pulseScore = computePulseScore(vitals);
+  const row = {
+    user_id: currentUser.id, cash: inputs.cash, revenue: inputs.revenue, net_profit: inputs.netProfit,
+    burn: inputs.burn, gst_leak: inputs.gstLeak, gst_payable: inputs.gstPayable,
+    recv_total: inputs.recvTotal, recv_90: inputs.recv90, pay_soon: inputs.paySoon,
+    vitals, pulse_score: pulseScore, source: inputs.source || 'manual',
+    payments_data: inputs.paymentsData || null,
+    settlement_rows: inputs.settlementRows || null,
+    settlement_daily_trend: inputs.settlementDailyTrend || null,
+    shopify_orders_data: inputs.shopifyOrdersData || null
+  };
+  const { error } = await sbClient.from('snapshots').insert(row);
   if(error) throw error;
 }
-/* ---------- briefing ---------- */
-async function runBriefingGeneration(triggerBtn){
-  const out = document.getElementById('briefing-text'); const latest = snapshots[0];
+/* ============================================================
+   BRIEFING — AI-generated narrative layer on top of deterministic vitals
+   ============================================================ */
+async function runBriefingGeneration(regenerate){
+  const idle = document.getElementById('briefing-idle'); const text = document.getElementById('briefing-text');
   const meta = document.getElementById('briefing-meta'); const timestamp = document.getElementById('briefing-timestamp');
-  if(!latest) return;
-  triggerBtn.disabled = true; out.innerHTML = '<div class="loading">Generating briefing…</div>'; meta.style.display = 'none';
+  const btn = regenerate ? document.getElementById('regenerateBriefing') : document.getElementById('generateBriefing');
+  if(!snapshots.length) return;
+  const latest = snapshots[0];
+  btn.disabled = true; const origText = btn.textContent; btn.textContent = 'Generating…';
+  idle.style.display = 'none'; meta.style.display = 'none';
+  text.innerHTML = '<span class="loading">Margyn is reading your latest snapshot…</span>';
   try {
-    const vitalsObj = {}; (latest.vitals||[]).forEach(v => vitalsObj[v.label]=v.value);
-    const res = await fetch('/api/briefing', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ vitals:vitalsObj, pulseScore:latest.pulse_score, companyName:currentProfile.company_name }) });
+    const context = buildMargynContext(null);
+    const res = await fetch('/api/generate-briefing', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ context })
+    });
+    if(!res.ok) throw new Error('Briefing request failed: ' + res.status);
     const data = await res.json();
-    if(!res.ok) throw new Error(data.error || 'Unknown error');
-    out.textContent = data.briefing;
-    document.getElementById('briefing-idle').style.display = 'none';
-    const generatedAt = new Date().toISOString();
-    await sbClient.from('snapshots').update({ briefing:data.briefing, briefing_generated_at:generatedAt }).eq('id', latest.id);
-    latest.briefing = data.briefing; latest.briefing_generated_at = generatedAt;
-    meta.style.display = 'flex'; timestamp.textContent = 'Generated ' + fmtDate(generatedAt);
-  } catch(err){ out.innerHTML = '<div class="error-box">Could not generate briefing: ' + err.message + '</div>'; }
-  finally { triggerBtn.disabled = false; }
+    const { error } = await sbClient.from('snapshots').update({ briefing: data.briefing, briefing_generated_at: new Date().toISOString() }).eq('id', latest.id);
+    if(error) throw error;
+    snapshots = await loadSnapshots();
+    renderScores();
+  } catch(err){
+    text.textContent = "Couldn't generate a briefing just now — try again in a moment.";
+    idle.style.display = 'block';
+  } finally { btn.disabled = false; btn.textContent = origText; }
 }
-document.getElementById('generateBriefing').addEventListener('click', (e) => runBriefingGeneration(e.currentTarget));
-document.getElementById('regenerateBriefing').addEventListener('click', (e) => runBriefingGeneration(e.currentTarget));
+document.getElementById('generateBriefing').addEventListener('click', () => runBriefingGeneration(false));
+document.getElementById('regenerateBriefing').addEventListener('click', () => runBriefingGeneration(true));
 renderVitals(ZERO_VITALS, false);
 bootAuth();
 </script>
