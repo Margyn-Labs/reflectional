@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#FAFAF8" />
-<title>Margyn — Your margin, live.</title>
+<title>Margyn, your margin, live.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -17,8 +17,6 @@
     --caution:#5B6472; --caution-bg:rgba(91,100,114,0.13); --orange:#CC5B34; --peach:#FFE0C7;
     --rose:#B3432E; --blush:#FBD9E4; --sky:#0B4B8C; --sky-light:#D8E8F7;
     --line: rgba(11,18,32,0.11); --line-strong: rgba(11,18,32,0.20);
-    --shadow-card: 0 1px 2px rgba(20,24,31,0.045), 0 8px 20px -12px rgba(20,24,31,0.10);
-    --shadow-card-hover: 0 2px 4px rgba(20,24,31,0.05), 0 14px 32px -12px rgba(20,24,31,0.14);
     --shadow-modal: 0 24px 60px -20px rgba(20,24,31,0.28);
     --bg-page: #FAFAF8;
     --surf-0: #FAFAF8;
@@ -31,6 +29,11 @@
     --text-1: #5B6472;
     --text-2: #5B6472;
     --text-3: #8B93A0;
+    --radius-card: 16px;
+    --radius-modal: 20px;
+    --radius-control: 10px;
+    --radius-btn: 8px;
+    --radius-pill: 999px;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{ height:100%; }
@@ -51,7 +54,7 @@
   nav{ position:sticky; top:0; left:0; right:0; z-index:100; height:64px; background:var(--bg-page); border-bottom:1px solid var(--border-1); transition:box-shadow .2s ease; }
   .nav-inner{ max-width:1280px; margin:0 auto; height:64px; padding:0 24px; display:flex; align-items:center; gap:16px; }
   .nav-brand{ display:flex; align-items:center; gap:10px; }
-  .nav-logo{ font-family:'Manrope', sans-serif; font-size:19px; font-weight:800; letter-spacing:-0.01em; color:var(--text-0); }
+  .nav-logo{ font-family:'Manrope', sans-serif; font-size:20px; font-weight:800; letter-spacing:-0.01em; color:var(--text-0); }
   .nav-logo-mark{ display:block; height:26px; width:auto; }
   .nav-live{ display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--emerald-bright); font-weight:600; }
   .nav-live::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--emerald-bright); box-shadow:0 0 0 3px rgba(14,143,92,0.2); animation:navPulse 2s ease-in-out infinite; }
@@ -64,13 +67,13 @@
   .gate-col{ max-width:460px; width:100%; }
   .gate-back{ display:block; text-align:center; margin-top:20px; font-size:13px; font-weight:600; color:var(--text-2); transition:color .2s ease; }
   .gate-back:hover{ color:var(--text-0); }
-  .gate-modal{ max-width:460px; width:100%; background:var(--surf-1); border:1px solid var(--border-1); border-radius:20px; padding:40px 34px; box-shadow:0 20px 50px -20px rgba(20,24,31,0.18); }
+  .gate-modal{ max-width:460px; width:100%; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); padding:40px 34px; box-shadow:0 20px 50px -20px rgba(20,24,31,0.18); }
   .gate-modal .eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--emerald-bright); margin-bottom:14px; font-weight:600; }
   .gate-modal h2{ font-family:'Manrope',sans-serif; font-weight:800; font-size:25px; letter-spacing:-0.01em; margin-bottom:12px; color:var(--text-0); }
   .gate-modal .sub{ font-size:14px; color:var(--text-2); margin-bottom:28px; line-height:1.6; }
-  .auth-tab-bar{ display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--border-1); border-radius:10px; padding:4px; }
-  .oauth-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:10px; padding:11px; margin-bottom:18px; background:var(--surf-1); border:1px solid var(--border-2); border-radius:9px; font-family:'Manrope',sans-serif; font-size:13px; font-weight:700; color:var(--text-0); cursor:pointer; transition:border-color .15s ease, box-shadow .15s ease; }
-  .oauth-btn:hover{ border-color:#0B4B8C; box-shadow:0 0 0 3px rgba(11,75,140,0.08); }
+  .auth-tab-bar{ display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--border-1); border-radius:12px; padding:4px; }
+  .oauth-btn{ width:100%; display:flex; align-items:center; justify-content:center; gap:10px; padding:11px; margin-bottom:18px; background:var(--surf-1); border:1px solid var(--border-2); border-radius:var(--radius-btn); font-family:'Manrope',sans-serif; font-size:13px; font-weight:700; color:var(--text-0); cursor:pointer; transition:border-color .15s ease, box-shadow .15s ease; }
+  .oauth-btn:hover{ border-color:var(--sky); box-shadow:0 0 0 3px rgba(11,75,140,0.08); }
   .oauth-btn:disabled{ opacity:.6; cursor:default; }
   .oauth-btn svg{ flex-shrink:0; }
   .oauth-divider{ display:flex; align-items:center; gap:12px; margin-bottom:18px; }
@@ -82,7 +85,7 @@
   .auth-form.active{ display:block; }
   .auth-field{ margin-bottom:16px; }
   .auth-field label{ display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); margin-bottom:6px; font-weight:600; }
-  .auth-field input, .auth-field select{ width:100%; padding:11px 14px; border:1px solid var(--border-2); border-radius:12px; font-family:'Manrope',sans-serif; font-size:14px; color:var(--text-0); background:var(--surf-2); transition:border-color .2s ease; }
+  .auth-field input, .auth-field select{ width:100%; padding:11px 14px; border:1px solid var(--border-2); border-radius:var(--radius-control); font-family:'Manrope',sans-serif; font-size:14px; color:var(--text-0); background:var(--surf-2); transition:border-color .2s ease; }
   .auth-field input::placeholder{ color:var(--text-3); }
   .auth-field input:focus, .auth-field select:focus{ outline:none; border-color:var(--emerald-bright); }
   .auth-field select option{ background:var(--surf-1-solid); color:var(--text-0); }
@@ -95,7 +98,7 @@
   .app-eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--emerald-bright); margin-bottom:10px; font-weight:600; }
   .app-title{ font-family:'Manrope',sans-serif; font-weight:800; font-size:31px; letter-spacing:-0.01em; line-height:1.15; color:var(--text-0); }
   .app-sub{ margin-top:8px; font-size:14px; color:var(--text-2); }
-  .pagenav{ display:flex; gap:4px; margin-bottom:30px; border:1px solid var(--border-1); border-radius:11px; padding:4px; background:var(--surf-2); flex-wrap:wrap; }
+  .pagenav{ display:flex; gap:4px; margin-bottom:30px; border:1px solid var(--border-1); border-radius:12px; padding:4px; background:var(--surf-2); flex-wrap:wrap; }
   .pagenav button{ flex:1; padding:12px 8px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:8px; min-width:90px; position:relative; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
   .pagenav button svg{ flex-shrink:0; opacity:.7; transition:opacity .2s ease; }
   .pagenav button:hover:not(.active){ color:var(--text-0); background:rgba(20,24,31,0.05); }
@@ -137,8 +140,8 @@
   @media (min-width:1400px){
     .app-body .wrap{ padding-left:64px; padding-right:64px; }
   }
-  .card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; padding:28px; margin-bottom:20px; box-shadow:var(--shadow-card); transition:box-shadow .2s ease, border-color .2s ease; }
-  .card:hover{ border-color:var(--border-2); box-shadow:var(--shadow-card-hover); }
+  .card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:28px; margin-bottom:20px; transition:border-color .2s ease; }
+  .card:hover{ border-color:var(--border-2); }
   .card h2{font-family:'Manrope',sans-serif; font-weight:700; font-size:20px; margin-bottom:6px; color:var(--text-0);}
   .section-head{ margin-bottom:22px; }
   .section-head h2{font-family:'Manrope',sans-serif; font-weight:700; font-size:20px; margin-bottom:6px; color:var(--text-0);}
@@ -157,16 +160,15 @@
   .kv .v{ font-weight:600; text-align:right; color:var(--text-0); }
   .pulse-wrap{ margin-bottom:22px; }
   .pulse-score{
-    position:relative; border-radius:16px; padding:26px 30px; border:1px solid var(--border-1);
+    position:relative; border-radius:var(--radius-card); padding:26px 30px; border:1px solid var(--border-1);
     background:linear-gradient(155deg, rgba(14,143,92,0.05) 0%, var(--surf-1) 40%); border-left:3px solid var(--emerald);
-    box-shadow:var(--shadow-card);
-    cursor:pointer; overflow:hidden; transition:box-shadow .2s ease, border-color .2s ease;
+    cursor:pointer; overflow:hidden; transition:border-color .2s ease;
   }
-  .pulse-score:hover, .pulse-score:focus-visible{ border-color:var(--border-2); box-shadow:var(--shadow-card-hover); }
+  .pulse-score:hover, .pulse-score:focus-visible{ border-color:var(--border-2); }
   .pulse-main{ display:flex; align-items:center; gap:22px; position:relative; z-index:1; }
   .pulse-ring{ width:176px; height:98px; flex-shrink:0; position:relative; }
   .pulse-ring svg{ width:100%; height:100%; display:block; }
-  .pulse-ring .num{ position:absolute; left:0; right:0; bottom:2px; text-align:center; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:34px; line-height:1; color:var(--text-0); }
+  .pulse-ring .num{ position:absolute; left:0; right:0; bottom:2px; text-align:center; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:31px; line-height:1; color:var(--text-0); }
   .pulse-text{ flex:1; min-width:0; text-align:left; }
   .p-label{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--band-color, var(--emerald)); display:flex; align-items:center; justify-content:flex-start; gap:7px; margin-bottom:8px; }
   .p-label::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--band-color, var(--emerald)); box-shadow:0 0 0 4px color-mix(in srgb, var(--band-color, var(--emerald)) 18%, transparent); }
@@ -175,7 +177,7 @@
   .pulse-delta{ font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600; color:var(--text-0); }
   .pulse-asof{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-3); margin-top:0; }
   .pulse-tap-hint{ margin-top:8px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); display:flex; align-items:center; gap:5px; }
-  .vitals-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-bottom:34px; border:1px solid var(--border-1); border-radius:14px; background:var(--surf-1); box-shadow:var(--shadow-card); overflow:hidden;}
+  .vitals-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-bottom:34px; border:1px solid var(--border-1); border-radius:var(--radius-card); background:var(--surf-1); overflow:hidden;}
   .vital{ background:transparent; border:none; border-right:1px solid var(--border-1); border-bottom:1px solid var(--border-1); border-radius:0; padding:22px 24px; position:relative; box-shadow:none; text-align:left; cursor:pointer; transition:background .2s ease; animation:cardIn .6s cubic-bezier(.16,1,.3,1) backwards; }
   .vital:nth-child(3n){ border-right:none; }
   .vital:nth-child(n+4){ border-bottom:none; }
@@ -192,12 +194,12 @@
   .vital .v-score{font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:500; color:var(--text-2);}
   .vital.is-zero{ cursor:default; }
   .vital.is-zero .v-bar-fill{ background:var(--border-2); }
-  .tabs{display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--border-1); border-radius:11px; padding:4px; background:var(--surf-2);}
+  .tabs{display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--border-1); border-radius:12px; padding:4px; background:var(--surf-2);}
   .tab{ flex:1; padding:11px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:7px; }
   .tab:hover:not(.active){ color:var(--text-0); background:rgba(20,24,31,0.05); }
   .tab.active{background:var(--emerald); color:var(--white);}
   .panel{display:none;} .panel.active{display:block;}
-  .dropzone{ position:relative; border:1.5px dashed var(--border-2); border-radius:16px; padding:36px; text-align:center; cursor:pointer; transition:all .3s cubic-bezier(.22,1,.36,1); overflow:hidden; }
+  .dropzone{ position:relative; border:1.5px dashed var(--border-2); border-radius:var(--radius-card); padding:36px; text-align:center; cursor:pointer; transition:all .3s cubic-bezier(.22,1,.36,1); overflow:hidden; }
   .dropzone:hover{border-color:var(--emerald-bright); background:rgba(14,143,92,0.05);}
   .dropzone input{display:none;}
   .dz-icon{ width:46px; height:46px; margin:0 auto 14px; border-radius:10px; background:rgba(14,143,92,0.12); color:var(--emerald); display:flex; align-items:center; justify-content:center; }
@@ -207,7 +209,7 @@
   .template-link{display:inline-block; margin-top:18px; font-size:13px; color:var(--emerald); cursor:pointer; font-weight:600; border-bottom:1px solid rgba(14,143,92,0.35);}
   .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;}
   label{display:block; font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--text-2); margin-bottom:7px; text-transform:uppercase; letter-spacing:.06em; font-weight:600;}
-  input[type=number], input[type=text], select{ width:100%; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
+  input[type=number], input[type=text], select{ width:100%; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:var(--radius-control); color:var(--text-0); font-family:'IBM Plex Mono',monospace; font-size:14px; margin-bottom:16px; transition:border-color .2s ease; }
   input::placeholder{ color:var(--text-3); }
   input:focus, select:focus{outline:none; border-color:var(--emerald-bright);}
   select option{ background:var(--surf-1-solid); color:var(--text-0); }
@@ -228,9 +230,9 @@
   /* ---------- payments tab (NEW) — transparent glass, neon green accents ---------- */
   .mock-banner{ display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:8px; background:var(--surf-2); border:1px solid var(--border-1); border-left:3px solid var(--text-2); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-1); margin-bottom:20px; font-weight:600; }
   .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
-  .pay-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; padding:20px; box-shadow:var(--shadow-card); transition:box-shadow .2s ease, border-color .2s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
+  .pay-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:20px; transition:border-color .2s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
   .pay-grid .pay-card:nth-child(1){ animation-delay:.02s; } .pay-grid .pay-card:nth-child(2){ animation-delay:.07s; } .pay-grid .pay-card:nth-child(3){ animation-delay:.12s; } .pay-grid .pay-card:nth-child(4){ animation-delay:.17s; } .pay-grid .pay-card:nth-child(5){ animation-delay:.22s; } .pay-grid .pay-card:nth-child(6){ animation-delay:.27s; } .pay-grid .pay-card:nth-child(7){ animation-delay:.32s; }
-  .pay-card:hover{ border-color:rgba(31,163,116,0.4); transform:translateY(-2px); }
+  .pay-card:hover{ border-color:var(--border-2); }
   .pay-card.wide{ grid-column:span 2; }
   .pay-card .pc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
   .pay-card .pc-value{ font-family:'IBM Plex Mono',monospace; font-size:25px; font-weight:600; color:var(--text-0); margin-bottom:6px; }
@@ -245,9 +247,9 @@
   .method-legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
   .pay-empty{ text-align:center; padding:40px 20px; color:var(--text-2); font-size:13.5px; line-height:1.7; }
   /* ---------- charts (SVG, neon green, transparent) ---------- */
-  .chart-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; padding:24px; margin-bottom:20px; box-shadow:var(--shadow-card); }
+  .chart-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:24px; margin-bottom:20px; }
   .chart-card .cc-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:8px; }
-  .chart-card h3{ font-family:'Manrope',sans-serif; font-weight:700; font-size:17px; color:var(--text-0); }
+  .chart-card h3{ font-family:'Manrope',sans-serif; font-weight:700; font-size:16px; color:var(--text-0); }
   .chart-card .cc-sub{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--text-2); text-transform:uppercase; letter-spacing:.05em; }
   .bar-chart{ display:flex; align-items:flex-end; gap:10px; height:150px; padding-top:10px; }
   .bar-chart .bc-col{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; gap:8px; }
@@ -265,10 +267,10 @@
   .trend-empty{ text-align:center; padding:30px 10px; color:var(--text-2); font-size:13px; line-height:1.6; }
   /* ---------- vital detail overlay ---------- */
   .detail-overlay{ position:fixed; inset:0; z-index:300; background:rgba(20,24,31,0.35); display:flex; align-items:center; justify-content:center; padding:20px; }
-  .detail-modal{ width:min(440px, 100%); background:var(--surf-1); border:1px solid var(--border-1); border-radius:18px; padding:28px; box-shadow:0 20px 50px -20px rgba(20,24,31,0.25); position:relative; animation:detailIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
+  .detail-modal{ width:min(440px, 100%); background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); padding:28px; box-shadow:0 20px 50px -20px rgba(20,24,31,0.25); position:relative; animation:detailIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
   .detail-modal.wide{ width:min(560px, 100%); }
   @keyframes detailIn{ from{ opacity:0; transform:scale(0.96) translateY(8px); } to{ opacity:1; transform:scale(1) translateY(0); } }
-  .detail-close{ position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; border:1px solid var(--border-1); background:var(--surf-2); color:var(--text-2); cursor:pointer; font-size:14px; }
+  .detail-close{ position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; border:1px solid var(--border-1); background:var(--surf-2); color:var(--text-2); cursor:pointer; display:flex; align-items:center; justify-content:center; }
   .detail-close:hover{ color:var(--text-0); border-color:var(--emerald-bright); }
   .detail-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--emerald-bright); font-weight:700; margin-bottom:8px; }
   .detail-title{ font-family:'Manrope',sans-serif; font-weight:800; font-size:25px; color:var(--text-0); margin-bottom:14px; padding-right:30px; }
@@ -288,14 +290,14 @@
   .finding-card.verified .finding-tier{ color:var(--emerald); }
   .finding-card.signal .finding-tier{ color:var(--orange); }
   .finding-summary{ font-size:13px; line-height:1.55; color:var(--text-0); margin-bottom:10px; }
-  .finding-explain{ background:transparent; border:1px solid var(--border-2); color:var(--text-0); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
+  .finding-explain{ background:transparent; border:1px solid var(--border-2); color:var(--text-0); padding:6px 12px; border-radius:var(--radius-btn); font-size:12px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
   .finding-explain:hover{ border-color:var(--emerald-bright); color:var(--emerald); }
   .finding-explain:disabled{ opacity:.5; cursor:default; }
   .finding-provenance{ font-size:11px; color:var(--text-3); margin-top:8px; line-height:1.4; }
   .source-badge{ display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; padding:3px 9px; border-radius:6px; background:var(--surf-2); color:var(--text-3); border:1px solid var(--border-1); }
   .source-badge.self-reported{ color:var(--orange); border-color:var(--orange); }
   .source-badge.connector{ color:var(--emerald); border-color:var(--emerald-bright); }
-  .chat-history-row{ padding:9px 11px; border:1px solid var(--border-1); border-radius:9px; margin-bottom:8px; cursor:pointer; }
+  .chat-history-row{ padding:9px 11px; border:1px solid var(--border-1); border-radius:var(--radius-control); margin-bottom:8px; cursor:pointer; }
   .chat-history-row:hover{ border-color:var(--emerald-bright); }
   .chr-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin-bottom:3px; }
   .chr-preview{ font-size:12.5px; color:var(--text-0); }
@@ -312,26 +314,27 @@
   .margyn-msg.assistant{ align-self:flex-start; background:var(--peach); color:var(--text-0); border-bottom-left-radius:4px; }
   .margyn-msg.assistant.loading{ color:var(--text-2); font-style:italic; }
   .margyn-chat-form{ display:flex; gap:8px; }
-  .margyn-chat-form input{ flex:1; padding:10px 12px; border:1px solid var(--border-2); border-radius:9px; font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
+  .margyn-chat-form input{ flex:1; padding:10px 12px; border:1px solid var(--border-2); border-radius:var(--radius-control); font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
   .margyn-chat-form input:focus{ outline:none; border-color:var(--orange); }
-  .margyn-chat-form button{ background:var(--orange); color:#fff; border:none; padding:0 16px; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; flex-shrink:0; }
+  .margyn-chat-form button{ background:var(--orange); color:#fff; border:none; padding:0 16px; border-radius:var(--radius-btn); font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; flex-shrink:0; }
   .margyn-chat-form button:hover{ opacity:.9; }
   .margyn-chat-form button:disabled{ opacity:.5; cursor:default; }
-  .ask-margyn-fab{ position:fixed; right:24px; bottom:24px; z-index:250; width:54px; height:54px; border-radius:50%; background:var(--orange); color:#fff; border:none; box-shadow:0 10px 24px -8px rgba(204,91,52,0.55); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:21px; transition:transform .2s ease; }
+  .ask-margyn-fab{ position:fixed; right:24px; bottom:24px; z-index:250; width:54px; height:54px; border-radius:50%; background:var(--orange); color:#fff; border:none; box-shadow:0 10px 24px -8px rgba(204,91,52,0.55); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform .2s ease; }
   .ask-margyn-fab:hover{ transform:scale(1.06); }
-  .ask-margyn-panel{ position:fixed; right:24px; bottom:92px; z-index:250; width:min(380px, calc(100vw - 48px)); max-height:min(560px, calc(100vh - 140px)); background:var(--surf-1); border:1px solid var(--border-1); border-radius:16px; box-shadow:0 24px 60px -20px rgba(20,24,31,0.3); display:flex; flex-direction:column; overflow:hidden; }
+  .ask-margyn-panel{ position:fixed; right:24px; bottom:92px; z-index:250; width:min(380px, calc(100vw - 48px)); max-height:min(560px, calc(100vh - 140px)); background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); box-shadow:0 24px 60px -20px rgba(20,24,31,0.3); display:flex; flex-direction:column; overflow:hidden; }
   .ask-margyn-panel.hidden{ display:none; }
   .ask-margyn-head{ padding:16px 18px; border-bottom:1px solid var(--border-1); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
   .ask-margyn-head .amh-title{ font-family:'Manrope',sans-serif; font-weight:800; font-size:14.5px; color:var(--text-0); display:flex; align-items:center; gap:7px; }
   .ask-margyn-head .amh-title::before{ content:''; width:7px; height:7px; border-radius:50%; background:var(--orange); }
-  .ask-margyn-head button{ background:transparent; border:none; color:var(--text-2); cursor:pointer; font-size:16px; line-height:1; }
+  .ask-margyn-head button{ background:transparent; border:none; color:var(--text-2); cursor:pointer; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:7px; transition:background .15s ease, color .15s ease; }
+  .ask-margyn-head button:hover{ background:var(--surf-2); color:var(--text-0); }
   .ask-margyn-body{ padding:16px 18px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
   .ask-margyn-foot{ padding:12px 14px; border-top:1px solid var(--border-1); flex-shrink:0; }
   @media (max-width:640px){ .ask-margyn-panel{ right:12px; left:12px; width:auto; bottom:84px; } .ask-margyn-fab{ right:16px; bottom:16px; } }
   @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
   .summary-grid{ grid-template-columns:repeat(5,1fr); margin-bottom:20px; }
   /* ---------- ledger UI (receivables / payables / settlements) ---------- */
-  .ledger-form{ background:var(--surf-2); border:1px solid var(--border-1); border-radius:14px; padding:16px; margin-bottom:18px; }
+  .ledger-form{ background:var(--surf-2); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:16px; margin-bottom:18px; }
   .ledger-form .lf-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
   .ledger-form .lf-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
   .ledger-form input{ width:100%; padding:9px 10px; border:1px solid var(--border-2); border-radius:8px; font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
@@ -355,6 +358,8 @@
   .lr-btn{ font-family:'Manrope',sans-serif; font-size:10.5px; font-weight:700; padding:5px 9px; border-radius:6px; cursor:pointer; border:1px solid var(--border-2); background:var(--surf-1); color:var(--text-1); white-space:nowrap; }
   .lr-btn:hover{ border-color:var(--emerald-bright); color:var(--emerald-bright); }
   .lr-btn.danger:hover{ border-color:#B3432E; color:#B3432E; }
+  .lr-btn.connect{ border-color:var(--sky); color:var(--sky); }
+  .lr-btn.connect:hover{ border-color:var(--sky); color:var(--sky); background:var(--sky-light); }
   .ledger-empty{ font-size:12.5px; color:var(--text-2); padding:14px 0; text-align:center; }
   /* ---------- summary overview (NEW — kpi strip / revenue trend / alerts) ---------- */
   .summary-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:22px; flex-wrap:wrap; }
@@ -369,7 +374,7 @@
   .verdict-cta{ background:transparent; border:1px solid var(--border-2); color:var(--text-0); padding:10px 18px; border-radius:8px; font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; cursor:pointer; transition:border-color .2s ease, background .2s ease; margin-bottom:6px; }
   .verdict-cta:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
   @media (max-width:640px){ .verdict-num{ font-size:49px; } .verdict-row{ align-items:flex-start; } .verdict-cta{ margin-left:0; } }
-  .kpi-strip{ display:flex; border:1px solid var(--border-1); border-radius:14px; background:var(--surf-1); box-shadow:var(--shadow-card); margin-bottom:24px; overflow:hidden; }
+  .kpi-strip{ display:flex; border:1px solid var(--border-1); border-radius:var(--radius-card); background:var(--surf-1); margin-bottom:24px; overflow:hidden; }
   .kpi-strip .kpi-card:nth-child(1){ animation-delay:.02s; } .kpi-strip .kpi-card:nth-child(2){ animation-delay:.09s; } .kpi-strip .kpi-card:nth-child(3){ animation-delay:.16s; } .kpi-strip .kpi-card:nth-child(4){ animation-delay:.23s; }
   .kpi-card:hover{ background:var(--surf-2); }
   .kpi-card{ position:relative; flex:1; min-width:0; background:transparent; padding:18px 22px; transition:background .15s ease; cursor:pointer; animation:cardIn .6s cubic-bezier(.16,1,.3,1) backwards; }
@@ -410,7 +415,7 @@
   .alert-title{ font-size:13px; font-weight:700; color:var(--text-0); margin-bottom:2px; }
   .alert-desc{ font-size:12px; color:var(--text-2); line-height:1.5; }
   .alert-empty{ font-size:13px; color:var(--text-2); padding:14px 0; text-align:center; }
-  .stat-strip{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; padding:6px 24px; margin-bottom:0; box-shadow:var(--shadow-card); }
+  .stat-strip{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:6px 24px; margin-bottom:0; }
   .stat-row{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--border-1); }
   .stat-row:last-child{ border-bottom:none; }
   .stat-row .sc-label{ font-size:13.5px; color:var(--text-1); }
@@ -433,7 +438,7 @@
     .grid-2{grid-template-columns:1fr;}
     .pay-grid{grid-template-columns:1fr 1fr;}
     .pay-card.wide{ grid-column:span 2; }
-    .app-title{font-size:27px;}
+    .app-title{font-size:25px;}
     .wrap{padding:88px 20px 72px;}
     .pagenav button{ font-size:12px; padding:11px 6px; }
     .hbar-label{ width:96px; font-size:10.5px; }
@@ -444,7 +449,7 @@
     .pulse-ring{ width:100%; max-width:220px; height:auto; aspect-ratio:176/98; }
   }
   /* ---------- zoho books connector (NEW) — org picker + books tab ---------- */
-  .org-option{ display:flex; align-items:center; gap:11px; padding:12px 14px; border:1px solid var(--border-1); border-radius:12px; margin-bottom:8px; cursor:pointer; transition:border-color .2s ease, background .2s ease; }
+  .org-option{ display:flex; align-items:center; gap:11px; padding:12px 14px; border:1px solid var(--border-1); border-radius:var(--radius-control); margin-bottom:8px; cursor:pointer; transition:border-color .2s ease, background .2s ease; }
   .org-option:hover{ border-color:var(--emerald-bright); background:rgba(31,163,116,0.06); }
   .org-option input{ accent-color:var(--emerald-bright); width:16px; height:16px; margin:0; flex-shrink:0; }
   .org-option .org-name{ font-size:13.5px; font-weight:700; color:var(--text-0); flex:1; min-width:0; }
@@ -454,8 +459,8 @@
   .lsuper-panel{ display:none; } .lsuper-panel.active{ display:block; }
   .khata-panel{ display:none; } .khata-panel.active{ display:block; }
   .search-row{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
-  .search-row input{ flex:1; min-width:180px; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'Manrope',sans-serif; font-size:14px; margin-bottom:0; }
-  .search-row select{ padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:12px; color:var(--text-0); font-family:'Manrope',sans-serif; font-size:13px; margin-bottom:0; }
+  .search-row input{ flex:1; min-width:180px; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:var(--radius-control); color:var(--text-0); font-family:'Manrope',sans-serif; font-size:14px; margin-bottom:0; }
+  .search-row select{ padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:var(--radius-control); color:var(--text-0); font-family:'Manrope',sans-serif; font-size:13px; margin-bottom:0; }
   .btn-primary{ background:var(--emerald); color:#fff; border:none; padding:11px 20px; border-radius:8px; font-weight:700; font-size:13.5px; cursor:pointer; font-family:'Manrope',sans-serif; white-space:nowrap; }
   .btn-primary:hover{ background:var(--emerald-bright); }
   .btn-ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:10px 18px; border-radius:8px; font-size:13px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; white-space:nowrap; }
@@ -494,7 +499,7 @@
   .li-head{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; color:var(--text-2); font-weight:600; padding-bottom:8px; }
   .li-row{ margin-bottom:8px; }
   .li-row input{ padding:8px 10px; font-size:12.5px; margin-bottom:0; }
-  .li-del{ background:transparent; border:none; color:var(--text-2); cursor:pointer; font-size:15px; }
+  .li-del{ background:transparent; border:none; color:var(--text-2); cursor:pointer; display:flex; align-items:center; justify-content:center; padding:4px; }
   .li-del:hover{ color:#B3432E; }
   .totals-box{ margin-top:14px; margin-left:auto; width:280px; }
   .tot-row{ display:flex; justify-content:space-between; padding:8px 0; font-size:13px; border-bottom:1px solid var(--border-1); }
@@ -524,7 +529,7 @@
   <div class="gate-modal">
     <div class="eyebrow">Margyn 1.0</div>
     <h2 id="authTitle">Welcome back.</h2>
-    <p class="sub">Log in to your dashboard or create an account to get started.</p>
+    <p class="sub">Log in to your operating view or create an account to get started.</p>
     <button type="button" class="oauth-btn" id="googleAuthBtn">
       <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.56 2.68-3.87 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.66 9c0-.59.1-1.17.29-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.97l2.99 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
       <span id="googleAuthLabel">Sign in with Google</span>
@@ -796,7 +801,7 @@
           <div class="aging-bars" id="kpdAging"></div>
           <div class="pro-note">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            AI insight on why this party is slipping — available on Pro
+            AI insight on why this party is slipping, available on Pro
           </div>
         </div>
       </div>
@@ -1041,11 +1046,11 @@
   <div id="view-history" class="hidden">
     <div class="section-head">
       <h1>History</h1>
-      <div class="hint">Every finding Margyn has surfaced, and every conversation you've had about them — nothing here disappears on refresh.</div>
+      <div class="hint">Every finding Margyn has surfaced, and every conversation you've had about them. Nothing here disappears on refresh.</div>
     </div>
     <div class="card">
       <h2>Conversations</h2>
-      <div class="hint">Pick one up where you left off — same context, capped the same way a live chat is.</div>
+      <div class="hint">Pick one up where you left off, same context, capped the same way a live chat is.</div>
       <div id="historyThreadList" style="margin-top:14px;"></div>
       <div id="historyThreadOpen" class="hidden" style="margin-top:18px; border-top:1px solid var(--border-1); padding-top:16px;">
         <button id="historyThreadBack" style="background:transparent; border:none; color:var(--text-2); font-size:12.5px; cursor:pointer; margin-bottom:12px; padding:0;">← All conversations</button>
@@ -1068,7 +1073,7 @@
       <h2>Payment health <span class="source-badge" id="paymentsSourceBadge" style="display:none; vertical-align:middle; margin-left:8px;"></span></h2>
       <div class="hint">From Razorpay + Shopify data. See the validation roadmap doc for what's needed to make each of these production-grade.</div>
     </div>
-    <div id="paymentsMockBanner" class="mock-banner hidden">No payments data yet — showing zero. Upload a Razorpay Settlements sheet or use Quick manual entry to see your real numbers.</div>
+    <div id="paymentsMockBanner" class="mock-banner hidden">No payments data yet, showing zero. Upload a Razorpay Settlements sheet or use Quick manual entry to see your real numbers.</div>
     <div class="pay-grid">
       <div class="pay-card" data-margyn-topic="Gross processed">
         <div class="pc-label">Gross processed</div>
@@ -1131,8 +1136,8 @@
       <h2>Books</h2>
       <div class="hint">Straight from your Zoho Books ledger: receivables aging, payables due, GST input-credit risk and true margin. Synced nightly. These figures are computed from the ledger itself, so they should match what you see natively in Zoho Books.</div>
     </div>
-    <div id="booksNotConnected" class="mock-banner hidden">Zoho Books isn't connected — connect it under Connectors to unlock receivables, payables, GST/ITC leakage and true net margin.</div>
-    <div id="booksBackfillBanner" class="mock-banner hidden">First sync in progress — Margyn is pulling your last 12 months. This can take a few minutes on a busy set of books.</div>
+    <div id="booksNotConnected" class="mock-banner hidden">Zoho Books isn't connected. Connect it under Connectors to unlock receivables, payables, GST/ITC leakage and true net margin.</div>
+    <div id="booksBackfillBanner" class="mock-banner hidden">First sync in progress. Margyn is pulling your last 12 months. This can take a few minutes on a busy set of books.</div>
     <div id="booksContent" class="hidden">
       <div class="pay-grid">
         <div class="pay-card">
@@ -1212,14 +1217,14 @@
     </div>
   </div>
   </div>
-  <button class="ask-margyn-fab" id="askMargynFab" title="Ask Margyn" aria-label="Ask Margyn">💬</button>
+  <button class="ask-margyn-fab" id="askMargynFab" title="Ask Margyn" aria-label="Ask Margyn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></button>
   <div class="ask-margyn-panel hidden" id="askMargynPanel">
     <div class="ask-margyn-head">
       <div class="amh-title">Ask Margyn</div>
-      <div style="display:flex; gap:12px; align-items:center;">
-        <button id="askMargynNewChat" title="New chat" aria-label="New chat">＋</button>
-        <button id="askMargynHistoryToggle" title="Previous chats" aria-label="Previous chats">🕐</button>
-        <button id="askMargynClose" aria-label="Close">✕</button>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <button id="askMargynNewChat" title="New chat" aria-label="New chat"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <button id="askMargynHistoryToggle" title="Previous chats" aria-label="Previous chats"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg></button>
+        <button id="askMargynClose" aria-label="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
     <div class="ask-margyn-body" id="askMargynThread"></div>
@@ -1234,25 +1239,25 @@
 </div>
 <div class="detail-overlay hidden" id="detailOverlay">
   <div class="detail-modal">
-    <button class="detail-close" id="detailClose">✕</button>
+    <button class="detail-close" id="detailClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div id="detailContent"></div>
   </div>
 </div>
 <div class="detail-overlay hidden" id="razorpayOverlay">
   <div class="detail-modal">
-    <button class="detail-close" id="razorpayClose">✕</button>
+    <button class="detail-close" id="razorpayClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div id="razorpayContent"></div>
   </div>
 </div>
 <div class="detail-overlay hidden" id="zohoOverlay">
   <div class="detail-modal">
-    <button class="detail-close" id="zohoClose">✕</button>
+    <button class="detail-close" id="zohoClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div id="zohoContent"></div>
   </div>
 </div>
 <div class="detail-overlay hidden" id="shopifyOverlay">
   <div class="detail-modal">
-    <button class="detail-close" id="shopifyClose">✕</button>
+    <button class="detail-close" id="shopifyClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div id="shopifyContent"></div>
   </div>
 </div>
@@ -1460,7 +1465,7 @@ function renderRazorpayStatus(){
     const syncText = lastSyncedAt ? 'Last synced ' + fmtDate(lastSyncedAt) : 'Connected, syncing tonight at 2 AM IST';
     host.innerHTML =
       '<div class="ledger-row"><div class="lr-main">' +
-        '<div class="lr-party">✓ Razorpay</div>' +
+        '<div class="lr-party">Razorpay</div>' +
         '<div class="lr-meta">'+syncText+'</div>' +
       '</div><span class="lr-tag ok">Connected</span></div>';
   } else {
@@ -1468,7 +1473,7 @@ function renderRazorpayStatus(){
       '<div class="ledger-row"><div class="lr-main">' +
         '<div class="lr-party">Razorpay</div>' +
         '<div class="lr-meta">Not connected · optional, adds payment detail nightly on top of your uploads</div>' +
-      '</div><div class="lr-actions"><button class="lr-btn" id="connectRazorpayBtn" style="border-color:#0B4B8C; color:#0B4B8C;">Connect</button></div></div>';
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectRazorpayBtn">Connect</button></div></div>';
     const btn = document.getElementById('connectRazorpayBtn');
     if(btn) btn.addEventListener('click', openRazorpayModal);
   }
@@ -1723,7 +1728,7 @@ function renderScores(){
   arc.setAttribute('stroke-dashoffset', (RING_CIRC * (1 - pct/100)).toFixed(2));
   arc.setAttribute('stroke', band.color);
   const deltaEl = document.getElementById('pulseDelta');
-  if(!hasData){ deltaEl.textContent = 'no snapshots yet — upload data to calculate'; }
+  if(!hasData){ deltaEl.textContent = 'no snapshots yet, upload data to calculate'; }
   else if(prev){ const d = latest.pulse_score - prev.pulse_score; deltaEl.textContent = d===0?'no change since last':(d>0?'▲ +'+d:'▼ '+d)+' since last'; }
   else { deltaEl.textContent = 'first snapshot'; }
   let asOfText = hasData ? 'synced ' + fmtDate(latest.created_at) : '';
@@ -1960,7 +1965,7 @@ document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e
    - 'global'                — the floating panel's general thread
    Reopening the same vital/finding/panel automatically replays its saved
    thread — that's "access previous chats" for the natural entry points.
-   The history browser (🕐 in the panel header) additionally lists every
+   The history browser (clock icon in the panel header) additionally lists every
    thread across the account for jumping back into an older one.
 
    CHAT_CONTEXT_CAP bounds how many past turns get sent to the model on
@@ -2025,9 +2030,9 @@ function sessionThreadKeyFor(topic){
    on the topic string, not the model choosing where to send someone —
    keeps navigation predictable and impossible for a reply to get wrong. */
 const MARGYN_VIEW_HINTS = [
-  { test: /receivable|customer|invoice/i, view:'ledger', ltab:'receivables', label:'Ledger — Receivables' },
-  { test: /payable|vendor|bill/i, view:'ledger', ltab:'payables', label:'Ledger — Payables' },
-  { test: /cash/i, view:'ledger', ltab:'cash', label:'Ledger — Cash' },
+  { test: /receivable|customer|invoice/i, view:'ledger', ltab:'receivables', label:'Ledger: Receivables' },
+  { test: /payable|vendor|bill/i, view:'ledger', ltab:'payables', label:'Ledger: Payables' },
+  { test: /cash/i, view:'ledger', ltab:'cash', label:'Ledger: Cash' },
   { test: /gst|itc/i, view:'scores', label:'Scores' },
   { test: /razorpay|settlement|mdr|fail|gross processed|transaction value|method mix/i, view:'payments', label:'Payments' },
   { test: /shopify/i, view:'payments', label:'Payments' },
@@ -2054,7 +2059,7 @@ function appendGoToChip(threadEl, hint){
 }
 
 /* Universal click-to-chat entry point. Any tile with data-margyn-topic
-   (or the small 💬 icon on tiles that keep a navigate-on-click primary
+   (or the small chat-icon button on tiles that keep a navigate-on-click primary
    action, like the Summary KPIs) calls this instead of opening a whole
    detail modal — it reuses the same global panel and the same
    session-scoped 'vital:<topic>::<suffix>' thread-key convention as
@@ -2075,7 +2080,7 @@ async function openMargynFocused(topic, valueText){
   const chip = document.createElement('div');
   chip.className = 'finding-card';
   chip.style.borderLeftColor = 'var(--blue)';
-  chip.innerHTML = '<div class="finding-tier" style="color:var(--blue);">Talking about</div><div class="finding-summary">' + escapeHtml(topic) + (valueText ? ' — ' + escapeHtml(String(valueText)) : '') + '</div>';
+  chip.innerHTML = '<div class="finding-tier" style="color:var(--blue);">Talking about</div><div class="finding-summary">' + escapeHtml(topic) + (valueText ? ': ' + escapeHtml(String(valueText)) : '') + '</div>';
   thread.appendChild(chip);
   const past = await loadChatThread(threadKey);
   past.forEach(m => { appendChatBubble(thread, m.role, m.content); askMargynGlobalHistory.push({ role:m.role, content:m.content }); });
@@ -2122,7 +2127,7 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
       if(tk) saveChatMessage(tk, fl, 'assistant', reply);
       if(showNavHint) appendGoToChip(threadEl, findViewHint(fl));
     } catch(err){
-      loadingBubble.textContent = "Couldn't reach Margyn just now — try again in a moment.";
+      loadingBubble.textContent = "Couldn't reach Margyn just now, try again in a moment.";
       loadingBubble.classList.remove('loading');
     } finally {
       submitBtn.disabled = false;
@@ -2135,7 +2140,7 @@ function findingCardHtml(f){
   return '<div class="finding-card ' + f.tier + '">' +
     '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified · 2 sources agree' : 'Signal · single source, unconfirmed') + '</div>' +
     '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>' +
-    (f.self_reported ? '<div class="finding-provenance">📝 Based on manually entered / uploaded data — not yet cross-checked against a live connector.</div>' : '') +
+    (f.self_reported ? '<div class="finding-provenance">Based on manually entered / uploaded data, not yet cross-checked against a live connector.</div>' : '') +
     '<button class="finding-explain">Explain why →</button>' +
   '</div>';
 }
@@ -2195,8 +2200,8 @@ async function renderGlobalFindings(thread){
   const sorted = latestBatch.slice().sort((a,b) => (a.tier === b.tier) ? 0 : (a.tier === 'verified' ? -1 : 1)).slice(0,3);
   if(!sorted.length){
     appendChatBubble(thread, 'assistant', snapshots.length > 1
-      ? "Nothing's moved enough to flag since your last snapshot — or I'm still crunching it, check back in a moment. Ask me anything about your numbers below."
-      : "Add another snapshot and I'll start flagging what's actually changed — cross-checked against Razorpay and Shopify where you're connected, not just a single number.");
+      ? "Nothing's moved enough to flag since your last snapshot, or I'm still crunching it, check back in a moment. Ask me anything about your numbers below."
+      : "Add another snapshot and I'll start flagging what's actually changed, cross-checked against Razorpay and Shopify where you're connected, not just a single number.");
     return;
   }
   for(const f of sorted){
@@ -2215,7 +2220,7 @@ async function renderGlobalFindings(thread){
   }
 }
 
-/* 🕐 history browser — lists every thread on the account, click one to
+/* History browser — lists every thread on the account, click one to
    reopen and continue it (the free-text form below switches to that
    thread's key via currentGlobalThreadKey). */
 async function renderChatHistoryList(thread){
@@ -2310,7 +2315,7 @@ document.getElementById('pulseCard').addEventListener('click', (e) => {
 });
 
 /* ---------- History tab ----------
-   Full-page version of the same data the panel's 🕐 browser shows —
+   Full-page version of the same data the panel's history browser shows —
    every chat thread (reopenable and continuable) and every finding
    Margyn has ever surfaced, not just the latest batch. */
 async function renderHistoryView(){
@@ -2325,7 +2330,7 @@ async function renderHistoryThreadList(){
   listEl.innerHTML = '<div class="hint">Loading…</div>';
   const summaries = await loadAllThreadSummaries();
   if(!summaries.length){
-    listEl.innerHTML = '<div class="hint">No conversations yet — ask Margyn something from any vital, or the floating panel.</div>';
+    listEl.innerHTML = '<div class="hint">No conversations yet, ask Margyn something from any vital, or the floating panel.</div>';
     return;
   }
   listEl.innerHTML = '';
@@ -2377,7 +2382,7 @@ document.getElementById('historyThreadBack').addEventListener('click', () => {
 function renderHistoryFindingsList(){
   const listEl = document.getElementById('historyFindingsList');
   if(!findings.length){
-    listEl.innerHTML = '<div class="hint">No findings yet — save a couple of snapshots to get started.</div>';
+    listEl.innerHTML = '<div class="hint">No findings yet, save a couple of snapshots to get started.</div>';
     return;
   }
   const sorted = findings.slice().sort((a,b) => new Date(b.generated_at) - new Date(a.generated_at));
@@ -2845,7 +2850,7 @@ document.getElementById('kpdRemindBtn').addEventListener('click', () => {
     window.open('https://wa.me/' + digits + '?text=' + encodeURIComponent(msg), '_blank');
   } else {
     navigator.clipboard && navigator.clipboard.writeText(msg);
-    alert('No phone on file — reminder text copied to clipboard instead.');
+    alert('No phone on file, reminder text copied to clipboard instead.');
   }
 });
 /* ---------- invoicing ---------- */
@@ -2871,7 +2876,7 @@ function renderInvoiceLines(){
       '<input type="number" data-f="qty" class="mono" value="'+li.qty+'">' +
       '<input type="number" data-f="rate" class="mono" value="'+li.rate+'">' +
       '<input type="number" data-f="gst" class="mono" value="'+li.gst+'">' +
-      '<button class="li-del" type="button">✕</button>';
+      '<button class="li-del" type="button" aria-label="Remove line"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
     row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', () => {
       const f = inp.dataset.f; li[f] = (f==='description'||f==='hsn') ? inp.value : Number(inp.value)||0;
       renderInvoiceTotals();
@@ -3395,7 +3400,7 @@ function renderSummary(){
       '<div class="kc-value">'+k.value+'</div>' +
       '<span class="kc-delta '+d.cls+'">'+d.text+'</span>' +
       sparklineSvg(k.series, d.cls==='down' ? '#B3432E' : k.accent) +
-      '<button class="margyn-ask-icon" title="Ask Margyn about this" aria-label="Ask Margyn about this">💬</button>';
+      '<button class="margyn-ask-icon" title="Ask Margyn about this" aria-label="Ask Margyn about this"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></button>';
     const go = () => { if(k.nav.ltab) ledgerActiveTab = k.nav.ltab; showView(k.nav.view); };
     el.addEventListener('click', go);
     el.addEventListener('keydown', e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); go(); } });
@@ -3525,7 +3530,7 @@ function renderSettlementList(){
     host.innerHTML = '<div class="ledger-empty">Upload a Razorpay Settlements sheet to see batches here, each with a Mark as settled toggle.</div>';
     return;
   }
-  sub.textContent = rows.length + ' batches — status is a local toggle, not yet persisted';
+  sub.textContent = rows.length + ' batches, status is a local toggle, not yet persisted';
   host.innerHTML = '';
   rows.forEach((r, i) => {
     const row = document.createElement('div'); row.className = 'ledger-row';
@@ -3546,7 +3551,7 @@ function renderSettleTrendChart(){
   const sub = document.getElementById('paySettleTrendSub');
   const series = settlementDailyTrend || [0,0,0,0,0,0,0];
   const hasReal = !!settlementDailyTrend;
-  sub.textContent = hasReal ? '₹ per day (from uploaded settlement rows)' : 'No data yet — upload settlements to see daily trend';
+  sub.textContent = hasReal ? '₹ per day (from uploaded settlement rows)' : 'No data yet, upload settlements to see daily trend';
   const max = Math.max(...series, 1);
   host.innerHTML = '';
   const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -3564,7 +3569,7 @@ function renderShopifyChart(){
   // Uploaded sheet wins when present. Otherwise fall back to live counts from
   // the Shopify connector, so a connected store isn't told to go upload a file.
   let rows = shopifyOrdersData;
-  let subText = 'From last upload — reference only, not yet scored';
+  let subText = 'From last upload, reference only, not yet scored';
   if(!rows && shopifyConnected && shopifyStore && shopifyStore.counts){
     const c = shopifyStore.counts;
     rows = [
@@ -3573,7 +3578,7 @@ function renderShopifyChart(){
       { label:'SKUs with cost', value: Math.max(0, (c.variants||0) - (c.variants_missing_cost||0)) },
       { label:'SKUs missing cost', value: c.variants_missing_cost||0 }
     ];
-    subText = 'Live from the Shopify connector — ' + (shopifyStore.backfill_complete ? 'synced nightly' : 'backfill in progress');
+    subText = 'Live from the Shopify connector, ' + (shopifyStore.backfill_complete ? 'synced nightly' : 'backfill in progress');
   }
   if(sub) sub.textContent = rows ? subText : 'Not connected';
   if(!rows){ host.innerHTML = '<div class="ledger-empty">Connect Shopify under Connectors, or upload a Shopify Orders sheet, to see order and SKU counts here.</div>'; return; }
@@ -3644,11 +3649,11 @@ function renderShopifyStatus(){
     const backfilling = !needsReauth && !s.backfill_complete;
     let meta;
     if(needsReauth){
-      meta = escapeHtml(s.shop_domain) + ' — app uninstalled or token regenerated in Shopify, reconnect to resume';
+      meta = escapeHtml(s.shop_domain) + ', app uninstalled or token regenerated in Shopify, reconnect to resume';
     } else if(backfilling){
-      meta = escapeHtml(s.shop_domain) + ' — first 90-day backfill in progress, ' + (c.orders||0).toLocaleString('en-IN') + ' orders so far';
+      meta = escapeHtml(s.shop_domain) + ', first 90-day backfill in progress, ' + (c.orders||0).toLocaleString('en-IN') + ' orders so far';
     } else {
-      meta = escapeHtml(s.shop_domain) + ' — ' + (c.orders||0).toLocaleString('en-IN') + ' orders synced' +
+      meta = escapeHtml(s.shop_domain) + ', ' + (c.orders||0).toLocaleString('en-IN') + ' orders synced' +
              (s.last_synced_at ? ', last synced ' + fmtDate(s.last_synced_at) : '');
       if((s.flags||[]).indexOf('cogs_data_incomplete') !== -1){
         meta += ' · cost per item missing on ' + s.cogs_missing_pct + '% of SKUs, margin shown as an estimate';
@@ -3658,7 +3663,7 @@ function renderShopifyStatus(){
     const tagTxt = needsReauth ? 'Reconnect' : (backfilling ? 'Backfilling' : 'Connected');
     host.innerHTML =
       '<div class="ledger-row"><div class="lr-main">' +
-        '<div class="lr-party">' + (needsReauth || backfilling ? '' : '✓ ') + 'Shopify</div>' +
+        '<div class="lr-party">Shopify</div>' +
         '<div class="lr-meta">' + meta + '</div>' +
       '</div><span class="lr-tag ' + tagCls + '">' + tagTxt + '</span>' +
       '<div class="lr-actions">' +
@@ -3674,7 +3679,7 @@ function renderShopifyStatus(){
       '<div class="ledger-row"><div class="lr-main">' +
         '<div class="lr-party">Shopify</div>' +
         '<div class="lr-meta">Not connected · unlocks SKU-level COGS, true net margin and COD receivables for D2C stores</div>' +
-      '</div><div class="lr-actions"><button class="lr-btn" id="connectShopifyBtn" style="border-color:#0B4B8C; color:#0B4B8C;">Connect</button></div></div>';
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectShopifyBtn">Connect</button></div></div>';
     const btn = document.getElementById('connectShopifyBtn');
     if(btn) btn.addEventListener('click', openShopifyModal);
   }
@@ -3814,13 +3819,13 @@ function renderZohoStatus(){
     const needsReauth = zohoVitals.status === 'needs_reauth';
     const name = escapeHtml(zohoVitals.organization_name || zohoVitals.organization_id || 'your organization');
     const meta = needsReauth
-      ? 'Needs re-authentication — reconnect to resume nightly syncing'
+      ? 'Needs re-authentication, reconnect to resume nightly syncing'
       : (zohoVitals.backfill_completed_at
-          ? 'Connected to ' + name + ' — syncing nightly at 2:30 AM IST'
-          : 'Connected to ' + name + ' — first 12-month backfill in progress');
+          ? 'Connected to ' + name + ', syncing nightly at 2:30 AM IST'
+          : 'Connected to ' + name + ', first 12-month backfill in progress');
     host.innerHTML =
       '<div class="ledger-row"><div class="lr-main">' +
-        '<div class="lr-party">' + (needsReauth ? '' : '✓ ') + 'Zoho Books</div>' +
+        '<div class="lr-party">Zoho Books</div>' +
         '<div class="lr-meta">' + meta + '</div>' +
       '</div><span class="lr-tag ' + (needsReauth ? 'bad' : 'ok') + '">' + (needsReauth ? 'Reconnect' : 'Connected') + '</span>' +
       '<div class="lr-actions">' +
@@ -3836,7 +3841,7 @@ function renderZohoStatus(){
       '<div class="ledger-row"><div class="lr-main">' +
         '<div class="lr-party">Zoho Books</div>' +
         '<div class="lr-meta">Not connected · unlocks receivables, payables, GST/ITC leakage and true margin</div>' +
-      '</div><div class="lr-actions"><button class="lr-btn" id="connectZohoBtn" style="border-color:#0B4B8C; color:#0B4B8C;">Connect</button></div></div>';
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectZohoBtn">Connect</button></div></div>';
     const btn = document.getElementById('connectZohoBtn');
     if(btn) btn.addEventListener('click', openZohoModal);
   }
@@ -3859,7 +3864,7 @@ function openZohoModal(){
     '<div class="ledger-form">' +
       '<div class="lf-title">Your Zoho data centre</div>' +
       '<select id="zohoRegion" style="margin-bottom:8px;">' + opts + '</select>' +
-      '<div style="font-size:11px; color:var(--text-2); margin-bottom:10px;">Most Indian businesses are on zoho.in. If you sign in at a different Zoho domain, pick it here — Margyn will still auto-correct to the right one after you approve.</div>' +
+      '<div style="font-size:11px; color:var(--text-2); margin-bottom:10px;">Most Indian businesses are on zoho.in. If you sign in at a different Zoho domain, pick it here. Margyn will still auto-correct to the right one after you approve.</div>' +
       '<div class="note bad" id="zohoError" style="display:none; margin-bottom:8px;"></div>' +
       '<button id="zohoConnectBtn">Continue to Zoho</button>' +
     '</div>';
@@ -3889,9 +3894,9 @@ window.addEventListener('message', (ev) => {
     const ZOHO_FAIL = {
       invalid_state: 'The connection link expired before Zoho sent you back. Try again and move through the Zoho screens without pausing.',
       missing_code: 'Zoho did not return an authorization code.',
-      token_exchange_failed: 'Zoho rejected the token exchange — usually a data-centre mismatch or the client secret not being valid for that data centre.',
-      db_write_failed: 'Could not record the connection — the zoho_organizations write failed. Check the SQL migration ran.',
-      vault_write_failed: 'Could not store the Zoho token — the Supabase vault write failed. Check the supabase_vault extension is enabled.',
+      token_exchange_failed: 'Zoho rejected the token exchange, usually a data-centre mismatch or the client secret not being valid for that data centre.',
+      db_write_failed: 'Could not record the connection, the zoho_organizations write failed. Check the SQL migration ran.',
+      vault_write_failed: 'Could not store the Zoho token, the Supabase vault write failed. Check the supabase_vault extension is enabled.',
       org_list_failed: 'Signed in to Zoho, but could not list your Books organizations.',
       no_books_organization: 'That Zoho login has no Zoho Books organization. A Zoho Books plan (the free plan works) is required.'
     };
@@ -4437,7 +4442,7 @@ async function runBriefingGeneration(regenerate){
     snapshots = await loadSnapshots();
     renderScores();
   } catch(err){
-    text.textContent = "Couldn't generate a briefing just now — try again in a moment.";
+    text.textContent = "Couldn't generate a briefing just now, try again in a moment.";
     idle.style.display = 'block';
   } finally { btn.disabled = false; btn.textContent = origText; }
 }
