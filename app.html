@@ -3821,7 +3821,19 @@ async function loadZohoVitals(){
     const v = await zohoApi('/api/zoho?action=vitals');
     zohoConnected = v && v.connected === true;
     zohoVitals = zohoConnected ? v : null;
-  } catch(e){ zohoConnected = false; zohoVitals = null; }
+  } catch(e){
+    // A failed status *check* — cold start, transient 500, a network blip
+    // right after a heavier Sync Now call — used to be treated identically
+    // to "genuinely disconnected", collapsing straight to the Connect
+    // button. That button kicks off a brand-new OAuth flow, so one flaky
+    // request could funnel a still-connected user into reconnecting,
+    // creating duplicate zoho_organizations rows and re-triggering the
+    // org picker for no reason. Keep the last known good state instead —
+    // an actual disconnect is reflected honestly (zohoConnected only ever
+    // becomes true from a real `connected:true` response), this just
+    // stops a fetch failure from masquerading as one.
+    console.error('[margyn] Zoho status check failed, keeping last known state:', e.message);
+  }
   renderZohoStatus();
   renderZohoBooksTab();
 }
