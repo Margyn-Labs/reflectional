@@ -130,10 +130,20 @@ async function handler(req, res) {
     return;
   }
 
-  // Guard against connecting the same Zoho org twice for one user.
+  // Guard against connecting the same Zoho org twice for one user — but
+  // disconnect.js deliberately keeps the old row around (status:
+  // 'disconnected') so historical vitals stay viewable, rather than
+  // deleting it. Without excluding that status here, a genuinely
+  // disconnected org permanently blocks ever reconnecting to it: the old
+  // row still matches on organization_id, and oauth-callback.js always
+  // inserts a *fresh* pending row on a new OAuth round-trip (it only
+  // reuses a row still sitting at the PENDING_ORG_SENTINEL), so `org.id`
+  // here never equals the old disconnected row's id either. Only a row
+  // that's actually live should count as a duplicate.
   const duplicate = await selectRows(
     'zoho_organizations',
-    `select=id&user_id=eq.${user.id}&organization_id=eq.${chosenId}&limit=1`
+    `select=id&user_id=eq.${user.id}&organization_id=eq.${chosenId}` +
+    `&status=in.(active,pending_org_selection,needs_reauth)&limit=1`
   );
   if (duplicate.length > 0 && duplicate[0].id !== org.id) {
     res.status(409).json({ error: 'That organization is already connected to Margyn' });
