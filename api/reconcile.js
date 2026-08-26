@@ -1,6 +1,7 @@
 /**
  * POST /api/reconcile?action=run          — reconcile one user (JWT-authed) or all users (cron)
  * POST /api/reconcile?action=resolve       — manually resolve a pending_review row (JWT-authed)
+ * GET  /api/reconcile?action=summary       — read-only view of reconciliation output for the UI (JWT-authed)
  *
  * Wraps the pure matching logic in api/_lib/reconcileMatcher.js with real
  * Supabase reads/writes. Zero-npm: plain fetch() only, matching the rest
@@ -124,8 +125,78 @@ async function resolveManualMatch({ matchId, userId, razorpayPaymentId, matchedA
   return { status: 'ok' };
 }
 
+/**
+ * Read-only projection of what the nightly reconcile already wrote, for
+ * app.html. No matching happens here — it just reads reconciliation_status
+ * off zoho_invoices and the pending_review rows out of reconciliation_matches
+ * so the UI can show them. Same active-org scoping as reconcileForUser.
+ */
+async function summaryForUser(userId) {
+  const orgs = await selectRows(
+    'zoho_organizations',
+    `select=id&user_id=eq.${userId}&status=eq.active&limit=1`
+  );
+  if (!orgs.length) return { connected: false };
+  const orgRef = orgs[0].id;
+
+  const [invoices, pending] = await Promise.all([
+    selectRows(
+      'zoho_invoices',
+      'select=invoice_id,invoice_number,customer_name,total,balance,reconciliation_status,verified_paid_amount' +
+        `&org_ref=eq.${orgRef}&reconciliation_status=in.(verified,review)` +
+        '&order=reconciliation_status.desc,invoice_number.asc'
+    ),
+    selectRows(
+      'reconciliation_matches',
+      'select=id,invoice_ref,zoho_payment_id,invoice_amount,match_reason,same_source_flag,date_diff_days' +
+        `&user_id=eq.${userId}&match_status=eq.pending_review`
+    )
+  ]);
+
+  const byId = {};
+  for (const inv of invoices) byId[inv.invoice_id] = inv;
+
+  const reviewQueue = pending.map((m) => {
+    const inv = byId[m.invoice_ref] || {};
+    return {
+      id: m.id,
+      invoice_ref: m.invoice_ref,
+      invoice_number: inv.invoice_number || null,
+      customer_name: inv.customer_name || null,
+      amount: m.invoice_amount,
+      reason: m.match_reason,
+      same_source: !!m.same_source_flag,
+      date_diff_days: m.date_diff_days
+    };
+  });
+
+  return {
+    connected: true,
+    counts: {
+      verified: invoices.filter((i) => i.reconciliation_status === 'verified').length,
+      needs_review: invoices.filter((i) => i.reconciliation_status === 'review').length,
+      pending_review: pending.length
+    },
+    invoices,
+    review_queue: reviewQueue
+  };
+}
+
 module.exports = async (req, res) => {
   const action = req.query.action;
+
+  if (action === 'summary') {
+    const user = await getUserFromRequest(req);
+    if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    try {
+      const result = await summaryForUser(user.id);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+    return;
+  }
 
   if (action === 'run') {
     const cronSecret = req.headers['authorization'];
@@ -169,3 +240,4 @@ module.exports = async (req, res) => {
 };
 
 module.exports.reconcileForUser = reconcileForUser;
+module.exports.summaryForUser = summaryForUser;
