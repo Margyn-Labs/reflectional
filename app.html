@@ -4170,7 +4170,49 @@ document.getElementById('logoutBtn').addEventListener('click', async () => { awa
 document.querySelectorAll('.tabs .tab[data-tab]').forEach(t => t.addEventListener('click', () => {
   document.querySelectorAll('.tabs .tab[data-tab]').forEach(x => x.classList.toggle('active', x === t));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + t.dataset.tab));
+  if(t.dataset.tab === 'manual') prefillManualEntry();
 }));
+/**
+ * Quick manual entry used to open blank every time. computeFromManual()
+ * reads every field with `Number(x) || 0`, so any field left empty on a
+ * resubmit — a correction to just one number, a stray click, whatever —
+ * silently wrote 0 for cash / revenue / margin / receivables and got saved
+ * as the new latest snapshot, wiping the Summary dashboard back to ₹0
+ * even though nothing was actually deleted (the real history is still
+ * sitting in `snapshots`, just shadowed under the new zero row).
+ * saveLedgerSnapshot() already avoids this by carrying the previous
+ * snapshot's values forward; this does the equivalent by pre-filling the
+ * form so leaving a field untouched resubmits the real prior value instead
+ * of a silent zero. Only pre-fills empty inputs, so it never clobbers
+ * something the user is actively mid-typing.
+ */
+function prefillManualEntry(){
+  if(!snapshots.length) return;
+  const s = snapshots[0];
+  const fill = (id, val) => {
+    const el = document.getElementById(id);
+    if(el && !el.value && val !== null && val !== undefined) el.value = val;
+  };
+  fill('m-cash', s.cash);
+  fill('m-burn', s.burn);
+  fill('m-rev', s.revenue);
+  fill('m-profit', s.net_profit);
+  fill('m-gstpay', s.gst_payable);
+  fill('m-gst', s.gst_leak);
+  // Only prefill the payments block from a prior *manual* entry — a
+  // razorpay_live payments_data row has a different shape and is already
+  // carried forward automatically by computeFromManual's own source-
+  // priority check when these fields are left blank.
+  if(s.payments_source === 'manual' && s.payments_data){
+    const p = s.payments_data;
+    fill('m-pay-gross', p.gross);
+    fill('m-pay-mdr', p.mdr);
+    fill('m-pay-failed', p.failed);
+    fill('m-pay-total', p.total);
+    fill('m-pay-lag', p.lag);
+    fill('m-pay-upi', p.upiPct);
+  }
+}
 /* ============================================================
    FILE UPLOAD — dropzone, parsing, sheet-to-rows
    ============================================================ */
@@ -4202,9 +4244,36 @@ function handleFile(file){
 function sheetToRows(wb, sheetName){
   const sheet = wb.Sheets[sheetName];
   if(!sheet) return null;
-  return XLSX.utils.sheet_to_json(sheet, { defval:null });
+  // The downloadable Margyn_Data_Template.xlsx puts a branding/title block
+  // above the real header row on every sheet (blank row, "margyn" wordmark,
+  // sheet title, blank row) — sheet_to_json defaults to row 1 as the
+  // header, which swallowed those decorative cells as column names and
+  // made every field lookup below come back empty/undefined no matter what
+  // the user typed in. Scan for the row that actually looks like a header
+  // (2+ populated cells — every title/instruction row in the template has
+  // exactly one) and parse starting there instead.
+  const raw = XLSX.utils.sheet_to_json(sheet, { header:1, defval:null });
+  let headerRow = raw.findIndex(row => row.filter(c => c !== null && c !== '').length >= 2);
+  if(headerRow === -1) headerRow = 0;
+  return XLSX.utils.sheet_to_json(sheet, { defval:null, range: headerRow });
 }
 function sumCol(rows, col){ return rows.reduce((s,r) => s + (Number(r[col]) || 0), 0); }
+/**
+ * P&L Summary in the template is a "Line Item" / "Amount" list — one row
+ * per metric, e.g. {Line Item:'Revenue', Amount:600000} — not one row with
+ * a column per metric. Look a value up by its line-item label first; fall
+ * back to the columnar shape for any older/hand-built workbook that used
+ * one row with a named column per metric.
+ */
+function pnlValue(rows, labels){
+  for(const r of rows){
+    const label = String(r['Line Item'] ?? r['line_item'] ?? '').trim().toLowerCase();
+    if(labels.some(l => l.toLowerCase() === label)) return Number(r['Amount'] ?? r['amount'] ?? 0) || 0;
+  }
+  const row = rows[0] || {};
+  for(const l of labels){ if(row[l] !== undefined && row[l] !== null && row[l] !== '') return Number(row[l]) || 0; }
+  return 0;
+}
 function findSheetCI(wb, target){
   const names = wb.SheetNames;
   const exact = names.find(n => n.toLowerCase() === target.toLowerCase());
@@ -4235,35 +4304,56 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
     const shopRows = shopSheet ? sheetToRows(wb, shopSheet) : [];
 
     const cash = sumCol(bankRows, 'Balance') || sumCol(bankRows, 'Balance (₹)') || sumCol(bankRows, 'balance');
-    const pnlRow = pnlRows[0] || {};
-    const revenue = Number(pnlRow['Revenue'] || pnlRow['revenue'] || pnlRow['Monthly Revenue'] || 0);
-    const netProfit = Number(pnlRow['Net Profit'] || pnlRow['net_profit'] || pnlRow['Net profit'] || 0);
-    const burn = Number(pnlRow['Operating Expenses'] || pnlRow['Monthly Operating Expenses'] || pnlRow['burn'] || 0) || 1;
-    const gstPayable = Number(pnlRow['GST Payable'] || pnlRow['gst_payable'] || 0);
-    const gstLeakRow = gstRows[0] || {};
-    const gstLeak = sumCol(gstRows, 'Unclaimed ITC') || sumCol(gstRows, 'Unclaimed Amount') || Number(gstLeakRow['Unclaimed ITC'] || 0);
+    const revenue = pnlValue(pnlRows, ['Revenue', 'Monthly Revenue']);
+    const netProfit = pnlValue(pnlRows, ['Net Profit']);
+    const burn = pnlValue(pnlRows, ['Operating Expenses', 'Monthly Operating Expenses']) || 1;
+    // GST Payable lives on the GST ITC sheet (one row per month), not P&L —
+    // sum across months. gstLeak = unclaimed ITC = ITC Available - ITC
+    // Claimed per month, floored at 0 so an over-claimed month can't net
+    // negative against a genuinely leaking one.
+    const gstPayable = sumCol(gstRows, 'GST Payable') || pnlValue(pnlRows, ['GST Payable']);
+    const gstLeak = gstRows.reduce((s, r) => {
+      const available = Number(r['ITC Available'] ?? r['itc_available'] ?? 0);
+      const claimed = Number(r['ITC Claimed'] ?? r['itc_claimed'] ?? 0);
+      return s + Math.max(available - claimed, 0);
+    }, 0) || sumCol(gstRows, 'Unclaimed ITC') || sumCol(gstRows, 'Unclaimed Amount');
 
     // Populate receivables/payables tables from the sheet (replace existing open items with this snapshot's data)
     if(recvRows.length){
       await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open');
-      const rows = recvRows.filter(r => r['Party Name'] || r['party_name']).map(r => ({
-        user_id: currentUser.id,
-        party_name: r['Party Name'] || r['party_name'] || 'Unknown',
-        amount: Number(r['Amount'] || r['amount'] || 0),
-        due_date: r['Due Date'] || r['due_date'] || null,
-        status: 'open'
-      }));
+      // Template columns are Customer / Amount / Amount Received — the open
+      // balance is Amount minus Amount Received, per the sheet's own
+      // instruction row. 'Party Name' is kept as a fallback for any
+      // hand-built workbook using the older columnar naming.
+      const rows = recvRows
+        .filter(r => r['Customer'] || r['Party Name'] || r['party_name'])
+        .map(r => {
+          const amt = Number(r['Amount'] ?? r['amount'] ?? 0);
+          const received = Number(r['Amount Received'] ?? r['amount_received'] ?? 0);
+          return {
+            user_id: currentUser.id,
+            party_name: r['Customer'] || r['Party Name'] || r['party_name'] || 'Unknown',
+            amount: amt - received,
+            due_date: r['Due Date'] || r['due_date'] || null,
+            status: 'open'
+          };
+        })
+        .filter(r => r.amount > 0);
       if(rows.length) await sbClient.from('receivables').insert(rows);
     }
     if(payRows.length){
       await sbClient.from('payables').delete().eq('user_id', currentUser.id).eq('status','open');
-      const rows = payRows.filter(r => r['Party Name'] || r['party_name']).map(r => ({
-        user_id: currentUser.id,
-        party_name: r['Party Name'] || r['party_name'] || 'Unknown',
-        amount: Number(r['Amount'] || r['amount'] || 0),
-        due_date: r['Due Date'] || r['due_date'] || null,
-        status: 'open'
-      }));
+      // Template column is Vendor, not Party Name.
+      const rows = payRows
+        .filter(r => r['Vendor'] || r['Party Name'] || r['party_name'])
+        .map(r => ({
+          user_id: currentUser.id,
+          party_name: r['Vendor'] || r['Party Name'] || r['party_name'] || 'Unknown',
+          amount: Number(r['Amount'] ?? r['amount'] ?? 0),
+          due_date: r['Due Date'] || r['due_date'] || null,
+          status: 'open'
+        }))
+        .filter(r => r.amount > 0);
       if(rows.length) await sbClient.from('payables').insert(rows);
     }
     receivables = await loadReceivables(); payables = await loadPayables();
