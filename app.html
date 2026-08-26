@@ -3963,7 +3963,11 @@ async function confirmZohoOrg(){
   const btn = document.getElementById('zohoOrgConfirm');
   zohoShowError('');
   btn.disabled = true; btn.textContent = 'Connecting…';
+  btn.textContent = 'Connecting… (first sync can take a minute)';
   try {
+    // select-org now runs the one-time 12-month backfill in-process and
+    // waits for it to finish before responding, so this call can take a
+    // while on a data-heavy org — see api/_zoho/select-org.js.
     const out = await zohoApi('/api/zoho?action=select-org', {
       method: 'POST',
       body: JSON.stringify({ org_ref: zohoPendingOrgRef, organization_id: zohoChosenOrgId })
@@ -3974,8 +3978,6 @@ async function confirmZohoOrg(){
     if(out.multi_currency_detected){
       alert('This organization uses a non-INR base currency. Those records are excluded from your vitals until currency conversion is available.');
     }
-    // The 12-month backfill runs in the background; re-read once it has had a moment.
-    setTimeout(loadZohoVitals, 25000);
   } catch(e){
     zohoShowError(e.message);
     btn.disabled = false;
