@@ -32,7 +32,7 @@
  * means the briefing prompt does not have to re-derive them.
  */
 
-const { getUserFromRequest, rpc } = require('../_lib/supabaseRest');
+const { getUserFromRequest, rpc, selectRows } = require('../_lib/supabaseRest');
 
 function inr(n) {
   const v = Number(n) || 0;
@@ -134,8 +134,29 @@ async function handler(req, res) {
     return;
   }
 
+  // The `zoho_vitals` SQL function's JSON payload never carried
+  // backfill_completed_at — it's a column on zoho_organizations, not
+  // something the vitals RPC computes. app.html's "First sync in
+  // progress" banner (booksBackfillBanner) gates on
+  // zohoVitals.backfill_completed_at, so that field was always
+  // `undefined` here regardless of what sync.js had actually set on the
+  // org row: the banner could never clear even after a clean sync. Pull
+  // it straight from zoho_organizations and merge it in.
+  let backfillCompletedAt = null;
+  if (v.org_ref) {
+    try {
+      const orgs = await selectRows(
+        'zoho_organizations',
+        `select=backfill_completed_at&id=eq.${v.org_ref}&user_id=eq.${user.id}&limit=1`
+      );
+      backfillCompletedAt = orgs[0] ? orgs[0].backfill_completed_at : null;
+    } catch (err) {
+      console.error('Failed to read backfill_completed_at:', err.message);
+    }
+  }
+
   res.setHeader('Cache-Control', 'no-store');
-  res.status(200).json({ ...v, briefing_hints: buildBriefingHints(v) });
+  res.status(200).json({ ...v, backfill_completed_at: backfillCompletedAt, briefing_hints: buildBriefingHints(v) });
 };
 
 module.exports = { handler, buildBriefingHints };
