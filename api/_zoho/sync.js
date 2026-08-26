@@ -434,10 +434,21 @@ async function syncZohoForUser(userId, mode) {
   // run is fragile: the initial backfill is kicked off fire-and-forget from
   // zoho-select-org.js and can get cut off by a serverless timeout before it
   // ever reaches here, permanently wedging the banner even after weeks of
-  // successful nightly delta syncs. So any error-free run — backfill or
-  // delta — sets this the first time it hasn't been set yet, letting a
-  // stuck backfill self-heal on the very next cron pass.
-  if (errors.length === 0 && !org.backfill_completed_at) {
+  // successful nightly delta syncs.
+  //
+  // It's also fragile to require zero errors across every module: one
+  // under-scoped or flaky module (e.g. chartofaccounts 401ing because the
+  // connected token predates a scope being added — see zoho-books-auth-flow)
+  // pushes an entry into `errors` every single run and would permanently
+  // wedge this flag even though the org is clearly live and other modules
+  // are pulling real records. A hard auth failure already takes a different
+  // path entirely — it throws ZohoAuthError up to handleAuthFailure() and
+  // never reaches this line — so simply getting here means the session
+  // itself authenticated fine. That's enough to call the org "synced" the
+  // first time it hasn't been set yet; a handful of clean nightly runs will
+  // have already surfaced any real per-module problem in connector_logs
+  // long before this banner matters to anyone.
+  if (!org.backfill_completed_at) {
     orgPatch.backfill_completed_at = new Date().toISOString();
   }
   if (Object.keys(orgPatch).length > 0) {
