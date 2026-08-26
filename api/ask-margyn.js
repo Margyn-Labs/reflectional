@@ -5,7 +5,15 @@
 // AI narrates, never calculates: this function never recomputes a vital
 // or the Pulse Score. It only receives numbers already computed elsewhere
 // (computeVitals() client-side / zoho_vitals() SQL server-side) and talks
-// about them. Zero-npm: plain fetch() only, matching api/briefing.js.
+// about them. Zero-npm: plain fetch() only, matching api/generate-briefing.js.
+//
+// The context-formatting below (vitals/P&L/payments/etc. as plain-English
+// text blocks) is shared with api/generate-briefing.js via
+// _lib/formatMargynContext.js — both features narrate the same underlying
+// data and previously had two copies of this formatting that had already
+// started drifting apart.
+
+import { formatMargynContext } from './_lib/formatMargynContext.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -88,82 +96,13 @@ export default async function handler(req, res) {
 
 function buildSystemPrompt(context) {
   const ctx = context || {};
-  const companyName = ctx.companyName || 'this business';
-  const pulseScore = (ctx.pulseScore === 0 || ctx.pulseScore) ? ctx.pulseScore : 'not yet calculated';
-  const pulseTrend = ctx.pulseScoreTrend ? ` (${ctx.pulseScoreTrend})` : '';
-  const vitals = Array.isArray(ctx.vitals) ? ctx.vitals : [];
   const focusVital = ctx.focusVital || null;
   const focusFindingTier = ctx.focusFindingTier || null;
-  const payments = ctx.payments || null;
-  const shopify = Array.isArray(ctx.shopify) ? ctx.shopify : null;
-  const rp = ctx.receivablesPayables || null;
-  const connectors = ctx.connectors || {};
-  const provenance = ctx.dataProvenance || null;
-  const razorpayLive = ctx.razorpayLive || null;
-  const pnl = ctx.pnl || null;
 
-  const vitalsLines = vitals.length
-    ? vitals.map(v => `- ${v.label}: ${v.value} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
-    : 'No vitals calculated yet for this business — no data has been synced or uploaded.';
-
-  let pnlBlock = 'No P&L figures recorded yet.';
-  if (pnl) {
-    pnlBlock = [
-      `Revenue: ₹${pnl.revenue.toLocaleString('en-IN')}${pnl.revenueTrend ? ' (' + pnl.revenueTrend + ')' : ''}`,
-      `Net profit: ₹${pnl.netProfit.toLocaleString('en-IN')}${pnl.netProfitTrend ? ' (' + pnl.netProfitTrend + ')' : ''}`,
-      `Total spend/burn: ₹${pnl.burn.toLocaleString('en-IN')}`,
-      `Cash on hand: ₹${pnl.cash.toLocaleString('en-IN')}`,
-      `GST payable: ₹${pnl.gstPayable.toLocaleString('en-IN')}, ITC unclaimed: ₹${pnl.gstLeak.toLocaleString('en-IN')}`
-    ].join('\n');
-  }
-
-  let paymentsBlock = 'Not connected / no payments data uploaded yet.';
-  if (payments) {
-    paymentsBlock = [
-      `Gross processed: ₹${payments.grossProcessed}${payments.grossTrend ? ' (' + payments.grossTrend + ')' : ''}`,
-      `Net settled: ₹${payments.netSettled}`,
-      `MDR: ${payments.mdrPct}%${payments.mdrTrend ? ' (' + payments.mdrTrend + ')' : ''}`,
-      `Failed transaction rate: ${payments.failRatePct}%${payments.failRateTrend ? ' (' + payments.failRateTrend + ')' : ''}`,
-      `Settlement lag: ${payments.settlementLagDays} days${payments.lagTrend ? ' (' + payments.lagTrend + ')' : ''}`,
-      `Top payment method: ${payments.topPaymentMethod}`
-    ].join('\n');
-  }
-
-  let shopifyBlock = 'Not connected / no Shopify data uploaded yet.';
-  if (shopify && shopify.length) {
-    shopifyBlock = shopify.map(r => `- ${r.label}: ${r.value}${r.trend ? ' (' + r.trend + ')' : ''}`).join('\n');
-  }
-
-  let razorpayLiveBlock = 'No real per-transaction Razorpay data yet — either Razorpay isn\'t connected, or fewer than 4 transactions have synced so far. Do not estimate an average transaction value from anything else (like Shopify order counts) — say plainly you don\'t have real transaction-level data yet.';
-  if (razorpayLive) {
-    razorpayLiveBlock = [
-      `Real transactions synced: ${razorpayLive.txnCount}`,
-      razorpayLive.avgTicket !== null ? `Average transaction value: ₹${Math.round(razorpayLive.avgTicket)}${razorpayLive.avgTicketTrendPct !== null ? ' (' + (razorpayLive.avgTicketTrendPct >= 0 ? '+' : '') + razorpayLive.avgTicketTrendPct.toFixed(1) + '% vs the earlier half of the synced window)' : ''}` : null,
-      razorpayLive.failRate !== null ? `Failed-payment rate: ${razorpayLive.failRate.toFixed(1)}%${razorpayLive.failRateTrendPct !== null ? ' (' + (razorpayLive.failRateTrendPct >= 0 ? '+' : '') + razorpayLive.failRateTrendPct.toFixed(1) + '%)' : ''}` : null,
-      razorpayLive.refundRate !== null ? `Refund rate: ${razorpayLive.refundRate.toFixed(1)}% of captured payments` : null,
-      razorpayLive.topMethod ? `Top payment method: ${razorpayLive.topMethod}` : null,
-      razorpayLive.avgSettlementLagDays !== null ? `Average settlement lag: ${razorpayLive.avgSettlementLagDays.toFixed(1)} days` : null
-    ].filter(Boolean).join('\n');
-  }
-
-  let rpBlock = '';
-  if (rp) {
-    rpBlock = `Total outstanding receivables: ₹${rp.totalOutstandingReceivables} (₹${rp.receivablesOver90d} over 90 days)\nPayables due in next 30 days: ₹${rp.payablesDueNext30d}`;
-    if (rp.topReceivables && rp.topReceivables.length) {
-      rpBlock += `\nLargest open receivables: ${rp.topReceivables.map(r => `${r.party} ₹${r.amount} (${r.overdueDays}d overdue)`).join('; ')}`;
-    }
-    if (rp.topPayables && rp.topPayables.length) {
-      rpBlock += `\nLargest open payables: ${rp.topPayables.map(p => `${p.party} ₹${p.amount} (due in ${p.dueInDays}d)`).join('; ')}`;
-    }
-  }
-
-  let historyBlock = 'No past findings recorded yet.';
-  if (Array.isArray(ctx.findingsHistory) && ctx.findingsHistory.length) {
-    historyBlock = ctx.findingsHistory.map(f => {
-      const d = new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      return `- ${d} · ${f.vital} (${f.tier}): ${f.summary}`;
-    }).join('\n');
-  }
+  const {
+    companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock, paymentsBlock,
+    shopifyBlock, razorpayLiveBlock, rpBlock, historyBlock, provenanceLine, connectors
+  } = formatMargynContext(ctx);
 
   const focusLine = focusVital
     ? `\nThe user just tapped on "${focusVital}" on their dashboard and this chat opened focused on it — that tap is why this conversation started. Any vague or deictic phrase in their message ("what does this say", "what does this mean", "explain this", "why", "is that good") refers to "${focusVital}" and the numbers already given to you above. Answer directly from that data.`
@@ -173,10 +112,6 @@ function buildSystemPrompt(context) {
     ? (focusFindingTier === 'verified'
         ? `\nThis message is the user asking you to explain a VERIFIED finding — two independent connected sources moved together, so you can state the causal read with real confidence, though still avoid absolute certainty language like "definitely."`
         : `\nThis message is the user asking you to explain a SIGNAL finding — only one connected source supports this read, nothing else confirms it. Say plainly this is a single-source signal that could be noise, not a confirmed driver, and suggest what a second source would need to show to confirm it.`)
-    : '';
-
-  const provenanceLine = (provenance && provenance.selfReported)
-    ? `\nImportant: the current snapshot's data came from ${provenance.label.toLowerCase()} — someone typed or uploaded these numbers by hand, not a live connector sync. When it's relevant to what the user is asking (especially anything about accuracy, verification, or "is this real data"), say so plainly — e.g. "this is based on your manually entered numbers, not yet cross-checked against a live Razorpay/Shopify feed." Don't volunteer this on every single reply if it's not relevant to the question, but never let the user think a number is connector-verified when it isn't.`
     : '';
 
   return `You are Margyn, an AI financial co-pilot built into the Margyn app for ${companyName}, a digital-native Indian business.
