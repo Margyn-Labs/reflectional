@@ -106,6 +106,10 @@
   .pagenav button.active svg{ opacity:1; }
   .nav-badge{ position:absolute; top:4px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--rose); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; font-family:'IBM Plex Mono',monospace; }
   .nav-badge.hidden{ display:none; }
+  /* Ledger's nav button already carries a FREE chip pinned right, so its review-queue
+     count sits inline after the label instead of absolutely-positioned over the chip. */
+  #ledgerBadge{ position:static; top:auto; right:auto; margin-left:6px; }
+  #ledgerBadge.hidden{ display:none; }
   /* ---------- app shell (desktop): fixed left rail, independently-scrolling content pane ---------- */
   .app-body{ display:flex; flex-direction:column; }
   .app-body .sidebar{ order:2; }
@@ -620,7 +624,7 @@
       <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
       <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg><span>History</span></button>
       <div class="nav-group-label">Money</div>
-      <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span><span class="tier-chip free">FREE</span></button>
+      <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span><span class="tier-chip free">FREE</span><span class="nav-badge hidden" id="ledgerBadge"></span></button>
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
       <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
@@ -690,6 +694,11 @@
         <button class="tab" data-ltab="receivables">Receivables</button>
         <button class="tab" data-ltab="payables">Payables</button>
         <button class="tab" data-ltab="cash">Cash</button>
+      </div>
+      <div class="card hidden" id="reconReviewCard">
+        <div class="ledger-list-title" id="reconReviewTitle" style="margin-top:0; padding-top:0; border-top:none;">Payments needing review</div>
+        <div class="hint" style="margin-bottom:10px;">The nightly reconciliation check found more than one possible Razorpay payment for these invoices, or the two sources didn't line up cleanly. They're left for a human to confirm rather than auto-marked as verified.</div>
+        <div id="reconReviewList"></div>
       </div>
       <div class="facts" id="ledgerFacts"></div>
       <div class="ledger-form hidden" id="ledgerAddForm">
@@ -1187,6 +1196,10 @@
         <div class="cc-head"><h3>Overdue customers</h3><span class="cc-sub">Largest first</span></div>
         <div id="zvOverdueList"></div>
       </div>
+      <div class="chart-card hidden" id="zvReconCard">
+        <div class="cc-head"><h3>Payment reconciliation</h3><span class="cc-sub">Cross-checked against Razorpay</span></div>
+        <div id="zvReconList"></div>
+      </div>
       <div class="chart-card">
         <div class="cc-head"><h3>Vendors putting ITC at risk</h3><span class="cc-sub" id="zvVendorSub">Latest filing period</span></div>
         <div id="zvVendorList"></div>
@@ -1290,6 +1303,7 @@ let razorpayConnected = false; // optional connector — supplements manual uplo
 let lastSyncedAt = null;
 let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker gated
 let zohoVitals = null;       // last /api/zoho-vitals payload
+let reconSummary = null;     // last /api/reconcile?action=summary payload — read-only view of nightly reconciliation output
 let zohoPendingOrgRef = null;
 let zohoChosenOrgId = null;
 let shopifyConnected = false;  // Shopify connector — Custom App token, read-only
@@ -1406,7 +1420,7 @@ const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr
 function showView(name){
   ['summary','profile','ledger','calculate','scores','history','payments','books','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  if(name === 'ledger'){ renderLedgerView(); renderKhataParties(); }
+  if(name === 'ledger'){ renderLedgerView(); renderKhataParties(); renderReconLedger(); }
   if(name === 'books') renderZohoBooksTab();
   if(name === 'history') renderHistoryView();
   window.scrollTo({ top:0, behavior:'smooth' });
@@ -1434,8 +1448,10 @@ async function refreshAll(){
     paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
   await loadZohoVitals();
+  reconSummary = await loadReconSummary();
   await loadShopifyStatus();
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
+  renderReconBooksCard(); renderReconLedger();
   handleZohoHashReturn();
 }
 /* ============================================================
@@ -4139,6 +4155,64 @@ function renderZohoBooksTab(){
     badge.textContent = urgent ? '!' : '';
     badge.classList.toggle('hidden', !urgent);
   }
+
+  renderReconBooksCard();
+}
+
+/* ============================================================
+   RECONCILIATION — surface the nightly api/reconcile.js output.
+   Read-only: the matching itself lives in api/_lib/reconcileMatcher.js.
+   ============================================================ */
+async function loadReconSummary(){
+  try {
+    return await zohoApi('/api/reconcile?action=summary');
+  } catch(e){
+    console.error('[margyn] loadReconSummary:', e.message);
+    return null;
+  }
+}
+/* Books tab: a "Payment matched" / "Needs review" tag per reconciled invoice. */
+function renderReconBooksCard(){
+  const card = document.getElementById('zvReconCard');
+  const list = document.getElementById('zvReconList');
+  if(!card || !list) return;
+  const invs = (reconSummary && reconSummary.connected && reconSummary.invoices) || [];
+  if(!invs.length){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  list.innerHTML = invs.map(inv => {
+    const verified = inv.reconciliation_status === 'verified';
+    const tag = verified
+      ? '<span class="lr-tag ok">✓ Payment matched</span>'
+      : '<span class="lr-tag warn">Needs review</span>';
+    const amt = (verified && inv.verified_paid_amount != null) ? inv.verified_paid_amount : inv.total;
+    return '<div class="ledger-row"><div class="lr-main">' +
+      '<div class="lr-party">' + escapeHtml(inv.customer_name || 'Unnamed customer') + '</div>' +
+      '<div class="lr-meta">' + escapeHtml(inv.invoice_number || '—') + tag + '</div>' +
+      '</div><div class="lr-amount">' + inr(amt) + '</div></div>';
+  }).join('');
+}
+/* Ledger tab: the pending_review queue + a nav badge so it isn't invisible. */
+function renderReconLedger(){
+  const queue = (reconSummary && reconSummary.connected && reconSummary.review_queue) || [];
+  const badge = document.getElementById('ledgerBadge');
+  if(badge){
+    badge.textContent = queue.length ? String(queue.length) : '';
+    badge.classList.toggle('hidden', queue.length === 0);
+  }
+  const card = document.getElementById('reconReviewCard');
+  const list = document.getElementById('reconReviewList');
+  const title = document.getElementById('reconReviewTitle');
+  if(!card || !list) return;
+  if(!queue.length){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  if(title) title.textContent = 'Payments needing review (' + queue.length + ')';
+  list.innerHTML = queue.map(q => {
+    const meta = [q.invoice_number ? 'Invoice ' + q.invoice_number : null, q.reason].filter(Boolean).join(' · ');
+    return '<div class="ledger-row"><div class="lr-main">' +
+      '<div class="lr-party">' + escapeHtml(q.customer_name || 'Unknown customer') + '<span class="lr-tag warn">Needs review</span></div>' +
+      '<div class="lr-meta">' + escapeHtml(meta) + '</div>' +
+      '</div><div class="lr-amount">' + inr(q.amount) + '</div></div>';
+  }).join('');
 }
 
 /* ============================================================
