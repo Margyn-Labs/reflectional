@@ -14,10 +14,12 @@
 const {
   restRequest,
   insertRows,
+  updateRows,
   selectRows,
   getUserFromRequest,
   logConnectorEvent
 } = require('./_lib/supabaseRest');
+const { computePaymentsFromRazorpay } = require('./_lib/computePaymentsFromRazorpay');
 
 const RAZORPAY_BASE = 'https://api.razorpay.com/v1';
 const PAGE_SIZE = 100;
@@ -244,6 +246,45 @@ async function syncRazorpayForUser(userId) {
     });
   }
 
+  // Payments tab: write live-synced data onto the user's latest snapshot.
+  // Source-priority rule — live always wins when it has anything to show:
+  //   - transactions found in the window -> aggregate and overwrite
+  //     payments_data/settlement_rows/settlement_daily_trend, tagged
+  //     payments_source: 'razorpay_live'.
+  //   - nothing synced in the window (not connected long enough, or a
+  //     genuinely quiet period) -> leave payments_data untouched, so
+  //     whatever manual/upload data (or an earlier live sync) is already
+  //     there keeps showing rather than getting zeroed out.
+  // If the user has no snapshot row at all yet, there's nowhere to write
+  // this — the Payments tab only reads from snapshots[0], so live data
+  // will start showing once their first snapshot exists (upload/manual
+  // entry, or a future onboarding bootstrap snapshot).
+  let paymentsWrite = 'skipped_no_transactions';
+  try {
+    const agg = await computePaymentsFromRazorpay(userId);
+    if (agg) {
+      const latestSnap = await selectRows(
+        'snapshots',
+        `select=id&user_id=eq.${userId}&order=created_at.desc&limit=1`
+      );
+      if (latestSnap.length) {
+        await updateRows('snapshots', `id=eq.${latestSnap[0].id}`, {
+          payments_data: agg.paymentsData,
+          settlement_rows: agg.settlementRows,
+          settlement_daily_trend: agg.settlementDailyTrend,
+          payments_source: 'razorpay_live',
+          payments_updated_at: new Date().toISOString()
+        });
+        paymentsWrite = 'updated';
+      } else {
+        paymentsWrite = 'skipped_no_snapshot';
+      }
+    }
+  } catch (err) {
+    errors.push(`payments_data write: ${err.message}`);
+    paymentsWrite = 'error';
+  }
+
   const totalSynced = (results.payments || 0) + (results.settlements || 0) + (results.refunds || 0);
   const durationMs = Date.now() - startedAt;
 
@@ -261,6 +302,7 @@ async function syncRazorpayForUser(userId) {
     status: errors.length === 0 ? 'success' : 'partial',
     records_synced: totalSynced,
     breakdown: results,
+    payments_tab: paymentsWrite,
     errors: errors.length ? errors : undefined,
     duration_ms: durationMs
   };
