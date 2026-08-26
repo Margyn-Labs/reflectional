@@ -11,7 +11,9 @@
  * POST body: { org_ref: uuid, organization_id: string }
  * Response:  200 { status: "active", organization_id, organization_name, backfill: "started" }
  *
- * On success it kicks off the one-time 12-month backfill in the background.
+ * On success it runs the one-time 12-month backfill in-process and awaits
+ * it before responding (see the comment above the syncZohoForUser call
+ * below for why this isn't fire-and-forget).
  */
 
 const { getUserFromRequest, selectRows, updateRows, logConnectorEvent } = require('../_lib/supabaseRest');
@@ -21,6 +23,7 @@ const {
   listOrganizations,
   ZohoAuthError
 } = require('../_lib/zohoClient');
+const { syncZohoForUser } = require('./sync');
 
 async function loadPendingOrg(userId, orgRef) {
   const rows = await selectRows(
@@ -162,24 +165,25 @@ async function handler(req, res) {
     recordsSynced: 0
   });
 
-  // One-time 12-month backfill, fire-and-forget. If it fails or the function
-  // times out, the nightly cron picks the org up and resumes from the
-  // sync cursors — nothing is lost.
+  // One-time 12-month backfill. This used to be fired via a self-HTTP
+  // fetch() that was never awaited — on Vercel's serverless model the
+  // function is free to terminate the instant res.json() below is sent,
+  // which could (and did) cut the backfill off mid-run before it ever
+  // reached the line in sync.js that marks it complete. api/zoho.js
+  // (this handler's entry point) already carries a 300s maxDuration, so
+  // we call syncZohoForUser directly, in-process, and await it — no
+  // second network hop to lose, and the response only goes out once the
+  // backfill has actually finished (or failed).
+  //
+  // If it still fails outright (rate limit, transient Zoho error), that's
+  // fine: the nightly cron picks the org up on delta mode and, per
+  // syncZohoForUser's own self-healing logic, marks the org "synced" on
+  // its first clean run regardless of mode — nothing is lost.
+  let backfillResult;
   try {
-    const proto = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['host'];
-    if (host) {
-      fetch(`${proto}://${host}/api/zoho?action=sync`, {
-        method: 'POST',
-        headers: {
-          Authorization: req.headers['authorization'],
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ mode: 'backfill' })
-      }).catch(() => {});
-    }
-  } catch {
-    // best-effort only
+    backfillResult = await syncZohoForUser(user.id, 'backfill');
+  } catch (err) {
+    backfillResult = { status: 'error', message: err.message };
   }
 
   res.status(200).json({
@@ -189,7 +193,7 @@ async function handler(req, res) {
     organization_name: match.name || null,
     plan_type: match.plan_type || null,
     multi_currency_detected: isMultiCurrency,
-    backfill: 'started'
+    backfill: backfillResult && backfillResult.status === 'error' ? 'failed' : 'completed'
   });
 };
 
