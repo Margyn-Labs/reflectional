@@ -1639,9 +1639,17 @@ async function saveLedgerSnapshot(){
   const latest = snapshots[0];
   if(!latest){ return; } // no baseline cash/revenue yet — user needs one snapshot from Upload & calculate first
   const { recvTotal, recv90, paySoon } = ledgerAggregates();
+  // Carry the latest snapshot's payments block forward untouched — a ledger
+  // edit has no payments data of its own, and creating a new snapshot with
+  // payments_data left out would otherwise blank the Payments tab back to
+  // zero until the next Razorpay sync re-populates it.
+  const carryPayments = latest.payments_data ? {
+    paymentsData: latest.payments_data, paymentsSource: latest.payments_source || 'manual',
+    settlementRows: latest.settlement_rows, settlementDailyTrend: latest.settlement_daily_trend
+  } : {};
   await saveSnapshot({ cash: Number(latest.cash)||0, recvTotal, recv90, paySoon, revenue: Number(latest.revenue)||0,
     netProfit: Number(latest.net_profit)||0, burn: Number(latest.burn)||1, gstLeak: Number(latest.gst_leak)||0,
-    gstPayable: Number(latest.gst_payable)||0, source:'ledger' });
+    gstPayable: Number(latest.gst_payable)||0, source:'ledger', ...carryPayments });
   snapshots = await loadSnapshots();
   renderScores();
 }
@@ -3476,11 +3484,15 @@ function renderPayments(){
   banner.classList.toggle('hidden', hasData);
   const srcBadge = document.getElementById('paymentsSourceBadge');
   if(hasData && snapshots[0]){
-    const selfReported = SELF_REPORTED_SOURCES.includes(snapshots[0].source);
-    srcBadge.textContent = selfReported ? sourceLabel(snapshots[0].source) : 'Connector-synced';
-    srcBadge.className = 'source-badge ' + (selfReported ? 'self-reported' : 'connector');
+    // payments_source is scoped to payments_data specifically, not the whole
+    // snapshot's source — a snapshot's cash/revenue can be self-reported
+    // while its payments block was overwritten live by the Razorpay sync
+    // (or vice versa), so this must not read snapshots[0].source.
+    const live = snapshots[0].payments_source === 'razorpay_live';
+    srcBadge.textContent = live ? 'Live · Razorpay' : 'Manual';
+    srcBadge.className = 'source-badge ' + (live ? 'connector' : 'self-reported');
     srcBadge.style.display = 'inline-flex';
-    srcBadge.title = selfReported ? 'These numbers were entered or uploaded by hand, not pulled live from Razorpay.' : 'These numbers were synced live from Razorpay.';
+    srcBadge.title = live ? 'Synced automatically from Razorpay each night.' : 'These numbers were entered or uploaded by hand, not pulled live from Razorpay.';
   } else {
     srcBadge.style.display = 'none';
   }
@@ -4286,9 +4298,22 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
       ];
     }
 
+    // Source priority: this upload didn't include a Razorpay Settlements
+    // sheet, but Razorpay is connected and already has live-synced data on
+    // the current snapshot — carry it forward rather than blanking the
+    // Payments tab back to zero. If this upload DID include a settlements
+    // sheet, that's a deliberate manual override and takes precedence.
+    let paymentsSource = paymentsPayload ? 'manual' : null;
+    if(!paymentsPayload && razorpayConnected && snapshots.length && snapshots[0].payments_source === 'razorpay_live'){
+      paymentsPayload = snapshots[0].payments_data;
+      settleRowsPayload = snapshots[0].settlement_rows;
+      settleTrendPayload = snapshots[0].settlement_daily_trend;
+      paymentsSource = 'razorpay_live';
+    }
+
     await saveSnapshot({
       cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon,
-      paymentsData: paymentsPayload, settlementRows: settleRowsPayload, settlementDailyTrend: settleTrendPayload,
+      paymentsData: paymentsPayload, paymentsSource, settlementRows: settleRowsPayload, settlementDailyTrend: settleTrendPayload,
       shopifyOrdersData: shopifyPayload, source:'upload'
     });
     snapshots = await loadSnapshots();
@@ -4325,11 +4350,25 @@ document.getElementById('computeFromManual').addEventListener('click', async () 
     const payTotal = Number(document.getElementById('m-pay-total').value) || 0;
     const payLag = Number(document.getElementById('m-pay-lag').value) || 0;
     const payUpi = Number(document.getElementById('m-pay-upi').value) || 0;
-    const paymentsPayload = payGross > 0 ? { gross:payGross, mdr:payMdr, failed:payFailed, total:payTotal, lag:payLag, upiPct:payUpi } : null;
+    let paymentsPayload = payGross > 0 ? { gross:payGross, mdr:payMdr, failed:payFailed, total:payTotal, lag:payLag, upiPct:payUpi } : null;
+    let settleRowsPayload = null, settleTrendPayload = null;
 
-    await saveSnapshot({ cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon, paymentsData: paymentsPayload, source:'manual' });
+    // Source priority: this entry left the Payments fields blank, but
+    // Razorpay is connected and already has live-synced data on the current
+    // snapshot — carry it forward rather than blanking the Payments tab
+    // back to zero. Typing Payments numbers here is a deliberate manual
+    // override and takes precedence.
+    let paymentsSource = paymentsPayload ? 'manual' : null;
+    if(!paymentsPayload && razorpayConnected && snapshots.length && snapshots[0].payments_source === 'razorpay_live'){
+      paymentsPayload = snapshots[0].payments_data;
+      settleRowsPayload = snapshots[0].settlement_rows;
+      settleTrendPayload = snapshots[0].settlement_daily_trend;
+      paymentsSource = 'razorpay_live';
+    }
+
+    await saveSnapshot({ cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon, paymentsData: paymentsPayload, paymentsSource, settlementRows: settleRowsPayload, settlementDailyTrend: settleTrendPayload, source:'manual' });
     snapshots = await loadSnapshots();
-    paymentsData = paymentsPayload;
+    paymentsData = paymentsPayload; settlementRows = settleRowsPayload; settlementDailyTrend = settleTrendPayload;
     renderScores(); renderPayments(); renderFinancing(); renderSummary();
     note.className = 'note ok'; note.textContent = 'Saved.';
     triggerFindingsGeneration();
@@ -4410,6 +4449,8 @@ async function saveSnapshot(inputs){
     recv_total: inputs.recvTotal, recv_90: inputs.recv90, pay_soon: inputs.paySoon,
     vitals, pulse_score: pulseScore, source: inputs.source || 'manual',
     payments_data: inputs.paymentsData || null,
+    payments_source: inputs.paymentsData ? (inputs.paymentsSource || 'manual') : null,
+    payments_updated_at: inputs.paymentsData ? new Date().toISOString() : null,
     settlement_rows: inputs.settlementRows || null,
     settlement_daily_trend: inputs.settlementDailyTrend || null,
     shopify_orders_data: inputs.shopifyOrdersData || null
