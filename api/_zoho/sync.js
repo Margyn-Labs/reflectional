@@ -5,10 +5,15 @@
  * customer payments, vendor payments, bank accounts, chart of accounts,
  * and P&L journal entries.
  *
- * Called two ways, exactly like sync-razorpay.js:
+ * Called three ways, exactly like sync-razorpay.js:
  *   1. Directly by the client (Authorization: Bearer <user JWT>) — the
- *      "Sync Now" button, and the backfill kicked off by zoho-select-org.
- *   2. Internally by api/cron-sync-zoho.js, which imports syncZohoForUser.
+ *      "Sync Now" button.
+ *   2. In-process, awaited, from zoho-select-org.js right after activation
+ *      — the one-time 12-month backfill. It used to be a fire-and-forget
+ *      self-fetch that Vercel could cut off mid-run; it's now a direct,
+ *      awaited call to syncZohoForUser so the invocation can't be torn
+ *      down before the backfill finishes.
+ *   3. Internally by api/cron-sync-zoho.js, which imports syncZohoForUser.
  *
  * Body: { mode?: "delta" | "backfill" }   (default "delta")
  *
@@ -424,7 +429,15 @@ async function syncZohoForUser(userId, mode) {
   if (flags.indexOf('multi_currency_detected') !== -1 && !org.multi_currency_detected) {
     orgPatch.multi_currency_detected = true;
   }
-  if (syncMode === 'backfill' && errors.length === 0) {
+  // "Backfill done" really means "do we have real data yet" for the UI's
+  // sync-in-progress banner. Gating this strictly on a clean *backfill-mode*
+  // run is fragile: the initial backfill is kicked off fire-and-forget from
+  // zoho-select-org.js and can get cut off by a serverless timeout before it
+  // ever reaches here, permanently wedging the banner even after weeks of
+  // successful nightly delta syncs. So any error-free run — backfill or
+  // delta — sets this the first time it hasn't been set yet, letting a
+  // stuck backfill self-heal on the very next cron pass.
+  if (errors.length === 0 && !org.backfill_completed_at) {
     orgPatch.backfill_completed_at = new Date().toISOString();
   }
   if (Object.keys(orgPatch).length > 0) {
