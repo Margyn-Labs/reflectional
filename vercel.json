@@ -19,10 +19,19 @@
     {
       "path": "/api/reconcile?action=run",
       "schedule": "15 21 * * *"
+    },
+    {
+      "path": "/api/whatsapp?action=cron-opening",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/whatsapp?action=cron-closing",
+      "schedule": "30 13 * * *"
     }
   ],
   "functions": {
     "api/zoho.js": { "maxDuration": 300 },
-    "api/shopify.js": { "maxDuration": 300 }
+    "api/shopify.js": { "maxDuration": 300 },
+    "api/whatsapp.js": { "maxDuration": 60 }
   }
 }
