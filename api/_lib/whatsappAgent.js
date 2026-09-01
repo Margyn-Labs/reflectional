@@ -33,6 +33,24 @@ const HISTORY_TURNS = 10;
 const MAX_INBOUND_CHARS = 1500;
 const MAX_REPLY_CHARS = 900;
 
+// In-memory guard against a BSP re-delivering the same inbound message (its
+// webhook timeout is shorter than our Claude tool loop, so retries happen).
+// Warm-instance-local and short-lived — the immediate 200 ack in
+// api/whatsapp.js is the primary defence; this catches retries that still
+// land on the same warm function instance before the ack is seen.
+const _handledWamids = new Map();
+const WAMID_TTL_MS = 5 * 60 * 1000;
+function alreadyHandled(wamid) {
+  if (!wamid) return false;
+  const now = Date.now();
+  for (const [k, t] of _handledWamids) {
+    if (now - t > WAMID_TTL_MS) _handledWamids.delete(k);
+  }
+  if (_handledWamids.has(wamid)) return true;
+  _handledWamids.set(wamid, now);
+  return false;
+}
+
 const APPROVAL_REQUIRED_REPLY =
   "I can't action payments, approvals, or balance changes over WhatsApp — that has to go through the Margyn app where it's authenticated and logged. Anything else, I can help with here.";
 
@@ -93,9 +111,15 @@ const TOOLS = [
  * @param {{ profileId: string, fromPhone: string, text: string,
  *           contextMessageId?: string|null }} opts
  */
-async function runConversation({ profileId, fromPhone, text }) {
+async function runConversation({ profileId, fromPhone, text, wamid }) {
   const cleanText = String(text || '').trim().slice(0, MAX_INBOUND_CHARS);
   if (!profileId || !cleanText) return;
+
+  // Drop BSP retries of a message we're already handling / have handled.
+  if (alreadyHandled(wamid)) {
+    console.log('[whatsappAgent] duplicate inbound ignored:', wamid);
+    return;
+  }
 
   // Always persist the inbound turn first — even if we can't reply.
   await persist(profileId, 'user', cleanText, null);
@@ -224,7 +248,8 @@ HARD RULE — you have NO ability to take any financial or approval action and m
 
 Other rules:
 - Only state numbers, statuses or names that a tool actually returned. Never invent a figure, an invoice status, or a contact.
-- If a tool returns an error or nothing, say so plainly and suggest opening the Margyn app.
+- get_vitals returns real figures even when nothing is connected — data entered manually in the app still counts. Give the actual numbers. When data_source is "manual" or "upload", add one short caveat that they're self-reported and not yet connector-verified — do not refuse, hedge the whole answer, or claim the data is missing/empty/wrong.
+- If a tool genuinely returns an error or no data at all, say so plainly and suggest opening the Margyn app.
 - Never call the Pulse Score a "credit score" — it is an operating/financial health score.
 - Keep every reply under 90 words.`;
 }
@@ -247,17 +272,49 @@ async function execTool(name, input, ctx) {
 }
 
 async function toolGetVitals(ctx) {
-  let v;
+  // Primary source: the latest `snapshots` row — the exact same thing the app
+  // dashboard reads. It carries the computed six vitals, the Pulse Score, and
+  // a `source` ('manual' | 'upload' | 'ledger' | a connector name) regardless
+  // of whether the figures were typed in or synced. Manual data is still real
+  // data — surface it, just flagged as self-reported.
+  let rows;
   try {
-    v = await rpc('zoho_vitals', { p_user_id: ctx.profileId, p_org_ref: null });
+    rows = await selectRows(
+      'snapshots',
+      `select=vitals,pulse_score,source,cash,revenue,net_profit,burn,created_at` +
+        `&user_id=eq.${ctx.profileId}&order=created_at.desc&limit=1`
+    );
   } catch (e) {
-    return { error: 'Could not load vitals right now.' };
+    return { error: 'Could not load your figures right now.' };
   }
-  const vitals = Array.isArray(v) ? v[0] : v;
-  if (!vitals || typeof vitals !== 'object') {
-    return { error: 'No vitals available yet — no accounting source is connected.' };
+
+  if (rows && rows.length) {
+    const s = rows[0];
+    const src = s.source || 'manual';
+    return {
+      pulse_score: s.pulse_score,
+      vitals: s.vitals,
+      cash: s.cash,
+      revenue: s.revenue,
+      net_profit: s.net_profit,
+      burn: s.burn,
+      as_of: s.created_at,
+      data_source: src,
+      source_note: (src === 'manual' || src === 'upload')
+        ? 'These figures were entered/uploaded by the business in the app — self-reported, not yet cross-checked against a connected source.'
+        : `These figures are derived from the ${src} data.`
+    };
   }
-  return vitals;
+
+  // No snapshot at all — fall back to the Zoho Books vitals RPC.
+  try {
+    const v = await rpc('zoho_vitals', { p_user_id: ctx.profileId, p_org_ref: null });
+    const vitals = Array.isArray(v) ? v[0] : v;
+    if (vitals && typeof vitals === 'object') return Object.assign({ data_source: 'zoho_books' }, vitals);
+  } catch (e) {
+    // fall through
+  }
+  return { error: 'No figures on file yet — nothing has been entered in the app or synced from a connector.' };
 }
 
 async function toolGetInvoiceStatus(input, ctx) {
