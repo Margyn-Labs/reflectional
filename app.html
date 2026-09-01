@@ -11,36 +11,72 @@
 <!-- supabase-js is loaded programmatically at the bottom of this file -->
 <style>
   :root{
-    --ink:#0B1220; --ink-soft:#16233A; --steel:#5C6B7A;
-    --bg:#F0F1F3; --bg-dim:#E6E8EB; --white:#FFFFFF;
-    --emerald:#0E8F5C; --emerald-bright:#1FA374; --mint:#CFEFDD;
-    --caution:#5B6472; --caution-bg:rgba(91,100,114,0.13); --orange:#CC5B34; --peach:#FFE0C7;
-    --rose:#B3432E; --blush:#FBD9E4; --sky:#0B4B8C; --sky-light:#D8E8F7;
-    --line: rgba(17,21,28,0.09); --line-strong: rgba(17,21,28,0.16);
-    --shadow-modal: 0 24px 60px -20px rgba(20,24,31,0.28);
-    --bg-page: #FBFBF9;
-    --surf-0: #FBFBF9;
-    --surf-1: #FFFFFF;
-    --surf-1-solid: #FFFFFF;
-    --surf-2: #F4F3EF;
-    --border-1: #E8E5DE;
-    --border-2: #DAD6CD;
-    --text-0: #14181F;
-    --text-1: #565E6B;
-    --text-2: #767E8B;
-    --text-3: #9AA1AD;
-    --radius-card: 14px;
-    --radius-modal: 18px;
-    --radius-control: 9px;
-    --radius-btn: 8px;
-    --radius-pill: 999px;
-    --gap-section: 56px;
+    /* ============================================================
+       Margyn product palette — light theme, single source of truth.
+       Extends the redesigned index.html marketing system onto the
+       product surface. Functional colour, one job each:
+         emerald  = brand / primary actions / Pulse Score
+         sky/blue = connector + OAuth actions only
+         orange   = AI-generated narrative only
+         rose     = raw negative delta / hard error only
+         caution  = neutral "needs review / pending" — greyscale, not a hue
+       ============================================================ */
+    --bg-page:#FAFAF8;
+    --surf-0:#FAFAF8;
+    --surf-1:#FFFFFF;
+    --surf-1-solid:#FFFFFF;
+    --surf-2:#F4F3EE;
+    --border-1:#E4E1DA;
+    --border-2:#D8D4CB;
+    --text-0:#14181F;
+    --text-1:#5B6472;
+    --text-2:#767E8B;
+    --text-3:#9AA1AD;
+
+    --emerald:#0E8F5C;
+    --emerald-deep:#0A6E46;
+    --emerald-bright:#0A6E46;   /* legacy alias, collapsed onto emerald-deep so a single green reads as the brand */
+    --emerald-wash:#E4F1EA;
+    --sky:#0B4B8C;
+    --sky-light:#E3ECF5;
+    --orange:#CC5B34;
+    --orange-wash:#F6E7E0;
+    --rose:#B3432E;
+    --rose-wash:#F6E3DE;
+    --caution:#5B6472;
+    --caution-bg:rgba(91,100,114,0.12);
+    --steel:#5B6472;
+    --white:#FFFFFF;
+
+    --radius-card:12px;
+    --radius-modal:16px;
+    --radius-control:8px;
+    --radius-btn:4px;
+    --radius-pill:999px;
+    --gap-section:56px;
+
+    --ease:cubic-bezier(.16,1,.3,1);
+    --shadow-sm:0 1px 2px rgba(11,18,32,0.04), 0 4px 12px -6px rgba(11,18,32,0.08);
+    --shadow-md:0 2px 4px rgba(11,18,32,0.05), 0 18px 40px -20px rgba(11,18,32,0.18);
+    --shadow-modal:0 2px 4px rgba(11,18,32,0.05), 0 24px 60px -20px rgba(11,18,32,0.24);
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{ height:100%; }
   html{ background:var(--bg-page); overflow-x:hidden; }
   body{ background:var(--bg-page); color:var(--text-1); font-family:'Manrope',sans-serif; min-height:100vh; line-height:1.55; -webkit-font-smoothing:antialiased; position:relative; }
   .mono{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;}
+  /* ---------- global polish: focus, selection, scrollbars, motion ---------- */
+  ::selection{ background:rgba(14,143,92,0.18); }
+  :focus-visible{ outline:2px solid var(--emerald); outline-offset:2px; border-radius:3px; }
+  button:focus:not(:focus-visible), a:focus:not(:focus-visible){ outline:none; }
+  *{ scrollbar-width:thin; scrollbar-color:var(--border-2) transparent; }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-2); border-radius:999px; border:3px solid var(--bg-page); }
+  ::-webkit-scrollbar-thumb:hover{ background:var(--text-3); }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation-duration:.001ms !important; animation-delay:0ms !important; transition-duration:.001ms !important; }
+  }
   .f-value,.v-value,.pc-value,.kc-value,.verdict-num,.sc-value,.pulse-ring .num,.hbar-val,.aging-val,.cust-balance .amt,.detail-score-num,table.ledger-table td.num,.pb-points,.pb-calc{ font-variant-numeric:tabular-nums; }
   a{ color:inherit; text-decoration:none; }
   .wrap{max-width:960px; margin:0 auto; padding:96px 24px 96px; position:relative; z-index:2;}
@@ -49,28 +85,28 @@
   .crescent::after{ content:''; position:absolute; top:0; left:-42%; width:100%; height:100%; border-radius:50%; background:#fff; }
   /* ---------- tier badges (FREE / PRO) on sidebar nav ---------- */
   .tier-chip{ font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:800; letter-spacing:.04em; padding:2px 6px; border-radius:5px; margin-left:auto; flex-shrink:0; }
-  .tier-chip.free{ background:rgba(31,163,116,0.22); color:#0E8F5C; }
+  .tier-chip.free{ background:var(--emerald-wash); color:var(--emerald-deep); }
   .tier-chip.pro{ background:var(--text-0); color:#fff; }
   @media (min-width:901px){ .sidebar .pagenav button{ justify-content:space-between; } }
   @media (max-width:900px){ .tier-chip{ display:none; } }
-  nav{ position:sticky; top:0; left:0; right:0; z-index:100; height:64px; background:var(--bg-page); border-bottom:1px solid var(--border-1); transition:box-shadow .2s ease; }
+  nav{ position:sticky; top:0; left:0; right:0; z-index:100; height:64px; background:var(--bg-page); border-bottom:1px solid var(--border-1); box-shadow:0 1px 0 rgba(11,18,32,0.03), 0 8px 24px -18px rgba(11,18,32,0.22); transition:box-shadow .2s ease; }
   .nav-inner{ max-width:none; margin:0; height:64px; padding:0 24px 0 0; display:flex; align-items:center; gap:0; }
-  .nav-brand{ display:flex; flex-direction:row; align-items:center; justify-content:center; gap:8px; height:64px; padding-left:20px; }
-  .nav-logo{ font-family:'Manrope', sans-serif; font-size:18px; font-weight:800; letter-spacing:-0.01em; color:var(--text-0); line-height:1; }
-  .nav-logo-mark{ display:block; height:22px; width:auto; }
+  .nav-brand{ display:flex; flex-direction:row; align-items:center; justify-content:center; gap:9px; height:64px; padding:0 16px; }
+  .nav-logo{ font-family:'Manrope', sans-serif; font-size:18px; font-weight:800; letter-spacing:-0.02em; color:var(--text-0); line-height:1; }
+  .nav-logo-mark{ display:block; height:21px; width:auto; flex-shrink:0; }
   @media (min-width:901px){
-    .nav-brand{ width:208px; padding-left:0; border-right:1px solid var(--border-1); }
+    .nav-brand{ width:208px; padding:0 16px; border-right:1px solid var(--border-1); }
   }
   @media (min-width:1150px){ .nav-brand{ width:224px; } }
   @keyframes navPulse{ 0%,100%{ box-shadow:0 0 0 3px rgba(14,143,92,0.2); } 50%{ box-shadow:0 0 0 5px rgba(14,143,92,0.08); } }
   .nav-user{ display:flex; align-items:center; gap:12px; font-size:13px; color:var(--text-2); }
-  .nav-logout{ background:transparent; border:1px solid var(--border-2); color:var(--text-2); padding:8px 14px; border-radius:8px; cursor:pointer; font-size:12.5px; font-weight:600; transition:border-color .2s ease, color .2s ease, background .2s ease; }
+  .nav-logout{ background:transparent; border:1px solid var(--border-2); color:var(--text-2); padding:8px 14px; border-radius:var(--radius-btn); cursor:pointer; font-size:12.5px; font-weight:600; transition:border-color .2s ease, color .2s ease, background .2s ease; }
   .nav-logout:hover{ border-color:var(--emerald); color:var(--text-0); background:var(--surf-2); }
   .gate{ position:fixed; inset:0; background:transparent; z-index:200; display:flex; align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
   .gate-col{ max-width:460px; width:100%; }
   .gate-back{ display:block; text-align:center; margin-top:20px; font-size:13px; font-weight:600; color:var(--text-2); transition:color .2s ease; }
   .gate-back:hover{ color:var(--text-0); }
-  .gate-modal{ max-width:460px; width:100%; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); padding:40px 34px; box-shadow:0 20px 50px -20px rgba(20,24,31,0.18); }
+  .gate-modal{ max-width:460px; width:100%; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); padding:40px 34px; box-shadow:var(--shadow-modal); }
   .gate-modal .eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--emerald-bright); margin-bottom:14px; font-weight:600; }
   .gate-modal h2{ font-family:'Manrope',sans-serif; font-weight:700; font-size:25px; letter-spacing:-0.02em; margin-bottom:12px; color:var(--text-0); }
   .gate-modal .sub{ font-size:14px; color:var(--text-2); margin-bottom:28px; line-height:1.6; }
@@ -92,8 +128,9 @@
   .auth-field input::placeholder{ color:var(--text-3); }
   .auth-field input:focus, .auth-field select:focus{ outline:none; border-color:var(--emerald-bright); }
   .auth-field select option{ background:var(--surf-1-solid); color:var(--text-0); }
-  .auth-submit{ width:100%; background:var(--emerald); color:var(--white); border:none; padding:12px; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; transition:background .2s ease; font-family:'Manrope',sans-serif; }
-  .auth-submit:hover{ background:var(--emerald-bright); }
+  .auth-submit{ width:100%; background:var(--emerald); color:var(--white); border:none; padding:13px; border-radius:var(--radius-btn); font-size:14px; font-weight:700; cursor:pointer; transition:background .2s ease, transform .15s var(--ease), box-shadow .2s ease; font-family:'Manrope',sans-serif; box-shadow:0 1px 0 rgba(0,0,0,0.04), 0 10px 22px -14px rgba(14,143,92,0.5); }
+  .auth-submit:hover{ background:var(--emerald-deep); transform:translateY(-1px); box-shadow:0 14px 28px -14px rgba(14,143,92,0.55); }
+  .auth-submit:active{ transform:translateY(0); }
   .auth-submit:disabled{ opacity:0.5; cursor:not-allowed; }
   .auth-error{ font-size:12px; color:#B3432E; margin-top:12px; display:none; }
   .auth-error.show{ display:block; }
@@ -152,7 +189,7 @@
   @media (min-width:1400px){
     .app-body .wrap{ padding-left:64px; padding-right:64px; }
   }
-  .card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:30px 32px; margin-bottom:24px; transition:border-color .2s ease; }
+  .card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:26px 28px; margin-bottom:22px; box-shadow:var(--shadow-sm); transition:border-color .2s ease, box-shadow .2s ease; }
   .card:hover{ border-color:var(--border-2); }
   .card h2{font-family:'Manrope',sans-serif; font-weight:700; font-size:19px; letter-spacing:-0.01em; margin-bottom:6px; color:var(--text-0);}
   .section-head{ margin-bottom:22px; margin-top:8px; }
@@ -230,7 +267,7 @@
     display:grid; grid-template-columns:220px 1fr 116px; grid-template-rows:auto auto; column-gap:26px; row-gap:7px; align-items:center; }
   .vital:first-child{ border-top:1px solid var(--border-1); }
   .vital:not(.is-zero):hover{ background:var(--surf-2); }
-  .vitals-grid .vital:nth-child(1){ animation-delay:.02s; } .vitals-grid .vital:nth-child(2){ animation-delay:.06s; } .vitals-grid .vital:nth-child(3){ animation-delay:.1s; } .vitals-grid .vital:nth-child(4){ animation-delay:.14s; } .vitals-grid .vital:nth-child(5){ animation-delay:.18s; } .vitals-grid .vital:nth-child(6){ animation-delay:.22s; }
+  .vitals-grid .vital:nth-child(n){ animation-delay:0s; }
   .vital .v-top{ display:flex; align-items:center; gap:9px; margin-bottom:0; grid-column:1; grid-row:1; align-self:center; }
   .vital .v-dot{ width:7px; height:7px; border-radius:50%; background:var(--v-accent, var(--steel)); flex-shrink:0; box-shadow:0 0 0 3px color-mix(in srgb, var(--v-accent, var(--steel)) 16%, transparent); }
   .vital .v-label{font-family:'Manrope',sans-serif; font-size:13px; text-transform:none; letter-spacing:0; color:var(--text-0); font-weight:600; transition:color .2s ease;}
@@ -272,7 +309,7 @@
   .dx-panel .trend-empty{ padding:24px 0; text-align:left; }
   @media (max-width:760px){ .dx-two{ grid-template-columns:1fr; gap:32px; } .dx-panel .hbar-label{ width:120px; } }
   /* briefing — the AI-generated narrative, a plain card with one orange marker */
-  .dx-briefing{ border:1px solid var(--border-1); background:var(--surf-1); border-radius:var(--radius-card); padding:28px 30px; }
+  .dx-briefing{ border:1px solid var(--border-1); background:var(--surf-1); border-radius:var(--radius-card); padding:28px 30px; box-shadow:var(--shadow-sm); }
   .dx-briefing .app-eyebrow{ color:var(--orange); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
   .dx-briefing .app-eyebrow::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--orange); flex-shrink:0; }
   .dx-briefing h2{ font-family:'Manrope',sans-serif; font-weight:700; font-size:19px; letter-spacing:-0.01em; color:var(--text-0); margin-bottom:6px; }
@@ -280,10 +317,10 @@
   .dx-briefing .hint{ max-width:70ch; }
   .pulse-text{ max-width:none; }
   .pulse-score{ padding-right:0; }
-  .tabs{display:flex; gap:4px; margin-bottom:24px; border:1px solid var(--border-1); border-radius:12px; padding:4px; background:var(--surf-2);}
-  .tab{ flex:1; padding:11px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13.5px; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; border:none; border-radius:7px; }
-  .tab:hover:not(.active){ color:var(--text-0); background:rgba(20,24,31,0.05); }
-  .tab.active{background:var(--emerald); color:var(--white);}
+  .tabs{ display:flex; gap:24px; margin-bottom:24px; border:none; border-bottom:1px solid var(--border-1); border-radius:0; padding:0; background:transparent; flex-wrap:wrap; }
+  .tab{ flex:0 0 auto; padding:10px 1px; text-align:center; cursor:pointer; background:transparent; color:var(--text-2); font-size:13px; font-weight:700; font-family:'Manrope',sans-serif; transition:color .15s ease, box-shadow .15s ease; border:none; border-radius:0; box-shadow:inset 0 -2px 0 transparent; }
+  .tab:hover:not(.active){ color:var(--text-0); background:transparent; }
+  .tab.active{ background:transparent; color:var(--text-0); box-shadow:inset 0 -2px 0 var(--emerald); }
   .panel{display:none;} .panel.active{display:block;}
   .dropzone{ position:relative; border:1.5px dashed var(--border-2); border-radius:var(--radius-card); padding:36px; text-align:center; cursor:pointer; transition:all .3s cubic-bezier(.22,1,.36,1); overflow:hidden; }
   .dropzone:hover{border-color:var(--emerald-bright); background:rgba(14,143,92,0.05);}
@@ -300,11 +337,43 @@
   input:focus, select:focus{outline:none; border-color:var(--emerald-bright);}
   select option{ background:var(--surf-1-solid); color:var(--text-0); }
   .btn-row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-  button.primary{ background:var(--emerald); color:var(--white); border:none; padding:14px 28px; border-radius:8px; font-weight:700; font-size:14.5px; font-family:'Manrope',sans-serif; cursor:pointer; transition:background .2s ease; }
-  button.primary:hover{background:var(--emerald-bright);}
-  button.primary:disabled{opacity:0.4; cursor:not-allowed;}
-  button.ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:13px 28px; border-radius:8px; font-size:14.5px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; transition:all .2s ease; }
-  button.ghost:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
+  button.primary{ background:var(--emerald); color:var(--white); border:none; padding:13px 26px; border-radius:var(--radius-btn); font-weight:700; font-size:14.5px; font-family:'Manrope',sans-serif; cursor:pointer; transition:background .2s ease, transform .15s var(--ease), box-shadow .2s ease; box-shadow:0 1px 0 rgba(0,0,0,0.04), 0 10px 22px -14px rgba(14,143,92,0.5); }
+  button.primary:hover{ background:var(--emerald-deep); transform:translateY(-1px); box-shadow:0 14px 28px -14px rgba(14,143,92,0.55); }
+  button.primary:active{ transform:translateY(0); }
+  button.primary:disabled{opacity:0.4; cursor:not-allowed; box-shadow:none; transform:none;}
+  button.ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:12px 26px; border-radius:var(--radius-btn); font-size:14.5px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; transition:border-color .2s ease, background .2s ease, color .2s ease; }
+  button.ghost:hover{ border-color:var(--emerald); color:var(--emerald); background:var(--surf-2); }
+  /* ---------- Agents tab ---------- */
+  .agent-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:26px 28px; margin-bottom:18px; box-shadow:var(--shadow-sm); }
+  /* "coming soon" reads as forthcoming, not broken: dashed edge, flat, no drop shadow */
+  .agent-card.is-disabled{ opacity:1; background:var(--surf-0); border-style:dashed; border-color:var(--border-2); box-shadow:none; }
+  .agent-card.is-disabled h3{ color:var(--text-1); }
+  .agent-card.is-disabled .btn-primary{ opacity:.55; }
+  .agent-card-head{ display:flex; align-items:flex-start; gap:14px; }
+  .agent-card-head h3{ font-family:'Manrope',sans-serif; font-weight:700; font-size:17px; color:var(--text-0); margin:0 0 3px; }
+  .agent-card-head .agent-desc{ font-size:13px; color:var(--text-2); line-height:1.55; }
+  .agent-badge{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:4px 8px; border-radius:5px; white-space:nowrap; }
+  .agent-badge.notdeployed{ background:var(--caution-bg); color:var(--caution); }
+  .agent-badge.active{ background:rgba(14,143,92,0.16); color:var(--emerald); }
+  .agent-badge.paused{ background:rgba(204,91,52,0.16); color:var(--orange); }
+  .agent-badge.soon{ background:var(--caution-bg); color:var(--caution); }
+  .agent-card-actions{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:20px; }
+  .agent-configure-link{ font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--emerald); cursor:pointer; border-bottom:1px solid rgba(14,143,92,0.35); }
+  .agent-step-dots{ display:flex; gap:8px; margin-bottom:20px; }
+  .agent-step-dots span{ flex:1; height:3px; border-radius:2px; background:var(--border-2); }
+  .agent-step-dots span.on{ background:var(--emerald); }
+  .agent-modal-title{ font-family:'Manrope',sans-serif; font-weight:700; font-size:20px; color:var(--text-0); margin-bottom:6px; }
+  .agent-vital-row{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border-1); font-size:13px; color:var(--text-1); }
+  .agent-seg{ display:inline-flex; border:1px solid var(--border-2); border-radius:7px; overflow:hidden; flex-shrink:0; }
+  .agent-seg button{ background:var(--surf-1); border:none; padding:6px 12px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:600; color:var(--text-2); cursor:pointer; }
+  .agent-seg button.on{ background:var(--emerald); color:var(--white); }
+  .agent-stk-row{ display:grid; grid-template-columns:1fr 1fr 90px 32px; gap:10px; align-items:center; margin-bottom:10px; }
+  .agent-stk-row .stk-del{ background:transparent; border:none; color:var(--orange); cursor:pointer; font-size:16px; line-height:1; }
+  .agent-ref-note{ font-size:12.5px; color:var(--text-2); background:var(--surf-2); border:1px solid var(--border-1); border-radius:var(--radius-control); padding:12px 14px; line-height:1.55; }
+  .agent-fieldset{ margin-bottom:22px; }
+  .agent-fieldset > .agent-fs-label{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; display:block; }
+  .danger-zone{ border-color:rgba(179,67,46,0.35) !important; }
+  .danger-zone h2{ color:#B3432E; }
   #briefing-text{ white-space:pre-wrap; font-size:15px; line-height:1.75; color:var(--text-1); }
   .loading{color:var(--text-2); font-size:14px; font-style:italic;}
   .error-box{ border:1px solid rgba(179,67,46,0.4); background:rgba(179,67,46,0.14); color:#B3432E; padding:14px; border-radius:6px; font-size:13px; margin-top:14px; }
@@ -314,17 +383,19 @@
   footer{ border-top:1px solid var(--border-1); padding:32px 24px; text-align:center; font-size:12.5px; color:var(--text-2); position:relative; z-index:2; }
   @media (min-width:901px){ footer{ display:none; } }
   /* ---------- payments tab (NEW) — transparent glass, neon green accents ---------- */
-  .mock-banner{ display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:8px; background:var(--surf-2); border:1px solid var(--border-1); border-left:3px solid var(--text-2); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-1); margin-bottom:20px; font-weight:600; }
-  .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
-  .pay-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:20px; transition:border-color .2s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
-  .pay-grid .pay-card:nth-child(1){ animation-delay:.02s; } .pay-grid .pay-card:nth-child(2){ animation-delay:.07s; } .pay-grid .pay-card:nth-child(3){ animation-delay:.12s; } .pay-grid .pay-card:nth-child(4){ animation-delay:.17s; } .pay-grid .pay-card:nth-child(5){ animation-delay:.22s; } .pay-grid .pay-card:nth-child(6){ animation-delay:.27s; } .pay-grid .pay-card:nth-child(7){ animation-delay:.32s; }
-  .pay-card:hover{ border-color:var(--border-2); }
+  .mock-banner{ display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:var(--radius-control); background:var(--surf-2); border:1px solid var(--border-1); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-1); margin-bottom:20px; font-weight:600; }
+  .mock-banner::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--text-3); flex-shrink:0; }
+  /* card stack -> one panel: a single border + shadow, hairline internal grid */
+  .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px; margin-bottom:20px; background:var(--border-1); border:1px solid var(--border-1); border-radius:var(--radius-card); overflow:hidden; box-shadow:var(--shadow-sm); }
+  .pay-card{ position:relative; background:var(--surf-1); border:none; border-radius:0; padding:18px 20px; transition:background .12s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
+  .pay-grid .pay-card:nth-child(n){ animation-delay:0s; }
+  .pay-card:hover{ background:var(--surf-2); }
   .pay-card.wide{ grid-column:span 2; }
   .pay-card .pc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
   .pay-card .pc-value{ font-family:'IBM Plex Mono',monospace; font-size:25px; font-weight:600; color:var(--text-0); margin-bottom:6px; }
   .pay-card .pc-sub{ font-size:12px; color:var(--text-2); line-height:1.5; }
   .pay-card .pc-flag{ display:inline-block; margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; }
-  .pc-flag.ok{ background:rgba(31,163,116,0.2); color:#0E8F5C; }
+  .pc-flag.ok{ background:rgba(14,143,92,0.2); color:#0E8F5C; }
   .pc-flag.warn{ background:var(--caution-bg); color:var(--caution); }
   .pc-flag.bad{ background:rgba(179,67,46,0.22); color:#B3432E; }
   .method-bar{ display:flex; height:24px; border-radius:7px; overflow:hidden; margin-top:10px; background:var(--surf-2); }
@@ -333,7 +404,7 @@
   .method-legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
   .pay-empty{ text-align:center; padding:40px 20px; color:var(--text-2); font-size:13.5px; line-height:1.7; }
   /* ---------- charts (SVG, neon green, transparent) ---------- */
-  .chart-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:26px 28px; margin-bottom:24px; }
+  .chart-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:26px 28px; margin-bottom:22px; box-shadow:var(--shadow-sm); }
   .chart-card .cc-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:8px; }
   .chart-card h3{ font-family:'Manrope',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.005em; color:var(--text-0); }
   .chart-card .cc-sub{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-variant-numeric:tabular-nums; }
@@ -352,8 +423,8 @@
   .trend-svg{ width:100%; height:130px; display:block; }
   .trend-empty{ text-align:center; padding:30px 10px; color:var(--text-2); font-size:13px; line-height:1.6; }
   /* ---------- vital detail overlay ---------- */
-  .detail-overlay{ position:fixed; inset:0; z-index:300; background:rgba(20,24,31,0.35); display:flex; align-items:center; justify-content:center; padding:20px; }
-  .detail-modal{ width:min(440px, 100%); background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); padding:28px; box-shadow:0 20px 50px -20px rgba(20,24,31,0.25); position:relative; animation:detailIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
+  .detail-overlay{ position:fixed; inset:0; z-index:300; background:rgba(10,14,18,0.44); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:20px; }
+  .detail-modal{ width:min(440px, 100%); background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-modal); padding:28px; box-shadow:var(--shadow-modal); position:relative; animation:detailIn .22s cubic-bezier(.16,1,.3,1); max-height:86vh; overflow-y:auto; }
   .detail-modal.wide{ width:min(560px, 100%); }
   @keyframes detailIn{ from{ opacity:0; transform:scale(0.96) translateY(8px); } to{ opacity:1; transform:scale(1) translateY(0); } }
   .detail-close{ position:absolute; top:16px; right:16px; width:30px; height:30px; border-radius:50%; border:1px solid var(--border-1); background:var(--surf-2); color:var(--text-2); cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -369,8 +440,8 @@
   .margyn-chat{ margin-top:18px; padding-top:16px; border-top:1px solid var(--border-1); }
   .margyn-chat-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--orange); font-weight:700; margin-bottom:10px; display:flex; align-items:center; gap:6px; }
   .margyn-chat-label::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--orange); flex-shrink:0; }
-  .finding-card{ border:1px solid var(--border-1); border-left:3px solid var(--border-2); border-radius:10px; padding:13px 15px; margin-bottom:12px; background:var(--surf-2); }
-  .finding-card.verified{ border-left-color:var(--emerald-bright); }
+  .finding-card{ border:1px solid var(--border-1); border-left:2px solid var(--border-2); border-radius:var(--radius-control); padding:13px 15px; margin-bottom:12px; background:var(--surf-2); }
+  .finding-card.verified{ border-left-color:var(--emerald); }
   .finding-card.signal{ border-left-color:var(--orange); }
   .finding-tier{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; margin-bottom:6px; }
   .finding-card.verified .finding-tier{ color:var(--emerald); }
@@ -396,9 +467,9 @@
   .margyn-ask-icon:hover{ border-color:var(--orange); color:var(--orange); }
   .margyn-chat-thread{ display:flex; flex-direction:column; gap:10px; margin-bottom:12px; max-height:320px; overflow-y:auto; }
   .margyn-msg{ font-size:13px; line-height:1.6; padding:10px 13px; border-radius:var(--radius-control); max-width:88%; word-wrap:break-word; white-space:pre-wrap; }
-  .margyn-msg.user{ align-self:flex-end; background:var(--surf-2); color:var(--text-0); }
-  .margyn-msg.assistant{ align-self:flex-start; background:var(--surf-1); border:1px solid var(--border-1); border-left:3px solid var(--orange); color:var(--text-0); }
-  .margyn-msg.assistant.loading{ color:var(--text-2); font-style:italic; border-left-color:var(--border-2); }
+  .margyn-msg.user{ align-self:flex-end; background:var(--text-0); color:#fff; border-radius:var(--radius-control) var(--radius-control) 3px var(--radius-control); }
+  .margyn-msg.assistant{ align-self:flex-start; background:var(--orange-wash); border:1px solid rgba(204,91,52,0.28); border-radius:var(--radius-control) var(--radius-control) var(--radius-control) 3px; color:var(--text-0); }
+  .margyn-msg.assistant.loading{ color:var(--text-2); font-style:italic; background:var(--surf-2); border-color:var(--border-1); }
   .margyn-chat-form{ display:flex; gap:8px; }
   .margyn-chat-form input{ flex:1; padding:10px 12px; border:1px solid var(--border-2); border-radius:var(--radius-control); font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
   .margyn-chat-form input:focus{ outline:none; border-color:var(--orange); }
@@ -421,13 +492,13 @@
   @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
   .summary-grid{ grid-template-columns:repeat(5,1fr); margin-bottom:20px; }
   /* ---------- ledger UI (receivables / payables / settlements) ---------- */
-  .ledger-form{ background:var(--surf-2); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:16px; margin-bottom:18px; }
+  .ledger-form{ background:var(--surf-2); border:1px solid var(--border-1); border-radius:var(--radius-control); padding:16px 18px; margin-bottom:18px; }
   .ledger-form .lf-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
   .ledger-form .lf-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
-  .ledger-form input{ width:100%; padding:9px 10px; border:1px solid var(--border-2); border-radius:8px; font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
-  .ledger-form input:focus{ outline:none; border-color:var(--emerald-bright); }
-  .ledger-form button{ width:100%; background:var(--emerald); color:#fff; border:none; padding:10px; border-radius:7px; font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; }
-  .ledger-form button:hover{ background:var(--emerald-bright); }
+  .ledger-form input{ width:100%; padding:9px 10px; border:1px solid var(--border-2); border-radius:var(--radius-btn); font-family:'Manrope',sans-serif; font-size:13px; background:var(--surf-1); color:var(--text-0); margin-bottom:0; }
+  .ledger-form input:focus{ outline:none; border-color:var(--emerald); }
+  .ledger-form button{ width:100%; background:var(--emerald); color:#fff; border:none; padding:11px; border-radius:var(--radius-btn); font-size:13px; font-weight:700; cursor:pointer; font-family:'Manrope',sans-serif; transition:background .2s ease; }
+  .ledger-form button:hover{ background:var(--emerald-deep); }
   .ledger-list-title{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin:14px 0 8px; padding-top:10px; border-top:1px solid var(--border-1); }
   .ledger-row{ border-bottom:1px solid var(--border-1); padding:12px 2px; display:flex; align-items:center; gap:10px; }
   .ledger-row:last-child{ border-bottom:none; }
@@ -436,7 +507,7 @@
   .ledger-row .lr-meta{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--text-2); margin-top:2px; }
   .ledger-row .lr-amount{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; font-weight:600; color:var(--text-0); white-space:nowrap; }
   .lr-tag{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:6px; }
-  .lr-tag.ok{ background:rgba(31,163,116,0.2); color:#0E8F5C; }
+  .lr-tag.ok{ background:rgba(14,143,92,0.2); color:#0E8F5C; }
   .lr-tag.warn{ background:var(--caution-bg); color:var(--caution); }
   .lr-tag.bad{ background:rgba(179,67,46,0.22); color:#B3432E; }
   .lr-tag.type-recv{ background:rgba(179,67,46,0.18); color:#B3432E; }
@@ -462,7 +533,7 @@
   .today-context{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; text-align:right; }
   .summary-headline{ font-family:'IBM Plex Mono',monospace; font-weight:500; font-size:11.5px; letter-spacing:.02em; color:var(--text-1); text-transform:none; }
   .summary-asof{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); display:inline-flex; align-items:center; gap:6px; }
-  .summary-asof::before{ content:''; width:5px; height:5px; border-radius:50%; background:var(--emerald-bright); box-shadow:0 0 0 3px rgba(31,163,116,0.22); flex-shrink:0; }
+  .summary-asof::before{ content:''; width:5px; height:5px; border-radius:50%; background:var(--emerald-bright); box-shadow:0 0 0 3px rgba(14,143,92,0.22); flex-shrink:0; }
   /* verdict hero — spread across the page: score cluster left, scale right */
   .verdict-hero{ display:grid; grid-template-columns:auto 1fr; gap:0 72px; align-items:center; padding-bottom:36px; margin-bottom:44px; border-bottom:1px solid var(--border-1); }
   .verdict-row{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:6px 28px; padding:0; margin:0; border-bottom:none; cursor:pointer; }
@@ -495,12 +566,12 @@
   .s-chart svg{ width:100%; height:100%; display:block; }
   @media (max-width:920px){ .sum-grid{ grid-template-columns:1fr; gap:0; } }
   /* the numbers — a compact 2×2 of headline metrics + a 2-col supporting list */
-  .numbers-panel{ border:1px solid var(--border-1); border-radius:var(--radius-card); overflow:hidden; }
+  .numbers-panel{ border:1px solid var(--border-1); border-radius:var(--radius-card); overflow:hidden; box-shadow:var(--shadow-sm); }
   .numbers-panel .kpi-strip{ display:grid; grid-template-columns:1fr 1fr; border:none; border-radius:0; background:var(--border-1); gap:1px; margin:0; overflow:visible; }
   .numbers-panel #statStrip{ display:grid; grid-template-columns:1fr 1fr; gap:1px; margin:0; border-top:1px solid var(--border-1); background:var(--border-1); }
   .numbers-panel .kpi-card{ position:relative; display:grid; grid-template-columns:1fr auto; grid-template-rows:auto auto; column-gap:14px; align-items:center; padding:14px 16px; background:var(--surf-1); cursor:pointer; transition:background .12s ease; animation:cardIn .45s cubic-bezier(.16,1,.3,1) backwards; }
   .numbers-panel .kpi-card:hover{ background:var(--surf-2); }
-  .kpi-strip .kpi-card:nth-child(1){ animation-delay:.02s; } .kpi-strip .kpi-card:nth-child(2){ animation-delay:.06s; } .kpi-strip .kpi-card:nth-child(3){ animation-delay:.1s; } .kpi-strip .kpi-card:nth-child(4){ animation-delay:.14s; }
+  .kpi-strip .kpi-card:nth-child(n){ animation-delay:0s; }
   .numbers-panel .kpi-card .kc-top{ grid-column:1 / -1; grid-row:1; display:flex; align-items:center; gap:7px; margin:0 0 8px; }
   .kpi-icon{ width:12px; height:12px; display:flex; align-items:center; justify-content:center; color:var(--text-3); flex-shrink:0; }
   .numbers-panel .kpi-card .kc-label{ font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-2); font-weight:600; }
@@ -518,7 +589,7 @@
   .numbers-panel #statStrip .sc-right{ display:flex; align-items:baseline; gap:8px; }
   .numbers-panel #statStrip .sc-value{ font-size:13px; }
   .numbers-panel #statStrip .sc-delta{ font-size:8.5px; }
-  @keyframes cardIn{ from{ opacity:0; transform:translateY(14px) scale(.98); } to{ opacity:1; transform:translateY(0) scale(1); } }
+  @keyframes cardIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
   .draw-line{ transition:stroke-dashoffset 1.15s cubic-bezier(.22,1,.36,1); }
   .area-fill{ transition:opacity .9s ease .25s; opacity:0; }
   .area-fill.in{ opacity:1; }
@@ -544,7 +615,7 @@
   .alert-item.is-clickable:hover{ background:var(--surf-2); }
   .alert-chevron{ align-self:center; color:var(--text-3); font-size:15px; flex-shrink:0; transition:transform .15s ease, color .15s ease; }
   .alert-item.is-clickable:hover .alert-chevron{ transform:translateX(3px); color:var(--text-1); }
-  #alertsList .alert-item:nth-child(1){ animation-delay:.04s; } #alertsList .alert-item:nth-child(2){ animation-delay:.09s; } #alertsList .alert-item:nth-child(3){ animation-delay:.14s; } #alertsList .alert-item:nth-child(4){ animation-delay:.19s; } #alertsList .alert-item:nth-child(5){ animation-delay:.24s; }
+  #alertsList .alert-item:nth-child(n){ animation-delay:0s; }
   .alert-item:last-child{ border-bottom:none; }
   .alert-dot{ width:22px; height:22px; border-radius:6px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; margin-top:1px; font-family:'IBM Plex Mono',monospace; }
   .alert-dot.ok{ background:color-mix(in srgb, var(--emerald) 16%, transparent); color:var(--emerald); }
@@ -577,25 +648,26 @@
   }
   /* ---------- zoho books connector (NEW) — org picker + books tab ---------- */
   .org-option{ display:flex; align-items:center; gap:11px; padding:12px 14px; border:1px solid var(--border-1); border-radius:var(--radius-control); margin-bottom:8px; cursor:pointer; transition:border-color .2s ease, background .2s ease; }
-  .org-option:hover{ border-color:var(--emerald-bright); background:rgba(31,163,116,0.06); }
+  .org-option:hover{ border-color:var(--emerald-bright); background:rgba(14,143,92,0.06); }
   .org-option input{ accent-color:var(--emerald-bright); width:16px; height:16px; margin:0; flex-shrink:0; }
   .org-option .org-name{ font-size:13.5px; font-weight:700; color:var(--text-0); flex:1; min-width:0; }
   .org-option .org-meta{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-2); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
-  .zoho-scope-note{ display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:#0E8F5C; background:rgba(31,163,116,0.12); border:1px solid rgba(31,163,116,0.28); border-radius:999px; padding:7px 13px; margin-bottom:14px; }
+  .zoho-scope-note{ display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:#0E8F5C; background:rgba(14,143,92,0.12); border:1px solid rgba(14,143,92,0.28); border-radius:999px; padding:7px 13px; margin-bottom:14px; }
   /* ---------- khata: customers/vendors + invoicing (NEW, free-tier ledger) ---------- */
   .lsuper-panel{ display:none; } .lsuper-panel.active{ display:block; }
   .khata-panel{ display:none; } .khata-panel.active{ display:block; }
   .search-row{ display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
   .search-row input{ flex:1; min-width:180px; padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:var(--radius-control); color:var(--text-0); font-family:'Manrope',sans-serif; font-size:14px; margin-bottom:0; }
   .search-row select{ padding:11px 14px; background:var(--surf-2); border:1px solid var(--border-2); border-radius:var(--radius-control); color:var(--text-0); font-family:'Manrope',sans-serif; font-size:13px; margin-bottom:0; }
-  .btn-primary{ background:var(--emerald); color:#fff; border:none; padding:11px 20px; border-radius:8px; font-weight:700; font-size:13.5px; cursor:pointer; font-family:'Manrope',sans-serif; white-space:nowrap; }
-  .btn-primary:hover{ background:var(--emerald-bright); }
-  .btn-ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:10px 18px; border-radius:8px; font-size:13px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; white-space:nowrap; }
-  .btn-ghost:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
+  .btn-primary{ background:var(--emerald); color:#fff; border:none; padding:11px 20px; border-radius:var(--radius-btn); font-weight:700; font-size:13.5px; cursor:pointer; font-family:'Manrope',sans-serif; white-space:nowrap; transition:background .2s ease, transform .15s var(--ease); }
+  .btn-primary:hover{ background:var(--emerald-deep); transform:translateY(-1px); }
+  .btn-primary:active{ transform:translateY(0); }
+  .btn-ghost{ background:transparent; color:var(--text-0); border:1.5px solid var(--border-2); padding:10px 18px; border-radius:var(--radius-btn); font-size:13px; cursor:pointer; font-weight:700; font-family:'Manrope',sans-serif; white-space:nowrap; transition:border-color .2s ease, color .2s ease, background .2s ease; }
+  .btn-ghost:hover{ border-color:var(--emerald); color:var(--emerald); background:var(--surf-2); }
   .cust-row{ display:flex; align-items:center; gap:14px; padding:14px 4px; border-bottom:1px solid var(--border-1); cursor:pointer; transition:background .15s ease; }
   .cust-row:last-child{ border-bottom:none; }
-  .cust-row:hover{ background:rgba(31,163,116,0.05); border-radius:10px; }
-  .cust-avatar{ width:38px; height:38px; border-radius:10px; background:rgba(31,163,116,0.16); color:var(--emerald-bright); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0; }
+  .cust-row:hover{ background:rgba(14,143,92,0.05); border-radius:10px; }
+  .cust-avatar{ width:38px; height:38px; border-radius:10px; background:rgba(14,143,92,0.16); color:var(--emerald-bright); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0; }
   .cust-main{ flex:1; min-width:0; }
   .cust-name{ font-size:14px; font-weight:700; color:var(--text-0); }
   .cust-meta{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-2); margin-top:2px; }
@@ -606,13 +678,19 @@
   .cust-balance .amt{ font-family:'IBM Plex Mono',monospace; font-size:14.5px; font-weight:700; }
   .cust-balance .lbl{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; color:var(--text-2); }
   .ledger-facts{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  /* one table recipe: mono sticky header on a tone-shift ground, hairline rows,
+     right-aligned tabular figures, generous row height, hover affordance */
   table.ledger-table{ width:100%; border-collapse:collapse; font-size:13px; }
-  table.ledger-table th{ text-align:left; font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-2); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--border-2); }
-  table.ledger-table td{ padding:11px 10px; border-bottom:1px solid var(--border-1); color:var(--text-1); }
-  table.ledger-table td.num, table.ledger-table th.num{ font-family:'IBM Plex Mono',monospace; text-align:right; }
+  table.ledger-table thead th{ text-align:left; font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-2); font-weight:600; padding:10px 12px; background:var(--surf-2); border-bottom:1px solid var(--border-2); position:sticky; top:0; z-index:1; }
+  table.ledger-table tbody td{ padding:13px 12px; border-bottom:1px solid var(--border-1); color:var(--text-1); }
+  table.ledger-table tbody tr{ transition:background .12s ease; }
+  table.ledger-table tbody tr:hover{ background:var(--surf-2); }
+  table.ledger-table tbody tr:last-child td{ border-bottom:none; }
+  table.ledger-table td.num, table.ledger-table th.num{ font-family:'IBM Plex Mono',monospace; text-align:right; font-variant-numeric:tabular-nums; letter-spacing:-0.01em; }
+  table.ledger-table tbody tr.total td, table.ledger-table tfoot td{ border-top:1.5px solid var(--border-2); border-bottom:none; font-weight:700; color:var(--text-0); }
   .type-badge{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; text-transform:uppercase; padding:3px 8px; border-radius:999px; }
   .type-badge.sale, .type-badge.debit_note{ background:rgba(179,67,46,0.18); color:#B3432E; }
-  .type-badge.receipt, .type-badge.credit_note{ background:rgba(31,163,116,0.2); color:#0E8F5C; }
+  .type-badge.receipt, .type-badge.credit_note{ background:rgba(14,143,92,0.2); color:#0E8F5C; }
   .type-badge.purchase{ background:rgba(91,100,114,0.22); color:#5B6472; }
   .type-badge.payment{ background:var(--caution-bg); color:var(--caution); }
   .aging-bars{ display:flex; flex-direction:column; gap:10px; margin-top:6px; }
@@ -632,11 +710,11 @@
   .tot-row{ display:flex; justify-content:space-between; padding:8px 0; font-size:13px; border-bottom:1px solid var(--border-1); }
   .tot-row.grand{ font-weight:700; font-size:15px; color:var(--text-0); border-bottom:none; padding-top:12px; }
   .tot-row .v{ font-family:'IBM Plex Mono',monospace; }
-  .pro-note{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); background:var(--surf-2); border:1px solid var(--border-1); border-radius:10px; padding:10px 14px; margin-top:14px; }
+  .pro-note{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); background:var(--surf-2); border:1px solid var(--border-1); border-radius:var(--radius-control); padding:11px 14px; margin-top:14px; }
   .inv-status{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; text-transform:uppercase; padding:3px 9px; border-radius:999px; }
   .inv-status.draft{ background:rgba(91,100,114,0.22); color:#5B6472; }
   .inv-status.sent{ background:var(--caution-bg); color:var(--caution); }
-  .inv-status.paid{ background:rgba(31,163,116,0.2); color:#0E8F5C; }
+  .inv-status.paid{ background:rgba(14,143,92,0.2); color:#0E8F5C; }
   .inv-status.overdue{ background:rgba(179,67,46,0.22); color:#B3432E; }
   @media (max-width:640px){ .ledger-facts{ grid-template-columns:1fr 1fr; } .li-head{ display:none; } .li-row{ grid-template-columns:1fr 1fr; grid-auto-rows:auto; } }
   @media print{
@@ -750,6 +828,8 @@
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
       <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
+      <div class="nav-group-label">Automation</div>
+      <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Agents</span><span class="nav-badge hidden" id="agentsBadge"></span></button>
       <div class="nav-group-label">Account</div>
       <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Connectors</span><span class="tier-chip pro">PRO</span></button>
       <button data-view="financing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
@@ -1059,6 +1139,13 @@
         </div>
       </form>
     </div>
+    <div class="card danger-zone">
+      <h2>Delete account</h2>
+      <div class="hint">Soft delete. Your account is deactivated right away, every connector is revoked, and you are signed out. The data purge itself runs later as a scheduled job.</div>
+      <div class="btn-row">
+        <button type="button" class="ghost" id="deleteAccountBtn" style="border-color:rgba(179,67,46,0.4); color:#B3432E;">Delete my account</button>
+      </div>
+    </div>
   </div>
   <!-- ---------- 1b. CONNECTORS (NEW) — moved out of Profile into its own section ---------- -->
   <div id="view-connectors" class="hidden">
@@ -1099,7 +1186,7 @@
         <button class="primary" id="computeFromFile" disabled>Compute &amp; save</button>
         <span class="note" id="noteUpload"></span>
       </div>
-      <div class="import-summary hidden" id="importSummaryUpload" style="background:rgba(31,163,116,0.16); border:1px solid rgba(31,163,116,0.32); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--text-1); line-height:1.6;"></div>
+      <div class="import-summary hidden" id="importSummaryUpload" style="background:rgba(14,143,92,0.16); border:1px solid rgba(14,143,92,0.32); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--text-1); line-height:1.6;"></div>
     </div>
     <div class="panel" id="panel-manual">
       <div class="card">
@@ -1144,7 +1231,7 @@
           <div class="pulse-ring">
             <svg viewBox="0 0 176 98" aria-hidden="true">
               <path d="M 12 88 A 76 76 0 0 1 164 88" fill="none" stroke="var(--border-1)" stroke-width="6" stroke-linecap="round"></path>
-              <path id="pulseArc" d="M 12 88 A 76 76 0 0 1 164 88" fill="none" stroke="#1FA374" stroke-width="6"
+              <path id="pulseArc" d="M 12 88 A 76 76 0 0 1 164 88" fill="none" stroke="#0E8F5C" stroke-width="6"
                       stroke-linecap="round" stroke-dasharray="238.76" stroke-dashoffset="238.76"></path>
               <text x="12" y="98" style="font-family:'IBM Plex Mono',monospace; font-size:7px; letter-spacing:.05em; fill:var(--text-3);" text-anchor="start">0</text>
               <text x="164" y="98" style="font-family:'IBM Plex Mono',monospace; font-size:7px; letter-spacing:.05em; fill:var(--text-3);" text-anchor="end">100</text>
@@ -1380,6 +1467,16 @@
       </form>
     </div>
   </div>
+
+  <!-- ---------- AGENTS ---------- -->
+  <div id="view-agents" class="hidden">
+    <div class="section-head">
+      <h2>Agents</h2>
+      <div class="hint">Automations you can deploy on top of your data. Each runs on its own once active. Deploying an agent never changes your snapshots or scores, it only decides what gets pushed to you and when.</div>
+    </div>
+    <div id="agentCards"></div>
+  </div>
+
   </div>
   <button class="ask-margyn-fab" id="askMargynFab" title="Ask Margyn" aria-label="Ask Margyn" aria-expanded="false" aria-controls="askMargynPanel"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></button>
   <div class="ask-margyn-panel hidden" id="askMargynPanel">
@@ -1423,6 +1520,12 @@
   <div class="detail-modal">
     <button class="detail-close" id="shopifyClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div id="shopifyContent"></div>
+  </div>
+</div>
+<div class="detail-overlay hidden" id="agentOverlay">
+  <div class="detail-modal wide">
+    <button class="detail-close" id="agentClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    <div id="agentContent"></div>
   </div>
 </div>
 <footer>Margyn 1.0 · Built for new-age Indian businesses</footer>
@@ -1475,7 +1578,7 @@ function fmtDay(iso){
 }
 function scoreClass(s){ return s >= 70 ? 'score-good' : s >= 40 ? 'score-warn' : 'score-bad'; }
 function scoreBand(s){
-  if(s >= 70) return { cls:'good', color:'#1FA374', label:'Healthy' };
+  if(s >= 70) return { cls:'good', color:'#0E8F5C', label:'Healthy' };
   if(s >= 40) return { cls:'warn', color:'#5B6472', label:'Caution' };
   return { cls:'bad', color:'#B3432E', label:'At risk' };
 }
@@ -1569,11 +1672,12 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
 });
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 function showView(name){
-  ['summary','profile','ledger','calculate','scores','history','payments','books','connectors','financing'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  ['summary','profile','ledger','calculate','scores','history','payments','books','connectors','financing','agents'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   if(name === 'ledger'){ renderLedgerView(); renderKhataParties(); renderReconLedger(); }
   if(name === 'books') renderZohoBooksTab();
   if(name === 'history') renderHistoryView();
+  if(name === 'agents') renderAgents();
   window.scrollTo({ top:0, behavior:'smooth' });
 }
 document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
@@ -1853,7 +1957,7 @@ document.getElementById('profileForm').addEventListener('submit', async (e) => {
   } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
   finally { btn.disabled = false; }
 });
-const VITAL_ACCENTS = { 'Cash Position':'#1FA374','Receivables Aging':'#B3432E','Payables Due (30d)':'#5B6472','GST/ITC Leakage':'#B3432E','Net Margin':'#1FA374','Working Capital Runway':'#1FA374' };
+const VITAL_ACCENTS = { 'Cash Position':'#0E8F5C','Receivables Aging':'#B3432E','Payables Due (30d)':'#5B6472','GST/ITC Leakage':'#B3432E','Net Margin':'#0E8F5C','Working Capital Runway':'#0E8F5C' };
 const ZERO_VITALS = [
   { label:'Cash Position', value:'₹0', score:0 },
   { label:'Receivables Aging', value:'₹0 over 90d', score:0 },
@@ -3329,7 +3433,7 @@ function renderVitalsBarChart(vitals, hasData){
   host.innerHTML = '';
   if(!hasData){ host.innerHTML = '<div class="trend-empty">Add a snapshot to compare your six vitals here.</div>'; return; }
   vitals.forEach(v => {
-    const accent = VITAL_ACCENTS[v.label] || '#1FA374';
+    const accent = VITAL_ACCENTS[v.label] || '#0E8F5C';
     const pct = Math.max(2, Math.min(100, v.score || 0));
     const row = document.createElement('div'); row.className = 'hbar-row';
     row.innerHTML = '<span class="hbar-label">'+v.label+'</span>' +
@@ -3475,7 +3579,7 @@ function deltaBadge(curr, prev, opts){
 }
 let sparkGradId = 0;
 function sparklineSvg(values, color){
-  color = color || '#1FA374';
+  color = color || '#0E8F5C';
   const clean = (values||[]).map(v => Number(v)||0);
   if(clean.length < 2) return '<svg class="kc-spark" viewBox="0 0 100 32" preserveAspectRatio="none"></svg>';
   const min = Math.min(...clean), max = Math.max(...clean);
@@ -3637,7 +3741,7 @@ function renderSummary(){
   const kpis = [
     { icon:'wallet', label:'Cash position', value: inr(latest?latest.cash:0), curr: latest?Number(latest.cash):0, prevVal: prev?Number(prev.cash):null, series: seriesOf('cash'), accent:'#0E8F5C', nav:{view:'ledger', ltab:'cash'} },
     { icon:'inbox', label:'Receivables', value: inr(recvTotal), curr: recvTotal, prevVal: null, series: seriesOf('recv_total'), accent:'#B3432E', nav:{view:'ledger', ltab:'receivables'} },
-    { icon:'percent', label:'Net margin', value: latest && Number(latest.revenue) ? ((Number(latest.net_profit)/Number(latest.revenue))*100).toFixed(1)+'%' : '0.0%', curr: latest && Number(latest.revenue) ? (Number(latest.net_profit)/Number(latest.revenue))*100 : 0, prevVal: prev && Number(prev.revenue) ? (Number(prev.net_profit)/Number(prev.revenue))*100 : null, series: marginSeries, accent:'#1FA374', nav:{view:'scores'} },
+    { icon:'percent', label:'Net margin', value: latest && Number(latest.revenue) ? ((Number(latest.net_profit)/Number(latest.revenue))*100).toFixed(1)+'%' : '0.0%', curr: latest && Number(latest.revenue) ? (Number(latest.net_profit)/Number(latest.revenue))*100 : 0, prevVal: prev && Number(prev.revenue) ? (Number(prev.net_profit)/Number(prev.revenue))*100 : null, series: marginSeries, accent:'#0E8F5C', nav:{view:'scores'} },
     { icon:'clock', label:'Payables (30d)', value: inr(paySoon), curr: paySoon, prevVal: null, series: seriesOf('pay_soon'), invert:true, accent:'#5B6472', nav:{view:'ledger', ltab:'payables'} }
   ];
   strip.innerHTML = '';
@@ -3709,7 +3813,7 @@ function computePaymentsMetrics(d){
   // Simple method mix placeholder: UPI vs "Other" (card/netbanking/wallet combined).
   // Real version needs per-transaction method breakdown from Razorpay Transactions export — see roadmap.
   const methods = [
-    { name:'UPI', pct: upiPct, color:'#1FA374' },
+    { name:'UPI', pct: upiPct, color:'#0E8F5C' },
     { name:'Other (card/NB/wallet)', pct: 100 - upiPct, color:'#5C6B7A' }
   ];
   const topMethod = methods.slice().sort((a,b) => b.pct - a.pct)[0];
@@ -4896,6 +5000,380 @@ async function runBriefingGeneration(regenerate){
 }
 document.getElementById('generateBriefing').addEventListener('click', () => runBriefingGeneration(false));
 document.getElementById('regenerateBriefing').addEventListener('click', () => runBriefingGeneration(true));
+/* ============================================================
+   AGENTS TAB
+   Catalog of deployable automations. First real card: WhatsApp Bell,
+   which wires the existing Opening/Closing Bell + inbound conversational
+   backend (api/whatsapp.js, api/_lib/whatsappAgent.js) to a UI. No new
+   WhatsApp backend logic is created here.
+
+   Deploy state lives in agent_deployments (one row per user+agent_id).
+   All of the Configure form saves into agent_deployments.config (JSONB)
+   in a SINGLE write. Stakeholder routing rows are their own table
+   (business_stakeholders, keyed on business_id) and are written
+   independently of the config blob.
+
+   NOTE (flagged to VP, not fixed here): api/whatsapp.js handleCron selects
+   recipients purely on profiles.whatsapp_opt_in + whatsapp_phone and does
+   NOT check agent_deployments.status. Pausing the agent sets status='paused'
+   but the cron will keep sending until that filter is added server-side.
+   ============================================================ */
+const AGENT_VITALS = ['Cash Position','Receivables Aging','Payables Due (30d)','GST/ITC Leakage','Net Margin','Working Capital Runway'];
+const WA_FREQ_LABELS = { opening:'Opening Bell only', closing:'Closing Bell only', both:'Both bells', custom:'Custom schedule' };
+let agentDeployments = {};
+let agentStakeholders = [];
+
+async function loadAgentData(){
+  agentDeployments = {};
+  agentStakeholders = [];
+  try {
+    const { data } = await sbClient.from('agent_deployments').select('*').eq('user_id', currentUser.id);
+    (data || []).forEach(r => { agentDeployments[r.agent_id] = r; });
+  } catch(e){ console.error('[margyn] loadAgentData deployments:', e); }
+  try {
+    const { data } = await sbClient.from('business_stakeholders').select('*').eq('business_id', currentUser.id).order('created_at', { ascending:true });
+    agentStakeholders = data || [];
+  } catch(e){ console.error('[margyn] loadAgentData stakeholders:', e); }
+}
+
+function agentBadge(status){
+  if(status === 'active') return '<span class="agent-badge active">Active</span>';
+  if(status === 'paused') return '<span class="agent-badge paused">Paused</span>';
+  return '<span class="agent-badge notdeployed">Not deployed</span>';
+}
+
+async function renderAgents(){
+  const host = document.getElementById('agentCards');
+  host.innerHTML = '<div class="loading">Loading agents…</div>';
+  await loadAgentData();
+  const wa = agentDeployments['whatsapp_bell'];
+  const waStatus = (wa && wa.status) || 'not_deployed';
+
+  let actions;
+  if(waStatus === 'active'){
+    actions = '<button class="btn-ghost" id="waPauseBtn">Pause</button>' +
+              '<span class="agent-configure-link" id="waConfigureLink">Configure</span>';
+  } else if(waStatus === 'paused'){
+    actions = '<button class="btn-primary" id="waResumeBtn">Resume</button>' +
+              '<span class="agent-configure-link" id="waConfigureLink">Configure</span>';
+  } else {
+    actions = '<button class="btn-primary" id="waDeployBtn">Deploy</button>';
+  }
+
+  host.innerHTML =
+    '<div class="agent-card">' +
+      '<div class="agent-card-head">' +
+        '<div style="flex:1; min-width:0;">' +
+          '<h3>WhatsApp Bell</h3>' +
+          '<div class="agent-desc">Pushes your Opening and Closing Bell briefing to WhatsApp, and lets you ask about your numbers by replying.</div>' +
+        '</div>' +
+        agentBadge(waStatus) +
+      '</div>' +
+      '<div class="agent-card-actions">' + actions + '</div>' +
+    '</div>' +
+    '<div class="agent-card is-disabled">' +
+      '<div class="agent-card-head">' +
+        '<div style="flex:1; min-width:0;">' +
+          '<h3>Auto-Reconciliation</h3>' +
+          '<div class="agent-desc">Automatically matches incoming payments against open invoices and flags mismatches for review.</div>' +
+        '</div>' +
+        '<span class="agent-badge soon">Coming soon</span>' +
+      '</div>' +
+      '<div class="agent-card-actions"><button class="btn-primary" disabled>Deploy</button></div>' +
+    '</div>';
+
+  const dep = document.getElementById('waDeployBtn');
+  if(dep) dep.addEventListener('click', startWhatsappDeploy);
+  const pause = document.getElementById('waPauseBtn');
+  if(pause) pause.addEventListener('click', () => setAgentStatus('whatsapp_bell', 'paused'));
+  const resume = document.getElementById('waResumeBtn');
+  if(resume) resume.addEventListener('click', () => setAgentStatus('whatsapp_bell', 'active'));
+  const cfg = document.getElementById('waConfigureLink');
+  if(cfg) cfg.addEventListener('click', openWhatsappConfigure);
+}
+
+/* ---------- modal plumbing ---------- */
+function openAgentModal(html){
+  document.getElementById('agentContent').innerHTML = html;
+  document.getElementById('agentOverlay').classList.remove('hidden');
+}
+function closeAgentModal(){ document.getElementById('agentOverlay').classList.add('hidden'); }
+document.getElementById('agentClose').addEventListener('click', closeAgentModal);
+document.getElementById('agentOverlay').addEventListener('click', (e) => { if(e.target.id === 'agentOverlay') closeAgentModal(); });
+
+/* ---------- deploy flow (no OTP: number is stored, verification happens
+   the first time the user replies to a bell, matched on whatsapp_phone) ---------- */
+function stepDots(n){
+  return '<div class="agent-step-dots">' +
+    '<span class="' + (n>=1?'on':'') + '"></span>' +
+    '<span class="' + (n>=2?'on':'') + '"></span></div>';
+}
+
+function startWhatsappDeploy(){
+  const existing = (currentProfile && currentProfile.whatsapp_phone) || '';
+  openAgentModal(
+    stepDots(1) +
+    '<div class="agent-modal-title">Deploy WhatsApp Bell</div>' +
+    '<div class="hint">Step 1 of 2 — the number your briefing goes to. This is also the number Margyn will answer when you reply.</div>' +
+    '<label>WhatsApp number (with country code)</label>' +
+    '<input type="tel" id="waPhoneInput" placeholder="+91 98765 43210" value="' + escapeHtml(existing) + '">' +
+    '<div class="btn-row"><button class="primary" id="waPhoneNext">Continue</button>' +
+    '<span class="note bad" id="waPhoneErr"></span></div>'
+  );
+  document.getElementById('waPhoneNext').addEventListener('click', () => {
+    const raw = document.getElementById('waPhoneInput').value;
+    const digits = String(raw || '').replace(/[^\d]/g, '');
+    if(digits.length < 10){ document.getElementById('waPhoneErr').textContent = 'Enter a valid number with country code.'; return; }
+    waDeployConfirm(digits);
+  });
+}
+
+function waDeployConfirm(digits){
+  openAgentModal(
+    stepDots(2) +
+    '<div class="agent-modal-title">Confirm opt-in</div>' +
+    '<div class="hint">Step 2 of 2 — Margyn will send your Opening and Closing Bell to <strong>+' + escapeHtml(digits) + '</strong> as a WhatsApp utility message. You can pause or change this any time from the Agents tab.</div>' +
+    '<label style="display:flex; gap:9px; align-items:flex-start; text-transform:none; letter-spacing:0; font-family:\'Manrope\',sans-serif; font-size:13px; color:var(--text-1);">' +
+      '<input type="checkbox" id="waOptIn" style="width:auto; margin:2px 0 0;">' +
+      '<span>I agree to receive automated WhatsApp briefings from Margyn on this number.</span></label>' +
+    '<div class="btn-row"><button class="primary" id="waConfirmBtn">Deploy agent</button>' +
+    '<button class="ghost" id="waBackBtn" style="padding:13px 20px;">Back</button>' +
+    '<span class="note" id="waConfirmNote"></span></div>'
+  );
+  document.getElementById('waBackBtn').addEventListener('click', startWhatsappDeploy);
+  document.getElementById('waConfirmBtn').addEventListener('click', async () => {
+    const note = document.getElementById('waConfirmNote');
+    if(!document.getElementById('waOptIn').checked){ note.className = 'note bad'; note.textContent = 'Tick the box to continue.'; return; }
+    note.className = 'note'; note.textContent = 'Deploying…';
+    try {
+      const { error: pErr } = await withTimeout(
+        sbClient.from('profiles').update({ whatsapp_phone: digits, whatsapp_verified: true, whatsapp_opt_in: true }).eq('id', currentUser.id),
+        20000, 'Saving number');
+      if(pErr) throw pErr;
+      currentProfile.whatsapp_phone = digits; currentProfile.whatsapp_verified = true; currentProfile.whatsapp_opt_in = true;
+      const nowIso = new Date().toISOString();
+      const { error: dErr } = await withTimeout(
+        sbClient.from('agent_deployments').upsert(
+          { user_id: currentUser.id, agent_id: 'whatsapp_bell', status: 'active', deployed_at: nowIso, updated_at: nowIso },
+          { onConflict: 'user_id,agent_id' }),
+        20000, 'Deploying agent');
+      if(dErr) throw dErr;
+      closeAgentModal();
+      renderAgents();
+    } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not deploy.'; }
+  });
+}
+
+async function setAgentStatus(agentId, status){
+  try {
+    const { error } = await withTimeout(
+      sbClient.from('agent_deployments').update({ status: status, updated_at: new Date().toISOString() })
+        .eq('user_id', currentUser.id).eq('agent_id', agentId),
+      20000, 'Updating agent');
+    if(error) throw error;
+    renderAgents();
+  } catch(err){ alert(err.message || 'Could not update the agent.'); }
+}
+
+/* ---------- configure flow ---------- */
+function openWhatsappConfigure(){
+  const dep = agentDeployments['whatsapp_bell'] || {};
+  const cfg = dep.config || {};
+  const pv = cfg.priority_vitals || {};
+  const freq = cfg.frequency || 'both';
+
+  const freqOpts = Object.keys(WA_FREQ_LABELS).map(k =>
+    '<option value="' + k + '"' + (freq === k ? ' selected' : '') + '>' + WA_FREQ_LABELS[k] + '</option>').join('');
+
+  const timeOpts = [];
+  for(let h = 0; h < 24; h++){
+    for(const m of ['00','30']){
+      const v = String(h).padStart(2,'0') + ':' + m;
+      timeOpts.push('<option value="' + v + '"' + ((cfg.send_time_ist || '08:00') === v ? ' selected' : '') + '>' + v + '</option>');
+    }
+  }
+
+  const vitalRows = AGENT_VITALS.map(label => {
+    const mode = pv[label] === 'always' ? 'always' : 'flagged';
+    return '<div class="agent-vital-row"><span>' + escapeHtml(label) + '</span>' +
+      '<span class="agent-seg" data-vital="' + escapeHtml(label) + '">' +
+        '<button data-mode="always" class="' + (mode === 'always' ? 'on' : '') + '">Always</button>' +
+        '<button data-mode="flagged" class="' + (mode === 'flagged' ? 'on' : '') + '">When flagged</button>' +
+      '</span></div>';
+  }).join('');
+
+  openAgentModal(
+    '<div class="agent-modal-title">Configure WhatsApp Bell</div>' +
+    '<div class="hint">Editable any time. Frequency, send time and priority vitals save together in one step. Stakeholder contacts save as you add or remove them.</div>' +
+
+    '<div class="agent-fieldset"><span class="agent-fs-label">Frequency</span>' +
+      '<select id="waFreq">' + freqOpts + '</select></div>' +
+
+    '<div class="agent-fieldset"><span class="agent-fs-label">Send time (IST)</span>' +
+      '<select id="waSendTime">' + timeOpts.join('') + '</select></div>' +
+
+    '<div class="agent-fieldset"><span class="agent-fs-label">Priority vitals</span>' +
+      '<div class="hint" style="margin-bottom:8px;">Which vitals always appear in the briefing, versus only when they cross a threshold.</div>' +
+      vitalRows + '</div>' +
+
+    '<div class="agent-fieldset"><span class="agent-fs-label">Stakeholder routing</span>' +
+      '<div class="hint" style="margin-bottom:10px;">People Margyn can forward a message to when you reply asking it to. Used by the WhatsApp agent\'s routing.</div>' +
+      '<div id="waStkList"></div>' +
+      '<div class="agent-stk-row">' +
+        '<input type="text" id="waStkName" placeholder="Name" style="margin-bottom:0;">' +
+        '<input type="tel" id="waStkPhone" placeholder="+91…" style="margin-bottom:0;">' +
+        '<select id="waStkRole" style="margin-bottom:0;"><option value="AR">AR</option><option value="AP">AP</option><option value="owner">owner</option></select>' +
+        '<button class="stk-del" id="waStkAdd" title="Add" style="color:var(--emerald); font-size:22px;">+</button>' +
+      '</div>' +
+      '<span class="note bad" id="waStkErr"></span></div>' +
+
+    '<div class="agent-fieldset"><span class="agent-fs-label">Threshold sensitivity</span>' +
+      '<div class="agent-ref-note">Bell thresholds follow your scoring sensitivity in Settings. A dedicated control for this is coming with the Settings build. There is no separate threshold system here.</div></div>' +
+
+    '<div class="btn-row"><button class="primary" id="waCfgSave">Save configuration</button>' +
+    '<span class="note" id="waCfgNote"></span></div>'
+  );
+
+  renderStakeholderList();
+  document.getElementById('waStkAdd').addEventListener('click', addStakeholder);
+
+  document.querySelectorAll('#agentContent .agent-seg').forEach(seg => {
+    seg.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+      });
+    });
+  });
+
+  document.getElementById('waCfgSave').addEventListener('click', saveWhatsappConfig);
+}
+
+function renderStakeholderList(){
+  const host = document.getElementById('waStkList');
+  if(!host) return;
+  if(!agentStakeholders.length){ host.innerHTML = '<div class="hint" style="margin-bottom:10px;">No contacts yet.</div>'; return; }
+  host.innerHTML = agentStakeholders.map(s =>
+    '<div class="agent-stk-row" data-id="' + s.id + '">' +
+      '<span style="font-size:13px; color:var(--text-1);">' + escapeHtml(s.name) + '</span>' +
+      '<span style="font-size:13px; color:var(--text-2); font-family:\'IBM Plex Mono\',monospace;">' + escapeHtml(s.phone) + '</span>' +
+      '<span class="agent-badge notdeployed">' + escapeHtml(s.role) + '</span>' +
+      '<button class="stk-del" data-del="' + s.id + '" title="Remove">&times;</button>' +
+    '</div>').join('');
+  host.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => deleteStakeholder(b.getAttribute('data-del'))));
+}
+
+async function addStakeholder(){
+  const name = document.getElementById('waStkName').value.trim();
+  const phoneRaw = document.getElementById('waStkPhone').value;
+  const phone = String(phoneRaw || '').replace(/[^\d]/g, '');
+  const role = document.getElementById('waStkRole').value;
+  const err = document.getElementById('waStkErr');
+  err.textContent = '';
+  if(!name || phone.length < 10){ err.textContent = 'Name and a valid phone number are required.'; return; }
+  try {
+    const { data, error } = await sbClient.from('business_stakeholders')
+      .insert({ business_id: currentUser.id, name: name, phone: phone, role: role }).select().single();
+    if(error) throw error;
+    agentStakeholders.push(data);
+    document.getElementById('waStkName').value = '';
+    document.getElementById('waStkPhone').value = '';
+    renderStakeholderList();
+  } catch(e){ err.textContent = e.message || 'Could not add contact.'; }
+}
+
+async function deleteStakeholder(id){
+  try {
+    const { error } = await sbClient.from('business_stakeholders').delete().eq('id', id);
+    if(error) throw error;
+    agentStakeholders = agentStakeholders.filter(s => s.id !== id);
+    renderStakeholderList();
+  } catch(e){ alert(e.message || 'Could not remove contact.'); }
+}
+
+async function saveWhatsappConfig(){
+  const note = document.getElementById('waCfgNote');
+  note.className = 'note'; note.textContent = 'Saving…';
+  const priority = {};
+  document.querySelectorAll('#agentContent .agent-seg').forEach(seg => {
+    const on = seg.querySelector('button.on');
+    priority[seg.getAttribute('data-vital')] = on ? on.getAttribute('data-mode') : 'flagged';
+  });
+  const config = {
+    frequency: document.getElementById('waFreq').value,
+    send_time_ist: document.getElementById('waSendTime').value,
+    priority_vitals: priority,
+    threshold_ref: 'settings_scoring_sensitivity',
+    updated_from: 'agents_tab'
+  };
+  try {
+    const { error } = await withTimeout(
+      sbClient.from('agent_deployments').update({ config: config, updated_at: new Date().toISOString() })
+        .eq('user_id', currentUser.id).eq('agent_id', 'whatsapp_bell'),
+      20000, 'Saving configuration');
+    if(error) throw error;
+    if(agentDeployments['whatsapp_bell']) agentDeployments['whatsapp_bell'].config = config;
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    setTimeout(closeAgentModal, 900);
+  } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
+}
+
+/* ============================================================
+   SETTINGS — account delete (soft delete)
+   Sets profiles.deleted_at, best-effort revokes every connector via the
+   existing disconnect endpoints, then ends the Supabase session. The
+   actual data purge is a separate scheduled job that keys off deleted_at.
+   ============================================================ */
+async function runAccountDelete(){
+  const note = document.getElementById('delAcctNote');
+  note.className = 'note'; note.textContent = 'Deleting…';
+  const nowIso = new Date().toISOString();
+  // Best-effort connector revokes — one failing must not block the others
+  // or the deleted_at write.
+  try { if(typeof shopifyStore !== 'undefined' && shopifyStore && shopifyStore.id)
+    await shopifyApi('/api/shopify?action=disconnect', { method:'POST', body: JSON.stringify({ storeId: shopifyStore.id }) }); }
+  catch(e){ console.error('[margyn] delete: shopify disconnect', e); }
+  try { await zohoApi('/api/zoho?action=disconnect', { method:'POST', body: JSON.stringify({}) }); }
+  catch(e){ console.error('[margyn] delete: zoho disconnect', e); }
+  try { await sbClient.from('connector_credentials').update({ disconnected_at: nowIso })
+    .eq('user_id', currentUser.id).is('disconnected_at', null); }
+  catch(e){ console.error('[margyn] delete: razorpay/credentials revoke', e); }
+
+  try {
+    const { error } = await withTimeout(
+      sbClient.from('profiles').update({ deleted_at: nowIso }).eq('id', currentUser.id),
+      20000, 'Deleting account');
+    if(error) throw error;
+  } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not delete the account.'; return; }
+
+  try { await sbClient.auth.signOut(); } catch(e){ /* session already gone is fine */ }
+
+  document.getElementById('agentContent').innerHTML =
+    '<div class="agent-modal-title">Account deleted</div>' +
+    '<div class="hint">Your account is deactivated and all connectors have been revoked. Your data will be permanently removed by a scheduled cleanup. You have been signed out.</div>' +
+    '<div class="btn-row"><button class="primary" id="delDoneBtn">Close</button></div>';
+  document.getElementById('delDoneBtn').addEventListener('click', () => window.location.reload());
+}
+
+function confirmAccountDelete(){
+  openAgentModal(
+    '<div class="agent-modal-title">Delete account</div>' +
+    '<div class="hint">This deactivates your account immediately, revokes every connected source (Razorpay, Zoho, Shopify), and signs you out. Data is purged later by a scheduled job. This cannot be undone from the app.</div>' +
+    '<label style="text-transform:none; letter-spacing:0; font-family:\'Manrope\',sans-serif; font-size:13px; color:var(--text-1);">Type DELETE to confirm</label>' +
+    '<input type="text" id="delAcctConfirm" placeholder="DELETE">' +
+    '<div class="btn-row"><button class="primary" id="delAcctBtn" style="background:#B3432E;">Delete my account</button>' +
+    '<button class="ghost" id="delAcctCancel" style="padding:13px 20px;">Cancel</button>' +
+    '<span class="note" id="delAcctNote"></span></div>'
+  );
+  document.getElementById('delAcctCancel').addEventListener('click', closeAgentModal);
+  document.getElementById('delAcctBtn').addEventListener('click', () => {
+    if(document.getElementById('delAcctConfirm').value.trim() !== 'DELETE'){
+      const n = document.getElementById('delAcctNote'); n.className = 'note bad'; n.textContent = 'Type DELETE to confirm.'; return;
+    }
+    runAccountDelete();
+  });
+}
+document.getElementById('deleteAccountBtn').addEventListener('click', confirmAccountDelete);
+
 renderVitals(ZERO_VITALS, false);
 bootAuth();
 </script>
