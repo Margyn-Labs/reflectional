@@ -125,9 +125,6 @@ async function handleWebhookEvent(req, res) {
     // An unrecognized button reply is treated as free text — hand it to the
     // conversational routing layer instead of just logging it.
     if (replyType === 'unrecognized' && event.buttonText && event.buttonText.trim()) {
-      // Ack before the slow Claude loop so the BSP doesn't retry (see the
-      // note in handleConversationalInbound). wamid guard dedupes any retry.
-      if (!res.headersSent) res.status(200).json({ received: true });
       try {
         await runConversation({
           profileId: matches[0].id,
@@ -139,7 +136,6 @@ async function handleWebhookEvent(req, res) {
       } catch (err) {
         console.error('whatsapp webhook: conversational handoff failed', err.message);
       }
-      return;
     }
   } catch (err) {
     console.error('whatsapp webhook: failed to persist reply', err.message);
@@ -153,14 +149,11 @@ async function handleWebhookEvent(req, res) {
 /* Conversational routing layer — inbound free-text messages           */
 /* ------------------------------------------------------------------ */
 async function handleConversationalInbound(res, textEvent) {
-  // Acknowledge the webhook IMMEDIATELY. The Claude tool loop can take ~8s,
-  // longer than the BSP's webhook timeout — if we hold the connection open
-  // that long, Gupshup/Meta assume failure and re-deliver the same message,
-  // and each re-delivery generates another reply (the "loop"). The function
-  // stays alive to finish runConversation because we await it below; the
-  // wamid guard inside runConversation catches any retry that still slips in.
-  res.status(200).json({ received: true, conversational: true });
-
+  // We must finish the Claude loop BEFORE responding — Vercel terminates a
+  // Node function once its response is sent, so "ack early, work later" drops
+  // the reply. That means the response can take ~8s, and the BSP may retry
+  // the delivery in the meantime. Retries are made harmless by the wamid
+  // dedupe in runConversation (persistent — checks whatsapp_conversations).
   let matches;
   try {
     matches = await selectRows(
@@ -188,6 +181,8 @@ async function handleConversationalInbound(res, textEvent) {
   } catch (err) {
     console.error('whatsapp webhook: conversational inbound failed', err.message);
   }
+
+  if (!res.headersSent) res.status(200).json({ received: true, conversational: true });
 }
 
 function normalizePhone(phone) {
