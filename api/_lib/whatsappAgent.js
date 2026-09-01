@@ -70,9 +70,24 @@ async function alreadyHandled(wamid) {
 const APPROVAL_REQUIRED_REPLY =
   "I can't action payments, approvals, or balance changes over WhatsApp — that has to go through the Margyn app where it's authenticated and logged. Anything else, I can help with here.";
 
-// Fast hard block: if the inbound message reads like a request to move money
-// or approve something, we never reach Claude and never touch a tool.
-const FINANCIAL_INTENT_RE = /\b(pay|paying|payment|payout|paid|remit|remittance|transfer|neft|imps|rtgs|settle|settlement|disburse|refund|reimburse|approve|approval|approved|authoris|authoriz|sign\s*-?\s*off|release\s+(the\s+)?funds|write\s*-?\s*off|writeoff|adjust\s+(the\s+)?balance|update\s+(the\s+)?balance|top\s*-?\s*up)\b/i;
+// Fast hard block. Only an unambiguous IMPERATIVE aimed at the agent to move
+// money / approve something is stopped before Claude. Questions ("how much
+// have I paid in GST?") and relay requests ("tell my AP person...") are not
+// caught here — Claude handles those, and it has no write tools regardless.
+// A false negative is still safe: Claude cannot action anything and the
+// system prompt refuses. So bias toward not blocking legitimate messages.
+const FINANCIAL_COMMAND_RE = /^\s*(?:(?:please|pls|plz|kindly|hey\s+margyn|margyn|can\s+you|could\s+you|would\s+you|i\s+want\s+(?:you\s+)?to|i\s+need\s+(?:you\s+)?to)[\s,]+)*(?:go\s+(?:and\s+)?)?(pay|approve|transfer|remit|settle|disburse|refund|reimburse|authoris|authoriz|release\s+(?:the\s+)?funds?|wire|send\s+(?:the\s+)?(?:money|payment|funds))\b/i;
+const FINANCIAL_MUTATION_RE = /\b(?:adjust|update|change|set|correct|reduce|increase)\s+[\w\s'-]{0,25}\bbalance\b|\bmark(?:ed|ing)?\s+[\w\s#'-]{0,25}\bpaid\b/i;
+
+// ...but NOT when the message asks the agent to relay/forward to a person
+// ("tell my AP person the bill needs paying", "ask AR to chase receivables").
+// Those are routing requests — Claude handles them via route_message.
+const RELAY_INTENT_RE = /\b(tell|ask|let\s+[\w'-]+\s+know|message|forward|pass\s+(it\s+|this\s+)?(on|along)|remind|loop\s+in|notify|chase|follow\s*up|nudge|ping)\b/i;
+
+function isHardFinancialCommand(text) {
+  if (RELAY_INTENT_RE.test(text)) return false;
+  return FINANCIAL_COMMAND_RE.test(text) || FINANCIAL_MUTATION_RE.test(text);
+}
 
 /* ------------------------------------------------------------------ */
 /* Tools — every one is read-only except route_message, which only     */
@@ -148,7 +163,8 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
   }
 
   // Hard financial-intent block: never reaches Claude, never touches a tool.
-  if (FINANCIAL_INTENT_RE.test(cleanText)) {
+  // Skipped when the message is a relay request (see isHardFinancialCommand).
+  if (isHardFinancialCommand(cleanText)) {
     await persist(profileId, 'assistant', APPROVAL_REQUIRED_REPLY, null);
     await sendReply(fromPhone, APPROVAL_REQUIRED_REPLY);
     return;
@@ -261,7 +277,8 @@ You can do exactly two things:
 1. ANSWER a question using your read-only tools: get_vitals, get_invoice_status, get_stakeholder.
 2. ROUTE the message to the right person with route_message when it is really meant for someone else (customer chasing a payment -> AR, vendor/bill question -> AP, anything else the owner should see -> owner). After routing, tell the sender you have passed it on and to whom.
 
-HARD RULE — you have NO ability to take any financial or approval action and must never imply otherwise. You cannot make, schedule or confirm a payment, move funds, change or adjust a balance, approve or sign off on anything, or write anything back to the books. If the message asks for any of that, do NOT call any tool — reply only with exactly this line: "${APPROVAL_REQUIRED_REPLY}"
+HARD RULE — you have NO ability to take any financial or approval action and must never imply otherwise. You cannot make, schedule or confirm a payment, move funds, change or adjust a balance, approve or sign off on anything, or write anything back to the books. If the sender asks YOU to do any of that, do NOT call any tool — reply only with exactly this line: "${APPROVAL_REQUIRED_REPLY}"
+Relaying is different and allowed: "tell my AP person the Acme bill needs paying" or "chase Acme on the overdue payment" is a routing request — use route_message to forward it to the right person. You are passing a message to a human, not actioning anything.
 
 Other rules:
 - Only state numbers, statuses or names that a tool actually returned. Never invent a figure, an invoice status, or a contact.
@@ -373,17 +390,32 @@ async function toolRouteMessage(input, ctx) {
   if (!rows.length) return { error: `No ${role || 'matching'} contact on file — cannot route. Tell the sender.` };
 
   const s = rows[0];
+
+  // Preferred: an approved Utility template (WHATSAPP_TEMPLATE_RELAY). A
+  // template can be delivered even when the recipient has no open 24h session
+  // with our number — which is the normal case for a teammate who hasn't
+  // messaged Margyn. Body params: [1] who it's from, [2] the message, [3] note.
+  const relayTemplate = process.env.WHATSAPP_TEMPLATE_RELAY;
+  if (relayTemplate) {
+    const r = await bsp.sendTemplate({
+      to: s.phone,
+      templateId: relayTemplate,
+      params: [ctx.senderLabel, ctx.inboundText.slice(0, 600), note || 'No extra context given.']
+    });
+    if (!r.ok) return { error: `Could not deliver to ${s.name}: ${r.error}` };
+    return { routed_to: s.name, role: s.role, via: 'template' };
+  }
+
+  // Fallback until the template is approved: free-form text. Only lands if the
+  // stakeholder already has an open 24h WhatsApp session with our number.
   const forwarded =
     `Forwarded via Margyn from ${ctx.senderLabel}:\n\n"${ctx.inboundText}"` +
     (note ? `\n\nContext: ${note}` : '');
-
-  // NOTE: a free-form text send only lands if this stakeholder already has an
-  // open 24h WhatsApp session with our number. Outside that window Gupshup
-  // rejects it and the error surfaces here — wire an approved utility template
-  // (e.g. WHATSAPP_TEMPLATE_ROUTING) if routing to cold numbers becomes common.
   const r = await bsp.sendText({ to: s.phone, text: forwarded });
-  if (!r.ok) return { error: `Could not deliver to ${s.name}: ${r.error}` };
-  return { routed_to: s.name, role: s.role };
+  if (!r.ok) {
+    return { error: `Could not deliver to ${s.name} — they may not have messaged Margyn recently, and the relay template isn't set up yet. ${r.error}` };
+  }
+  return { routed_to: s.name, role: s.role, via: 'session_text' };
 }
 
 /* ------------------------------------------------------------------ */
@@ -442,4 +474,4 @@ async function persist(profileId, role, content, toolCalls, waMessageId) {
   }
 }
 
-module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, FINANCIAL_INTENT_RE };
+module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand };
