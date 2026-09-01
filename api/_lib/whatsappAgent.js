@@ -33,14 +33,16 @@ const HISTORY_TURNS = 10;
 const MAX_INBOUND_CHARS = 1500;
 const MAX_REPLY_CHARS = 900;
 
-// In-memory guard against a BSP re-delivering the same inbound message (its
-// webhook timeout is shorter than our Claude tool loop, so retries happen).
-// Warm-instance-local and short-lived — the immediate 200 ack in
-// api/whatsapp.js is the primary defence; this catches retries that still
-// land on the same warm function instance before the ack is seen.
+// Dedupe BSP webhook retries. The Claude loop runs ~8s, past Gupshup's
+// webhook timeout, so the same inbound message gets re-delivered — each
+// retry would otherwise generate another reply (the "loop"). Two layers:
+//   1. in-memory: instant, catches retries hitting the same warm instance
+//   2. persistent: a SELECT on whatsapp_conversations.wa_message_id, catches
+//      retries that land on a different function instance
 const _handledWamids = new Map();
 const WAMID_TTL_MS = 5 * 60 * 1000;
-function alreadyHandled(wamid) {
+
+function seenInMemory(wamid) {
   if (!wamid) return false;
   const now = Date.now();
   for (const [k, t] of _handledWamids) {
@@ -49,6 +51,20 @@ function alreadyHandled(wamid) {
   if (_handledWamids.has(wamid)) return true;
   _handledWamids.set(wamid, now);
   return false;
+}
+
+async function alreadyHandled(wamid) {
+  if (!wamid) return false;
+  if (seenInMemory(wamid)) return true;
+  try {
+    const rows = await selectRows(
+      'whatsapp_conversations',
+      `select=id&wa_message_id=eq.${encodeURIComponent(wamid)}&limit=1`
+    );
+    return rows.length > 0;
+  } catch (e) {
+    return false; // never block a real message on a dedupe-check failure
+  }
 }
 
 const APPROVAL_REQUIRED_REPLY =
@@ -116,13 +132,14 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
   if (!profileId || !cleanText) return;
 
   // Drop BSP retries of a message we're already handling / have handled.
-  if (alreadyHandled(wamid)) {
+  if (await alreadyHandled(wamid)) {
     console.log('[whatsappAgent] duplicate inbound ignored:', wamid);
     return;
   }
 
-  // Always persist the inbound turn first — even if we can't reply.
-  await persist(profileId, 'user', cleanText, null);
+  // Persist the inbound turn first (with its wamid, so a retry that arrives
+  // after this point is caught by the persistent dedupe check above).
+  await persist(profileId, 'user', cleanText, null, wamid);
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -411,13 +428,14 @@ async function buildMessages(profileId, cleanText) {
 /* ------------------------------------------------------------------ */
 /* Persistence — never throws (a logging failure must not break reply) */
 /* ------------------------------------------------------------------ */
-async function persist(profileId, role, content, toolCalls) {
+async function persist(profileId, role, content, toolCalls, waMessageId) {
   try {
     await insertRows('whatsapp_conversations', [{
       profile_id: profileId,
       role,
       content: content || '',
-      tool_calls: toolCalls || null
+      tool_calls: toolCalls || null,
+      wa_message_id: waMessageId || null
     }]);
   } catch (e) {
     console.error('[whatsappAgent] persist failed:', e.message);
