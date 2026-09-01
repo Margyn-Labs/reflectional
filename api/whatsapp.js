@@ -125,29 +125,42 @@ async function handleWebhookEvent(req, res) {
     // An unrecognized button reply is treated as free text — hand it to the
     // conversational routing layer instead of just logging it.
     if (replyType === 'unrecognized' && event.buttonText && event.buttonText.trim()) {
+      // Ack before the slow Claude loop so the BSP doesn't retry (see the
+      // note in handleConversationalInbound). wamid guard dedupes any retry.
+      if (!res.headersSent) res.status(200).json({ received: true });
       try {
         await runConversation({
           profileId: matches[0].id,
           fromPhone: event.from,
           text: event.buttonText,
+          wamid: event.wamid,
           contextMessageId: event.contextMessageId
         });
       } catch (err) {
         console.error('whatsapp webhook: conversational handoff failed', err.message);
       }
+      return;
     }
   } catch (err) {
     console.error('whatsapp webhook: failed to persist reply', err.message);
     // Still 200 — the failure is ours to chase in logs, not WhatsApp's to retry forever.
   }
 
-  res.status(200).json({ received: true });
+  if (!res.headersSent) res.status(200).json({ received: true });
 }
 
 /* ------------------------------------------------------------------ */
 /* Conversational routing layer — inbound free-text messages           */
 /* ------------------------------------------------------------------ */
 async function handleConversationalInbound(res, textEvent) {
+  // Acknowledge the webhook IMMEDIATELY. The Claude tool loop can take ~8s,
+  // longer than the BSP's webhook timeout — if we hold the connection open
+  // that long, Gupshup/Meta assume failure and re-deliver the same message,
+  // and each re-delivery generates another reply (the "loop"). The function
+  // stays alive to finish runConversation because we await it below; the
+  // wamid guard inside runConversation catches any retry that still slips in.
+  res.status(200).json({ received: true, conversational: true });
+
   let matches;
   try {
     matches = await selectRows(
@@ -156,13 +169,11 @@ async function handleConversationalInbound(res, textEvent) {
     );
   } catch (err) {
     console.error('whatsapp webhook: profile lookup failed', err.message);
-    res.status(200).json({ received: true, error: true });
     return;
   }
 
   if (!matches.length) {
     console.error('whatsapp webhook: no profile matches phone', textEvent.from);
-    res.status(200).json({ received: true, matched: false });
     return;
   }
 
@@ -171,13 +182,12 @@ async function handleConversationalInbound(res, textEvent) {
       profileId: matches[0].id,
       fromPhone: textEvent.from,
       text: textEvent.text,
+      wamid: textEvent.wamid,
       contextMessageId: textEvent.contextMessageId
     });
   } catch (err) {
     console.error('whatsapp webhook: conversational inbound failed', err.message);
   }
-
-  res.status(200).json({ received: true, conversational: true });
 }
 
 function normalizePhone(phone) {
