@@ -109,7 +109,7 @@ async function runConversation({ profileId, fromPhone, text }) {
   // Hard financial-intent block: never reaches Claude, never touches a tool.
   if (FINANCIAL_INTENT_RE.test(cleanText)) {
     await persist(profileId, 'assistant', APPROVAL_REQUIRED_REPLY, null);
-    await bsp.sendText({ to: fromPhone, text: APPROVAL_REQUIRED_REPLY });
+    await sendReply(fromPhone, APPROVAL_REQUIRED_REPLY);
     return;
   }
 
@@ -167,14 +167,30 @@ async function runConversation({ profileId, fromPhone, text }) {
   }
 
   if (finalText) {
-    await bsp.sendText({ to: fromPhone, text: finalText.slice(0, MAX_REPLY_CHARS) });
+    await sendReply(fromPhone, finalText.slice(0, MAX_REPLY_CHARS));
     return;
   }
 
   // No usable answer (Claude error, or ran out of tool iterations).
   const fallback = "Sorry — I couldn't work that one out over WhatsApp. Try rephrasing, or open the Margyn app.";
   await persist(profileId, 'assistant', fallback, null);
-  await bsp.sendText({ to: fromPhone, text: fallback });
+  await sendReply(fromPhone, fallback);
+}
+
+/** Send an outbound WhatsApp reply, logging (not throwing) on failure so a
+ *  BSP-side problem — wallet, session window, unregistered number — is
+ *  visible in the function logs instead of vanishing. */
+async function sendReply(to, text) {
+  let result;
+  try {
+    result = await bsp.sendText({ to, text });
+  } catch (e) {
+    console.error('[whatsappAgent] sendText threw:', e.message);
+    return;
+  }
+  if (!result || !result.ok) {
+    console.error('[whatsappAgent] sendText failed:', result && result.error);
+  }
 }
 
 /* ------------------------------------------------------------------ */
