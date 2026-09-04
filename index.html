@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+<!-- Marketing homepage. AI finance team / waitlist. Shipped 2026-09-04. -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Margyn, a Financial AI Operator for Indian digital-native businesses</title>
-<meta name="description" content="Margyn is a Financial AI Operator for Indian digital-native businesses. It connects your payments, accounting, commerce, banking and tax, tells you in plain language what changed, and increasingly acts on it.">
+<title>Margyn — the AI finance team for India's growing businesses</title>
+<meta name="description" content="Margyn is the AI finance team for India's digital-native businesses. Connect books, payments, and your store. Talk on WhatsApp. A number only counts when two independent sources agree.">
 <meta name="theme-color" content="#0A0E12">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="canonical" href="https://margyn.in/">
@@ -154,7 +155,6 @@
 
   /* hero briefing reel */
   .hero-stage{ position:relative; }
-  @media (min-width:1025px){ .hero-stage{ margin-right:calc(-1 * var(--pad) - 8px); } }
   .reel{ position:relative; z-index:2; min-width:0; max-width:100%; opacity:0; transform:translateY(28px) scale(.97); animation:uvIn 1.05s var(--ease) .4s forwards; }
   @keyframes uvIn{ to{ opacity:1; transform:none; } }
   @keyframes beatO{ 0%{ box-shadow:0 0 0 0 rgba(204,91,52,0.5); } 70%,100%{ box-shadow:0 0 0 8px rgba(204,91,52,0); } }
@@ -647,7 +647,7 @@
       <a href="#agents">Agents</a>
       <a href="#connectors">Connections</a>
       <a href="#security">Trust</a>
-      <a class="nav-cta" href="/app.html">Get started</a>
+      <button class="nav-cta" type="button" data-open-wl>Join the waitlist</button>
     </div>
   </div>
 </nav>
@@ -659,20 +659,20 @@
   <div class="hero-grid-lines"></div>
   <div class="hero-grid">
     <div class="hero-copy">
-      <div class="kicker on-dark h-anim d1">Financial AI Operator</div>
-      <h1 class="hero-title h-anim d2">Your whole business, <span class="accent">in one morning briefing.</span></h1>
-      <p class="hero-sub h-anim d3">Margyn is a Financial AI Operator for Indian digital-native businesses. It connects your payments, accounting, commerce, banking and tax, tells you in plain language what changed overnight, and increasingly acts on it.</p>
+      <div class="kicker on-dark h-anim d1">AI finance team</div>
+      <h1 class="hero-title h-anim d2">Books, bank, and GST still <span class="accent">disagree about your cash.</span></h1>
+      <p class="hero-sub h-anim d3">Margyn is the AI finance team for India's growing businesses. You connect the tools you already run — books, payments, your store — and talk to it on WhatsApp. It only treats a number as true when two independently operated sources agree, so you get one answer you can act on instead of three that don't match.</p>
       <div class="hero-ctas h-anim d4">
-        <a class="btn-primary" href="#what">
-          See it work
+        <button class="btn-primary" type="button" data-open-wl>
+          Join the waitlist
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </a>
-        <button class="btn-ghost" type="button" data-open-wl>Get early access</button>
+        </button>
+        <a class="btn-ghost" href="#problem">See how it works</a>
       </div>
       <div class="hero-trust h-anim d5">
-        <span>Read-only access</span>
-        <span>RBI Account Aggregator</span>
-        <span>DPDPA-compliant</span>
+        <span>Read-only connectors</span>
+        <span>WhatsApp-first</span>
+        <span>Two sources before it acts</span>
       </div>
     </div>
 
@@ -682,45 +682,33 @@
           <div class="reel-topbar">
             <i></i><i></i><i></i>
             <span class="reel-u mono">margyn sends this to you</span>
-            <span class="reel-pulse mono">PULSE 76</span>
           </div>
           <div class="reel-viewport">
             <div class="reel-track" id="reelTrack">
               <article class="reel-card">
-                <div class="rc-head mono"><span class="rc-when">Opening Bell</span><span class="rc-time">07:30</span></div>
-                <p class="rc-line">Pulse <b>76</b>, up 4 overnight. Cash <b>&#8377;42.1L</b>, tracking fine.</p>
+                <div class="rc-head mono"><span class="rc-when">Reconciler &middot; Live</span><span class="rc-time">just now</span></div>
+                <p class="rc-line">Razorpay and Zoho didn't match on one payment. Margyn sent it to review instead of guessing.</p>
                 <div class="rc-rows">
-                  <div class="rc-row"><span>Cash position</span><i>&#8377;42.1L</i></div>
-                  <div class="rc-row"><span>Receivables past 30 days</span><i>&#8377;3.6L</i></div>
+                  <div class="rc-row"><span>Matched automatically</span><i>41</i></div>
+                  <div class="rc-row"><span>Needs review</span><i>1</i></div>
                 </div>
-                <div class="rc-ai"><span class="dot"></span><p>Two invoices are past 30 days. Want me to nudge Acme and Tech Solutions on WhatsApp?</p></div>
+                <div class="rc-ai"><span class="dot"></span><p>One Razorpay payout doesn't line up with the Zoho ledger. Flagged for a human to look.</p></div>
               </article>
               <article class="reel-card">
-                <div class="rc-head mono"><span class="rc-when">Cash watch</span><span class="rc-time">midday</span></div>
-                <p class="rc-line">Payables spike <b>&#8377;5.1L</b> on Friday.</p>
+                <div class="rc-head mono"><span class="rc-when">Ask on WhatsApp &middot; Live</span><span class="rc-time">today</span></div>
+                <p class="rc-line">You: <b>which payments still need a books match?</b></p>
                 <div class="rc-rows">
-                  <div class="rc-row"><span>Balance after payout</span><i>&#8377;37.0L</i></div>
-                  <div class="rc-row"><span>Bank feed shows it</span><i>2 days late</i></div>
+                  <div class="rc-row"><span>Unmatched Razorpay payouts</span><i>3</i></div>
                 </div>
-                <div class="rc-ai"><span class="dot"></span><p>The bank won't show this until it's already gone. You're covered, but the week's tight.</p></div>
+                <div class="rc-ai"><span class="dot"></span><p>Three Razorpay payouts are unmatched in Zoho. Want the list?</p></div>
               </article>
               <article class="reel-card">
-                <div class="rc-head mono"><span class="rc-when">Reconciled</span><span class="rc-time">live</span></div>
-                <p class="rc-line"><b>42 payments</b> matched to invoices and bank overnight.</p>
+                <div class="rc-head mono"><span class="rc-when">Briefing &middot; Coming</span><span class="rc-time">soon</span></div>
+                <p class="rc-line">Morning and evening WhatsApp briefings on what moved.</p>
                 <div class="rc-rows">
-                  <div class="rc-row"><span>Matched automatically</span><i>42</i></div>
-                  <div class="rc-row"><span>Sent to human review</span><i>1</i></div>
+                  <div class="rc-row"><span>Status</span><i>Not live yet</i></div>
                 </div>
-                <div class="rc-ai"><span class="dot"></span><p>One payment came in &#8377;4,200 short. I sent it to review instead of guessing.</p></div>
-              </article>
-              <article class="reel-card">
-                <div class="rc-head mono"><span class="rc-when">Closing Bell</span><span class="rc-time">18:00</span></div>
-                <p class="rc-line">Acme paid <b>&#8377;2.1L</b>. Tech Solutions opened the link.</p>
-                <div class="rc-rows">
-                  <div class="rc-row"><span>Collected today</span><i>&#8377;2.1L</i></div>
-                  <div class="rc-row"><span>Still outstanding</span><i>&#8377;1.5L</i></div>
-                </div>
-                <div class="rc-ai"><span class="dot"></span><p>Net margin held at 14.6% after the day's refunds and fees. Nothing needs you tonight.</p></div>
+                <div class="rc-ai"><span class="dot"></span><p>Not live yet. Waitlist gets first access.</p></div>
               </article>
             </div>
           </div>
@@ -739,8 +727,8 @@
     </button>
     <div id="wlFormWrap">
       <div class="wl-eyebrow">Early access</div>
-      <h3 id="wlTitle">We're building this with a small group of founders.</h3>
-      <p class="wl-sub">If you run a digital-native business between roughly &#8377;10 and &#8377;100 crore in revenue, and your tools don't agree with each other, you're exactly who we want in the room. Full access, a direct line to the team, and real influence on what we build next.</p>
+      <h3 id="wlTitle">Join the Margyn waitlist</h3>
+      <p class="wl-sub">For founders whose books, payments, and tax tools don't tell the same story.</p>
       <form id="wlForm">
         <div class="wl-field">
           <label for="wlName">Name</label>
@@ -794,8 +782,8 @@
           <div class="kicker">Five sources, five answers</div>
           <h2>Five logins, and four different answers to "how much cash do I have?"</h2>
         </div>
-        <p>Payments in one tab. Accounting in another. The bank in a third. Commerce and tax somewhere else again. Each one is right about its own slice and blind to the rest.</p>
-        <p class="b">By the time you've opened all of them and lined the numbers up by hand, the week is gone and the moment to act on it has passed.</p>
+        <p>Payments in one tab. Accounting in another. The bank in a third. Commerce and tax somewhere else. Each feed is right about its own slice. None of them is the full picture until they are checked against each other.</p>
+        <p class="b">The gap between these numbers is where founders lose the week — and sometimes the money.</p>
       </div>
       <div class="scatter reveal" id="scatter">
         <div class="scatter-q">asking each one: how much cash do I have today?</div>
@@ -816,7 +804,7 @@
     <div class="reveal"><div class="rhead"><span class="n">02</span><span>What Margyn does</span></div></div>
     <div class="head reveal">
       <div class="kicker">The shape of it</div>
-      <h2>See everything. Understand it. <span class="accent">Act on it.</span></h2>
+      <h2>See it. Ask it. <span class="accent">Act only when sources agree.</span></h2>
       <p>Three layers, in order. Each one only works if the one under it does.</p>
     </div>
     <div class="pipe reveal">
@@ -825,23 +813,23 @@
         <div class="pstep">
           <div class="ps-n">01</div>
           <h3>See everything</h3>
-          <p>One view across every connected tool. Six vitals, computed the same way every time, from source data.</p>
-          <div class="ticker" data-ticker='["cash position, verified against the bank","receivables, aged to the day","GST credit you are about to lose","real margin, after refunds and fees","runway measured, not estimated"]'></div>
+          <p>One picture across the tools you already use — starting with books, payments, and your store.</p>
+          <div class="ticker" data-ticker='["cash position, verified against your bank","receivables, aged to the day","GST credit you are about to lose","real margin, after refunds and fees","runway measured, not estimated"]'></div>
           <div class="ps-tag now">Live today</div>
         </div>
         <div class="pstep spot">
           <div class="ps-n">02</div>
-          <h3>Understand it</h3>
-          <p>Ask in plain language. The answer is written like a person wrote it. The numbers underneath are computed, not guessed.</p>
-          <div class="ticker" data-ticker='["why did margin drop in October?","what is coming due this week?","which customers are slipping?","can I afford the Q3 hire?","where did the GST mismatch come from?"]'></div>
+          <h3>Ask in plain language</h3>
+          <p>WhatsApp and in-app Ask. Answers use computed figures from connected sources — not invented totals.</p>
+          <div class="ticker" data-ticker='["which Razorpay payments still don’t match Zoho?","what is coming due this week?","which customers are slipping?","can I afford the Q3 hire?","where did the GST mismatch come from?"]'></div>
           <div class="ps-tag now">Live today</div>
         </div>
         <div class="pstep">
           <div class="ps-n">03</div>
-          <h3>Act on it</h3>
-          <p>Agents that do the work, not just flag it. They act only where the sources already agree.</p>
-          <div class="ticker" data-ticker='["reconciled 42 payments overnight","nudged 3 customers on WhatsApp","routed 1 mismatch to human review","updated 6 credit balances","flagged 2 invoices for a decision"]'></div>
-          <div class="ps-tag frontier">The frontier we are building toward</div>
+          <h3>Act with discipline</h3>
+          <p>Agents move only when two independently operated sources agree. Otherwise a human looks.</p>
+          <div class="ticker" data-ticker='["reconciled 41 payments overnight","routed 1 mismatch to human review","matched Shopify orders to Razorpay payouts","flagged 2 payments for a decision","checked books against payments, twice a day"]'></div>
+          <div class="ps-tag now">Live: Reconciler &middot; Coming: Briefing &amp; more</div>
         </div>
       </div>
     </div>
@@ -855,12 +843,12 @@
     <div class="head reveal">
       <div class="kicker">Vitals and Pulse</div>
       <h2>Six vitals. One number.</h2>
-      <p>The vitals are ground truth. The Pulse Score reads operating and financial health on a 0 to 100 scale, computed from them.</p>
+      <p>Vitals are computed from connected data. Words on top are generated. The model does not invent the figure.</p>
     </div>
     <div class="vgrid">
       <div class="vcar reveal" id="vcar">
         <div class="vtrack" id="vtrack">
-          <div class="vcard glass"><div class="k">Cash position</div><div class="val">&#8377;42.1L</div><div class="cap">Triangulated across settlements, payouts and the bank feed.</div><div class="bar"><i data-w="82"></i></div></div>
+          <div class="vcard glass"><div class="k">Cash position</div><div class="val">&#8377;42.1L</div><div class="cap">Illustrative layout — your numbers come from your connectors.</div><div class="bar"><i data-w="82"></i></div></div>
           <div class="vcard glass"><div class="k">Receivables aging</div><div class="val">&#8377;18.4L</div><div class="cap">&#8377;6.1L is already past 30 days.</div><div class="bar"><i data-w="46"></i></div></div>
           <div class="vcard glass"><div class="k">Payables due</div><div class="val">&#8377;11.3L</div><div class="cap">Next spike lands in 4 days.</div><div class="bar"><i data-w="60"></i></div></div>
           <div class="vcard glass"><div class="k">GST / ITC leakage</div><div class="val" style="color:var(--orange)">&#8377;1.2L</div><div class="cap">Input credit mismatches, flagged before you file.</div><div class="bar"><i data-w="18" style="background:var(--orange)"></i></div></div>
@@ -878,7 +866,7 @@
           <div class="pv"><b id="pulseNum">76</b><span>Pulse Score</span></div>
         </div>
         <h4>Operating and financial health</h4>
-        <p>Not a credit score. Margyn holds no RBI CIC licence and does not rank you for a lender.</p>
+        <p>Not a credit score. Pulse is an internal operating read — not a lender score, not a CIBIL substitute.</p>
       </div>
     </div>
     <p class="vitals-note reveal"><b>The AI narrates the score. It never calculates it.</b> Every vital is a deterministic computation over your connected data. The words on top are generated. The numbers under them are not.</p>
@@ -894,27 +882,27 @@
         <div class="head">
           <div class="kicker">The chat layer</div>
           <h2>You can talk to it.</h2>
-          <p>Ask a real question. Get an answer built from the same numbers that drive the vitals.</p>
+          <p>Ask a real question. Get an answer built from connected source data — with Verified vs Signal said in plain words.</p>
         </div>
         <p>No report to open, no filter to set. You ask the way you'd ask a finance lead who already has every number in front of them.</p>
         <p>The answer reads like plain language. It isn't a guess. Every figure comes from the same computation that drives the vitals.</p>
         <div class="ac-prompts">
-          <div class="ac-p">"How much runway do I actually have?"</div>
-          <div class="ac-p">"Which vendor payments can slip a week?"</div>
+          <div class="ac-p">"Which Razorpay payments still don't match Zoho?"</div>
+          <div class="ac-p">"Did Shopify and Razorpay agree on yesterday?"</div>
         </div>
       </div>
       <div class="ask-window reveal" data-d="1">
         <div class="ask-top">Ask Margyn</div>
         <div class="ask-body" id="askBody">
-          <div class="amsg q show" data-i="0">Why did net margin drop in October?</div>
+          <div class="amsg q show" data-i="0">Which Razorpay payments still don't match Zoho?</div>
           <div class="amsg a show" data-i="1">
             <div class="a-tag">Margyn</div>
-            <p>Margin fell from <span class="n">14.6%</span> to <span class="n">11.2%</span>. Two drivers. Razorpay fees rose <span class="n">&#8377;1.9L</span> on higher card volume, and <span class="n">&#8377;3.4L</span> of refunds settled that were not in the ledger yet. Underlying gross margin held.</p>
+            <p>Three payouts are unmatched in books. I can list amounts and dates — <span class="n">Signal</span> until books catch up.</p>
           </div>
-          <div class="amsg q show" data-i="2">What is coming due this week?</div>
+          <div class="amsg q show" data-i="2">Did Shopify and Razorpay agree on yesterday?</div>
           <div class="amsg a show" data-i="3">
             <div class="a-tag">Margyn</div>
-            <p>Three payables totalling <span class="n">&#8377;9.7L</span>. The largest is Supplier Inc at <span class="n">&#8377;5.1L</span> on Friday. Cash position covers all three with <span class="n">&#8377;28L</span> to spare.</p>
+            <p>Mostly. One order is paid in Shopify and missing in Razorpay — needs review.</p>
           </div>
           <div class="atyping" id="askTyping"><span></span><span></span><span></span></div>
         </div>
@@ -934,22 +922,23 @@
         <div class="head">
           <div class="kicker">The frontier</div>
           <h2>It can act for you.</h2>
-          <p>The briefing tells you what moved. Agents do something about it. One is live now, and each new one ships only once it can act without guessing.</p>
+          <p>One agent is live. More ship only when they can act without guessing.</p>
         </div>
         <div class="agent-status live">Live</div>
-        <h3>WhatsApp Bell</h3>
-        <p>The one that's live. Every morning: what your Pulse Score did overnight and the few things that need you. Every evening: what got done. No new app to open.</p>
+        <h3>Reconciler</h3>
+        <p>Matches payments, orders, and books. Mismatches go to review. Talk to it on WhatsApp.</p>
         <div class="agent-run" id="agentRun">
-          <i>07:30 reads overnight data</i>
-          <i>checks 6 vitals</i>
-          <i>ranks what changed</i>
-          <i>sends 1 message</i>
+          <i>reads Razorpay overnight</i>
+          <i>checks against Zoho Books</i>
+          <i>matches payments to ledger entries</i>
+          <i>flags what doesn't match</i>
           <i>waits for your reply</i>
         </div>
         <div class="agent-list">
-          <div class="agent-row"><span class="agent-status live">Live</span><span class="ar-name">WhatsApp Bell</span><span class="ar-note">briefing and replies</span></div>
-          <div class="agent-row"><span class="agent-status coming">Coming</span><span class="ar-name">Auto-Reconciliation</span><span class="ar-note">matches payments to invoices</span></div>
-          <div class="agent-row"><span class="agent-status open">Next</span><span class="ar-name">More agents</span><span class="ar-note">tell us what to build</span></div>
+          <div class="agent-row"><span class="agent-status live">Live</span><span class="ar-name">Reconciler</span><span class="ar-note">matches payments, orders and books</span></div>
+          <div class="agent-row"><span class="agent-status live">Live</span><span class="ar-name">Ask / WhatsApp Q&amp;A</span><span class="ar-note">inbound questions on your numbers, read-only</span></div>
+          <div class="agent-row"><span class="agent-status coming">Coming</span><span class="ar-name">Briefing (Opening &amp; Closing Bell)</span><span class="ar-note">morning and evening WhatsApp picture of what moved</span></div>
+          <div class="agent-row"><span class="agent-status coming">Coming</span><span class="ar-name">GST Guard</span><span class="ar-note">when GST and books stop agreeing</span></div>
         </div>
       </div>
       <div class="wh-phone reveal" data-d="1">
@@ -961,17 +950,17 @@
           </div>
           <div class="wh-msgs" id="whMsgs">
             <div class="wh-msg in show" id="wm2"><div class="wh-b multi">
-              <b>Opening Bell</b>
-              <div>Pulse Score <b>76</b>, up 4 since yesterday. Cash &#8377;42.1L, tracking fine.</div>
-              <div class="sep">2 invoices past 30 days, &#8377;3.6L. Chase Acme and Tech Solutions today?</div>
+              <b>Reconciler</b>
+              <div>One Razorpay payment didn't match Zoho Books &mdash; amounts differ by &#8377;4,200.</div>
+              <div class="sep">Send it to review, or check the payout details first?</div>
             </div></div>
             <div class="wh-msg in show" id="wm3"><div class="wh-b wh-btns">
-              <button class="wh-rb" id="wmReply">Yes, send the nudge</button>
-              <button class="wh-rb">Not yet</button>
-              <button class="wh-rb">Remind me at 4</button>
+              <button class="wh-rb" id="wmReply">Send to review</button>
+              <button class="wh-rb">Show payout details</button>
+              <button class="wh-rb">Remind me later</button>
             </div></div>
             <div class="wh-msg in" id="wmTyping"><div class="wh-typing"><span></span><span></span><span></span></div></div>
-            <div class="wh-msg in show" id="wm5"><div class="wh-b">On it. Both customers messaged with a payment link. I will report back at Closing Bell.</div></div>
+            <div class="wh-msg in show" id="wm5"><div class="wh-b">Done. It's in the review queue. 41 other payments matched automatically overnight.</div></div>
           </div>
           <div class="wh-input"><input type="text" placeholder="Message" disabled></div>
           <span class="wh-home"></span>
@@ -988,7 +977,7 @@
     <div class="head reveal">
       <div class="kicker">The connector map</div>
       <h2>Connects to what you already use.</h2>
-      <p>Your financial picture is already spread across these tools. Margyn sits on top of them. Nobody changes how they work.</p>
+      <p>Margyn sits on the tools you already run. Nobody has to change how they work.</p>
     </div>
 
     <div class="cmap reveal" id="cmap" aria-hidden="true">
@@ -1021,14 +1010,16 @@
         <div class="conn-row">
           <span class="conn-chip live"><span class="d"></span>Razorpay <span style="color:var(--ink-3);font-weight:500;">payments</span></span>
           <span class="conn-chip live"><span class="d"></span>Shopify <span style="color:var(--ink-3);font-weight:500;">orders and refunds</span></span>
-          <span class="conn-chip live"><span class="d"></span>Zoho Books <span style="color:var(--ink-3);font-weight:500;">the ledger and GST</span></span>
+          <span class="conn-chip live"><span class="d"></span>Zoho Books <span style="color:var(--ink-3);font-weight:500;">ledger</span></span>
         </div>
       </div>
       <div class="conn-block">
         <div class="conn-label">Coming</div>
         <div class="conn-row">
+          <span class="conn-chip coming">Tally</span>
           <span class="conn-chip coming">Cashfree</span>
-          <span class="conn-chip coming">RBI Account Aggregator</span>
+          <span class="conn-chip coming">GST / GSP</span>
+          <span class="conn-chip coming">Bank (Account Aggregator via partner)</span>
           <span class="conn-chip coming">WooCommerce</span>
           <span class="conn-chip coming">Amazon SP-API</span>
           <span class="conn-chip coming">PayU</span>
@@ -1050,27 +1041,26 @@
 <!-- ================= 07 · VERIFICATION + DELIVERY ================= -->
 <section id="security" class="band--tint">
   <div class="wrap">
-    <div class="reveal"><div class="rhead"><span class="n">07</span><span>Why we can let it act</span></div></div>
+    <div class="reveal"><div class="rhead"><span class="n">07</span><span>Why it can act</span></div></div>
     <div class="verify">
       <div class="verify-copy reveal">
         <div class="head">
           <div class="kicker">The trust layer</div>
-          <h2>An agent only acts when the sources agree.</h2>
+          <h2>An agent only acts when independent sources agree.</h2>
         </div>
-        <p>Before Margyn acts, it checks the same fact against independent sources: payments, accounting, commerce, the bank feed, GST filings. When they agree, the action is safe to take alone. When they don't, a person decides. That check is why an agent can update a credit balance without someone signing off on every line.</p>
+        <p>Before Margyn treats a number as safe to act on, it wants the same fact from two independently operated sources — for example payments and books. When they disagree, a human looks. No guessing to close the gap.</p>
+        <p class="b">It reaches you on WhatsApp — where Indian founders already run the business.</p>
         <div class="vswap" id="vswap">
-          <div class="vs-item" data-good="1">payment &#10003; &nbsp; invoice &#10003; &nbsp; bank &#10003; &nbsp; reconciled automatically</div>
+          <div class="vs-item" data-good="1">payments &#10003; &nbsp; books &#10003; &nbsp; reconciled automatically</div>
           <div class="vs-item bad" data-good="0">amounts differ by &#8377;4,200 &nbsp; sent to human review</div>
         </div>
       </div>
       <div class="vtri reveal" id="vtri" data-d="1">
         <div class="vtri-sources">
           <div class="vsrc"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M20 6L9 17l-5-5"/></svg></span>Payments</div>
-          <div class="vsrc"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M20 6L9 17l-5-5"/></svg></span>Accounting</div>
-          <div class="vsrc"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M20 6L9 17l-5-5"/></svg></span>Bank feed</div>
-          <div class="vsrc"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M20 6L9 17l-5-5"/></svg></span>GST filings</div>
+          <div class="vsrc"><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M20 6L9 17l-5-5"/></svg></span>Books</div>
         </div>
-        <div class="vtri-join">all four agree</div>
+        <div class="vtri-join">both sources agree</div>
         <div class="vtri-result">
           <span class="rk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg></span>
           <div><b>Margyn acts on its own</b><span>anything that does not line up goes to a person</span></div>
@@ -1081,12 +1071,12 @@
     <div class="practice reveal">
       <div class="practice-lead">
         <h3>It reaches you where you already work.</h3>
-        <p>Owners here run the business from WhatsApp, not a browser tab they mean to open. So that's where the briefing lands. That's where you reply. No login, no new screen.</p>
+        <p>Owners here run the business from WhatsApp, not a browser tab they mean to open. So that's where it talks to you. No login, no new screen.</p>
       </div>
       <div class="practice-stats" id="wfStats">
-        <div class="wf-stat"><div class="n" data-count-to="2">2</div><div class="l">messages a day, morning and evening</div></div>
-        <div class="wf-stat"><div class="n" data-count-to="0">0</div><div class="l">new apps to install</div></div>
-        <div class="wf-stat"><div class="n" data-count-to="10" data-prefix="&lt;" data-suffix=" min">&lt;10 min</div><div class="l">from connect to first briefing</div></div>
+        <div class="wf-stat"><div class="n" data-count-to="1">1</div><div class="l">channel you already use</div></div>
+        <div class="wf-stat"><div class="n" data-count-to="0">0</div><div class="l">new dashboards to learn</div></div>
+        <div class="wf-stat"><div class="n">2-source</div><div class="l">rule before it acts</div></div>
       </div>
     </div>
   </div>
@@ -1098,14 +1088,14 @@
   <div class="wrap">
     <div class="cta-inner reveal">
       <div class="kicker on-dark">Early access</div>
-      <h2>Tell us what you <span class="accent">want to see.</span></h2>
-      <p>We're building Margyn with a small group of founders whose tools don't agree with each other. Full access, a direct line to the team, and real say in what the next agent does. Pricing is still being set with this group.</p>
+      <h2>Deploy your <span class="accent">AI finance team</span> now.</h2>
+      <p>We're onboarding a small group of Indian digital-native founders. Join the waitlist — direct line to the team, first access as agents go live.</p>
       <div class="hero-ctas">
         <button class="btn-primary" type="button" data-open-wl>
-          Request access
+          Join the waitlist
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
-        <a class="btn-ghost" href="mailto:business@margyn.in">Talk to us</a>
+        <a class="btn-ghost" href="mailto:margynlabs@gmail.com">Talk to us</a>
       </div>
     </div>
   </div>
@@ -1127,10 +1117,10 @@
     <div class="footer-grid">
       <div class="footer-col">
         <div class="footer-brand"><img src="images/margyn-logo-mark.png" alt=""><span>margyn</span></div>
-        <p class="footer-desc">A Financial AI Operator for Indian digital-native businesses. Margyn Labs Pvt Ltd.</p>
+        <p class="footer-desc">The AI finance team for India's growing businesses. Margyn Labs.</p>
         <div class="footer-badges">
           <span class="footer-badge">DPDPA-compliant</span>
-          <span class="footer-badge">RBI Account Aggregator</span>
+          <span class="footer-badge">Read-only connectors</span>
         </div>
       </div>
       <div class="footer-col">
@@ -1139,26 +1129,26 @@
           <li><a href="#what">What it does</a></li>
           <li><a href="#agents">Agents</a></li>
           <li><a href="#connectors">Connections</a></li>
-          <li><a href="/app.html">Get started</a></li>
+          <li><a href="javascript:void(0)" data-open-wl>Join the waitlist</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h5>Company</h5>
         <ul>
           <li><a href="#security">Trust</a></li>
-          <li><a href="mailto:business@margyn.in">Pricing</a></li>
-          <li><a href="mailto:business@margyn.in">Contact</a></li>
+          <li><a href="mailto:margynlabs@gmail.com">Pricing</a></li>
+          <li><a href="mailto:margynlabs@gmail.com">Contact</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h5>Get in touch</h5>
         <ul>
-          <li><a href="mailto:business@margyn.in">business@margyn.in</a></li>
+          <li><a href="mailto:margynlabs@gmail.com">margynlabs@gmail.com</a></li>
         </ul>
       </div>
     </div>
     <div class="footer-inner">
-      <div>&copy; 2026 Margyn Labs Pvt Ltd</div>
+      <div>&copy; 2026 Margyn Labs</div>
       <div class="footer-legal">
         <a href="/privacy.html">Privacy policy</a> <a href="/terms.html">Terms of use</a>
       </div>
