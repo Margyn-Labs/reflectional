@@ -167,7 +167,7 @@ async function handleSummary(req, res) {
     );
     vouchers = await selectRows(
       'tally_vouchers',
-      `select=voucher_type,date,amount&install_id=in.${inList}&order=date.desc&limit=2000`
+      `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`
     );
     ledgers = await selectRows(
       'tally_ledgers',
@@ -234,7 +234,14 @@ async function handleSummary(req, res) {
       count: vouchers.length,
       by_type: byType,
       sales_30d: round2(sales30),
-      receipts_30d: round2(receipts30)
+      receipts_30d: round2(receipts30),
+      recent: vouchers.slice(0, 40).map((v) => ({
+        voucher_type: v.voucher_type || 'Other',
+        voucher_number: v.voucher_number || null,
+        date: v.date || null,
+        party_name: v.party_name || null,
+        amount: Math.abs(Number(v.amount) || 0)
+      }))
     },
     ledgers: { count: ledgerItems.length, items: ledgerItems.slice(0, 120) },
     provenance: 'signal'
