@@ -835,6 +835,7 @@
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
       <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
+      <button data-view="tally"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v4H3z"/><path d="M3 7v14h18V7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="13" y2="15"/></svg><span>Tally</span><span class="nav-badge hidden" id="tallyBadge"></span></button>
       <div class="nav-group-label">Automation</div>
       <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Agents</span><span class="nav-badge hidden" id="agentsBadge"></span></button>
       <div class="nav-group-label">Account</div>
@@ -1466,6 +1467,64 @@
       <div id="zvReconList"></div>
     </div>
   </div>
+  <!-- ---------- 3b-ii. TALLY ---------- -->
+  <div id="view-tally" class="hidden">
+    <div class="section-head">
+      <h2>Tally</h2>
+      <div class="hint">Straight from your TallyPrime books, pulled by the desktop agent: ledger balances, transactions and outstanding bills. Everything here is <strong>Signal</strong> — one source, held until a bank feed or GST filing corroborates it. No figure here moves your Pulse Score on its own.</div>
+    </div>
+    <div id="tallyNotConnected" class="mock-banner hidden">Tally isn't connected. Connect it under Connectors to sync your ledgers, transactions and outstanding bills.</div>
+    <div id="tallyTabContent" class="hidden">
+      <div class="pay-grid">
+        <div class="pay-card">
+          <div class="pc-label">Receivables outstanding</div>
+          <div class="pc-value" id="tvRecvVal">—</div>
+          <div class="pc-sub">Unpaid customer bills, all ages. Signal.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Payables due</div>
+          <div class="pc-value" id="tvPayVal">—</div>
+          <div class="pc-sub">Open vendor bills still owed. Signal.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Overdue</div>
+          <div class="pc-value" id="tvOverdueVal">—</div>
+          <div class="pc-sub">Bills past their due date, either side.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Sales, last 30 days</div>
+          <div class="pc-value" id="tvSalesVal">—</div>
+          <div class="pc-sub">Sum of sales vouchers dated in the last 30 days.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Receipts, last 30 days</div>
+          <div class="pc-value" id="tvReceiptsVal">—</div>
+          <div class="pc-sub">Cash actually collected in the last 30 days.</div>
+        </div>
+        <div class="pay-card">
+          <div class="pc-label">Synced from Tally</div>
+          <div class="pc-value" id="tvCountsVal">—</div>
+          <div class="pc-sub" id="tvAsOf">—</div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Transactions by type</h3><span class="cc-sub">All vouchers pulled so far</span></div>
+        <div class="hbar-list" id="tvByTypeChart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Outstanding bills</h3><span class="cc-sub">Most overdue first</span></div>
+        <div id="tvBillsList"></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Recent transactions</h3><span class="cc-sub">Newest first</span></div>
+        <div id="tvVouchersList"></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-head"><h3>Ledger balances</h3><span class="cc-sub">Largest first</span></div>
+        <div id="tvLedgersList"></div>
+      </div>
+    </div>
+  </div>
   <!-- ---------- 3c. FINANCING ---------- -->
   <div id="view-financing" class="hidden">
     <div class="card" style="border-left:3px solid var(--emerald);">
@@ -1708,10 +1767,11 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
 });
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 function showView(name){
-  ['summary','profile','ledger','calculate','scores','history','payments','books','connectors','financing','agents'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
+  ['summary','profile','ledger','calculate','scores','history','payments','books','tally','connectors','financing','agents'].forEach(v => document.getElementById('view-' + v).classList.toggle('hidden', v !== name));
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   if(name === 'ledger'){ renderLedgerView(); renderKhataParties(); renderReconLedger(); }
   if(name === 'books') renderZohoBooksTab();
+  if(name === 'tally') renderTallyTab();
   if(name === 'history') renderHistoryView();
   if(name === 'agents') renderAgents();
   window.scrollTo({ top:0, behavior:'smooth' });
@@ -1744,7 +1804,7 @@ async function refreshAll(){
   await loadTallyStatus();
   tallyData = await loadTallyData();
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
-  renderReconBooksCard(); renderReconLedger();
+  renderReconBooksCard(); renderReconLedger(); renderTallyTab();
   handleZohoHashReturn();
 }
 /* ============================================================
@@ -4658,6 +4718,89 @@ document.getElementById('tallyClose').addEventListener('click', () => {
 document.getElementById('tallyOverlay').addEventListener('click', (e) => {
   if(e.target.id === 'tallyOverlay'){ e.currentTarget.classList.add('hidden'); if(tallyPairPollTimer){ clearInterval(tallyPairPollTimer); tallyPairPollTimer = null; } }
 });
+/* ---------- Tally tab (mirrors the Books tab; data from api/tally.js?action=summary) ---------- */
+function renderTallyTab(){
+  const notConn = document.getElementById('tallyNotConnected');
+  const content = document.getElementById('tallyTabContent');
+  if(!notConn || !content) return;
+
+  const d = tallyData;
+  const badge = document.getElementById('tallyBadge');
+
+  if(!d || !d.connected){
+    notConn.classList.remove('hidden');
+    content.classList.add('hidden');
+    if(badge){ badge.textContent = ''; badge.classList.add('hidden'); }
+    return;
+  }
+  notConn.classList.add('hidden');
+  content.classList.remove('hidden');
+
+  const b = d.bills || {}, v = d.vouchers || {}, led = d.ledgers || {};
+
+  document.getElementById('tvRecvVal').textContent = inr(b.receivable_total || 0);
+  document.getElementById('tvPayVal').textContent = inr(b.payable_total || 0);
+  document.getElementById('tvOverdueVal').textContent = inr(b.overdue_total || 0);
+  document.getElementById('tvSalesVal').textContent = inr(v.sales_30d || 0);
+  document.getElementById('tvReceiptsVal').textContent = inr(v.receipts_30d || 0);
+  document.getElementById('tvCountsVal').textContent = (led.count || 0) + ' ledgers · ' + (v.count || 0) + ' vouchers · ' + (b.count || 0) + ' bills';
+  document.getElementById('tvAsOf').textContent = d.as_of ? ('as of ' + fmtDate(d.as_of)) : 'sync pending';
+
+  // transactions by type
+  const byType = Object.entries(v.by_type || {}).sort((a, c) => c[1] - a[1]);
+  const maxT = Math.max.apply(null, byType.map(x => x[1]).concat([1]));
+  const chart = document.getElementById('tvByTypeChart');
+  chart.innerHTML = '';
+  if(!byType.length){ chart.innerHTML = '<div class="ledger-empty">No transactions synced yet.</div>'; }
+  byType.forEach(([t, n]) => {
+    const row = document.createElement('div'); row.className = 'hbar-row';
+    row.innerHTML = '<span class="hbar-label">' + escapeHtml(t) + '</span>' +
+      '<div class="hbar-track"><div class="hbar-fill" style="width:0%;"></div></div>' +
+      '<span class="hbar-val">' + n + '</span>';
+    chart.appendChild(row);
+    requestAnimationFrame(() => { row.querySelector('.hbar-fill').style.width = Math.round(100 * n / maxT) + '%'; });
+  });
+
+  // outstanding bills
+  const bills = (b.items || []).slice().sort((a, c) => (c.overdue_days || 0) - (a.overdue_days || 0) || (c.amount || 0) - (a.amount || 0));
+  document.getElementById('tvBillsList').innerHTML = bills.length ? bills.map(x => {
+    const meta = (x.overdue_days != null && x.overdue_days > 0)
+      ? (x.overdue_days + ' days overdue')
+      : (x.due_date ? ('due ' + fmtDate(x.due_date)) : '');
+    const tag = x.direction === 'payable' ? '<span class="lr-tag warn">Payable</span>' : '<span class="lr-tag ok">Receivable</span>';
+    return '<div class="ledger-row"><div class="lr-main">' +
+      '<div class="lr-party">' + escapeHtml(x.party_name || 'Unknown') + '</div>' +
+      '<div class="lr-meta">' + (x.bill_ref ? ('Ref ' + escapeHtml(x.bill_ref) + ' · ') : '') + meta + '</div>' +
+    '</div>' + tag + '<div class="lr-amount">' + inr(x.amount || 0) + '</div></div>';
+  }).join('') : '<div class="ledger-empty">No outstanding bills.</div>';
+
+  // recent transactions
+  const rec = v.recent || [];
+  document.getElementById('tvVouchersList').innerHTML = rec.length ? rec.map(x =>
+    '<div class="ledger-row"><div class="lr-main">' +
+      '<div class="lr-party">' + escapeHtml(x.voucher_type || 'Voucher') + (x.voucher_number ? (' #' + escapeHtml(x.voucher_number)) : '') + '</div>' +
+      '<div class="lr-meta">' + (x.date ? fmtDate(x.date) : '') + (x.party_name ? (' · ' + escapeHtml(x.party_name)) : '') + '</div>' +
+    '</div><div class="lr-amount">' + inr(x.amount || 0) + '</div></div>'
+  ).join('') : '<div class="ledger-empty">No transactions synced yet.</div>';
+
+  // ledger balances
+  const ledItems = (led.items || []).filter(x => x.closing_balance != null)
+    .slice().sort((a, c) => Math.abs(c.closing_balance) - Math.abs(a.closing_balance)).slice(0, 40);
+  document.getElementById('tvLedgersList').innerHTML = ledItems.length ? ledItems.map(x => {
+    const bal = Number(x.closing_balance);
+    return '<div class="ledger-row"><div class="lr-main">' +
+      '<div class="lr-party">' + escapeHtml(x.name) + '</div>' +
+      '<div class="lr-meta">' + escapeHtml(x.parent || '') + '</div>' +
+    '</div><div class="lr-amount">' + inr(Math.abs(bal)) + (bal < 0 ? ' Cr' : ' Dr') + '</div></div>';
+  }).join('') : '<div class="ledger-empty">No closing balances yet — some Tally setups return these blank; the connector still records ledger names and groups.</div>';
+
+  // nav badge: overdue bill count
+  if(badge){
+    const odCount = (b.items || []).filter(x => x.overdue_days != null && x.overdue_days > 0).length;
+    if(odCount){ badge.textContent = odCount; badge.classList.remove('hidden'); }
+    else { badge.textContent = ''; badge.classList.add('hidden'); }
+  }
+}
 /* ============================================================
    ZOHO BOOKS CONNECTOR (NEW) — OAuth 2.0, org-picker gated.
    The only connector that can unlock receivables aging, payables
