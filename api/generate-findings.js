@@ -219,7 +219,12 @@ function buildEvidenceSheet(snapshots, receivables, payables, razorpayLive) {
     });
   });
 
-  const paySeries = ordered.map(s => s.payments_data ? { m: computePaymentsMetrics(s.payments_data), selfReported: isSelfReported(s.source) } : null);
+  // payments_data provenance is tracked by snapshots.payments_source, NOT
+  // snapshots.source — a snapshot can be source:'manual' overall while its
+  // payments block was written by the nightly Razorpay sync
+  // (payments_source:'razorpay_live'). Only that value counts as a real,
+  // independently-operated source; anything else was typed/uploaded by hand.
+  const paySeries = ordered.map(s => s.payments_data ? { m: computePaymentsMetrics(s.payments_data), selfReported: s.payments_source !== 'razorpay_live' } : null);
   const payPairs = [['failRate', 'Razorpay failed-payment rate'], ['mdrPct', 'Razorpay MDR'], ['lag', 'Razorpay settlement lag'], ['gross', 'Razorpay gross processed']];
   payPairs.forEach(([field, label]) => {
     const points = paySeries.filter(Boolean);
@@ -354,14 +359,22 @@ function validateFinding(claim, evidence) {
   const direction = primary.delta >= 0 ? 'up' : 'down';
   const headline = primary.label + ' ' + direction + (primary.pctChange !== null ? ' ' + Math.abs(primary.pctChange).toFixed(1) + '%' : '');
 
+  const tier = validCorroborators.length > 0 ? 'verified' : 'signal';
+  const corroboratorSources = Array.from(new Set(validCorroborators.map(m => m.source)));
+
   return {
     vital: primary.label,
-    tier: validCorroborators.length > 0 ? 'verified' : 'signal',
-    selfReported: primary.selfReported,
+    tier,
+    // A 'verified' finding is, by definition, corroborated by an
+    // independently-operated source — it must never also carry a
+    // self-reported flag (that contradiction was showing up on cards as
+    // "Verified · 2 sources agree" + "not yet cross-checked against a
+    // live connector" at the same time).
+    selfReported: tier === 'verified' ? false : primary.selfReported,
     headline,
     summary: typeof claim.summary === 'string' && claim.summary.trim() ? claim.summary.trim().slice(0, 200) : primary.valueText,
     narration: typeof claim.narration === 'string' && claim.narration.trim() ? claim.narration.trim().slice(0, 800) : primary.valueText,
     suggestedAction: typeof claim.suggestedAction === 'string' ? claim.suggestedAction.trim().slice(0, 300) : null,
-    evidenceUsed: { primary: primary.key, corroborators: validCorroborators.map(m => m.key) }
+    evidenceUsed: { primary: primary.key, corroborators: validCorroborators.map(m => m.key), corroboratorSources }
   };
 }

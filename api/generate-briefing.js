@@ -49,8 +49,10 @@ export default async function handler(req, res) {
   const model = process.env.BRIEFING_MODEL || 'claude-sonnet-5';
 
   const {
-    companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock, paymentsBlock,
-    shopifyBlock, razorpayLiveBlock, rpBlock, historyBlock, provenanceLine, connectors
+    companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock,
+    paymentsHeader, paymentsBlock, shopifyBlock, razorpayLiveBlock,
+    booksBlock, tallyBlock, ledgerBlock, crossLedgerBlock, reconLine, connectorFreshnessBlock,
+    historyBlock, provenanceLine, sourceDivergenceLine, connectors
   } = formatMargynContext(context);
 
   const prompt = `You are Margyn, an AI financial co-pilot, writing the Executive Briefing for ${companyName}, a digital-native Indian business. This briefing is the one AI-generated narrative surface in the product — everything else is a deterministic vital or score. Write like a sharp CFO advisor talking to a busy founder who is not a finance person, not a report generator.
@@ -59,13 +61,13 @@ Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pul
 
 Current financial vitals (each with trend vs the prior snapshot where available):
 ${vitalsLines}
-${provenanceLine}
+${provenanceLine}${sourceDivergenceLine}
 
 Top-line P&L figures (the actual rupee numbers behind the vitals above — e.g. Net Margin is netProfit ÷ revenue from these):
 ${pnlBlock}
 Note: this is top-line only — no cost-of-goods-sold vs operating-expense split, no per-line-item or per-category breakdown.
 
-Razorpay payments data (connected: ${!!connectors.razorpay}):
+${paymentsHeader}:
 ${paymentsBlock}
 
 Real per-transaction Razorpay data (independent of the summary above):
@@ -74,8 +76,20 @@ ${razorpayLiveBlock}
 Shopify data (connected: ${!!connectors.shopify}):
 ${shopifyBlock}
 
-Receivables / payables ledger (Zoho Books connected: ${!!connectors.zoho}):
-${rpBlock}
+Zoho Books — CONNECTOR-SYNCED, from the live books (invoice/bill level):
+${booksBlock}
+
+Tally — CONNECTOR-SYNCED via the desktop agent, SIGNAL-tier (one source, never Verified alone). Never merge Tally figures with Zoho's or with the Quick Ledger:
+${tallyBlock}
+
+Quick Ledger — SELF-ENTERED (typed in the app or uploaded via the CSV template; NOT from any connector):
+${ledgerBlock}
+
+CROSS-SOURCE LEDGER — the three receivables/payables sources compared counterparty-by-counterparty. Where sources agree, state it plainly; where they conflict, name both numbers and the gap; never blend or average; single-source items are Signal; only the self-entered ledger moves the Pulse Score:
+${crossLedgerBlock}${reconLine}
+
+Connector sync status (data freshness / re-auth — provenance, not a vital):
+${connectorFreshnessBlock}
 
 Past findings, most recent first (up to the last 10, across all snapshots):
 ${historyBlock}
@@ -83,6 +97,8 @@ ${historyBlock}
 Rules:
 1. Only reason about the numbers given above. Never invent a figure, percentage, or trend that wasn't provided to you.
 2. Every trend and delta figure above is pre-computed in plain JS before it reaches you — never recompute or contradict them.
+2b. Zoho Books and the Quick Ledger are SEPARATE sources of receivables/payables. Never add or blend them into one number. If they disagree, report both and name the gap. Self-entered data never corroborates a connector or itself — only a second independently-operated source makes something "Verified".
+2c. If a connector is marked NEEDS RE-AUTH above, treat every figure that depends on it as stale/unverified, say so plainly, and make reconnecting it one of this week's actions.
 3. Lead with the single most urgent issue, if any real risk shows up in the data above — otherwise say plainly that nothing is flagged this period rather than manufacturing urgency.
 4. Call out specific numbers from the data above, not generic advice.
 5. Flag cash risk, receivables risk, or GST/ITC leakage explicitly if the numbers warrant it.

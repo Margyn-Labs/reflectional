@@ -143,6 +143,39 @@ async function logConnectorEvent({ userId, connectorType, operation, status, err
   }
 }
 
+/**
+ * Set durable connector sync-status on connector_credentials (added by
+ * 2026-09-04-provenance-connector-status.sql). Never throws — a status
+ * write must not break a sync. Patches the one active row for
+ * user+connector (disconnected_at IS NULL).
+ *
+ * Pass only the fields you want to change:
+ *   { needsReauth, lastSuccessAt, lastErrorAt, lastErrorCode, lastSyncStatus }
+ */
+async function setConnectorStatus(userId, connectorType, patch = {}) {
+  const map = {
+    needsReauth: 'needs_reauth',
+    lastSuccessAt: 'last_success_at',
+    lastErrorAt: 'last_error_at',
+    lastErrorCode: 'last_error_code',
+    lastSyncStatus: 'last_sync_status'
+  };
+  const body = {};
+  for (const [k, col] of Object.entries(map)) {
+    if (patch[k] !== undefined) body[col] = patch[k];
+  }
+  if (!Object.keys(body).length) return;
+  try {
+    await updateRows(
+      'connector_credentials',
+      `user_id=eq.${userId}&connector_type=eq.${connectorType}&disconnected_at=is.null`,
+      body
+    );
+  } catch (err) {
+    console.error(`Failed to set ${connectorType} connector status:`, err.message);
+  }
+}
+
 module.exports = {
   SUPABASE_URL,
   getUserFromRequest,
@@ -151,5 +184,6 @@ module.exports = {
   updateRows,
   selectRows,
   rpc,
-  logConnectorEvent
+  logConnectorEvent,
+  setConnectorStatus
 };

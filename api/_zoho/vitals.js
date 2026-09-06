@@ -155,8 +155,58 @@ async function handler(req, res) {
     }
   }
 
+  // ---- Row-level open receivables / payables ----------------------------
+  // The vitals RPC only returns aggregates + top_overdue_customers. The
+  // unified Ledger view and the cross-source reconciliation logic need every
+  // open invoice / bill as a row, tagged source='zoho_books'. Bounded so a
+  // huge set of books can't blow the payload.
+  let receivablesList = [];
+  let payablesList = [];
+  if (v.org_ref) {
+    try {
+      const invs = await selectRows(
+        'zoho_invoices',
+        `select=invoice_number,customer_name,balance,due_date,invoice_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&order=due_date.asc.nullslast&limit=250`
+      );
+      receivablesList = (invs || []).map((r) => ({
+        party_name: r.customer_name || 'Unnamed customer',
+        amount: Number(r.balance) || 0,
+        due_date: r.due_date || null,
+        doc_date: r.invoice_date || null,
+        ref: r.invoice_number || null,
+        status: r.status || null,
+        source: 'zoho_books'
+      }));
+    } catch (err) {
+      console.error('zoho receivables_list read failed:', err.message);
+    }
+    try {
+      const bills = await selectRows(
+        'zoho_bills',
+        `select=bill_number,vendor_name,balance,due_date,bill_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&order=due_date.asc.nullslast&limit=250`
+      );
+      payablesList = (bills || []).map((r) => ({
+        party_name: r.vendor_name || 'Unnamed vendor',
+        amount: Number(r.balance) || 0,
+        due_date: r.due_date || null,
+        doc_date: r.bill_date || null,
+        ref: r.bill_number || null,
+        status: r.status || null,
+        source: 'zoho_books'
+      }));
+    } catch (err) {
+      console.error('zoho payables_list read failed:', err.message);
+    }
+  }
+
   res.setHeader('Cache-Control', 'no-store');
-  res.status(200).json({ ...v, backfill_completed_at: backfillCompletedAt, briefing_hints: buildBriefingHints(v) });
+  res.status(200).json({
+    ...v,
+    backfill_completed_at: backfillCompletedAt,
+    receivables_list: receivablesList,
+    payables_list: payablesList,
+    briefing_hints: buildBriefingHints(v)
+  });
 };
 
 module.exports = { handler, buildBriefingHints };

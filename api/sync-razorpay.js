@@ -17,7 +17,8 @@ const {
   updateRows,
   selectRows,
   getUserFromRequest,
-  logConnectorEvent
+  logConnectorEvent,
+  setConnectorStatus
 } = require('./_lib/supabaseRest');
 const { computePaymentsFromRazorpay } = require('./_lib/computePaymentsFromRazorpay');
 
@@ -277,7 +278,34 @@ async function syncRazorpayForUser(userId) {
         });
         paymentsWrite = 'updated';
       } else {
-        paymentsWrite = 'skipped_no_snapshot';
+        // No snapshot to write onto yet (Razorpay connected before any
+        // upload/manual entry). Park the aggregate with provenance instead
+        // of dropping it silently — app.html replays it onto the first
+        // snapshot that appears. See connector_pending_data
+        // (2026-09-04-provenance-connector-status.sql).
+        try {
+          // Keep a single unresolved row per user — refresh it in place if
+          // one already exists, otherwise insert.
+          const refreshed = await updateRows(
+            'connector_pending_data',
+            `user_id=eq.${userId}&connector_type=eq.razorpay&kind=eq.payments_aggregate&resolved_at=is.null`,
+            { payload: agg, fetched_at: new Date().toISOString() }
+          );
+          if (!Array.isArray(refreshed) || refreshed.length === 0) {
+            await insertRows('connector_pending_data', [{
+              user_id: userId,
+              connector_type: 'razorpay',
+              kind: 'payments_aggregate',
+              payload: agg,
+              reason: 'no_snapshot_yet',
+              fetched_at: new Date().toISOString()
+            }]);
+          }
+          paymentsWrite = 'parked_no_snapshot';
+        } catch (e) {
+          errors.push(`pending payments park: ${e.message}`);
+          paymentsWrite = 'skipped_no_snapshot';
+        }
       }
     }
   } catch (err) {
@@ -288,14 +316,26 @@ async function syncRazorpayForUser(userId) {
   const totalSynced = (results.payments || 0) + (results.settlements || 0) + (results.refunds || 0);
   const durationMs = Date.now() - startedAt;
 
+  const syncStatus = errors.length === 0 ? 'success' : (totalSynced > 0 ? 'partial' : 'error');
+
   await logConnectorEvent({
     userId,
     connectorType: 'razorpay',
     operation: 'sync_all',
-    status: errors.length === 0 ? 'success' : (totalSynced > 0 ? 'partial' : 'error'),
+    status: syncStatus,
     errorMessage: errors.length ? errors.join('; ') : null,
     recordsSynced: totalSynced,
     syncDurationMs: durationMs
+  });
+
+  // Durable connector status (2026-09-04-provenance-connector-status.sql).
+  // A sync that got this far did not hit an auth error, so clear needs_reauth
+  // and record freshness. A RazorpayAuthError would have thrown before here.
+  await setConnectorStatus(userId, 'razorpay', {
+    needsReauth: false,
+    lastSyncStatus: syncStatus,
+    lastErrorCode: errors.length ? 'partial_sync' : null,
+    ...(syncStatus !== 'error' ? { lastSuccessAt: new Date().toISOString() } : {})
   });
 
   return {
@@ -312,14 +352,18 @@ async function syncRazorpayForUser(userId) {
  * Handle a Razorpay auth failure at the top level: flag the credentials so
  * the UI can prompt a reconnect, and log it.
  *
- * NOTE: connector_credentials doesn't yet have a dedicated `needs_reauth`
- * flag column. As a stopgap this only writes to connector_logs (status:
- * 'error', error_message: 'needs_reauth') — the Settings page should treat
- * "most recent sync_all log is needs_reauth" as the reconnect trigger. A
- * follow-up migration should add `needs_reauth BOOLEAN DEFAULT false` to
- * connector_credentials and set it here directly instead.
+ * Writes both: the durable `connector_credentials.needs_reauth` column
+ * (added by 2026-09-04-provenance-connector-status.sql — this is what the
+ * Connectors UI and the AI context read) and a connector_logs line for the
+ * event history.
  */
 async function handleAuthFailure(userId) {
+  await setConnectorStatus(userId, 'razorpay', {
+    needsReauth: true,
+    lastSyncStatus: 'error',
+    lastErrorCode: 'auth_failed',
+    lastErrorAt: new Date().toISOString()
+  });
   await logConnectorEvent({
     userId,
     connectorType: 'razorpay',

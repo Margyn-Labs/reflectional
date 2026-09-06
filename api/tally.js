@@ -109,6 +109,7 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST' && action === 'pair-complete')  return await handlePairComplete(req, res);
     if (req.method === 'POST' && action === 'ingest')         return await handleIngest(req, res);
     if (req.method === 'GET'  && action === 'status')         return await handleStatus(req, res);
+    if (req.method === 'GET'  && action === 'summary')        return await handleSummary(req, res);
     if (req.method === 'POST' && action === 'revoke')         return await handleRevoke(req, res);
   } catch (err) {
     console.error('tally.js unhandled error:', err && err.message);
@@ -117,9 +118,128 @@ module.exports = async function handler(req, res) {
 
   return json(res, 400, {
     error: 'unknown_action',
-    message: 'Expected ?action= one of pair-init, pair-complete, ingest, status, revoke.'
+    message: 'Expected ?action= one of pair-init, pair-complete, ingest, status, summary, revoke.'
   });
 };
+
+/* ------------------------------------------------------------------ */
+/* summary — GET ?action=summary   (user JWT)                         */
+/* A read-only, pre-aggregated view of everything this user's Tally   */
+/* agents have synced — bills (receivable/payable), vouchers by type, */
+/* and ledger closing balances. All maths happens here so the app and */
+/* the AI layer can never quote different Tally numbers. Everything is */
+/* provenance 'signal' — one source, never auto-trusted.              */
+/* ------------------------------------------------------------------ */
+async function handleSummary(req, res) {
+  let user;
+  try { user = await getUserFromRequest(req); }
+  catch { return json(res, 500, { error: 'auth_check_failed' }); }
+  if (!user) return json(res, 401, { error: 'unauthorized' });
+
+  let installs = [];
+  try {
+    installs = await selectRows(
+      'tally_installs',
+      `select=id,company_name,last_sync_at,last_seen_at&user_id=eq.${user.id}&status=eq.active&order=last_sync_at.desc`
+    );
+  } catch (e) {
+    return json(res, 500, { error: 'lookup_failed' });
+  }
+
+  const empty = {
+    connected: false, company_name: null, as_of: null,
+    bills: { receivable_total: 0, payable_total: 0, overdue_total: 0, count: 0, items: [] },
+    vouchers: { count: 0, by_type: {}, sales_30d: 0, receipts_30d: 0 },
+    ledgers: { count: 0, items: [] },
+    provenance: 'signal'
+  };
+  if (!installs.length) return json(res, 200, empty);
+
+  const ids = installs.map((i) => i.id);
+  const inList = `(${ids.join(',')})`;
+  const asOf = installs.map((i) => i.last_sync_at).filter(Boolean).sort().pop() || null;
+
+  let bills = [], vouchers = [], ledgers = [];
+  try {
+    bills = await selectRows(
+      'tally_bills',
+      `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=overdue_days.desc.nullslast&limit=500`
+    );
+    vouchers = await selectRows(
+      'tally_vouchers',
+      `select=voucher_type,date,amount&install_id=in.${inList}&order=date.desc&limit=2000`
+    );
+    ledgers = await selectRows(
+      'tally_ledgers',
+      `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc&limit=500`
+    );
+  } catch (e) {
+    return json(res, 500, { error: 'lookup_failed' });
+  }
+
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const cutoff = Date.now() - 30 * 86400000;
+  const dateMs = (d) => {
+    if (!d) return NaN;
+    const s = String(d);
+    const iso = /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s;
+    return new Date(iso).getTime();
+  };
+
+  let receivableTotal = 0, payableTotal = 0, overdueTotal = 0;
+  const billItems = bills.map((b) => {
+    const bal = Math.abs(Number(b.closing_balance) || 0);
+    if (b.direction === 'payable') payableTotal += bal; else receivableTotal += bal;
+    if ((b.overdue_days || 0) > 0) overdueTotal += bal;
+    return {
+      direction: b.direction === 'payable' ? 'payable' : 'receivable',
+      party_name: b.party_name || 'Unknown',
+      bill_ref: b.bill_ref || null,
+      bill_date: b.bill_date || null,
+      due_date: b.due_date || null,
+      amount: bal,
+      overdue_days: b.overdue_days != null ? b.overdue_days : null
+    };
+  });
+
+  const byType = {};
+  let sales30 = 0, receipts30 = 0;
+  for (const v of vouchers) {
+    const t = v.voucher_type || 'Other';
+    byType[t] = (byType[t] || 0) + 1;
+    const ms = dateMs(v.date);
+    if (!Number.isNaN(ms) && ms >= cutoff) {
+      const amt = Math.abs(Number(v.amount) || 0);
+      if (/sales/i.test(t)) sales30 += amt;
+      if (/receipt/i.test(t)) receipts30 += amt;
+    }
+  }
+
+  const ledgerItems = ledgers
+    .map((l) => ({ name: l.name, parent: l.parent || null, closing_balance: l.closing_balance != null ? Number(l.closing_balance) : null }))
+    .filter((l) => l.name);
+
+  return json(res, 200, {
+    connected: true,
+    company_name: installs[0].company_name || (bills[0] && bills[0].company_name) || null,
+    as_of: asOf,
+    bills: {
+      receivable_total: round2(receivableTotal),
+      payable_total: round2(payableTotal),
+      overdue_total: round2(overdueTotal),
+      count: billItems.length,
+      items: billItems.slice(0, 100)
+    },
+    vouchers: {
+      count: vouchers.length,
+      by_type: byType,
+      sales_30d: round2(sales30),
+      receipts_30d: round2(receipts30)
+    },
+    ledgers: { count: ledgerItems.length, items: ledgerItems.slice(0, 120) },
+    provenance: 'signal'
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /* pair-init — POST ?action=pair-init   (user JWT)                    */

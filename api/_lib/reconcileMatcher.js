@@ -64,7 +64,14 @@ function matchPayments(zohoPayments, razorpayPayments, alreadyResolved = new Set
       invoice_ref: zp.invoice_ref || null,
       zoho_payment_id: zp.payment_id,
       invoice_amount: zp.amount,
-      same_source_flag: sameSource
+      same_source_flag: sameSource,
+      // Two-source provenance, as columns (2026-09-04 migration). The verdict
+      // lives here on reconciliation_matches, not on zoho_invoices.
+      source_a: 'zoho_books',
+      source_b: 'razorpay',
+      logical_invoice_key: zp.invoice_ref ? String(zp.invoice_ref).trim() : null,
+      logical_payment_key: String(zp.payment_id).trim(),
+      fetched_at_a: zp.synced_at || zp.payment_date || null
     };
 
     if (candidates.length === 1) {
@@ -76,6 +83,9 @@ function matchPayments(zohoPayments, razorpayPayments, alreadyResolved = new Set
         date_diff_days: Math.round(daysBetween(match.created_at, zp.payment_date)),
         match_status: 'auto_matched',
         match_confidence: sameSource ? 'signal' : 'verified',
+        status: sameSource ? 'signal' : 'verified',
+        verified_at: sameSource ? null : new Date().toISOString(),
+        fetched_at_b: match.created_at || null,
         match_reason: sameSource
           ? 'Amount and date match a captured Razorpay payment, but Zoho\u2019s payment mode suggests it may already be Razorpay-sourced \u2014 not counted as independent corroboration.'
           : `Amount (\u20b9${zp.amount}) and date matched a single captured Razorpay payment within ${DATE_WINDOW_DAYS} days.`
@@ -88,6 +98,16 @@ function matchPayments(zohoPayments, razorpayPayments, alreadyResolved = new Set
         date_diff_days: null,
         match_status: 'pending_review',
         match_confidence: null,
+        status: 'needs_review',
+        // Persist the actual candidates so the review queue in app.html can
+        // show the user which payments to pick between (it had nothing to
+        // offer before, making the queue a dead end).
+        candidate_payment_ids: candidates.map((c) => ({
+          id: c.payment_id,
+          amount: c.amount,
+          created_at: c.created_at,
+          method: c.method || null
+        })),
         match_reason: `${candidates.length} captured Razorpay payments match this amount within the date window \u2014 needs a manual pick.`
       });
     } else {
@@ -98,6 +118,7 @@ function matchPayments(zohoPayments, razorpayPayments, alreadyResolved = new Set
         date_diff_days: null,
         match_status: 'no_match',
         match_confidence: null,
+        status: 'unmatched',
         match_reason: `No captured Razorpay payment found matching \u20b9${zp.amount} within ${DATE_WINDOW_DAYS} days.`
       });
     }
