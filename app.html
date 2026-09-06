@@ -454,6 +454,13 @@
   .source-badge{ display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; padding:3px 9px; border-radius:6px; background:var(--surf-2); color:var(--text-3); border:1px solid var(--border-1); }
   .source-badge.self-reported{ color:var(--orange); border-color:var(--orange); }
   .source-badge.connector{ color:var(--emerald); border-color:var(--emerald-bright); }
+  .source-badge.verified{ color:var(--emerald); border-color:var(--emerald-bright); }
+  .source-badge.unreconciled{ color:var(--text-3); border-color:var(--border-1); }
+  .source-badge.review{ color:var(--caution); border-color:var(--caution); }
+  .lr-tag.verified{ background:rgba(14,143,92,0.2); color:#0E8F5C; }
+  .lr-tag.review{ background:var(--caution-bg); color:var(--caution); }
+  .lr-tag.self-reported{ background:rgba(204,91,52,0.16); color:#CC5B34; }
+  .lr-tag.unreconciled{ background:var(--surf-2); color:var(--text-3); }
   .chat-history-row{ padding:9px 11px; border:1px solid var(--border-1); border-radius:var(--radius-control); margin-bottom:8px; cursor:pointer; }
   .chat-history-row:hover{ border-color:var(--emerald-bright); }
   .chr-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-3); margin-bottom:3px; }
@@ -926,7 +933,16 @@
         <button id="ledgerAddBtn">Add to ledger</button>
       </div>
       <div class="card">
-        <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+          <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
+          <select id="ledgerSourceFilter" style="font-size:11px; padding:5px 8px;">
+            <option value="all">All sources</option>
+            <option value="self">Manual / CSV</option>
+            <option value="zoho">Zoho Books</option>
+            <option value="tally">Tally</option>
+          </select>
+        </div>
+        <div class="hint" id="ledgerSourceNote" style="margin-bottom:10px;"></div>
         <div id="ledgerListHost"></div>
       </div>
     </div>
@@ -1155,6 +1171,7 @@
       <div id="razorpayStatus"></div>
       <div id="zohoStatus"></div>
       <div id="shopifyStatus"></div>
+      <div id="tallyStatus"></div>
     </div>
     <div class="section-head">
       <h2>More connectors, on the way</h2>
@@ -1290,7 +1307,7 @@
   <div id="view-history" class="hidden">
     <div class="section-head">
       <h1>History</h1>
-      <div class="hint">Every finding Margyn has surfaced, and every conversation you've had about them. Nothing here disappears on refresh.</div>
+      <div class="hint">Every finding Margyn has surfaced, every conversation you've had about them, and every change to your ledger. Nothing here disappears on refresh.</div>
     </div>
     <div class="card">
       <h2>Conversations</h2>
@@ -1309,6 +1326,11 @@
       <h2>Findings history</h2>
       <div class="hint">Every Verified and Signal finding across every snapshot, most recent first.</div>
       <div id="historyFindingsList" style="margin-top:14px;"></div>
+    </div>
+    <div class="card">
+      <h2>Ledger activity</h2>
+      <div class="hint">Every receivable or payable you added, marked received/paid, deleted or imported — an append-only trail, most recent first.</div>
+      <div id="historyLedgerList" style="margin-top:14px;"></div>
     </div>
   </div>
   <!-- ---------- 3d. PAYMENTS (NEW) ---------- -->
@@ -1522,6 +1544,12 @@
     <div id="shopifyContent"></div>
   </div>
 </div>
+<div class="detail-overlay hidden" id="tallyOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="tallyClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    <div id="tallyContent"></div>
+  </div>
+</div>
 <div class="detail-overlay hidden" id="agentOverlay">
   <div class="detail-modal wide">
     <button class="detail-close" id="agentClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1554,15 +1582,21 @@ let paymentsData = null; // NEW — session-only, not yet persisted (see roadmap
 let settlementRows = null; // itemized settlement batches — session-only, "Mark as settled" is local state (see roadmap)
 let settlementDailyTrend = null; // real per-day gross totals, last 7 uploaded days — null until upload
 let razorpayConnected = false; // optional connector — supplements manual upload, doesn't replace it
+let razorpayStatus = null;    // { needs_reauth, last_success_at } from connector_credentials — durable provenance
 let lastSyncedAt = null;
 let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker gated
-let zohoVitals = null;       // last /api/zoho-vitals payload
+let zohoVitals = null;       // last /api/zoho?action=vitals payload
+let zohoLedgerRows = { receivables: [], payables: [] }; // row-level open invoices/bills from the vitals payload — for the unified ledger + cross-source logic
 let reconSummary = null;     // last /api/reconcile?action=summary payload — read-only view of nightly reconciliation output
 let zohoPendingOrgRef = null;
 let zohoChosenOrgId = null;
 let shopifyConnected = false;  // Shopify connector — Custom App token, read-only
-let shopifyStore = null;       // last /api/shopify-status store row
+let shopifyStore = null;       // last /api/shopify?action=status store row
 let shopifyPollTimer = null;   // nudges the resumable 90-day backfill along
+let tallyConnected = false;    // Tally connector — local Windows desktop agent, read-only XML/HTTP over port 9000
+let tallyInstalls = [];        // last /api/tally?action=status installs
+let tallyData = null;          // last /api/tally?action=summary — pre-aggregated bills/vouchers/ledgers, all Signal-tier
+let tallyPairPollTimer = null; // polls status every ~3s while the pairing modal is open
 function inr(n){ return '₹' + Math.round(Number(n)||0).toLocaleString('en-IN'); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
 function fmtDate(iso){ 
@@ -1619,9 +1653,11 @@ async function routeFor(session){
     receivables = []; payables = []; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
     khataParties = []; khataEntries = []; khataInvoices = []; khataInvoiceLineItems = []; khataActivePartyId = null; khataActiveInvoiceId = null; invoiceDraftLines = [];
     razorpayConnected = false; lastSyncedAt = null;
-    zohoConnected = false; zohoVitals = null; zohoPendingOrgRef = null; zohoChosenOrgId = null;
+    zohoConnected = false; zohoVitals = null; zohoLedgerRows = { receivables: [], payables: [] }; zohoPendingOrgRef = null; zohoChosenOrgId = null;
     shopifyConnected = false; shopifyStore = null;
     if(shopifyPollTimer){ clearInterval(shopifyPollTimer); shopifyPollTimer = null; }
+    tallyConnected = false; tallyInstalls = []; tallyData = null;
+    if(tallyPairPollTimer){ clearInterval(tallyPairPollTimer); tallyPairPollTimer = null; }
     document.getElementById('appShell').classList.add('hidden');
     document.getElementById('authGate').classList.remove('hidden');
     document.getElementById('onboardGate').classList.add('hidden');
@@ -1705,6 +1741,8 @@ async function refreshAll(){
   await loadZohoVitals();
   reconSummary = await loadReconSummary();
   await loadShopifyStatus();
+  await loadTallyStatus();
+  tallyData = await loadTallyData();
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
   renderReconBooksCard(); renderReconLedger();
   handleZohoHashReturn();
@@ -1715,12 +1753,13 @@ async function refreshAll(){
 async function checkRazorpayConnection(){
   try {
     const { data, error } = await sbClient.from('connector_credentials')
-      .select('id').eq('user_id', currentUser.id).eq('connector_type', 'razorpay')
+      .select('id,needs_reauth,last_success_at').eq('user_id', currentUser.id).eq('connector_type', 'razorpay')
       .is('disconnected_at', null).maybeSingle();
-    if(error){ razorpayConnected = false; return; }
+    if(error){ razorpayConnected = false; razorpayStatus = null; return; }
     razorpayConnected = !!data;
+    razorpayStatus = data ? { needs_reauth: !!data.needs_reauth, last_success_at: data.last_success_at || null } : null;
     if(razorpayConnected) await loadLastSyncTime();
-  } catch(e){ razorpayConnected = false; }
+  } catch(e){ razorpayConnected = false; razorpayStatus = null; }
 }
 async function loadLastSyncTime(){
   try {
@@ -1863,6 +1902,30 @@ async function loadFindings(){
   if(error){ console.error('[margyn] loadFindings:', error); return []; }
   return data || [];
 }
+/* Append-only Quick Ledger activity log (public.ledger_events). Every add,
+   settle, delete or CSV import writes one row so "Mark received" is a real
+   audit event, not an untraceable DELETE. Best-effort: a logging failure
+   must never block the underlying ledger action. */
+let ledgerEvents = [];
+async function loadLedgerEvents(){
+  const { data, error } = await sbClient.from('ledger_events').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(50);
+  if(error){ console.error('[margyn] loadLedgerEvents:', error); return []; }
+  return data || [];
+}
+async function logLedgerEvent(evt){
+  try {
+    await sbClient.from('ledger_events').insert({
+      user_id: currentUser.id,
+      entity_type: evt.entityType || null,
+      entity_id: evt.entityId || null,
+      event: evt.event,
+      party_name: evt.partyName || null,
+      amount: (evt.amount != null) ? Number(evt.amount) : null,
+      source: evt.source || null,
+      note: evt.note || null
+    });
+  } catch(e){ console.error('[margyn] logLedgerEvent:', e); }
+}
 /* Fire-and-forget trigger for the server-side Findings pipeline
    (api/generate-findings.js) — called right after a snapshot is saved so
    findings are already computed and persisted by the time anyone opens
@@ -1910,6 +1973,15 @@ async function saveLedgerSnapshot(){
   const latest = snapshots[0];
   if(!latest){ return; } // no baseline cash/revenue yet — user needs one snapshot from Upload & calculate first
   const { recvTotal, recv90, paySoon } = ledgerAggregates();
+  // Don't spawn a near-duplicate snapshot when the ledger aggregates haven't
+  // actually moved (e.g. a settle immediately followed by a re-render) — it
+  // just pollutes the Scores/History timeline with identical source:'ledger' rows.
+  if(latest.source === 'ledger'
+     && Math.round(Number(latest.recv_total)||0) === Math.round(recvTotal)
+     && Math.round(Number(latest.recv_90)||0) === Math.round(recv90)
+     && Math.round(Number(latest.pay_soon)||0) === Math.round(paySoon)){
+    return;
+  }
   // Carry the latest snapshot's payments block forward untouched — a ledger
   // edit has no payments data of its own, and creating a new snapshot with
   // payments_data left out would otherwise blank the Payments tab back to
@@ -1972,12 +2044,37 @@ const ZERO_VITALS = [
 // constant in both places rather than a shared import, since app.html and
 // the serverless functions can't share a module — if this list ever
 // changes, it has to change in both files together.
+// Keep byte-identical with SELF_REPORTED_SOURCES in api/generate-findings.js —
+// both lists define which snapshots.source values mean "a human typed/uploaded this".
 const SELF_REPORTED_SOURCES = ['manual', 'upload', 'ledger'];
 function sourceLabel(source){
   if(source === 'manual') return 'Manual entry';
   if(source === 'upload') return 'CSV upload';
   if(source === 'ledger') return 'Ledger entry';
   return 'Connector-synced';
+}
+/* One provenance/reconciliation tag vocabulary, used everywhere a data
+   element's origin or match state is shown. Returns {label, cls} where cls
+   is a .source-badge / .lr-tag modifier. */
+function provTag(kind){
+  switch(kind){
+    case 'self':            return { label:'Self-reported',       cls:'self-reported' };
+    case 'connector':       return { label:'Connector-synced',    cls:'connector' };
+    case 'verified':        return { label:'Verified · 2 sources',cls:'verified' };
+    case 'unreconciled':    return { label:'Not yet reconciled',  cls:'unreconciled' };
+    case 'review':          return { label:'Needs review',        cls:'review' };
+    case 'matched_bank':    return { label:'Matched to bank',     cls:'verified' };
+    case 'matched_gateway': return { label:'Matched to gateway',  cls:'verified' };
+    default:                return { label:kind || '',            cls:'' };
+  }
+}
+/* Provenance + reconciliation tags for a Quick Ledger row (receivable/payable). */
+function ledgerRowTags(r){
+  const src = provTag('self'); // Quick Ledger rows are always self-entered (manual or CSV upload)
+  const recRaw = r.reconciliation_status || 'unreconciled';
+  const rec = provTag(recRaw === 'matched_bank' ? 'matched_bank' : recRaw === 'matched_gateway' ? 'matched_gateway' : recRaw === 'review' ? 'review' : 'unreconciled');
+  return '<span class="lr-tag ' + src.cls + '">' + src.label + '</span>' +
+         '<span class="lr-tag ' + rec.cls + '">' + rec.label + '</span>';
 }
 const RING_CIRC = 238.76; // semicircle arc length of the Pulse Score gauge (r=76)
 function renderScores(){
@@ -2097,8 +2194,9 @@ function renderReceivablesDetail(accent){
     const due = document.getElementById('recvDue').value || null;
     if(!party || !amt) return;
     try {
-      const { error } = await sbClient.from('receivables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open' });
+      const { error } = await sbClient.from('receivables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' });
       if(error) throw error;
+      await logLedgerEvent({ entityType:'receivable', event:'created', partyName:party, amount:amt, source:'manual' });
       receivables = await loadReceivables();
       await saveLedgerSnapshot();
       renderReceivablesDetail(accent);
@@ -2113,7 +2211,7 @@ function renderReceivablesList(){
     const b = recvBucket(r.due_date);
     const row = document.createElement('div'); row.className = 'ledger-row';
     row.innerHTML =
-      '<div class="lr-main"><div class="lr-party">'+escapeHtml(r.party_name)+'</div>' +
+      '<div class="lr-main"><div class="lr-party">'+escapeHtml(r.party_name)+ledgerRowTags(r)+'</div>' +
       '<div class="lr-meta">due '+(r.due_date?fmtDay(r.due_date):'—')+(b.tag?'<span class="lr-tag '+b.tag+'">'+b.label+'</span>':'')+'</div></div>' +
       '<div class="lr-amount">'+inr(r.amount)+'</div>' +
       '<div class="lr-actions"><button class="lr-btn" data-act="collect">Mark received</button><button class="lr-btn danger" data-act="del">Delete</button></div>';
@@ -2124,8 +2222,9 @@ function renderReceivablesList(){
 }
 async function collectReceivable(r){
   try {
-    const { error } = await sbClient.from('receivables').delete().eq('id', r.id);
+    const { error } = await sbClient.from('receivables').update({ status:'settled', settled_at:new Date().toISOString(), settled_amount:r.amount, settled_kind:'received' }).eq('id', r.id);
     if(error) throw error;
+    await logLedgerEvent({ entityType:'receivable', entityId:r.id, event:'settled', partyName:r.party_name, amount:r.amount, source:r.source||'manual', note:'marked received' });
     receivables = await loadReceivables();
     await saveLedgerSnapshot();
     renderReceivablesDetail('#B3432E');
@@ -2133,6 +2232,7 @@ async function collectReceivable(r){
 }
 async function deleteReceivable(r){
   try {
+    await logLedgerEvent({ entityType:'receivable', entityId:r.id, event:'deleted', partyName:r.party_name, amount:r.amount, source:r.source||'manual' });
     const { error } = await sbClient.from('receivables').delete().eq('id', r.id);
     if(error) throw error;
     receivables = await loadReceivables();
@@ -2161,8 +2261,9 @@ function renderPayablesDetail(accent){
     const due = document.getElementById('payDue').value || null;
     if(!party || !amt) return;
     try {
-      const { error } = await sbClient.from('payables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open' });
+      const { error } = await sbClient.from('payables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' });
       if(error) throw error;
+      await logLedgerEvent({ entityType:'payable', event:'created', partyName:party, amount:amt, source:'manual' });
       payables = await loadPayables();
       await saveLedgerSnapshot();
       renderPayablesDetail(accent);
@@ -2177,7 +2278,7 @@ function renderPayablesList(){
     const u = payUrgency(p.due_date);
     const row = document.createElement('div'); row.className = 'ledger-row';
     row.innerHTML =
-      '<div class="lr-main"><div class="lr-party">'+escapeHtml(p.party_name)+'</div>' +
+      '<div class="lr-main"><div class="lr-party">'+escapeHtml(p.party_name)+ledgerRowTags(p)+'</div>' +
       '<div class="lr-meta">due '+(p.due_date?fmtDay(p.due_date):'—')+'<span class="lr-tag '+u.tag+'">'+u.label+'</span></div></div>' +
       '<div class="lr-amount">'+inr(p.amount)+'</div>' +
       '<div class="lr-actions"><button class="lr-btn" data-act="pay">Mark paid</button><button class="lr-btn danger" data-act="del">Delete</button></div>';
@@ -2188,8 +2289,9 @@ function renderPayablesList(){
 }
 async function payPayable(p){
   try {
-    const { error } = await sbClient.from('payables').delete().eq('id', p.id);
+    const { error } = await sbClient.from('payables').update({ status:'settled', settled_at:new Date().toISOString(), settled_amount:p.amount, settled_kind:'paid' }).eq('id', p.id);
     if(error) throw error;
+    await logLedgerEvent({ entityType:'payable', entityId:p.id, event:'settled', partyName:p.party_name, amount:p.amount, source:p.source||'manual', note:'marked paid' });
     payables = await loadPayables();
     await saveLedgerSnapshot();
     renderPayablesDetail('#5B6472');
@@ -2197,6 +2299,7 @@ async function payPayable(p){
 }
 async function deletePayable(p){
   try {
+    await logLedgerEvent({ entityType:'payable', entityId:p.id, event:'deleted', partyName:p.party_name, amount:p.amount, source:p.source||'manual' });
     const { error } = await sbClient.from('payables').delete().eq('id', p.id);
     if(error) throw error;
     payables = await loadPayables();
@@ -2424,11 +2527,20 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
   });
 }
 
+function findingTierLabel(f){
+  if(f.tier !== 'verified') return 'Signal · single source, unconfirmed';
+  const srcNames = { razorpay:'live Razorpay', razorpay_live:'live Razorpay', shopify:'Shopify', zoho:'Zoho Books' };
+  const srcs = (f.evidence && Array.isArray(f.evidence.corroboratorSources)) ? f.evidence.corroboratorSources : [];
+  const named = srcs.map(s => srcNames[s] || s).filter(Boolean);
+  return named.length ? ('Verified · corroborated by ' + named.join(' + ')) : 'Verified · 2 sources agree';
+}
 function findingCardHtml(f){
   return '<div class="finding-card ' + f.tier + '">' +
-    '<div class="finding-tier">' + (f.tier === 'verified' ? 'Verified · 2 sources agree' : 'Signal · single source, unconfirmed') + '</div>' +
+    '<div class="finding-tier">' + findingTierLabel(f) + '</div>' +
     '<div class="finding-summary">' + escapeHtml(f.summary) + '</div>' +
-    (f.self_reported ? '<div class="finding-provenance">Based on manually entered / uploaded data, not yet cross-checked against a live connector.</div>' : '') +
+    // Only self-reported (Signal) findings carry the "not cross-checked" note —
+    // a Verified finding is corroborated by an independent source by definition.
+    ((f.self_reported && f.tier !== 'verified') ? '<div class="finding-provenance">Based on manually entered / uploaded data, not yet cross-checked against a live connector.</div>' : '') +
     '<button class="finding-explain">Explain why →</button>' +
   '</div>';
 }
@@ -2672,6 +2784,29 @@ async function renderHistoryView(){
   document.getElementById('historyThreadList').classList.remove('hidden');
   await renderHistoryThreadList();
   renderHistoryFindingsList();
+  await renderHistoryLedgerList();
+}
+
+async function renderHistoryLedgerList(){
+  const listEl = document.getElementById('historyLedgerList');
+  if(!listEl) return;
+  listEl.innerHTML = '<div class="hint">Loading…</div>';
+  ledgerEvents = await loadLedgerEvents();
+  if(!ledgerEvents.length){
+    listEl.innerHTML = '<div class="hint">No ledger activity yet. Add a receivable or payable under Ledger to start the trail.</div>';
+    return;
+  }
+  const verb = { created:'Added', settled:'Settled', deleted:'Deleted', imported:'Imported', edited:'Edited' };
+  listEl.innerHTML = ledgerEvents.map(e => {
+    const d = new Date(e.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+    const who = e.party_name ? escapeHtml(e.party_name) : (e.note ? escapeHtml(e.note) : '—');
+    const amt = (e.amount != null) ? inr(e.amount) : '';
+    const src = e.source ? '<span class="source-badge self-reported">' + (e.source === 'upload' ? 'CSV upload' : 'Manual entry') + '</span>' : '';
+    return '<div class="ledger-row"><div class="lr-main">' +
+      '<div class="lr-party">' + (verb[e.event] || e.event) + ' ' + (e.entity_type || '') + ' · ' + who + ' ' + src + '</div>' +
+      '<div class="lr-meta">' + d + (e.note && e.party_name ? ' · ' + escapeHtml(e.note) : '') + '</div>' +
+      '</div><div class="lr-amount">' + amt + '</div></div>';
+  }).join('');
 }
 
 async function renderHistoryThreadList(){
@@ -2850,6 +2985,61 @@ function buildMargynContext(focusLabel){
     .slice(0, 10)
     .map(f => ({ date: f.generated_at, vital: f.vital, tier: f.tier, summary: f.summary }));
 
+  // Zoho Books connector vitals — the CONNECTOR-SYNCED view of receivables/
+  // payables/cash/GST/margin. Kept strictly separate from the self-entered
+  // Quick Ledger below so the AI never blends the two (see formatMargynContext.js).
+  const booksVitals = (zohoConnected && zohoVitals) ? {
+    receivables: zohoVitals.receivables || null,
+    payables: zohoVitals.payables || null,
+    cash_position: zohoVitals.cash_position || null,
+    gst_leakage: zohoVitals.gst_leakage || null,
+    net_margin: zohoVitals.net_margin || null,
+    working_capital_runway: zohoVitals.working_capital_runway || null,
+    top_overdue_customers: zohoVitals.top_overdue_customers || null,
+    flags: zohoVitals.flags || null
+  } : null;
+
+  // Divergence between the connector view and the self-entered view — surfaced
+  // as a lead fact rather than silently double-recorded.
+  let sourceDivergence = null;
+  if (booksVitals) {
+    const pairs = [
+      ['receivables', booksVitals.receivables && Number(booksVitals.receivables.total), recvTotal],
+      ['payables', booksVitals.payables && Number(booksVitals.payables.total), payables.reduce((s,p) => s + Number(p.amount||0), 0)]
+    ];
+    const msgs = [];
+    pairs.forEach(([label, bookVal, ledgerVal]) => {
+      if (bookVal == null || isNaN(bookVal) || !ledgerVal) return;
+      const gap = Math.abs(bookVal - ledgerVal);
+      if (gap > 25000 && gap / Math.max(bookVal, ledgerVal) > 0.10) {
+        msgs.push(`Books ${label} ${inr(bookVal)} vs Quick Ledger ${inr(ledgerVal)} — ${inr(gap)} unexplained gap`);
+      }
+    });
+    if (msgs.length) sourceDivergence = msgs.join('. ');
+  }
+
+  const reconciliation = (reconSummary && reconSummary.connected) ? {
+    connected: true,
+    counts: reconSummary.counts || {},
+    provenance: reconSummary.provenance || null,
+    reviewQueueLen: (reconSummary.review_queue || []).length
+  } : null;
+
+  // Durable connector provenance (needs_reauth / freshness) — see the
+  // connector-status columns from the 2026-09-04 provenance migration and
+  // formatMargynContext.js's connectorFreshnessBlock.
+  const connectorStatus = [
+    { type: 'Razorpay', connected: !!razorpayConnected,
+      needsReauth: !!(razorpayStatus && razorpayStatus.needs_reauth),
+      lastSuccessAt: (razorpayStatus && razorpayStatus.last_success_at) || null },
+    { type: 'Zoho Books', connected: !!zohoConnected,
+      needsReauth: !!(zohoVitals && zohoVitals.status === 'needs_reauth'),
+      lastSuccessAt: (zohoVitals && zohoVitals.last_synced_at) || null },
+    { type: 'Shopify', connected: !!shopifyConnected,
+      needsReauth: !!(shopifyStore && shopifyStore.status === 'needs_reauthentication'),
+      lastSuccessAt: (shopifyStore && shopifyStore.last_synced_at) || null }
+  ];
+
   return {
     companyName: (currentProfile && currentProfile.company_name) || null,
     pulseScore: hasData ? latest.pulse_score : null,
@@ -2857,14 +3047,19 @@ function buildMargynContext(focusLabel){
     vitals: vitalsOut,
     focusVital: focusLabel || null,
     payments,
+    paymentsSource: hasData ? (latest.payments_source || null) : null,
     shopify,
     receivablesPayables: {
+      selfEntered: true,
       totalOutstandingReceivables: Math.round(recvTotal),
       receivablesOver90d: Math.round(recv90),
       payablesDueNext30d: Math.round(paySoon),
       topReceivables,
       topPayables
     },
+    booksVitals,
+    reconciliation,
+    sourceDivergence,
     findingsHistory,
     pnl,
     dataProvenance: hasData ? {
@@ -2873,7 +3068,10 @@ function buildMargynContext(focusLabel){
       selfReported: SELF_REPORTED_SOURCES.includes(latest.source)
     } : null,
     razorpayLive: razorpayLiveSummary,
-    connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected }
+    connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected, tally: !!tallyConnected },
+    connectorStatus,
+    tally: tallyData,
+    crossLedger: buildCrossLedgerSummary()
   };
 }
 
@@ -2898,15 +3096,127 @@ async function callAskMargyn(message, history, focusLabel, findingTier){
    detail modals — this is just a dedicated, always-open page for it.
    ============================================================ */
 let ledgerActiveTab = 'all';
+let ledgerSourceFilter = 'all'; // all | self | zoho | tally — filters the unified ledger table
+
+/* ============================================================
+   UNIFIED LEDGER — one view over all three receivables/payables
+   sources: self-entered (manual/CSV upload) + Zoho Books + Tally.
+   IMPORTANT: only the self-entered rows are editable and only they
+   feed ledgerAggregates()/saveLedgerSnapshot()/the Pulse Score.
+   Connector rows are read-only and shown for comparison only —
+   they are NEVER summed into the self-entered totals or the vitals.
+   ============================================================ */
+function normPartyName(s){
+  return String(s||'').toLowerCase()
+    .replace(/\b(pvt|private|ltd|limited|llp|inc|co|corp|corporation|company|the|and)\b/g,'')
+    .replace(/[^a-z0-9]/g,'');
+}
+const LEDGER_SOURCE_META = {
+  manual: { label:'Manual',      cls:'self-reported', group:'self' },
+  upload: { label:'CSV upload',  cls:'self-reported', group:'self' },
+  zoho:   { label:'Zoho Books',  cls:'connector',     group:'zoho' },
+  tally:  { label:'Tally',       cls:'connector',     group:'tally' }
+};
+/* every open row, from every source, for one direction ('recv'|'pay') */
+function unifiedLedgerRows(direction){
+  const out = [];
+  const selfArr = direction === 'recv' ? receivables : payables;
+  selfArr.forEach(r => out.push({
+    party: r.party_name, amount: Number(r.amount)||0, due_date: r.due_date || null,
+    source: (r.source === 'upload' ? 'upload' : 'manual'), editable: true,
+    kind: direction, raw: r, ref: null, recon: r.reconciliation_status || null
+  }));
+  const zArr = direction === 'recv'
+    ? (zohoLedgerRows && zohoLedgerRows.receivables) || []
+    : (zohoLedgerRows && zohoLedgerRows.payables) || [];
+  zArr.forEach(r => out.push({
+    party: r.party_name, amount: Number(r.amount)||0, due_date: r.due_date || null,
+    source: 'zoho', editable: false, kind: direction, ref: r.ref || null
+  }));
+  if(tallyData && tallyData.bills && Array.isArray(tallyData.bills.items)){
+    const want = direction === 'recv' ? 'receivable' : 'payable';
+    tallyData.bills.items.filter(b => b.direction === want).forEach(b => out.push({
+      party: b.party_name, amount: Number(b.amount)||0, due_date: b.due_date || null,
+      source: 'tally', editable: false, kind: direction, ref: b.bill_ref || null,
+      overdue: b.overdue_days != null ? b.overdue_days : null
+    }));
+  }
+  return out;
+}
+/* group a direction's rows by normalised counterparty, flag cross-source agree/conflict */
+function crossLedgerGroups(direction){
+  const map = new Map();
+  unifiedLedgerRows(direction).forEach(r => {
+    const key = normPartyName(r.party) || ('~' + (r.party||'').toLowerCase());
+    if(!map.has(key)) map.set(key, { party: r.party, bySource:{}, srcGroups:new Set() });
+    const g = map.get(key);
+    const grp = (LEDGER_SOURCE_META[r.source]||{}).group || r.source;
+    g.bySource[grp] = (g.bySource[grp]||0) + r.amount;
+    g.srcGroups.add(grp);
+  });
+  return [...map.values()].map(g => {
+    const amts = Object.values(g.bySource);
+    const max = Math.max(...amts), min = Math.min(...amts);
+    const multi = g.srcGroups.size >= 2;
+    const agree = multi && (max - min) <= Math.max(1, max * 0.02); // within 2% or ₹1
+    return { party: g.party, bySource: g.bySource, sources:[...g.srcGroups], multi, agree, conflict: multi && !agree };
+  });
+}
+/* compact structure passed to the AI context so it can reason across sources */
+function buildCrossLedgerSummary(){
+  const pack = dir => {
+    const groups = crossLedgerGroups(dir);
+    const bySourceTotal = {};
+    unifiedLedgerRows(dir).forEach(r => {
+      const grp = (LEDGER_SOURCE_META[r.source]||{}).group || r.source;
+      bySourceTotal[grp] = (bySourceTotal[grp]||0) + r.amount;
+    });
+    return {
+      totalsBySource: bySourceTotal,
+      agree: groups.filter(g => g.agree).map(g => ({ party:g.party, amount: Math.max(...Object.values(g.bySource)), sources:g.sources })),
+      conflict: groups.filter(g => g.conflict).map(g => ({ party:g.party, bySource:g.bySource, sources:g.sources })),
+      singleSource: groups.filter(g => !g.multi).map(g => ({ party:g.party, amount: Object.values(g.bySource)[0], source:g.sources[0] }))
+    };
+  };
+  const hasAny = receivables.length || payables.length
+    || (zohoLedgerRows && ((zohoLedgerRows.receivables||[]).length || (zohoLedgerRows.payables||[]).length))
+    || (tallyData && tallyData.bills && (tallyData.bills.items||[]).length);
+  if(!hasAny) return null;
+  return {
+    sourcesPresent: {
+      self: !!(receivables.length || payables.length),
+      zoho: !!(zohoConnected && zohoLedgerRows && ((zohoLedgerRows.receivables||[]).length || (zohoLedgerRows.payables||[]).length)),
+      tally: !!(tallyConnected && tallyData && tallyData.bills && (tallyData.bills.items||[]).length)
+    },
+    receivables: pack('recv'),
+    payables: pack('pay')
+  };
+}
+function ledgerSourceChip(src){
+  const m = LEDGER_SOURCE_META[src] || { label: src, cls:'' };
+  let html = '<span class="lr-tag ' + m.cls + '">' + m.label + '</span>';
+  if(src === 'tally') html += '<span class="lr-tag unreconciled">Signal</span>';
+  return html;
+}
 function renderLedgerFacts(){
   const host = document.getElementById('ledgerFacts'); if(!host) return;
-  const { recvTotal } = ledgerAggregates();
+  const { recvTotal } = ledgerAggregates();               // self-entered only — feeds the Pulse Score
   const payTotal = payables.reduce((s,p) => s + Number(p.amount), 0);
   const net = recvTotal - payTotal;
-  host.innerHTML =
-    '<div class="fact" data-margyn-topic="Total receivable"><div class="f-label">Total receivable</div><div class="f-value" style="color:#B3432E;">'+inr(recvTotal)+'</div></div>' +
-    '<div class="fact" data-margyn-topic="Total payable"><div class="f-label">Total payable</div><div class="f-value" style="color:#5B6472;">'+inr(payTotal)+'</div></div>' +
-    '<div class="fact" data-margyn-topic="Net position"><div class="f-label">Net position</div><div class="f-value" style="color:'+(net>=0?'#0E8F5C':'#B3432E')+';">'+inr(net)+'</div></div>';
+  const cs = buildCrossLedgerSummary();
+  let facts =
+    '<div class="fact" data-margyn-topic="Total receivable"><div class="f-label">Receivable · your ledger</div><div class="f-value" style="color:#B3432E;">'+inr(recvTotal)+'</div></div>' +
+    '<div class="fact" data-margyn-topic="Total payable"><div class="f-label">Payable · your ledger</div><div class="f-value" style="color:#5B6472;">'+inr(payTotal)+'</div></div>' +
+    '<div class="fact" data-margyn-topic="Net position"><div class="f-label">Net · your ledger</div><div class="f-value" style="color:'+(net>=0?'#0E8F5C':'#B3432E')+';">'+inr(net)+'</div></div>';
+  if(cs){
+    const zr = (cs.receivables.totalsBySource.zoho)||0, tr = (cs.receivables.totalsBySource.tally)||0;
+    if(zr) facts += '<div class="fact"><div class="f-label">Receivable · Zoho Books</div><div class="f-value" style="color:#0B4B8C;">'+inr(zr)+'</div></div>';
+    if(tr) facts += '<div class="fact"><div class="f-label">Receivable · Tally <span class="lr-tag unreconciled" style="transform:scale(.85)">Signal</span></div><div class="f-value" style="color:#0B4B8C;">'+inr(tr)+'</div></div>';
+    const nConf = cs.receivables.conflict.length + cs.payables.conflict.length;
+    const nAgree = cs.receivables.agree.length + cs.payables.agree.length;
+    if(nAgree || nConf) facts += '<div class="fact"><div class="f-label">Cross-source</div><div class="f-value" style="font-size:15px; color:#5B6472;">'+nAgree+' agree · <span style="color:#B3432E;">'+nConf+' differ</span></div></div>';
+  }
+  host.innerHTML = facts;
 }
 function renderLedgerView(){
   renderLedgerFacts();
@@ -2915,8 +3225,13 @@ function renderLedgerView(){
   const addTitle = document.getElementById('ledgerAddTitle');
   const listTitle = document.getElementById('ledgerListTitle');
   const host = document.getElementById('ledgerListHost');
+  const srcSel = document.getElementById('ledgerSourceFilter');
+  const srcNote = document.getElementById('ledgerSourceNote');
+  if(srcSel && srcSel.value !== ledgerSourceFilter) srcSel.value = ledgerSourceFilter;
   if(ledgerActiveTab === 'cash'){
     addForm.classList.add('hidden');
+    if(srcSel) srcSel.parentElement.style.display = 'none';
+    if(srcNote) srcNote.textContent = '';
     listTitle.textContent = 'Cash balance readings';
     if(!snapshots.length){ host.innerHTML = '<div class="ledger-empty">No cash readings yet. Add one on Upload &amp; calculate.</div>'; return; }
     let rowsHtml = '';
@@ -2926,39 +3241,62 @@ function renderLedgerView(){
       const changeCell = d===null ? '—' : (d>0?'<span class="lr-tag ok">▲ '+inr(d)+'</span>':d<0?'<span class="lr-tag warn">▼ '+inr(Math.abs(d))+'</span>':'—');
       rowsHtml += '<tr><td>'+fmtDate(s.created_at)+'</td><td style="text-transform:capitalize;">'+(s.source||'manual')+'</td><td>'+changeCell+'</td><td class="num">'+inr(s.cash)+'</td></tr>';
     });
-    host.innerHTML = '<table class="ledger-table"><thead><tr><th>Date</th><th>Source</th><th>Change</th><th class="num">Balance</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>';
+    let cashExtra = '';
+    if(tallyData && tallyData.ledgers && Array.isArray(tallyData.ledgers.items)){
+      const led = tallyData.ledgers.items.filter(x => x.closing_balance != null).slice(0,30);
+      if(led.length) cashExtra = '<div class="ledger-list-title" style="display:flex; gap:8px; align-items:center;">Tally ledger balances <span class="lr-tag unreconciled">Signal</span></div>' +
+        '<table class="ledger-table"><thead><tr><th>Ledger</th><th>Group</th><th class="num">Closing balance</th></tr></thead><tbody>' +
+        led.map(x => '<tr><td>'+escapeHtml(x.name)+'</td><td>'+escapeHtml(x.parent||'—')+'</td><td class="num">'+inr(x.closing_balance)+'</td></tr>').join('') + '</tbody></table>';
+    }
+    host.innerHTML = '<table class="ledger-table"><thead><tr><th>Date</th><th>Source</th><th>Change</th><th class="num">Balance</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>' + cashExtra;
     return;
   }
+  if(srcSel) srcSel.parentElement.style.display = '';
   addForm.classList.remove('hidden');
   addTitle.textContent = ledgerActiveTab === 'payables' ? 'Add payable' : 'Add receivable';
   document.getElementById('ledgerParty').placeholder = ledgerActiveTab === 'payables' ? 'Vendor name' : 'Customer name';
-  let rows = [];
   const farFuture = new Date(8640000000000000);
-  if(ledgerActiveTab === 'all'){
-    listTitle.textContent = 'All open entries (' + (receivables.length + payables.length) + ')';
-    rows = [ ...receivables.map(r => ({...r, kind:'recv'})), ...payables.map(p => ({...p, kind:'pay'})) ]
-      .sort((a,b) => (a.due_date?new Date(a.due_date):farFuture) - (b.due_date?new Date(b.due_date):farFuture));
-  } else if(ledgerActiveTab === 'receivables'){
-    listTitle.textContent = 'Open receivables (' + receivables.length + ')';
-    rows = receivables.map(r => ({...r, kind:'recv'}));
-  } else {
-    listTitle.textContent = 'Open payables (' + payables.length + ')';
-    rows = payables.map(p => ({...p, kind:'pay'}));
+  let rows = [];
+  if(ledgerActiveTab === 'receivables') rows = unifiedLedgerRows('recv');
+  else if(ledgerActiveTab === 'payables') rows = unifiedLedgerRows('pay');
+  else rows = [ ...unifiedLedgerRows('recv'), ...unifiedLedgerRows('pay') ];
+  if(ledgerSourceFilter !== 'all'){
+    rows = rows.filter(r => ((LEDGER_SOURCE_META[r.source]||{}).group) === ledgerSourceFilter);
   }
-  if(!rows.length){ host.innerHTML = '<div class="ledger-empty">Nothing open here. Add one above.</div>'; return; }
+  rows.sort((a,b) => (a.due_date?new Date(a.due_date):farFuture) - (b.due_date?new Date(b.due_date):farFuture));
+  // cross-source lookup so a row can show "2 sources agree" / "sources differ"
+  const groupIndex = {};
+  ['recv','pay'].forEach(dir => crossLedgerGroups(dir).forEach(g => { groupIndex[dir + '|' + normPartyName(g.party)] = g; }));
   const showType = ledgerActiveTab === 'all';
+  listTitle.textContent = (ledgerActiveTab === 'receivables' ? 'Open receivables' : ledgerActiveTab === 'payables' ? 'Open payables' : 'All open entries') + ' (' + rows.length + ')';
+  if(srcNote){
+    const parts = [];
+    if(receivables.length || payables.length) parts.push('your manual/CSV ledger');
+    if(zohoConnected) parts.push('Zoho Books');
+    if(tallyConnected) parts.push('Tally (Signal)');
+    srcNote.innerHTML = parts.length > 1
+      ? 'Showing entries from ' + parts.join(' + ') + '. Only your manual/CSV rows are editable and count toward your Pulse Score — connector rows are shown for comparison.'
+      : '';
+  }
+  if(!rows.length){ host.innerHTML = '<div class="ledger-empty">Nothing open in this view.</div>'; return; }
   let rowsHtml = '';
   rows.forEach((r, i) => {
     const isRecv = r.kind === 'recv';
     const badge = isRecv ? recvBucket(r.due_date) : payUrgency(r.due_date);
+    const g = groupIndex[(isRecv?'recv':'pay') + '|' + normPartyName(r.party)];
+    const xtag = g && g.agree ? '<span class="lr-tag verified">2+ sources agree</span>'
+      : g && g.conflict ? '<span class="lr-tag review">sources differ</span>' : '';
+    const actions = r.editable
+      ? '<div class="lr-actions"><button class="lr-btn" data-act="settle">'+(isRecv?'Mark received':'Mark paid')+'</button><button class="lr-btn danger" data-act="del">Delete</button></div>'
+      : '<span class="lr-meta" style="font-size:10px;">synced · read-only</span>';
     rowsHtml +=
       '<tr data-idx="'+i+'">' +
-      '<td>'+escapeHtml(r.party_name)+'</td>' +
+      '<td>'+escapeHtml(r.party||'—')+'<div style="margin-top:3px;">'+ledgerSourceChip(r.source)+xtag+'</div></td>' +
       (showType ? '<td><span class="lr-tag '+(isRecv?'type-recv':'type-pay')+'">'+(isRecv?'Receivable':'Payable')+'</span></td>' : '') +
       '<td>'+(r.due_date?fmtDay(r.due_date):'—')+'</td>' +
       '<td>'+(badge.tag?'<span class="lr-tag '+badge.tag+'">'+badge.label+'</span>':'—')+'</td>' +
       '<td class="num">'+inr(r.amount)+'</td>' +
-      '<td><div class="lr-actions"><button class="lr-btn" data-act="settle">'+(isRecv?'Mark received':'Mark paid')+'</button><button class="lr-btn danger" data-act="del">Delete</button></div></td>' +
+      '<td>'+actions+'</td>' +
       '</tr>';
   });
   host.innerHTML = '<table class="ledger-table"><thead><tr><th>'+(ledgerActiveTab==='payables'?'Vendor':ledgerActiveTab==='receivables'?'Customer':'Party')+'</th>' +
@@ -2966,12 +3304,15 @@ function renderLedgerView(){
     '<th>Due</th><th>Status</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+rowsHtml+'</tbody></table>';
   host.querySelectorAll('tr[data-idx]').forEach(tr => {
     const r = rows[Number(tr.dataset.idx)];
+    if(!r.editable) return;
     const isRecv = r.kind === 'recv';
-    tr.querySelector('[data-act="settle"]').addEventListener('click', () => isRecv ? ledgerSettleReceivable(r) : ledgerSettlePayable(r));
-    tr.querySelector('[data-act="del"]').addEventListener('click', () => isRecv ? ledgerRemoveReceivable(r) : ledgerRemovePayable(r));
+    const sb = tr.querySelector('[data-act="settle"]'); const db = tr.querySelector('[data-act="del"]');
+    if(sb) sb.addEventListener('click', () => isRecv ? ledgerSettleReceivable(r.raw) : ledgerSettlePayable(r.raw));
+    if(db) db.addEventListener('click', () => isRecv ? ledgerRemoveReceivable(r.raw) : ledgerRemovePayable(r.raw));
   });
 }
 document.querySelectorAll('#ledgerTabs .tab').forEach(t => t.addEventListener('click', () => { ledgerActiveTab = t.dataset.ltab; renderLedgerView(); }));
+document.getElementById('ledgerSourceFilter').addEventListener('change', (e) => { ledgerSourceFilter = e.target.value; renderLedgerView(); });
 document.getElementById('ledgerAddBtn').addEventListener('click', async () => {
   const party = document.getElementById('ledgerParty').value.trim();
   const amt = Number(document.getElementById('ledgerAmt').value);
@@ -2979,8 +3320,9 @@ document.getElementById('ledgerAddBtn').addEventListener('click', async () => {
   if(!party || !amt) return;
   try {
     const table = ledgerActiveTab === 'payables' ? 'payables' : 'receivables';
-    const { error } = await sbClient.from(table).insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open' });
+    const { error } = await sbClient.from(table).insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' });
     if(error) throw error;
+    await logLedgerEvent({ entityType: table === 'payables' ? 'payable' : 'receivable', event:'created', partyName:party, amount:amt, source:'manual' });
     receivables = await loadReceivables(); payables = await loadPayables();
     await saveLedgerSnapshot();
     document.getElementById('ledgerParty').value = ''; document.getElementById('ledgerAmt').value = ''; document.getElementById('ledgerDue').value = '';
@@ -2988,22 +3330,26 @@ document.getElementById('ledgerAddBtn').addEventListener('click', async () => {
   } catch(err){ alert('Could not add: ' + (err.message||'unknown error')); }
 });
 async function ledgerSettleReceivable(r){
-  try { const { error } = await sbClient.from('receivables').delete().eq('id', r.id); if(error) throw error;
+  try { const { error } = await sbClient.from('receivables').update({ status:'settled', settled_at:new Date().toISOString(), settled_amount:r.amount, settled_kind:'received' }).eq('id', r.id); if(error) throw error;
+    await logLedgerEvent({ entityType:'receivable', entityId:r.id, event:'settled', partyName:r.party_name, amount:r.amount, source:r.source||'manual', note:'marked received' });
     receivables = await loadReceivables(); await saveLedgerSnapshot(); renderLedgerView();
   } catch(err){ alert('Could not mark as received: ' + (err.message||'unknown error')); }
 }
 async function ledgerRemoveReceivable(r){
-  try { const { error } = await sbClient.from('receivables').delete().eq('id', r.id); if(error) throw error;
+  try { await logLedgerEvent({ entityType:'receivable', entityId:r.id, event:'deleted', partyName:r.party_name, amount:r.amount, source:r.source||'manual' });
+    const { error } = await sbClient.from('receivables').delete().eq('id', r.id); if(error) throw error;
     receivables = await loadReceivables(); await saveLedgerSnapshot(); renderLedgerView();
   } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
 }
 async function ledgerSettlePayable(p){
-  try { const { error } = await sbClient.from('payables').delete().eq('id', p.id); if(error) throw error;
+  try { const { error } = await sbClient.from('payables').update({ status:'settled', settled_at:new Date().toISOString(), settled_amount:p.amount, settled_kind:'paid' }).eq('id', p.id); if(error) throw error;
+    await logLedgerEvent({ entityType:'payable', entityId:p.id, event:'settled', partyName:p.party_name, amount:p.amount, source:p.source||'manual', note:'marked paid' });
     payables = await loadPayables(); await saveLedgerSnapshot(); renderLedgerView();
   } catch(err){ alert('Could not mark as paid: ' + (err.message||'unknown error')); }
 }
 async function ledgerRemovePayable(p){
-  try { const { error } = await sbClient.from('payables').delete().eq('id', p.id); if(error) throw error;
+  try { await logLedgerEvent({ entityType:'payable', entityId:p.id, event:'deleted', partyName:p.party_name, amount:p.amount, source:p.source||'manual' });
+    const { error } = await sbClient.from('payables').delete().eq('id', p.id); if(error) throw error;
     payables = await loadPayables(); await saveLedgerSnapshot(); renderLedgerView();
   } catch(err){ alert('Could not delete: ' + (err.message||'unknown error')); }
 }
@@ -3963,7 +4309,7 @@ function renderShopifyChart(){
    primary margin source, not a supplement.
 
    Same rule as the Zoho connector: all counting and flagging
-   happens server-side in /api/shopify-status, this file only
+   happens server-side in /api/shopify?action=status, this file only
    renders what comes back, so the app and the AI briefing can
    never disagree on a number.
    ============================================================ */
@@ -4136,13 +4482,190 @@ async function disconnectShopify(){
   await loadShopifyStatus();
 }
 /* ============================================================
+   TALLY CONNECTOR — local Windows desktop agent -> TallyPrime
+   HTTP/XML server (port 9000) -> Margyn cloud. Unlike
+   Razorpay/Shopify/Zoho the credential exchange happens inside
+   the desktop agent, not this browser: the app only mints a
+   one-time pairing code and polls until the agent checks in.
+   No token field here. Everything Tally sends lands
+   provenance-tagged "Signal" and is never auto-trusted
+   — see api/tally.js.
+   ============================================================ */
+const MARGYN_TALLY_AGENT_DOWNLOAD = 'https://pub-432244bb0d9047989ffc94163a2fea75.r2.dev/Margyn-Tally-Agent-Setup-0.1.0.exe';
+async function tallyApi(path, opts){
+  opts = opts || {};
+  const { data:{ session } } = await sbClient.auth.getSession();
+  const token = session ? session.access_token : null;
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + token },
+    body: opts.body
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok) throw new Error(data.message || data.error || ('Request failed (' + res.status + ')'));
+  return data;
+}
+function tallyFmtAgo(iso){
+  if(!iso) return 'never';
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime())/1000);
+  if(secs < 90) return 'just now';
+  if(secs < 3600) return Math.round(secs/60) + ' min ago';
+  if(secs < 86400) return Math.round(secs/3600) + ' h ago';
+  return Math.round(secs/86400) + ' d ago';
+}
+/* ---------- status row inside Connectors ---------- */
+async function loadTallyStatus(){
+  try {
+    const d = await tallyApi('/api/tally?action=status');
+    tallyInstalls = Array.isArray(d.installs) ? d.installs : [];
+    tallyConnected = tallyInstalls.some(i => i.status === 'active');
+  } catch(e){ /* keep last known state on a flaky check */ }
+  renderTallyStatus();
+}
+/* Pre-aggregated bills / vouchers / ledger balances for the Ledger view + AI context.
+   Server does all the maths (api/tally.js?action=summary) so the app and the
+   briefing can never quote different Tally numbers. Everything here is Signal. */
+async function loadTallyData(){
+  try {
+    const d = await tallyApi('/api/tally?action=summary');
+    return (d && d.connected) ? d : null;
+  } catch(e){ return null; }
+}
+function renderTallyStatus(){
+  const host = document.getElementById('tallyStatus'); if(!host) return;
+  const active = tallyInstalls.filter(i => i.status === 'active');
+  if(active.length){
+    host.innerHTML = active.map(i => {
+      const c = i.counts || {};
+      const prod = i.tally_product === 'erp9' ? 'Tally.ERP 9'
+        : (i.tally_product === 'tallyprime' ? 'TallyPrime' : (i.tally_product_name || 'Tally'));
+      const parts = [
+        escapeHtml(prod) + (i.tally_version ? ' ' + escapeHtml(i.tally_version) : ''),
+        'company ' + escapeHtml(i.company_name || '—'),
+        (c.ledgers||0) + ' ledgers · ' + (c.vouchers||0) + ' vouchers · ' + (c.bills||0) + ' bills',
+        'agent checked in ' + tallyFmtAgo(i.last_seen_at),
+        'last sync ' + tallyFmtAgo(i.last_sync_at)
+      ];
+      return '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">' + escapeHtml(prod) + ' <span class="lr-meta" style="font-weight:400">(' + escapeHtml(i.machine_hint || 'desktop agent') + ')</span></div>' +
+        '<div class="lr-meta">' + parts.join(' · ') + '</div>' +
+      '</div><span class="lr-tag ok">Signal</span>' +
+      '<div class="lr-actions">' +
+        '<button class="lr-btn danger" data-tally-revoke="' + i.id + '">Disconnect</button>' +
+      '</div></div>';
+    }).join('') +
+    '<div class="lr-actions" style="margin-top:8px"><button class="lr-btn connect" id="tallyAddBtn">Pair another PC</button></div>';
+  } else {
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">TallyPrime</div>' +
+        '<div class="lr-meta">Not connected · a small agent on the Windows PC running Tally syncs ledgers, vouchers and bills. Lands as Signal, corroborated against bank &amp; GST before it moves any number.</div>' +
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="tallyConnectBtn">Connect</button></div></div>';
+  }
+  const b1 = document.getElementById('tallyConnectBtn'); if(b1) b1.addEventListener('click', openTallyModal);
+  const b2 = document.getElementById('tallyAddBtn'); if(b2) b2.addEventListener('click', openTallyModal);
+  host.querySelectorAll('[data-tally-revoke]').forEach(btn => {
+    btn.addEventListener('click', () => revokeTallyInstall(btn.getAttribute('data-tally-revoke')));
+  });
+}
+async function revokeTallyInstall(installId){
+  if(!confirm('Disconnect this Tally agent? Already-synced data stays visible; the agent stops syncing.')) return;
+  try {
+    await tallyApi('/api/tally?action=revoke', { method:'POST', body: JSON.stringify({ installId }) });
+    await loadTallyStatus();
+  } catch(e){ alert(e.message); }
+}
+/* ---------- pairing modal ---------- */
+function openTallyModal(){
+  const overlay = document.getElementById('tallyOverlay');
+  const host = document.getElementById('tallyContent');
+  host.innerHTML =
+    '<div class="detail-eyebrow">Connect data</div>' +
+    '<div class="detail-title">Connect TallyPrime</div>' +
+    '<div class="zoho-scope-note">Read-only · your data never leaves your network except the sync to Margyn</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Margyn reads Tally through a small agent you run on the Windows 10/11 PC where TallyPrime is installed. Works with <b>TallyPrime</b> and <b>Tally.ERP 9</b>. It only reads — it never posts vouchers or edits masters.</div>' +
+    '<div class="ledger-form">' +
+      '<div class="lf-title">Step 1 — download &amp; install the agent</div>' +
+      '<div style="font-size:11px; color:var(--text-2); margin:4px 0 10px; line-height:1.7;">Install it on the PC where TallyPrime runs.</div>' +
+      '<a class="lr-btn connect" style="display:inline-block; text-decoration:none; padding:8px 14px; font-size:12px;" href="' + MARGYN_TALLY_AGENT_DOWNLOAD + '">Download for Windows</a>' +
+      '<div style="font-size:11px; color:var(--text-2); margin:8px 0 14px; line-height:1.7;">Windows may warn about an unrecognised publisher — click <span class="mono">More info</span> → <span class="mono">Run anyway</span>.</div>' +
+      '<div class="lf-title">Step 2 — turn on Tally\'s connector</div>' +
+      '<div style="font-size:11px; color:var(--text-2); margin:4px 0 14px; line-height:1.7;">' +
+        '<b>TallyPrime:</b> F1 (Help) → Settings → Advanced Configuration → set <span class="mono">TallyPrime acts as</span> to <span class="mono">Both</span>, port <span class="mono">9000</span>.<br>' +
+        '<b>Tally.ERP 9:</b> F12 (Configure) → Advanced Configuration → set the same option to <span class="mono">Both</span>, port <span class="mono">9000</span>.<br>' +
+        'Keep the company open.' +
+      '</div>' +
+      '<div class="lf-title">Step 3 — pairing code</div>' +
+      '<div style="font-size:11px; color:var(--text-2); margin:4px 0 8px; line-height:1.7;">In the agent, paste this code and your company name.</div>' +
+      '<div id="tallyCodeBox" style="margin:8px 0 12px;">' +
+        '<div class="mono" id="tallyCode" style="font-size:26px; letter-spacing:3px; padding:10px 0;">····-····</div>' +
+        '<div style="font-size:11px; color:var(--text-2);" id="tallyCodeMeta">Generating…</div>' +
+      '</div>' +
+      '<div class="note bad" id="tallyError" style="display:none; margin:10px 0 8px;"></div>' +
+      '<div class="note ok" id="tallySuccess" style="display:none; margin:10px 0 8px;"></div>' +
+      '<button id="tallyRegenBtn" style="margin-top:6px;">Generate a new code</button>' +
+    '</div>';
+  document.getElementById('tallyRegenBtn').addEventListener('click', mintTallyCode);
+  overlay.classList.remove('hidden');
+  mintTallyCode();
+}
+async function mintTallyCode(){
+  const codeEl = document.getElementById('tallyCode');
+  const metaEl = document.getElementById('tallyCodeMeta');
+  const errEl = document.getElementById('tallyError');
+  if(errEl) errEl.style.display = 'none';
+  const known = new Set(tallyInstalls.map(i => i.id));
+  if(codeEl) codeEl.textContent = '····-····';
+  if(metaEl) metaEl.textContent = 'Generating…';
+  let out;
+  try {
+    out = await tallyApi('/api/tally?action=pair-init', { method:'POST', body: JSON.stringify({}) });
+  } catch(e){
+    if(metaEl) metaEl.textContent = '';
+    if(errEl){ errEl.textContent = e.message; errEl.style.display = 'block'; }
+    return;
+  }
+  if(codeEl) codeEl.textContent = out.code;
+  const expires = new Date(out.expires_at).getTime();
+  const tickMeta = () => {
+    const left = Math.max(0, Math.round((expires - Date.now())/1000));
+    if(metaEl) metaEl.textContent = left
+      ? ('Expires in ' + Math.floor(left/60) + ':' + String(left%60).padStart(2,'0'))
+      : 'Expired — generate a new code';
+  };
+  tickMeta();
+  if(tallyPairPollTimer) clearInterval(tallyPairPollTimer);
+  tallyPairPollTimer = setInterval(async () => {
+    tickMeta();
+    try {
+      const d = await tallyApi('/api/tally?action=status');
+      const installs = Array.isArray(d.installs) ? d.installs : [];
+      const fresh = installs.find(i => i.status === 'active' && !known.has(i.id));
+      if(fresh){
+        clearInterval(tallyPairPollTimer); tallyPairPollTimer = null;
+        const okEl = document.getElementById('tallySuccess');
+        if(okEl){ okEl.textContent = '✔ Connected — ' + (fresh.company_name || 'your company') + '. First sync will land shortly.'; okEl.style.display = 'block'; }
+        tallyInstalls = installs; tallyConnected = true; renderTallyStatus();
+        setTimeout(() => document.getElementById('tallyOverlay').classList.add('hidden'), 1500);
+      }
+    } catch(e){ /* transient */ }
+  }, 3000);
+}
+document.getElementById('tallyClose').addEventListener('click', () => {
+  document.getElementById('tallyOverlay').classList.add('hidden');
+  if(tallyPairPollTimer){ clearInterval(tallyPairPollTimer); tallyPairPollTimer = null; }
+});
+document.getElementById('tallyOverlay').addEventListener('click', (e) => {
+  if(e.target.id === 'tallyOverlay'){ e.currentTarget.classList.add('hidden'); if(tallyPairPollTimer){ clearInterval(tallyPairPollTimer); tallyPairPollTimer = null; } }
+});
+/* ============================================================
    ZOHO BOOKS CONNECTOR (NEW) — OAuth 2.0, org-picker gated.
    The only connector that can unlock receivables aging, payables
    due, GST/ITC leakage and true net margin, because those live in
    the books and nowhere else.
 
    All arithmetic happens server-side in the zoho_vitals() SQL
-   function; this file only renders what /api/zoho-vitals returns,
+   function; this file only renders what /api/zoho?action=vitals returns,
    so the app and the AI briefing always read identical numbers.
    ============================================================ */
 async function zohoApi(path, opts){
@@ -4170,6 +4693,9 @@ async function loadZohoVitals(){
     const v = await zohoApi('/api/zoho?action=vitals');
     zohoConnected = v && v.connected === true;
     zohoVitals = zohoConnected ? v : null;
+    zohoLedgerRows = zohoConnected
+      ? { receivables: Array.isArray(v.receivables_list) ? v.receivables_list : [], payables: Array.isArray(v.payables_list) ? v.payables_list : [] }
+      : { receivables: [], payables: [] };
   } catch(e){
     // A failed status *check* — cold start, transient 500, a network blip
     // right after a heavier Sync Now call — used to be treated identically
@@ -4515,8 +5041,8 @@ function renderReconBooksCard(){
   list.innerHTML = invs.map(inv => {
     const verified = inv.reconciliation_status === 'verified';
     const tag = verified
-      ? '<span class="lr-tag ok">✓ Payment matched</span>'
-      : '<span class="lr-tag warn">Needs review</span>';
+      ? '<span class="lr-tag verified">✓ Matched to gateway</span>'
+      : '<span class="lr-tag review">Needs review</span>';
     const amt = (verified && inv.verified_paid_amount != null) ? inv.verified_paid_amount : inv.total;
     return '<div class="ledger-row"><div class="lr-main">' +
       '<div class="lr-party">' + escapeHtml(inv.customer_name || 'Unnamed customer') + '</div>' +
@@ -4539,13 +5065,42 @@ function renderReconLedger(){
   if(!queue.length){ card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
   if(title) title.textContent = 'Payments needing review (' + queue.length + ')';
-  list.innerHTML = queue.map(q => {
+  list.innerHTML = queue.map((q, qi) => {
     const meta = [q.invoice_number ? 'Invoice ' + q.invoice_number : null, q.reason].filter(Boolean).join(' · ');
-    return '<div class="ledger-row"><div class="lr-main">' +
-      '<div class="lr-party">' + escapeHtml(q.customer_name || 'Unknown customer') + '<span class="lr-tag warn">Needs review</span></div>' +
-      '<div class="lr-meta">' + escapeHtml(meta) + '</div>' +
+    const cands = Array.isArray(q.candidates) ? q.candidates : [];
+    const picker = cands.length
+      ? '<div class="recon-picker" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">' +
+        cands.map((c, ci) =>
+          '<button class="lr-btn" data-recon-pick="' + qi + ':' + ci + '">' +
+          inr((Number(c.amount)||0)/100) + ' on ' + (c.created_at ? fmtDay(c.created_at) : '—') +
+          (c.method ? ' · ' + escapeHtml(c.method) : '') + ' — this is the one</button>'
+        ).join('') +
+        '</div>'
+      : '';
+    return '<div class="ledger-row" style="flex-wrap:wrap;"><div class="lr-main">' +
+      '<div class="lr-party">' + escapeHtml(q.customer_name || 'Unknown customer') + '<span class="lr-tag review">Needs review</span></div>' +
+      '<div class="lr-meta">' + escapeHtml(meta) + '</div>' + picker +
       '</div><div class="lr-amount">' + inr(q.amount) + '</div></div>';
   }).join('');
+  list.querySelectorAll('[data-recon-pick]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const [qi, ci] = btn.dataset.reconPick.split(':').map(Number);
+      const q = queue[qi]; const c = (q.candidates || [])[ci];
+      if(!q || !c) return;
+      btn.disabled = true; btn.textContent = 'Confirming…';
+      try {
+        await zohoApi('/api/reconcile?action=resolve', { method:'POST', body: JSON.stringify({
+          matchId: q.id, razorpayPaymentId: c.id, matchedAmount: q.amount
+        })});
+        reconSummary = await loadReconSummary();
+        renderReconLedger();
+        renderReconBooksCard();
+      } catch(err){
+        btn.disabled = false; btn.textContent = 'Try again';
+        alert('Could not confirm: ' + (err.message || 'unknown error'));
+      }
+    });
+  });
 }
 
 /* ============================================================
@@ -4737,9 +5292,11 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
       return s + Math.max(available - claimed, 0);
     }, 0) || sumCol(gstRows, 'Unclaimed ITC') || sumCol(gstRows, 'Unclaimed Amount');
 
-    // Populate receivables/payables tables from the sheet (replace existing open items with this snapshot's data)
+    // Populate receivables/payables tables from the sheet. Replace only the
+    // rows that came from a previous upload (source='upload') — never touch
+    // items the user added by hand in the Quick Ledger (source='manual').
     if(recvRows.length){
-      await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open');
+      await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
       // Template columns are Customer / Amount / Amount Received — the open
       // balance is Amount minus Amount Received, per the sheet's own
       // instruction row. 'Party Name' is kept as a fallback for any
@@ -4754,14 +5311,15 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
             party_name: r['Customer'] || r['Party Name'] || r['party_name'] || 'Unknown',
             amount: amt - received,
             due_date: r['Due Date'] || r['due_date'] || null,
-            status: 'open'
+            status: 'open',
+            source: 'upload'
           };
         })
         .filter(r => r.amount > 0);
-      if(rows.length) await sbClient.from('receivables').insert(rows);
+      if(rows.length){ await sbClient.from('receivables').insert(rows); await logLedgerEvent({ entityType:'receivable', event:'imported', source:'upload', note: rows.length + ' receivable(s) from workbook upload' }); }
     }
     if(payRows.length){
-      await sbClient.from('payables').delete().eq('user_id', currentUser.id).eq('status','open');
+      await sbClient.from('payables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
       // Template column is Vendor, not Party Name.
       const rows = payRows
         .filter(r => r['Vendor'] || r['Party Name'] || r['party_name'])
@@ -4770,10 +5328,11 @@ document.getElementById('computeFromFile').addEventListener('click', async () =>
           party_name: r['Vendor'] || r['Party Name'] || r['party_name'] || 'Unknown',
           amount: Number(r['Amount'] ?? r['amount'] ?? 0),
           due_date: r['Due Date'] || r['due_date'] || null,
-          status: 'open'
+          status: 'open',
+          source: 'upload'
         }))
         .filter(r => r.amount > 0);
-      if(rows.length) await sbClient.from('payables').insert(rows);
+      if(rows.length){ await sbClient.from('payables').insert(rows); await logLedgerEvent({ entityType:'payable', event:'imported', source:'upload', note: rows.length + ' payable(s) from workbook upload' }); }
     }
     receivables = await loadReceivables(); payables = await loadPayables();
     const { recvTotal, recv90, paySoon } = ledgerAggregates();
@@ -5122,8 +5681,12 @@ function startWhatsappDeploy(){
   );
   document.getElementById('waPhoneNext').addEventListener('click', () => {
     const raw = document.getElementById('waPhoneInput').value;
-    const digits = String(raw || '').replace(/[^\d]/g, '');
-    if(digits.length < 10){ document.getElementById('waPhoneErr').textContent = 'Enter a valid number with country code.'; return; }
+    let digits = String(raw || '').replace(/[^\d]/g, '').replace(/^0+/, '');
+    // Default to India (+91) when the user enters a bare 10-digit mobile — the
+    // WhatsApp webhook reports the sender in full international form, so the
+    // stored number must include the country code or inbound replies won't match.
+    if(digits.length === 10) digits = '91' + digits;
+    if(digits.length < 11 || digits.length > 15){ document.getElementById('waPhoneErr').textContent = 'Enter a valid mobile number with country code (e.g. +91 98765 43210).'; return; }
     waDeployConfirm(digits);
   });
 }
