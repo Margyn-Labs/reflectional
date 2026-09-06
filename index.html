@@ -1,5 +1,14 @@
 <!DOCTYPE html>
-<!-- Marketing homepage. AI finance team / waitlist. Shipped 2026-09-04. -->
+<!--
+  SPEC-SITE-PATCH.md applied. Full OLD→NEW map: SITE-PATCH-NOTES.md (repo root).
+  IDs/sections touched: head(title,meta), nav (#nav .nav-cta), .hero (kicker/h1/sub/CTAs/trust),
+  #heroReel (.reel-topbar, .reel-track cards), #problem (.problem-copy, #scatter),
+  #what (.head, .pstep x3), #vitals (.head, vcard[0] cap, .pulse-card p),
+  #ask (.head, .ac-prompts, #askBody amsg x4), #agents (.al-copy, #agentRun, .agent-list, #whMsgs),
+  #connectors (.head, .conn-chip Zoho, .conn-row coming list), #security (.verify-copy, .vtri, .practice-stats),
+  #cta, .wl-modal (#wlTitle, .wl-sub), footer (.footer-desc, .footer-badges, footer-col links, .footer-inner).
+  No overwrite of production index.html. No push/deploy performed.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -647,7 +656,7 @@
       <a href="#agents">Agents</a>
       <a href="#connectors">Connections</a>
       <a href="#security">Trust</a>
-      <button class="nav-cta" type="button" data-open-wl>Join the waitlist</button>
+      <a class="nav-cta" href="/app.html">Get started</a>
     </div>
   </div>
 </nav>
@@ -1129,7 +1138,7 @@
           <li><a href="#what">What it does</a></li>
           <li><a href="#agents">Agents</a></li>
           <li><a href="#connectors">Connections</a></li>
-          <li><a href="javascript:void(0)" data-open-wl>Join the waitlist</a></li>
+          <li><a href="/app.html">Get started</a></li>
         </ul>
       </div>
       <div class="footer-col">
