@@ -21,6 +21,10 @@
       "schedule": "15 21 * * *"
     },
     {
+      "path": "/api/reconcile?action=run-v2",
+      "schedule": "25 21 * * *"
+    },
+    {
       "path": "/api/whatsapp?action=cron-opening",
       "schedule": "0 2 * * *"
     },
