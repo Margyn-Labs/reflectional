@@ -15,6 +15,7 @@ const {
   getUserFromRequest,
   logConnectorEvent
 } = require('./_lib/supabaseRest');
+const { track } = require('./_lib/track');
 const { matchPayments } = require('./_lib/reconcileMatcher');
 const {
   matchBooksRazorpay,
@@ -536,6 +537,7 @@ module.exports = async (req, res) => {
     if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
     try {
       const result = await summaryForUser(user.id);
+      track(user.id, 'reconcile_summary_view'); // ops console — fire-and-forget
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json(result);
     } catch (err) {
@@ -558,6 +560,7 @@ module.exports = async (req, res) => {
     if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
     try {
       const result = await reconcileForUser(user.id);
+      track(user.id, 'reconcile_run'); // ops console — fire-and-forget
       res.status(200).json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
