@@ -55,6 +55,19 @@ async function sendTemplate({ to, templateId, params }) {
   return adapter({ to, templateId, params: params || [] });
 }
 
+/**
+ * Normalize any Indian mobile the app / a connector might hand us into the
+ * bare international form Gupshup + WhatsApp require (country code, no +, no
+ * separators). Handles "98765 43210", "+91-98765-43210", "0919876543210",
+ * "919876543210". A 10-digit input is assumed India (+91) — matches the
+ * assumption in app.html's deploy flow.
+ */
+function normalizeDestination(to) {
+  let d = String(to || '').replace(/[^\d]/g, '').replace(/^0+/, '');
+  if (d.length === 10) d = '91' + d;
+  return d;
+}
+
 async function gupshupSendTemplate({ to, templateId, params }) {
   const apiKey = process.env.GUPSHUP_API_KEY;
   const source = process.env.GUPSHUP_SOURCE_NUMBER;
@@ -66,11 +79,15 @@ async function gupshupSendTemplate({ to, templateId, params }) {
   if (!templateId) {
     return { ok: false, error: 'Missing templateId' };
   }
+  const destination = normalizeDestination(to);
+  if (destination.length < 11 || destination.length > 15) {
+    return { ok: false, error: `Invalid destination number "${to}"` };
+  }
 
   const body = new URLSearchParams({
     channel: 'whatsapp',
     source,
-    destination: to,
+    destination,
     'src.name': appName,
     template: JSON.stringify({ id: templateId, params })
   });
@@ -143,9 +160,9 @@ async function gupshupSendText({ to, text }) {
   if (!apiKey || !source || !appName) {
     return { ok: false, error: 'Gupshup credentials not configured (GUPSHUP_API_KEY / GUPSHUP_SOURCE_NUMBER / GUPSHUP_APP_NAME)' };
   }
-  const destination = String(to || '').replace(/[^\d]/g, '');
-  if (!destination) {
-    return { ok: false, error: 'Missing destination number' };
+  const destination = normalizeDestination(to);
+  if (destination.length < 11 || destination.length > 15) {
+    return { ok: false, error: `Invalid destination number "${to}"` };
   }
 
   const body = new URLSearchParams({
