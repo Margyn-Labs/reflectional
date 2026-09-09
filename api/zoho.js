@@ -29,6 +29,20 @@
  *                                              inside the handler itself)
  *   GET       /api/zoho?action=cron-gstr2b   (was api/cron-sync-zoho-gstr2b.js;
  *                                              same CRON_SECRET gate)
+ *
+ * ----------------------------------------------------------------------------
+ * ODOO CONNECTOR (2026-09-06) — folded in here rather than as its own Vercel
+ * function, because deployment is at the 12/12 Hobby-plan function cap. Odoo is
+ * a cloud books/ERP source in the same class as Zoho Books, so this file is now
+ * the shared "cloud books/ERP connector" router. Handler logic lives in
+ * api/_odoo/odoo.js (underscore folder, not function-detected). Auth is manual
+ * credential entry (the Razorpay pattern), NOT OAuth — see ODOO-CONNECTOR-DISCOVERY.md.
+ *
+ *   POST /api/zoho?action=odoo-connect      (user JWT)     validate + store creds, first sync
+ *   POST /api/zoho?action=odoo-sync         (user JWT)     re-sync now
+ *   GET  /api/zoho?action=odoo-status       (user JWT)     connection + pre-aggregated summary
+ *   POST /api/zoho?action=odoo-disconnect   (user JWT)     soft-disconnect, keep data
+ *   GET  /api/zoho?action=odoo-cron         (CRON_SECRET)  nightly sync across all active creds
  */
 
 const oauthStart = require('./_zoho/oauth-start');
@@ -39,9 +53,16 @@ const sync = require('./_zoho/sync');
 const syncGstr2b = require('./_zoho/sync-gstr2b');
 const cron = require('./_zoho/cron');
 const cronGstr2b = require('./_zoho/cron-gstr2b');
+const odoo = require('./_odoo/odoo');
 
 module.exports = async function handler(req, res) {
   var action = (req.query && req.query.action) || '';
+
+  if (action === 'odoo-connect')    return odoo.handleConnect(req, res);
+  if (action === 'odoo-sync')       return odoo.handleSync(req, res);
+  if (action === 'odoo-status')     return odoo.handleStatus(req, res);
+  if (action === 'odoo-disconnect') return odoo.handleDisconnect(req, res);
+  if (action === 'odoo-cron')       return odoo.handleCron(req, res);
 
   if (action === 'oauth-start') return oauthStart.handler(req, res);
   if (action === 'select-org') return selectOrg.handler(req, res);
@@ -54,6 +75,6 @@ module.exports = async function handler(req, res) {
 
   res.status(400).json({
     error: 'unknown_action',
-    message: 'Expected ?action= one of oauth-start, select-org, disconnect, vitals, sync, sync-gstr2b, cron, cron-gstr2b.'
+    message: 'Expected ?action= one of oauth-start, select-org, disconnect, vitals, sync, sync-gstr2b, cron, cron-gstr2b, odoo-connect, odoo-sync, odoo-status, odoo-disconnect, odoo-cron.'
   });
 };
