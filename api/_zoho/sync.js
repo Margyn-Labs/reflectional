@@ -495,15 +495,18 @@ async function syncZohoForUser(userId, mode) {
   };
 }
 
-async function handleAuthFailure(userId) {
+async function handleAuthFailure(userId, detail) {
   const orgs = await selectRows(
     'zoho_organizations',
-    `select=id&user_id=eq.${userId}&status=eq.active&limit=1`
+    `select=id&user_id=eq.${userId}&status=in.(active,needs_reauth)&limit=1`
   );
   if (orgs[0]) await markNeedsReauth(orgs[0].id);
   await logConnectorEvent({
     userId, connectorType: 'zoho_books', operation: 'sync_all',
-    status: 'error', errorMessage: 'needs_reauth'
+    status: 'error',
+    // Keep the actual failure (which endpoint / what Zoho said) so the Ops
+    // Console and connector_logs show more than a bare 'needs_reauth'.
+    errorMessage: detail ? `needs_reauth: ${String(detail).slice(0, 240)}` : 'needs_reauth'
   });
 }
 
@@ -531,7 +534,7 @@ async function handler(req, res) {
     res.status(result.status === 'error' ? 502 : 200).json(result);
   } catch (err) {
     if (err instanceof ZohoAuthError) {
-      await handleAuthFailure(user.id);
+      await handleAuthFailure(user.id, err.message);
       res.status(401).json({ status: 'error', message: 'Zoho Books connection needs to be re-authorized' });
       return;
     }
