@@ -39,6 +39,7 @@ const {
   updateRows,
   selectRows
 } = require('./_lib/supabaseRest');
+const { track } = require('./_lib/track');
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -512,6 +513,7 @@ async function handleIngest(req, res) {
 
   await updateRows('tally_installs', `id=eq.${inst.id}`, { last_sync_at: now }).catch(() => {});
   await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted, status: 'ok' });
+  track(inst.user_id, 'tally_agent_sync', { kind, rows: upserted }); // ops console — fire-and-forget
 
   return json(res, 200, { upserted, received: rawRows.length, skipped });
 }
