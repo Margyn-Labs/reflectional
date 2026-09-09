@@ -472,15 +472,30 @@ async function syncZohoForUser(userId, mode) {
 
   const totalSynced = Object.keys(results).reduce((sum, k) => sum + (results[k] || 0), 0);
   const durationMs = Date.now() - startedAt;
+  const runStatus = errors.length === 0 ? 'success' : (totalSynced > 0 ? 'partial' : 'error');
 
   await logConnectorEvent({
     userId, connectorType: 'zoho_books',
     operation: syncMode === 'backfill' ? 'backfill_all' : 'sync_all',
-    status: errors.length === 0 ? 'success' : (totalSynced > 0 ? 'partial' : 'error'),
+    status: runStatus,
     errorMessage: errors.length ? errors.join('; ') : null,
     recordsSynced: totalSynced,
     syncDurationMs: durationMs
   });
+
+  // Stamp a run timestamp on the org row so the freshness line (Ops Console,
+  // the app's "last synced" text) reflects reality. Reaching here means the
+  // session authenticated — a ZohoAuthError would have thrown long before.
+  // 2026-09-10-zoho-last-synced.sql adds this column.
+  if (runStatus !== 'error') {
+    try {
+      await updateRows('zoho_organizations', `id=eq.${org.id}`, {
+        last_synced_at: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Failed to stamp zoho_organizations.last_synced_at');
+    }
+  }
 
   return {
     status: errors.length === 0 ? 'success' : (totalSynced > 0 ? 'partial' : 'error'),
