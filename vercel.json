@@ -1,8 +1,12 @@
 {
   "crons": [
     {
-      "path": "/api/cron-sync-razorpay",
+      "path": "/api/sync-razorpay?action=cron",
       "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cashfree?action=cron",
+      "schedule": "45 20 * * *"
     },
     {
       "path": "/api/zoho?action=cron",
@@ -11,6 +15,10 @@
     {
       "path": "/api/zoho?action=cron-gstr2b",
       "schedule": "0 22 * * 6"
+    },
+    {
+      "path": "/api/zoho?action=odoo-cron",
+      "schedule": "50 20 * * *"
     },
     {
       "path": "/api/shopify?action=cron",
@@ -31,11 +39,16 @@
     {
       "path": "/api/whatsapp?action=cron-closing",
       "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/whatsapp?action=cron-chase",
+      "schedule": "0 5 * * *"
     }
   ],
   "functions": {
     "api/zoho.js": { "maxDuration": 300 },
     "api/shopify.js": { "maxDuration": 300 },
-    "api/whatsapp.js": { "maxDuration": 60 }
+    "api/cashfree.js": { "maxDuration": 300 },
+    "api/whatsapp.js": { "maxDuration": 300 }
   }
 }
