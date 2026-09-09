@@ -1,12 +1,15 @@
 /**
- * POST /api/sync-razorpay
+ * /api/sync-razorpay  — Razorpay connector router (dispatched by ?action=)
  *
- * Pulls the last 7 days of payments, settlements, and refunds from Razorpay
- * for one user and upserts them into Supabase. Called two ways:
- *   1. Directly by the client (Authorization: Bearer <user JWT>) — the
- *      "Sync Now" button, and the auto-trigger right after connecting.
- *   2. Internally by api/cron-sync-razorpay.js, which imports
- *      `syncRazorpayForUser` directly and loops over every connected user.
+ * Consolidated to stay under the Vercel Hobby 12-function cap: this one file
+ * now covers what used to be three separate functions.
+ *
+ *   POST /api/sync-razorpay                 (user JWT)      "Sync now" for the caller
+ *   POST /api/sync-razorpay?action=sync     (user JWT)      same, explicit
+ *   POST /api/sync-razorpay?action=connect  (user JWT)      validate + store Key ID/Secret, kick first sync
+ *                                                           (was POST /api/store-razorpay-credentials)
+ *   GET  /api/sync-razorpay?action=cron     (CRON_SECRET)   nightly sync across all connected users
+ *                                                           (was GET  /api/cron-sync-razorpay)
  *
  * Zero-npm: plain fetch() only, matching the rest of /api.
  */
@@ -20,6 +23,7 @@ const {
   logConnectorEvent,
   setConnectorStatus
 } = require('./_lib/supabaseRest');
+const { track } = require('./_lib/track');
 const { computePaymentsFromRazorpay } = require('./_lib/computePaymentsFromRazorpay');
 
 const RAZORPAY_BASE = 'https://api.razorpay.com/v1';
@@ -373,12 +377,10 @@ async function handleAuthFailure(userId) {
   });
 }
 
-module.exports = async (req, res) => {
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
-
+/* ------------------------------------------------------------------ */
+/* sync — POST (default) or POST ?action=sync                          */
+/* ------------------------------------------------------------------ */
+async function handleSync(req, res) {
   const user = await getUserFromRequest(req);
   if (!user) {
     res.status(401).json({ error: 'Not authenticated' });
@@ -387,6 +389,9 @@ module.exports = async (req, res) => {
 
   try {
     const result = await syncRazorpayForUser(user.id);
+    if (result.status !== 'error') {
+      track(user.id, 'connector_sync_manual', { connector: 'razorpay' }); // ops console
+    }
     res.status(result.status === 'error' ? 502 : 200).json(result);
   } catch (err) {
     if (err instanceof RazorpayAuthError) {
@@ -396,6 +401,211 @@ module.exports = async (req, res) => {
     }
     res.status(500).json({ status: 'error', message: 'Sync failed unexpectedly' });
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* connect — POST ?action=connect  (was /api/store-razorpay-credentials) */
+/*                                                                    */
+/* SECURITY: keySecret is never logged, never echoed back in a        */
+/* response, never included in a connector_logs error_message.        */
+/* ------------------------------------------------------------------ */
+async function handleConnect(req, res) {
+  let user;
+  try {
+    user = await getUserFromRequest(req);
+  } catch (err) {
+    res.status(500).json({ error: 'Authentication check failed' });
+    return;
+  }
+  if (!user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  let body;
+  try {
+    body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  } catch {
+    res.status(400).json({ error: 'Invalid request body' });
+    return;
+  }
+
+  const keyId = (body && body.keyId || '').trim();
+  const keySecret = (body && body.keySecret || '').trim();
+  if (!keyId || !keySecret) {
+    res.status(400).json({ error: 'Key ID and Key Secret are both required' });
+    return;
+  }
+
+  // Validate credentials against Razorpay with a minimal read call
+  let testCall;
+  try {
+    testCall = await fetch('https://api.razorpay.com/v1/payments?count=1', {
+      headers: { Authorization: basicAuthHeader(keyId, keySecret) }
+    });
+  } catch (err) {
+    await logConnectorEvent({
+      userId: user.id, connectorType: 'razorpay', operation: 'store_credentials',
+      status: 'error', errorMessage: 'Network error validating credentials with Razorpay'
+    });
+    res.status(500).json({ error: 'Could not reach Razorpay. Try again in a moment.' });
+    return;
+  }
+
+  if (testCall.status === 401) {
+    res.status(401).json({ error: 'Invalid credentials' });
+    return;
+  }
+  if (testCall.status !== 200) {
+    await logConnectorEvent({
+      userId: user.id, connectorType: 'razorpay', operation: 'store_credentials',
+      status: 'error', errorMessage: `Razorpay validation call returned ${testCall.status}`
+    });
+    res.status(500).json({ error: 'Razorpay could not be reached right now. Try again shortly.' });
+    return;
+  }
+
+  // Store — one active row per user+connector; retire any existing one first.
+  try {
+    const existing = await selectRows(
+      'connector_credentials',
+      `select=id&user_id=eq.${user.id}&connector_type=eq.razorpay&disconnected_at=is.null`
+    );
+    if (existing.length > 0) {
+      await updateRows(
+        'connector_credentials',
+        `user_id=eq.${user.id}&connector_type=eq.razorpay&disconnected_at=is.null`,
+        { disconnected_at: new Date().toISOString() }
+      );
+    }
+    await insertRows('connector_credentials', [{
+      user_id: user.id,
+      connector_type: 'razorpay',
+      key_id: keyId,
+      key_secret: keySecret,
+      created_at: new Date().toISOString()
+    }]);
+  } catch (err) {
+    await logConnectorEvent({
+      userId: user.id, connectorType: 'razorpay', operation: 'store_credentials',
+      status: 'error', errorMessage: 'Failed to persist credentials'
+    });
+    res.status(500).json({ error: 'Could not save credentials. Try again.' });
+    return;
+  }
+
+  await logConnectorEvent({
+    userId: user.id, connectorType: 'razorpay', operation: 'store_credentials',
+    status: 'success', recordsSynced: 0
+  });
+
+  // Fire-and-forget first sync (fresh invocation so the response isn't blocked).
+  // If it fails, the nightly cron still picks the user up.
+  try {
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['host'];
+    if (host) {
+      fetch(`${proto}://${host}/api/sync-razorpay`, {
+        method: 'POST',
+        headers: {
+          Authorization: req.headers['authorization'],
+          'Content-Type': 'application/json'
+        }
+      }).catch(() => {});
+    }
+  } catch { /* best-effort only */ }
+
+  res.status(200).json({ status: 'connected', message: 'Razorpay connected' });
+}
+
+/* ------------------------------------------------------------------ */
+/* cron — GET ?action=cron  (was /api/cron-sync-razorpay)              */
+/* ------------------------------------------------------------------ */
+async function notifyFailures(failed) {
+  const webhook = process.env.ALERT_EMAIL_WEBHOOK;
+  const to = process.env.ALERT_EMAIL_TO || 'varadpandey98@gmail.com';
+  if (!webhook || failed.length === 0) return;
+  try {
+    await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to,
+        subject: `Razorpay sync failures: ${failed.length} user(s)`,
+        text: `The nightly Razorpay sync failed for ${failed.length} user(s):\n\n` +
+          failed.map((f) => `- ${f.userId}: ${f.reason}`).join('\n')
+      })
+    });
+  } catch (err) {
+    console.error('Failed to send alert email:', err.message);
+  }
+}
+
+async function handleCron(req, res) {
+  const authHeader = req.headers['authorization'];
+  const querySecret = req.query.cron_secret;
+  const expected = process.env.CRON_SECRET;
+  if (!expected) { res.status(500).json({ error: 'CRON_SECRET not configured' }); return; }
+
+  const authValid = authHeader === `Bearer ${expected}` || querySecret === expected;
+  if (!authValid) { res.status(401).json({ error: 'Unauthorized' }); return; }
+
+  const startedAt = Date.now();
+  let connections;
+  try {
+    connections = await selectRows(
+      'connector_credentials',
+      'select=user_id&connector_type=eq.razorpay&disconnected_at=is.null'
+    );
+  } catch (err) {
+    res.status(500).json({ error: 'Could not list connected users' });
+    return;
+  }
+
+  const userIds = [...new Set(connections.map((c) => c.user_id))];
+  let succeeded = 0;
+  const failed = [];
+
+  for (const userId of userIds) {
+    try {
+      const result = await syncRazorpayForUser(userId);
+      if (result.status === 'error') failed.push({ userId, reason: result.message || 'sync error' });
+      else succeeded++;
+    } catch (err) {
+      if (err instanceof RazorpayAuthError) {
+        await handleAuthFailure(userId);
+        failed.push({ userId, reason: 'needs re-authorization' });
+      } else {
+        failed.push({ userId, reason: err.message });
+      }
+    }
+  }
+
+  await notifyFailures(failed);
+
+  res.status(200).json({
+    users_synced: succeeded,
+    failed: failed.length,
+    failed_users: failed,
+    total_users: userIds.length,
+    duration_ms: Date.now() - startedAt,
+    timestamp: new Date().toISOString()
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* dispatcher                                                          */
+/* ------------------------------------------------------------------ */
+module.exports = async (req, res) => {
+  const action = (req.query && req.query.action) || '';
+
+  if (req.method === 'GET' && action === 'cron') return handleCron(req, res);
+  if (req.method === 'POST' && action === 'connect') return handleConnect(req, res);
+  if (req.method === 'POST' && (action === '' || action === 'sync')) return handleSync(req, res);
+
+  res.status(400).json({
+    error: 'Expected POST (sync), POST ?action=connect, or GET ?action=cron'
+  });
 };
 
 module.exports.syncRazorpayForUser = syncRazorpayForUser;
