@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Margyn Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --canvas:#FAFAF8; --surf:#fff; --border:#E4E1DA;
+    --ink-0:#14181F; --ink-1:#5B6472; --ink-2:#8B93A0;
+    --emerald:#0E8F5C; --blue:#0B4B8C; --orange:#CC5B34; --rust:#B3432E;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--canvas); color:var(--ink-0);
+    font-family:'Manrope',system-ui,sans-serif; font-size:14px; line-height:1.5; }
+  code,.mono{ font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+  header{ padding:18px 24px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:12px; background:var(--surf); }
+  header h1{ font-size:16px; font-weight:800; margin:0; letter-spacing:-.01em; }
+  header .sub{ color:var(--ink-2); font-size:12px; }
+  header .spacer{ flex:1; }
+  header button{ font:inherit; font-size:12px; border:1px solid var(--border); background:var(--surf); color:var(--ink-1); border-radius:7px; padding:5px 11px; cursor:pointer; }
+  header button:hover{ color:var(--ink-0); }
+  main{ padding:24px; max-width:1400px; }
+  .gate{ padding:64px 24px; text-align:center; color:var(--ink-1); }
+  .gate code{ display:block; margin-top:12px; color:var(--ink-2); font-size:12px; }
+
+  table{ width:100%; border-collapse:collapse; background:var(--surf); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  th,td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th{ font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-2); font-weight:700; cursor:pointer; user-select:none; }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr{ cursor:pointer; }
+  tbody tr:hover{ background:#F4F2EE; }
+
+  .chip{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; text-transform:capitalize; }
+  .chip::before{ content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .chip.green{ color:var(--emerald); background:rgba(14,143,92,.10); }
+  .chip.yellow{ color:var(--orange); background:rgba(204,91,52,.10); }
+  .chip.red{ color:var(--rust); background:rgba(179,67,46,.10); }
+
+  .conn{ display:inline-block; font-size:11px; padding:1px 7px; border:1px solid var(--border); border-radius:6px; margin:1px 3px 1px 0; }
+  .conn.reauth{ color:var(--rust); border-color:var(--rust); }
+  .num{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; }
+  .muted{ color:var(--ink-2); }
+
+  /* detail */
+  .overlay{ position:fixed; inset:0; background:rgba(20,24,31,.35); display:flex; justify-content:flex-end; z-index:50; }
+  .drawer{ width:min(760px,96vw); background:var(--canvas); height:100%; overflow-y:auto; border-left:1px solid var(--border); }
+  .drawer .dhead{ padding:18px 22px; border-bottom:1px solid var(--border); background:var(--surf); position:sticky; top:0; }
+  .drawer .dhead h2{ margin:0 0 2px; font-size:15px; font-weight:800; }
+  .drawer .dhead .x{ position:absolute; top:16px; right:18px; border:none; background:none; font-size:20px; cursor:pointer; color:var(--ink-2); }
+  .tabs{ display:flex; gap:2px; padding:0 22px; border-bottom:1px solid var(--border); background:var(--surf); }
+  .tabs button{ font:inherit; font-size:12.5px; font-weight:700; border:none; background:none; padding:10px 12px; cursor:pointer; color:var(--ink-2); border-bottom:2px solid transparent; }
+  .tabs button.active{ color:var(--ink-0); border-bottom-color:var(--emerald); }
+  .tabpane{ padding:20px 22px; }
+  .tabpane h3{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-2); margin:0 0 8px; }
+  .kv{ display:grid; grid-template-columns:180px 1fr; gap:4px 14px; font-size:13px; margin-bottom:18px; }
+  .kv div:nth-child(odd){ color:var(--ink-1); }
+  .evrow{ display:grid; grid-template-columns:190px 200px 1fr; gap:10px; font-size:12px; padding:4px 0; border-bottom:1px dashed var(--border); }
+  textarea{ width:100%; min-height:90px; font:inherit; font-size:13px; border:1px solid var(--border); border-radius:8px; padding:9px; resize:vertical; background:var(--surf); }
+  .savebtn{ margin-top:8px; font:inherit; font-size:12.5px; font-weight:700; background:var(--emerald); color:#fff; border:none; border-radius:7px; padding:7px 14px; cursor:pointer; }
+  .pill{ display:inline-block; font-size:11px; background:#F4F2EE; border:1px solid var(--border); border-radius:6px; padding:1px 7px; margin:2px; }
+  .suggest{ background:rgba(204,91,52,.08); border:1px solid rgba(204,91,52,.25); color:#8a3f24; border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:16px; }
+  .loading{ padding:40px; color:var(--ink-2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Margyn Ops</h1>
+  <span class="sub">design-partner health &middot; usage &middot; value</span>
+  <span class="spacer"></span>
+  <span class="sub" id="genAt"></span>
+  <button id="refreshBtn">Refresh</button>
+</header>
+<main id="main"><div class="loading">Loading…</div></main>
+
+<script src="/supabase.js"></script>
+<script>
+const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
+let sb = null, token = null, partners = [], sortKey = 'status', sortDir = 1;
+
+const $ = (s, r=document) => r.querySelector(s);
+const fmtDate = (t) => t ? new Date(t).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+const ago = (t) => {
+  if(!t) return '—';
+  const h = (Date.now() - new Date(t)) / 3600000;
+  if(h < 1) return Math.round(h*60)+'m';
+  if(h < 48) return Math.round(h)+'h';
+  return Math.round(h/24)+'d';
+};
+
+async function api(path, opts={}){
+  const res = await fetch('/api/ops' + path, {
+    ...opts,
+    headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + token, ...(opts.headers||{}) }
+  });
+  if(res.status === 404) { const e = new Error('gate'); e.gate = true; throw e; }
+  if(!res.ok) throw new Error('api ' + res.status);
+  return res.json();
+}
+
+function gateScreen(){
+  $('#main').innerHTML = '<div class="gate">This surface is founder-only.<br>Sign in on the same browser session as a Margyn account in <span class="mono">OPS_ADMIN_USER_IDS</span>.'
+    + '<code>If you are the founder and seeing this: check OPS_ADMIN_USER_IDS / OPS_ADMIN_SECRET in Vercel env.</code></div>';
+}
+
+const RANK = { red:0, yellow:1, green:2 };
+function sortRows(){
+  partners.sort((a,b) => {
+    let av, bv;
+    if(sortKey === 'status'){ av = RANK[a.status]; bv = RANK[b.status]; }
+    else if(sortKey === 'value'){ av = RANK[a.value_pulse]; bv = RANK[b.value_pulse]; }
+    else if(sortKey === 'active'){ av = new Date(a.last_active_at||0); bv = new Date(b.last_active_at||0); }
+    else if(sortKey === 'mismatch'){ av = a.recon_open_mismatches; bv = b.recon_open_mismatches; }
+    else if(sortKey === 'wa'){ av = a.whatsapp_in_7d + a.whatsapp_out_7d; bv = b.whatsapp_in_7d + b.whatsapp_out_7d; }
+    else { av = (a.label||'').toLowerCase(); bv = (b.label||'').toLowerCase(); }
+    return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+  });
+}
+
+function renderList(){
+  sortRows();
+  const rows = partners.map(p => {
+    const conns = (p.connectors||[]).map(c =>
+      '<span class="conn' + (c.needs_reauth ? ' reauth' : '') + '">' + c.name + (c.needs_reauth ? ' ⚠' : '') + '</span>'
+    ).join('') || '<span class="muted">none</span>';
+    return '<tr data-id="' + p.user_id + '">'
+      + '<td><span class="chip ' + p.status + '">' + p.status + '</span></td>'
+      + '<td>' + escapeHtml(p.label || p.user_id) + (p.company_name && p.company_name !== p.label ? '<br><span class="muted">' + escapeHtml(p.company_name) + '</span>' : '') + '</td>'
+      + '<td class="num">' + ago(p.last_active_at) + '</td>'
+      + '<td>' + conns + '</td>'
+      + '<td class="num">' + p.recon_open_mismatches + '</td>'
+      + '<td class="num">' + (p.whatsapp_in_7d + p.whatsapp_out_7d) + '</td>'
+      + '<td><span class="chip ' + p.value_pulse + '">' + p.value_pulse + '</span></td>'
+      + '<td>' + escapeHtml(p.suggested_next || '') + '</td>'
+      + '<td class="muted">' + escapeHtml(p.note_preview || '') + '</td>'
+      + '</tr>';
+  }).join('');
+  $('#main').innerHTML =
+    '<table><thead><tr>'
+    + '<th data-k="status">Status</th><th data-k="label">Partner</th><th data-k="active">Active</th>'
+    + '<th>Connectors</th><th data-k="mismatch">Mism.</th><th data-k="wa">WA 7d</th>'
+    + '<th data-k="value">Value</th><th>Suggested next</th><th>Note</th>'
+    + '</tr></thead><tbody>' + (rows || '<tr><td colspan="9" class="muted">No partners with activity yet.</td></tr>') + '</tbody></table>';
+  $('#main').querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if(sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+    renderList();
+  });
+  $('#main').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openDetail(tr.dataset.id));
+}
+
+async function openDetail(userId){
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = '<div class="drawer"><div class="loading">Loading partner…</div></div>';
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+  let d;
+  try { d = await api('?action=partner&userId=' + encodeURIComponent(userId)); }
+  catch(e){ $('.drawer', ov).innerHTML = '<div class="loading">Could not load.</div>'; return; }
+
+  const s = d.suggested_next || {};
+  const u7 = d.usage.by_name_7d, u30 = d.usage.by_name_30d;
+  const evNames = Object.keys(u30);
+  const usageRows = evNames.map(n =>
+    '<div class="evrow"><div>' + n + '</div><div class="num">' + u7[n] + ' / 7d</div><div class="num muted">' + u30[n] + ' / 30d</div></div>'
+  ).join('');
+  const connRows = d.health.connectors.map(c =>
+    '<div class="kv"><div>' + c.name + '</div><div>' + (c.needs_reauth ? '<b style="color:var(--rust)">needs reauth</b> &middot; ' : '')
+    + 'last sync ' + fmtDate(c.last_success_at) + (c.days_since_last_sync != null ? ' (' + c.days_since_last_sync + 'd)' : '') + '</div></div>'
+  ).join('') || '<p class="muted">No connectors.</p>';
+  const errRows = (d.health.recent_track_errors||[]).map(e =>
+    '<div class="evrow"><div>' + fmtDate(e.created_at) + '</div><div>' + (e.connector_type||'') + '</div><div class="muted">' + escapeHtml(e.error_message||e.operation||'') + '</div></div>'
+  ).join('') || '<p class="muted">None.</p>';
+  const timeline = (d.timeline||[]).map(e =>
+    '<div class="evrow"><div>' + fmtDate(e.at) + '</div><div>' + e.name + '</div><div class="muted mono">' + escapeHtml(JSON.stringify(e.props||{})) + '</div></div>'
+  ).join('') || '<p class="muted">No events.</p>';
+
+  $('.drawer', ov).innerHTML =
+    '<div class="dhead"><button class="x">&times;</button>'
+    + '<h2>' + escapeHtml(d.label || d.user_id) + '</h2>'
+    + '<div class="muted mono" style="font-size:11px">' + d.user_id + '</div></div>'
+    + '<div class="tabs">'
+    + '<button data-t="health" class="active">Health</button><button data-t="usage">Usage</button>'
+    + '<button data-t="outcomes">Outcomes</button><button data-t="timeline">Timeline</button></div>'
+    + '<div class="tabpane" data-p="health">'
+      + '<div class="suggest"><b>Suggested next:</b> ' + escapeHtml(s.suggested_next || '') + ' &nbsp; <span class="pill">status ' + (s.status||'?') + '</span><span class="pill">value ' + (s.value_pulse||'?') + '</span></div>'
+      + '<h3>Connectors</h3>' + connRows
+      + '<h3>Days since any sync</h3><p>' + (d.health.days_since_any_sync != null ? d.health.days_since_any_sync + ' days' : '—') + '</p>'
+      + '<h3>Recent connector errors</h3>' + errRows
+      + '<h3 style="margin-top:20px">Ops note</h3>'
+      + '<textarea id="noteBox">' + escapeHtml(d.note || '') + '</textarea>'
+      + '<div><button class="savebtn" id="saveNote">Save note</button> <span class="muted" id="noteMeta">' + (d.note_updated_at ? 'updated ' + fmtDate(d.note_updated_at) + (d.note_updated_by ? ' by ' + escapeHtml(d.note_updated_by) : '') : '') + '</span></div>'
+    + '</div>'
+    + '<div class="tabpane" data-p="usage" hidden><h3>Events (7d / 30d)</h3>' + usageRows
+      + '<h3 style="margin-top:16px">Unique active days (30d)</h3><p class="num">' + d.usage.unique_active_days_30d + '</p></div>'
+    + '<div class="tabpane" data-p="outcomes" hidden>'
+      + '<div class="kv">'
+      + '<div>Open mismatches</div><div class="num">' + d.outcomes.recon_open_mismatches + '</div>'
+      + '<div>Verified (total)</div><div class="num">' + d.outcomes.recon_verified_total + '</div>'
+      + '<div>Verified (7d)</div><div class="num">' + d.outcomes.recon_verified_7d + '</div>'
+      + '<div>First connect</div><div>' + fmtDate(d.outcomes.first_connect_at) + '</div>'
+      + '<div>First mismatch</div><div>' + fmtDate(d.outcomes.first_mismatch_at) + '</div>'
+      + '<div>Time to first mismatch</div><div>' + (d.outcomes.time_to_first_mismatch_hours != null ? d.outcomes.time_to_first_mismatch_hours + ' h' : '—') + '</div>'
+      + '</div></div>'
+    + '<div class="tabpane" data-p="timeline" hidden><h3>Last 50 events</h3>' + timeline + '</div>';
+
+  $('.x', ov).onclick = () => ov.remove();
+  ov.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    ov.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
+    ov.querySelectorAll('.tabpane').forEach(p => p.hidden = p.dataset.p !== b.dataset.t);
+  });
+  $('#saveNote', ov).onclick = async () => {
+    const btn = $('#saveNote', ov); btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api('?action=note&userId=' + encodeURIComponent(userId), {
+        method:'PUT', body: JSON.stringify({ note: $('#noteBox', ov).value })
+      });
+      btn.textContent = 'Saved'; $('#noteMeta', ov).textContent = 'updated just now';
+      load();
+    } catch(e){ btn.textContent = 'Failed'; }
+    setTimeout(() => { btn.disabled = false; btn.textContent = 'Save note'; }, 1500);
+  };
+}
+
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+async function load(){
+  try {
+    const { data:{ session } } = await sb.auth.getSession();
+    if(!session){ $('#main').innerHTML = '<div class="gate">Not signed in. Open the app, sign in as the founder, then reload this page.</div>'; return; }
+    token = session.access_token;
+    const res = await api('?action=partners');
+    partners = res.partners || [];
+    $('#genAt').textContent = 'as of ' + fmtDate(res.generated_at);
+    renderList();
+  } catch(e){
+    if(e.gate) gateScreen();
+    else $('#main').innerHTML = '<div class="gate">Error loading: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+(async function init(){
+  if(!window.supabase){ $('#main').innerHTML = '<div class="gate">Could not load auth library.</div>'; return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  $('#refreshBtn').onclick = load;
+  load();
+})();
+</script>
+</body>
+</html>
