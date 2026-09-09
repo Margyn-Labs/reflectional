@@ -20,9 +20,11 @@
  * webhook handler can HMAC-verify the raw bytes before trusting the JSON.
  */
 
-const { getUserFromRequest, selectRows, insertRows, logConnectorEvent } = require('./_lib/supabaseRest');
+const { getUserFromRequest, selectRows, insertRows, updateRows, logConnectorEvent } = require('./_lib/supabaseRest');
 const bsp = require('./_lib/whatsappBsp');
 const { runConversation } = require('./_lib/whatsappAgent');
+const { track } = require('./_lib/track');
+const chase = require('./_lib/chaseEngine');
 
 module.exports = async function handler(req, res) {
   const action = (req.query && req.query.action) || '';
@@ -31,8 +33,9 @@ module.exports = async function handler(req, res) {
   if (action === 'webhook' && req.method === 'POST') return handleWebhookEvent(req, res);
   if (action === 'cron-opening' && req.method === 'GET') return handleCron(req, res, 'opening');
   if (action === 'cron-closing' && req.method === 'GET') return handleCron(req, res, 'closing');
+  if (action === 'cron-chase' && req.method === 'GET') return handleChaseCron(req, res);
 
-  res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing.' });
+  res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing, cron-chase.' });
 };
 
 // Raw body needed for webhook signature verification — see verifyInboundRequest.
@@ -81,12 +84,19 @@ async function handleWebhookEvent(req, res) {
 
   const event = bsp.parseInboundEvent(payload);
   if (!event) {
-    // Not a button reply. If it's a free-text message, hand it to the
-    // conversational routing layer; otherwise (delivery-status callback etc.)
-    // ack and ignore.
+    // Not a button reply. If it's a free-text message, it's either a Margyn
+    // user talking to the conversational agent, or a customer replying to a
+    // payment chase. Chase targets are checked FIRST — a customer's number is
+    // never in `profiles`, and the conversational agent must never run for a
+    // non-user sender (it would answer with the business's financials).
     const textEvent = bsp.parseInboundText(payload);
     if (textEvent && textEvent.text && textEvent.text.trim()) {
-      await handleConversationalInbound(res, textEvent);
+      const chaseTarget = await matchChaseTarget(textEvent.from);
+      if (chaseTarget) {
+        await handleChaseReply(res, chaseTarget, textEvent, payload);
+      } else {
+        await handleConversationalInbound(res, textEvent);
+      }
     } else {
       res.status(200).json({ received: true, ignored: true });
     }
@@ -100,6 +110,19 @@ async function handleWebhookEvent(req, res) {
     );
 
     if (!matches.length) {
+      // No Margyn user on this number — it may be a customer tapping the
+      // "Reply" quick-reply button on a chase template (which just opens the
+      // 24h session window). Treat the button text as their reply.
+      const chaseTarget = await matchChaseTarget(event.from);
+      if (chaseTarget) {
+        await handleChaseReply(res, chaseTarget, {
+          from: event.from,
+          text: event.buttonText || '',
+          wamid: event.wamid,
+          contextMessageId: event.contextMessageId
+        }, payload);
+        return;
+      }
       console.error('whatsapp webhook: no profile matches phone', event.from);
       res.status(200).json({ received: true, matched: false });
       return;
@@ -121,6 +144,8 @@ async function handleWebhookEvent(req, res) {
       replied_at: new Date(event.timestampMs).toISOString(),
       raw_payload: payload
     }]);
+
+    track(matches[0].id, 'whatsapp_inbound', { kind: 'button', reply_type: replyType }); // ops console
 
     // An unrecognized button reply is treated as free text — hand it to the
     // conversational routing layer instead of just logging it.
@@ -178,6 +203,9 @@ async function handleConversationalInbound(res, textEvent) {
       wamid: textEvent.wamid,
       contextMessageId: textEvent.contextMessageId
     });
+    // ops console — inbound question + the agent's outbound reply
+    track(matches[0].id, 'whatsapp_inbound', { kind: 'conversational', msg_len: String(textEvent.text || '').length });
+    track(matches[0].id, 'whatsapp_outbound', { kind: 'agent_reply' });
   } catch (err) {
     console.error('whatsapp webhook: conversational inbound failed', err.message);
   }
@@ -282,6 +310,7 @@ async function handleCron(req, res, kind) {
 
       sent++;
       await logConnectorEvent({ userId: profile.id, connectorType: 'whatsapp', operation: `send_${kind}`, status: 'success', recordsSynced: 1 });
+      track(profile.id, 'whatsapp_outbound', { kind }); // ops console — opening/closing bell
     } catch (err) {
       failed.push({ userId: profile.id, reason: err.message });
     }
@@ -296,6 +325,420 @@ async function handleCron(req, res, kind) {
     duration_ms: Date.now() - startedAt,
     timestamp: new Date().toISOString()
   });
+}
+
+/* ================================================================== */
+/* WhatsApp Chase Agent                                                */
+/* ================================================================== */
+
+function normPartyName(s) {
+  return String(s || '').toLowerCase()
+    .replace(/\b(pvt|private|ltd|limited|llp|inc|co|corp|corporation|company|the|and)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Find a non-terminal chase target for an inbound sender phone. A customer's
+ * number is never in `profiles`, so this is how a chase reply is recognised.
+ */
+async function matchChaseTarget(fromPhone) {
+  const phone = normalizePhone(fromPhone);
+  if (!phone) return null;
+  try {
+    const rows = await selectRows(
+      'whatsapp_chase_targets',
+      `select=*&contact_phone=eq.${encodeURIComponent(phone)}` +
+        `&state=not.in.(opted_out,resolved_paid)&order=updated_at.desc&limit=1`
+    );
+    return rows[0] || null;
+  } catch (err) {
+    console.error('chase: matchChaseTarget failed', err.message);
+    return null;
+  }
+}
+
+/**
+ * A customer replied to a payment chase. Classify the reply, log it, advance
+ * the target's state machine, and acknowledge inside the open session window.
+ * Always 200s — a failure here is ours to chase in logs, not the BSP's to retry.
+ */
+async function handleChaseReply(res, target, textEvent, rawPayload) {
+  const wamid = textEvent.wamid;
+
+  // Dedupe BSP webhook retries.
+  if (wamid) {
+    try {
+      const seen = await selectRows(
+        'whatsapp_chase_replies',
+        `select=id&wa_message_id=eq.${encodeURIComponent(wamid)}&limit=1`
+      );
+      if (seen.length) {
+        if (!res.headersSent) res.status(200).json({ received: true, duplicate: true });
+        return;
+      }
+    } catch (e) { /* fall through — never block a real reply on a dedupe failure */ }
+  }
+
+  const text = String(textEvent.text || '').trim();
+  let classified;
+  try {
+    classified = await chase.classifyReply(text, target.invoice_ref
+      ? `Chasing invoice ${target.invoice_ref} for ${chase.inr(target.amount)}.` : null);
+  } catch (e) {
+    classified = { intent: 'unclear', promise_date: null, promise_amount: null, classified_by: 'rule' };
+  }
+
+  let config = {};
+  try {
+    const dep = await selectRows(
+      'agent_deployments',
+      `select=config&user_id=eq.${target.user_id}&agent_id=eq.chase_agent&limit=1`
+    );
+    config = (dep[0] && dep[0].config) || {};
+  } catch (e) { /* defaults */ }
+
+  try {
+    await insertRows('whatsapp_chase_replies', [{
+      user_id: target.user_id,
+      chase_target_id: target.id,
+      in_reply_to_chase: textEvent.contextMessageId || null,
+      from_phone: textEvent.from,
+      reply_text: text || null,
+      intent: classified.intent,
+      promise_date: classified.promise_date || null,
+      promise_amount: classified.promise_amount || null,
+      classified_by: classified.classified_by || 'rule',
+      wa_message_id: wamid || null,
+      raw_payload: rawPayload || {}
+    }]);
+  } catch (err) {
+    console.error('chase: failed to persist reply', err.message);
+  }
+
+  const { patch, ack } = chase.applyReplyToTarget(target, classified, config);
+
+  // opt-out also lands the number on the per-business opt-out list so the cron
+  // never re-queues it from a fresh receivable.
+  if (classified.intent === 'opt_out') {
+    try {
+      const optOut = Array.isArray(config.opt_out) ? config.opt_out.slice() : [];
+      const digits = normalizePhone(textEvent.from);
+      if (digits && !optOut.includes(digits)) {
+        optOut.push(digits);
+        await updateRows(
+          'agent_deployments',
+          `user_id=eq.${target.user_id}&agent_id=eq.chase_agent`,
+          { config: Object.assign({}, config, { opt_out: optOut }) }
+        );
+      }
+    } catch (e) { console.error('chase: opt-out list update failed', e.message); }
+  }
+
+  try {
+    await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`, patch);
+  } catch (err) {
+    console.error('chase: failed to update target', err.message);
+  }
+
+  if (ack) {
+    try { await bsp.sendText({ to: textEvent.from, text: ack }); }
+    catch (e) { console.error('chase: ack send failed', e.message); }
+  }
+
+  if (!res.headersSent) res.status(200).json({ received: true, chase_reply: true, intent: classified.intent });
+}
+
+/* ------------------------------------------------------------------ */
+/* cron-chase — GET ?action=cron-chase (Vercel Cron target)           */
+/* ------------------------------------------------------------------ */
+async function handleChaseCron(req, res) {
+  const authHeader = req.headers['authorization'];
+  const querySecret = req.query.cron_secret;
+  const expected = process.env.CRON_SECRET;
+  if (!expected) { res.status(500).json({ error: 'CRON_SECRET not configured' }); return; }
+  if (authHeader !== `Bearer ${expected}` && querySecret !== expected) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const startedAt = Date.now();
+  const SEND_BUDGET = Number(process.env.CHASE_MAX_SENDS_PER_RUN || 200);
+
+  let deployments;
+  try {
+    deployments = await selectRows(
+      'agent_deployments',
+      "select=user_id,config&agent_id=eq.chase_agent&status=eq.active"
+    );
+  } catch (err) {
+    res.status(500).json({ error: 'Could not list chase_agent deployments' });
+    return;
+  }
+  if (!deployments.length) {
+    res.status(200).json({ sent: 0, note: 'no active chase_agent deployments' });
+    return;
+  }
+
+  let sent = 0, failed = 0, queued = 0, skipped_no_phone = 0, escalated = 0;
+  let budget = SEND_BUDGET;
+
+  for (const dep of deployments) {
+    const config = chase.mergeConfig(dep.config);
+    if (config.enabled === false) continue;
+
+    try {
+      const q = await syncChaseQueue(dep.user_id, config);
+      queued += q.created;
+      skipped_no_phone += q.skipped_no_phone;
+    } catch (err) {
+      console.error('chase: syncChaseQueue failed for', dep.user_id, err.message);
+    }
+
+    if (budget <= 0) continue;
+
+    let due;
+    try {
+      due = await selectRows(
+        'whatsapp_chase_targets',
+        `select=*&user_id=eq.${dep.user_id}&state=in.(active,paused_promise)` +
+          `&next_chase_at=not.is.null&next_chase_at=lte.${new Date().toISOString()}` +
+          `&order=next_chase_at.asc&limit=${Math.min(budget, 500)}`
+      );
+    } catch (err) {
+      console.error('chase: could not load due targets for', dep.user_id, err.message);
+      continue;
+    }
+
+    for (const target of due) {
+      if (budget <= 0) break;
+      if (!target.contact_phone) { skipped_no_phone++; continue; }
+      if (Array.isArray(config.opt_out) && config.opt_out.includes(normalizePhone(target.contact_phone))) {
+        await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`,
+          { state: 'opted_out', resolution: 'On the business opt-out list.', next_chase_at: null }).catch(() => {});
+        continue;
+      }
+
+      // A promise-to-pay window has elapsed and the receivable is still open
+      // (syncChaseQueue would have flipped it to resolved_paid otherwise).
+      // Treat it as a broken promise: resume, one tier firmer.
+      let brokenBumps = target.broken_promise_count || 0;
+      if (target.state === 'paused_promise') {
+        brokenBumps += 1;
+        await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`, {
+          state: 'active', broken_promise_count: brokenBumps
+        }).catch(() => {});
+      }
+
+      const chaseNumber = (target.chases_sent || 0) + 1;
+
+      // Hard stop -> hand to the founder.
+      if (chaseNumber > config.max_chases) {
+        await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`, {
+          state: 'escalated_human',
+          resolution: `No resolution after ${target.chases_sent} chases.`,
+          next_chase_at: null
+        }).catch(() => {});
+        escalated++;
+        continue;
+      }
+
+      const tier = chase.resolveTier(chaseNumber - 1, target.due_date, config, brokenBumps);
+      const businessName = await businessNameFor(dep.user_id);
+      const msg = chase.buildChaseMessage({
+        tier, tonePreset: config.tone_preset, businessName,
+        invoiceRef: target.invoice_ref, amount: target.amount, dueDate: target.due_date
+      });
+
+      const nowIso = new Date().toISOString();
+      let status = 'sent', error = null, waMessageId = null;
+
+      if (!msg.templateId) {
+        status = 'skipped';
+        error = `Template ${msg.templateName} has no configured id (WHATSAPP_TEMPLATE_${msg.templateName.toUpperCase()})`;
+      } else {
+        const result = await bsp.sendTemplate({ to: target.contact_phone, templateId: msg.templateId, params: msg.params });
+        if (!result.ok) { status = 'failed'; error = result.error; failed++; }
+        else { waMessageId = result.messageId || null; sent++; budget--; }
+      }
+
+      try {
+        await insertRows('whatsapp_chases', [{
+          user_id: dep.user_id,
+          chase_target_id: target.id,
+          receivable_id: target.receivable_id || null,
+          party_id: target.party_id || null,
+          invoice_ref: target.invoice_ref || null,
+          contact_phone: target.contact_phone,
+          chase_number: chaseNumber,
+          escalation_tier: tier,
+          channel: 'whatsapp_template',
+          tone_preset: config.tone_preset || 'friendly',
+          template_name: msg.templateName,
+          template_params: msg.params,
+          message_body: msg.body,
+          wa_message_id: waMessageId,
+          status,
+          error,
+          scheduled_for: target.next_chase_at,
+          sent_at: status === 'sent' ? nowIso : null
+        }]);
+      } catch (err) {
+        console.error('chase: failed to log chase attempt', err.message);
+      }
+
+      // Advance the target regardless of a send failure — a failed template
+      // (e.g. wallet, rate limit) shouldn't wedge the whole sequence; the next
+      // run retries at the next scheduled slot.
+      const nextIdx = chaseNumber; // 0-based index of the *next* chase
+      const nextAt = chase.nextChaseAt(target.due_date, nextIdx, config, new Date());
+      const patch = {
+        chases_sent: status === 'sent' ? chaseNumber : (target.chases_sent || 0),
+        current_tier: tier
+      };
+      if (status === 'sent') {
+        patch.last_chase_at = nowIso;
+        if (nextIdx >= config.max_chases || !nextAt) {
+          patch.state = 'escalated_human';
+          patch.resolution = `No resolution after ${chaseNumber} chases.`;
+          patch.next_chase_at = null;
+          escalated++;
+        } else {
+          patch.next_chase_at = nextAt.toISOString();
+        }
+      } else if (status === 'skipped') {
+        // No template configured — don't retry every run and pile up skipped
+        // rows; check back tomorrow.
+        patch.next_chase_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      }
+      // status === 'failed' leaves next_chase_at untouched -> retried next run.
+      await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`, patch).catch((e) =>
+        console.error('chase: target advance failed', e.message));
+
+      await logConnectorEvent({
+        userId: dep.user_id, connectorType: 'whatsapp',
+        operation: `chase_${tier}`, status: status === 'sent' ? 'success' : 'error',
+        errorMessage: error, recordsSynced: status === 'sent' ? 1 : 0
+      });
+    }
+  }
+
+  res.status(200).json({
+    deployments: deployments.length,
+    queued, sent, failed, escalated, skipped_no_phone,
+    duration_ms: Date.now() - startedAt,
+    timestamp: new Date().toISOString()
+  });
+}
+
+const _bizNameCache = new Map();
+async function businessNameFor(userId) {
+  if (_bizNameCache.has(userId)) return _bizNameCache.get(userId);
+  let name = 'your supplier';
+  try {
+    const p = await selectRows('profiles', `select=company_name&id=eq.${userId}&limit=1`);
+    if (p[0] && p[0].company_name) name = p[0].company_name;
+  } catch (e) { /* default */ }
+  _bizNameCache.set(userId, name);
+  return name;
+}
+
+/**
+ * Reconcile whatsapp_chase_targets against the current open receivables:
+ *   - create a target (with a resolved phone) for each newly-eligible receivable
+ *   - mark a target resolved_paid when its receivable is no longer open
+ * Returns { created, skipped_no_phone }.
+ */
+async function syncChaseQueue(userId, config) {
+  const c = chase.mergeConfig(config);
+  let created = 0, skipped_no_phone = 0;
+
+  let receivables = [];
+  try {
+    receivables = await selectRows(
+      'receivables',
+      `select=id,party_name,amount,due_date,status&user_id=eq.${userId}&status=eq.open&limit=1000`
+    );
+  } catch (err) {
+    console.error('chase: could not read receivables for', userId, err.message);
+    return { created, skipped_no_phone };
+  }
+
+  let parties = [];
+  try {
+    parties = await selectRows('ledger_parties', `select=id,name,phone&user_id=eq.${userId}&limit=2000`);
+  } catch (e) { /* no khata parties — nothing to resolve phones from */ }
+  const phoneByName = new Map();
+  const idByName = new Map();
+  for (const p of parties) {
+    const k = normPartyName(p.name);
+    if (p.phone && !phoneByName.has(k)) phoneByName.set(k, normalizePhone(p.phone));
+    if (!idByName.has(k)) idByName.set(k, p.id);
+  }
+
+  let existing = [];
+  try {
+    existing = await selectRows(
+      'whatsapp_chase_targets',
+      `select=id,receivable_id,state&user_id=eq.${userId}&limit=2000`
+    );
+  } catch (e) { /* treat as none */ }
+  const targetByRecv = new Map(existing.filter((t) => t.receivable_id).map((t) => [t.receivable_id, t]));
+  const openRecvIds = new Set(receivables.map((r) => r.id));
+
+  const now = new Date();
+  for (const r of receivables) {
+    if (targetByRecv.has(r.id)) continue;
+    if ((Number(r.amount) || 0) < c.min_amount) continue;
+
+    const overdue = r.due_date ? chase.daysOverdue(r.due_date, now) > 0 : false;
+    if (c.auto_include === 'overdue_only' && !overdue) {
+      // still create it if a pre-due chase is configured and due soon
+      const preDue = (c.days_before_due || []).some((d) => {
+        const od = chase.daysOverdue(r.due_date, now);
+        return od !== null && od >= -Math.abs(d) && od <= 0;
+      });
+      if (!preDue) continue;
+    }
+
+    const k = normPartyName(r.party_name);
+    const phone = phoneByName.get(k) || '';
+    if (!phone) { skipped_no_phone++; }
+
+    const firstAt = chase.nextChaseAt(r.due_date, 0, c, null);
+    try {
+      await insertRows('whatsapp_chase_targets', [{
+        user_id: userId,
+        receivable_id: r.id,
+        party_id: idByName.get(k) || null,
+        party_name: r.party_name || 'Customer',
+        contact_phone: phone,
+        amount: Number(r.amount) || 0,
+        due_date: r.due_date || null,
+        invoice_ref: null,
+        state: 'active',
+        current_tier: 'pre_due',
+        next_chase_at: phone && firstAt ? firstAt.toISOString() : null
+      }], { onConflict: 'user_id,receivable_id', merge: false });
+      created++;
+    } catch (err) {
+      console.error('chase: could not create target for receivable', r.id, err.message);
+    }
+  }
+
+  // Receivable settled/removed out from under an active chase -> stop chasing.
+  for (const t of existing) {
+    if (!t.receivable_id || openRecvIds.has(t.receivable_id)) continue;
+    if (['active', 'paused_promise'].includes(t.state)) {
+      await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, {
+        state: 'resolved_paid',
+        resolution: 'Receivable was settled or removed in the app.',
+        resolved_at: new Date().toISOString(),
+        next_chase_at: null
+      }).catch(() => {});
+    }
+  }
+
+  return { created, skipped_no_phone };
 }
 
 /**
