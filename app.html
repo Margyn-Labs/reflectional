@@ -6107,25 +6107,41 @@ function stepDots(n){
     '<span class="' + (n>=2?'on':'') + '"></span></div>';
 }
 
+/* Canonical WhatsApp-number normalizer, used by BOTH the Bell deploy step and
+   the stakeholder-routing add form so every number in Supabase is stored the
+   same way: country code, digits only, no +, no separators. A bare 10-digit
+   number is assumed India (+91). Returns { digits, error }. */
+function waNormalizeMobile(raw){
+  let digits = String(raw || '').replace(/[^\d]/g, '').replace(/^0+/, '');
+  if(digits.length === 10) digits = '91' + digits;
+  if(digits.length < 11 || digits.length > 15){
+    return { digits: null, error: 'Enter a 10-digit mobile (country code is added automatically) or a full number with country code.' };
+  }
+  return { digits: digits, error: null };
+}
+/* Pretty-print a stored digits-only number for display: +91 98765 43210 */
+function waPrettyPhone(digits){
+  const d = String(digits || '').replace(/[^\d]/g, '');
+  if(d.length === 12 && d.startsWith('91')) return '+91 ' + d.slice(2,7) + ' ' + d.slice(7);
+  if(d.length > 10) return '+' + d.slice(0, d.length-10) + ' ' + d.slice(-10, -5) + ' ' + d.slice(-5);
+  return d;
+}
+
 function startWhatsappDeploy(){
   const existing = (currentProfile && currentProfile.whatsapp_phone) || '';
   openAgentModal(
     stepDots(1) +
     '<div class="agent-modal-title">Deploy WhatsApp Bell</div>' +
     '<div class="hint">Step 1 of 2 — the number your briefing goes to. This is also the number Margyn will answer when you reply.</div>' +
-    '<label>WhatsApp number (with country code)</label>' +
-    '<input type="tel" id="waPhoneInput" placeholder="+91 98765 43210" value="' + escapeHtml(existing) + '">' +
+    '<label>WhatsApp mobile number</label>' +
+    '<input type="tel" id="waPhoneInput" inputmode="numeric" placeholder="98765 43210" value="' + escapeHtml(existing ? waPrettyPhone(existing) : '') + '">' +
+    '<div class="hint" style="margin-top:6px;">10-digit Indian mobile — we add +91 for you. For any other country, type the full number with its country code.</div>' +
     '<div class="btn-row"><button class="primary" id="waPhoneNext">Continue</button>' +
     '<span class="note bad" id="waPhoneErr"></span></div>'
   );
   document.getElementById('waPhoneNext').addEventListener('click', () => {
-    const raw = document.getElementById('waPhoneInput').value;
-    let digits = String(raw || '').replace(/[^\d]/g, '').replace(/^0+/, '');
-    // Default to India (+91) when the user enters a bare 10-digit mobile — the
-    // WhatsApp webhook reports the sender in full international form, so the
-    // stored number must include the country code or inbound replies won't match.
-    if(digits.length === 10) digits = '91' + digits;
-    if(digits.length < 11 || digits.length > 15){ document.getElementById('waPhoneErr').textContent = 'Enter a valid mobile number with country code (e.g. +91 98765 43210).'; return; }
+    const { digits, error } = waNormalizeMobile(document.getElementById('waPhoneInput').value);
+    if(error){ document.getElementById('waPhoneErr').textContent = error; return; }
     waDeployConfirm(digits);
   });
 }
@@ -6208,6 +6224,13 @@ function openWhatsappConfigure(){
     '<div class="agent-modal-title">Configure WhatsApp Bell</div>' +
     '<div class="hint">Editable any time. Frequency, send time and priority vitals save together in one step. Stakeholder contacts save as you add or remove them.</div>' +
 
+    '<div class="agent-fieldset"><span class="agent-fs-label">Briefing goes to</span>' +
+      '<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">' +
+        '<span style="font-family:\'IBM Plex Mono\',monospace; font-size:14px; color:var(--text-0);">' +
+          ((currentProfile && currentProfile.whatsapp_phone) ? escapeHtml(waPrettyPhone(currentProfile.whatsapp_phone)) : 'Not set') + '</span>' +
+        '<span class="agent-configure-link" id="waChangeNumLink">Change number</span>' +
+      '</div></div>' +
+
     '<div class="agent-fieldset"><span class="agent-fs-label">Frequency</span>' +
       '<select id="waFreq">' + freqOpts + '</select></div>' +
 
@@ -6223,10 +6246,11 @@ function openWhatsappConfigure(){
       '<div id="waStkList"></div>' +
       '<div class="agent-stk-row">' +
         '<input type="text" id="waStkName" placeholder="Name" style="margin-bottom:0;">' +
-        '<input type="tel" id="waStkPhone" placeholder="+91…" style="margin-bottom:0;">' +
+        '<input type="tel" id="waStkPhone" inputmode="numeric" placeholder="10-digit mobile" style="margin-bottom:0;">' +
         '<select id="waStkRole" style="margin-bottom:0;"><option value="AR">AR</option><option value="AP">AP</option><option value="owner">owner</option></select>' +
         '<button class="stk-del" id="waStkAdd" title="Add" style="color:var(--emerald); font-size:22px;">+</button>' +
       '</div>' +
+      '<div class="hint" style="margin-top:6px;">10-digit Indian mobile — +91 is added automatically. This person must send one message to Margyn’s WhatsApp (or the relay template must be approved) before routing can reach them.</div>' +
       '<span class="note bad" id="waStkErr"></span></div>' +
 
     '<div class="agent-fieldset"><span class="agent-fs-label">Threshold sensitivity</span>' +
@@ -6238,6 +6262,8 @@ function openWhatsappConfigure(){
 
   renderStakeholderList();
   document.getElementById('waStkAdd').addEventListener('click', addStakeholder);
+  const chg = document.getElementById('waChangeNumLink');
+  if(chg) chg.addEventListener('click', startWhatsappDeploy);
 
   document.querySelectorAll('#agentContent .agent-seg').forEach(seg => {
     seg.querySelectorAll('button').forEach(btn => {
@@ -6257,7 +6283,7 @@ function renderStakeholderList(){
   host.innerHTML = agentStakeholders.map(s =>
     '<div class="agent-stk-row" data-id="' + s.id + '">' +
       '<span style="font-size:13px; color:var(--text-1);">' + escapeHtml(s.name) + '</span>' +
-      '<span style="font-size:13px; color:var(--text-2); font-family:\'IBM Plex Mono\',monospace;">' + escapeHtml(s.phone) + '</span>' +
+      '<span style="font-size:13px; color:var(--text-2); font-family:\'IBM Plex Mono\',monospace;">' + escapeHtml(waPrettyPhone(s.phone)) + '</span>' +
       '<span class="agent-badge notdeployed">' + escapeHtml(s.role) + '</span>' +
       '<button class="stk-del" data-del="' + s.id + '" title="Remove">&times;</button>' +
     '</div>').join('');
@@ -6266,12 +6292,12 @@ function renderStakeholderList(){
 
 async function addStakeholder(){
   const name = document.getElementById('waStkName').value.trim();
-  const phoneRaw = document.getElementById('waStkPhone').value;
-  const phone = String(phoneRaw || '').replace(/[^\d]/g, '');
   const role = document.getElementById('waStkRole').value;
   const err = document.getElementById('waStkErr');
   err.textContent = '';
-  if(!name || phone.length < 10){ err.textContent = 'Name and a valid phone number are required.'; return; }
+  const { digits: phone, error: phoneErr } = waNormalizeMobile(document.getElementById('waStkPhone').value);
+  if(!name){ err.textContent = 'Name is required.'; return; }
+  if(phoneErr){ err.textContent = phoneErr; return; }
   try {
     const { data, error } = await sbClient.from('business_stakeholders')
       .insert({ business_id: currentUser.id, name: name, phone: phone, role: role }).select().single();
