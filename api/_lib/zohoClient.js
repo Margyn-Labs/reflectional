@@ -87,7 +87,34 @@ const DAILY_CAP_BY_PLAN = {
 // --------------------------------------------------------------- errors
 
 class ZohoAuthError extends Error {}          // refresh token dead -> needs_reauth
-class ZohoModuleUnavailable extends Error {}  // module not on this plan / not enabled
+class ZohoModuleUnavailable extends Error {}  // module not on this plan / not enabled / role can't see it
+
+/**
+ * Classify a Zoho 401/403 into "the whole grant is dead" (ZohoAuthError,
+ * flips the connection to needs_reauth) vs. "this one module is off-limits for
+ * this org/user" (ZohoModuleUnavailable, skip the module, keep the connection).
+ *
+ * Zoho error **code 57** ("You are not authorized to perform this operation")
+ * is a ROLE/permission result — e.g. the connected user's role in the Books
+ * org can't see Chart of Accounts. That must NOT kill the connection. A real
+ * token failure comes back with an oauth-token error (code 14/15, "invalid
+ * oauth token", "invalid token", "expired token").
+ */
+function classifyZohoAuthStatus(status, body, path) {
+  const text = String(body || '');
+  let code = null;
+  try { code = (JSON.parse(text) || {}).code; } catch {}
+  const permissionDenied =
+    code === 57 || /not authorized to perform this operation/i.test(text);
+  if (permissionDenied) {
+    return new ZohoModuleUnavailable(
+      `Zoho ${status} at ${path} — role/plan cannot access this module (code 57)`
+    );
+  }
+  return new ZohoAuthError(
+    `Zoho ${status} at ${path}${text ? ' — ' + text.slice(0, 160) : ''}`
+  );
+}
 
 // --------------------------------------------------------------- helpers
 
@@ -392,15 +419,20 @@ function createSession(org) {
         throw new Error(`Network error calling Zoho: ${err.message}`);
       }
 
-      if (res.status === 401) {
-        // Should be rare given the 50-min proactive refresh. Refresh once and retry.
-        if (attempt < MAX_RETRIES) {
+      if (res.status === 401 || res.status === 403) {
+        const body = await res.text().catch(() => '');
+        const classified = classifyZohoAuthStatus(res.status, body, path);
+        // A role/plan permission block on one module — skip it, don't touch
+        // the connection. (Zoho code 57, e.g. chartofaccounts on a limited role.)
+        if (classified instanceof ZohoModuleUnavailable) throw classified;
+        // Genuine token failure: refresh once and retry, then give up.
+        if (res.status === 401 && attempt < MAX_RETRIES) {
           state.accessToken = null;
           state.obtainedAt = 0;
           const fresh = await getAccessToken();
           return apiGetWithToken(url, fresh, path);
         }
-        throw new ZohoAuthError(`Zoho returned 401 at ${path} (after in-loop refresh)`);
+        throw classified;
       }
 
       if (res.status === 429) {
@@ -435,17 +467,14 @@ function createSession(org) {
     const res = await fetch(url, {
       headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' }
     });
-    // A 401/403 here means Zoho rejected a call made with a *freshly refreshed*
-    // access token — the grant itself is dead (refresh token evicted by Zoho's
-    // 20-token-per-user cap, access revoked in Zoho, a scope not consented, or
-    // the org no longer reachable). This must surface as a ZohoAuthError so
-    // sync.js -> handleAuthFailure() flips the org to needs_reauth and the UI
-    // prompts a reconnect. Throwing a plain Error here let it be swallowed as a
-    // partial module failure, so the org stayed 'active' and 401'd every night.
+    // 401/403 with a *freshly refreshed* token. classifyZohoAuthStatus splits
+    // "the grant is dead" (ZohoAuthError -> needs_reauth) from "this org/role
+    // can't see this one module" (ZohoModuleUnavailable -> skip module, keep
+    // the connection). Before this split, a code-57 permission block on e.g.
+    // chartofaccounts flipped the whole connection to needs_reauth.
     if (res.status === 401 || res.status === 403) {
-      let hint = '';
-      try { hint = (await res.text()).slice(0, 160); } catch {}
-      throw new ZohoAuthError(`Zoho ${res.status} at ${path || url} after token refresh${hint ? ' — ' + hint : ''}`);
+      const body = await res.text().catch(() => '');
+      throw classifyZohoAuthStatus(res.status, body, path || url);
     }
     if (!res.ok) throw new Error(`Zoho retry returned ${res.status} at ${path || url}`);
     return res.json();
