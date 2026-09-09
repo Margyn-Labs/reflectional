@@ -398,9 +398,9 @@ function createSession(org) {
           state.accessToken = null;
           state.obtainedAt = 0;
           const fresh = await getAccessToken();
-          return apiGetWithToken(url, fresh);
+          return apiGetWithToken(url, fresh, path);
         }
-        throw new ZohoAuthError('Zoho returned 401 after refresh');
+        throw new ZohoAuthError(`Zoho returned 401 at ${path} (after in-loop refresh)`);
       }
 
       if (res.status === 429) {
@@ -430,22 +430,24 @@ function createSession(org) {
     throw lastError || new Error('Zoho request failed after retries');
   }
 
-  async function apiGetWithToken(url, token) {
+  async function apiGetWithToken(url, token, path) {
     state.calls++;
     const res = await fetch(url, {
       headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' }
     });
-    // A 401 here means Zoho rejected a call made with a *freshly refreshed*
-    // access token — the grant itself is dead (refresh token evicted, access
-    // revoked in Zoho, or the org is no longer reachable). This must surface as
-    // a ZohoAuthError so sync.js -> handleAuthFailure() flips the org to
-    // needs_reauth and the UI prompts a reconnect. Throwing a plain Error here
-    // let it be swallowed as a partial module failure, so the org stayed
-    // 'active' and 401'd silently every nightly run.
+    // A 401/403 here means Zoho rejected a call made with a *freshly refreshed*
+    // access token — the grant itself is dead (refresh token evicted by Zoho's
+    // 20-token-per-user cap, access revoked in Zoho, a scope not consented, or
+    // the org no longer reachable). This must surface as a ZohoAuthError so
+    // sync.js -> handleAuthFailure() flips the org to needs_reauth and the UI
+    // prompts a reconnect. Throwing a plain Error here let it be swallowed as a
+    // partial module failure, so the org stayed 'active' and 401'd every night.
     if (res.status === 401 || res.status === 403) {
-      throw new ZohoAuthError(`Zoho returned ${res.status} after a token refresh`);
+      let hint = '';
+      try { hint = (await res.text()).slice(0, 160); } catch {}
+      throw new ZohoAuthError(`Zoho ${res.status} at ${path || url} after token refresh${hint ? ' — ' + hint : ''}`);
     }
-    if (!res.ok) throw new Error(`Zoho retry returned ${res.status}`);
+    if (!res.ok) throw new Error(`Zoho retry returned ${res.status} at ${path || url}`);
     return res.json();
   }
 
