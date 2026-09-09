@@ -89,7 +89,7 @@ async function handler(req, res) {
         // Marks the org needs_reauth so the UI can prompt a reconnect.
         // Deliberately NOT retried — re-consent burns one of the 20
         // refresh tokens Zoho allows per user account.
-        await handleAuthFailure(userId);
+        await handleAuthFailure(userId, err.message);
         failed.push({ userId, reason: 'needs re-authorization' });
       } else {
         failed.push({ userId, reason: err.message });
