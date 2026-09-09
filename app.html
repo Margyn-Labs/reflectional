@@ -933,6 +933,11 @@
         <div class="lf-grid"><input type="date" id="ledgerDue"><span></span></div>
         <button id="ledgerAddBtn">Add to ledger</button>
       </div>
+      <div class="card hidden" id="chaseColdCard">
+        <div class="ledger-list-title" id="chaseColdTitle" style="margin-top:0; padding-top:0; border-top:none;">Gone cold</div>
+        <div class="hint" style="margin-bottom:10px;">Receivables the Payment Chase agent has messaged more than once with no useful reply, or where the customer disputed or broke a promise. Highest amount &times; days overdue first &mdash; these are the ones worth a personal call.</div>
+        <div id="chaseColdList"></div>
+      </div>
       <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
           <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
@@ -1171,8 +1176,10 @@
       <div class="hint">Optional automated connectors that supplement your uploads. Keep uploading your full monthly snapshot as usual; connectors add detail on top, they don't replace it.</div>
       <div id="razorpayStatus"></div>
       <div id="zohoStatus"></div>
+      <div id="odooStatus"></div>
       <div id="shopifyStatus"></div>
       <div id="tallyStatus"></div>
+      <div id="cashfreeStatus"></div>
     </div>
     <div class="section-head">
       <h2>More connectors, on the way</h2>
@@ -1591,6 +1598,12 @@
     <div id="razorpayContent"></div>
   </div>
 </div>
+<div class="detail-overlay hidden" id="cashfreeOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="cashfreeClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    <div id="cashfreeContent"></div>
+  </div>
+</div>
 <div class="detail-overlay hidden" id="zohoOverlay">
   <div class="detail-modal">
     <button class="detail-close" id="zohoClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1601,6 +1614,12 @@
   <div class="detail-modal">
     <button class="detail-close" id="shopifyClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     <div id="shopifyContent"></div>
+  </div>
+</div>
+<div class="detail-overlay hidden" id="odooOverlay">
+  <div class="detail-modal">
+    <button class="detail-close" id="odooClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    <div id="odooContent"></div>
   </div>
 </div>
 <div class="detail-overlay hidden" id="tallyOverlay">
@@ -1643,6 +1662,10 @@ let settlementDailyTrend = null; // real per-day gross totals, last 7 uploaded d
 let razorpayConnected = false; // optional connector — supplements manual upload, doesn't replace it
 let razorpayStatus = null;    // { needs_reauth, last_success_at } from connector_credentials — durable provenance
 let lastSyncedAt = null;
+let cashfreeConnected = false; // Cashfree connector — manual App ID/Secret key entry, settled-payment feed
+let cashfreeStatus = null;    // last /api/cashfree?action=status payload
+let odooConnected = false;   // Odoo connector — External API / JSON-RPC, manual key entry
+let odooStatus = null;       // last /api/zoho?action=odoo-status payload (pre-aggregated, Signal-tier)
 let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker gated
 let zohoVitals = null;       // last /api/zoho?action=vitals payload
 let zohoLedgerRows = { receivables: [], payables: [] }; // row-level open invoices/bills from the vitals payload — for the unified ledger + cross-source logic
@@ -1692,6 +1715,23 @@ function showAuthError(msg){
   el.style.color = ''; el.textContent = msg; el.classList.add('show');
 }
 function clearAuthErrors(){ document.querySelectorAll('.auth-error').forEach(e => e.classList.remove('show')); }
+/* Ops-console usage ping — writes an allowlisted row to product_events via
+   /api/ops?action=track. Founder-only surface; this call is pure telemetry.
+   Fire-and-forget: never awaited on a UI path, every failure swallowed. */
+async function mtrack(name, props){
+  try {
+    if(!sbClient) return;
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(!session) return;
+    await fetch('/api/ops?action=track', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token },
+      body: JSON.stringify({ name, props: props || {} }),
+      keepalive: true
+    });
+  } catch(e){ /* tracking must never break the app */ }
+}
+
 async function bootAuth(){
   const sources = ['/supabase.js', 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js', 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js'];
   for(const src of sources){
@@ -1713,6 +1753,8 @@ async function routeFor(session){
     khataParties = []; khataEntries = []; khataInvoices = []; khataInvoiceLineItems = []; khataActivePartyId = null; khataActiveInvoiceId = null; invoiceDraftLines = [];
     razorpayConnected = false; lastSyncedAt = null;
     zohoConnected = false; zohoVitals = null; zohoLedgerRows = { receivables: [], payables: [] }; zohoPendingOrgRef = null; zohoChosenOrgId = null;
+    odooConnected = false; odooStatus = null;
+    cashfreeConnected = false; cashfreeStatus = null;
     shopifyConnected = false; shopifyStore = null;
     if(shopifyPollTimer){ clearInterval(shopifyPollTimer); shopifyPollTimer = null; }
     tallyConnected = false; tallyInstalls = []; tallyData = null;
@@ -1736,6 +1778,7 @@ async function routeFor(session){
   if(!currentProfile){ document.getElementById('appShell').classList.add('hidden'); document.getElementById('onboardGate').classList.remove('hidden'); return; }
   document.getElementById('onboardGate').classList.add('hidden');
   document.getElementById('appShell').classList.remove('hidden');
+  mtrack('app_open');
   await refreshAll();
 }
 async function loadProfile(){
@@ -1786,6 +1829,7 @@ async function refreshAll(){
   khataEntries = await loadKhataEntries();
   khataInvoices = await loadKhataInvoices();
   await checkRazorpayConnection();
+  await checkCashfreeConnection();
   razorpayLiveSummary = await loadRazorpayLiveSummary();
   // Restore session-only Payments-tab state from the latest snapshot so it
   // survives refresh/re-login instead of resetting to empty each load.
@@ -1799,6 +1843,7 @@ async function refreshAll(){
     paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
   await loadZohoVitals();
+  await loadOdooStatus();
   reconSummary = await loadReconSummary();
   await loadShopifyStatus();
   await loadTallyStatus();
@@ -1876,7 +1921,7 @@ function openRazorpayModal(){
     try {
       const { data:{ session } } = await sbClient.auth.getSession();
       const token = session?.access_token;
-      const res = await fetch('/api/store-razorpay-credentials', {
+      const res = await fetch('/api/sync-razorpay?action=connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ keyId, keySecret })
@@ -1895,6 +1940,99 @@ function openRazorpayModal(){
 }
 document.getElementById('razorpayClose').addEventListener('click', () => document.getElementById('razorpayOverlay').classList.add('hidden'));
 document.getElementById('razorpayOverlay').addEventListener('click', (e) => { if(e.target.id === 'razorpayOverlay') e.currentTarget.classList.add('hidden'); });
+
+/* ============================================================
+   CASHFREE CONNECTOR (optional, supplements manual upload)
+   Manual App ID / Secret Key entry against /api/cashfree?action=connect;
+   nightly cron sync server-side. Razorpay stays the primary gateway for
+   the Payments tab — Cashfree adds its own tables + provenance.
+   State vars (cashfreeConnected / cashfreeStatus) are declared near the
+   Razorpay ones above.
+   ============================================================ */
+async function checkCashfreeConnection(){
+  try {
+    const { data:{ session } } = await sbClient.auth.getSession();
+    const token = session?.access_token;
+    const res = await fetch('/api/cashfree?action=status', { headers: { 'Authorization': `Bearer ${token}` } });
+    if(!res.ok){ cashfreeConnected = false; cashfreeStatus = null; return; }
+    const d = await res.json().catch(() => ({}));
+    cashfreeConnected = !!d.connected;
+    cashfreeStatus = d.connected ? { environment: d.environment, needs_reauth: !!d.needs_reauth, last_success_at: d.last_success_at || null } : null;
+  } catch(e){ cashfreeConnected = false; cashfreeStatus = null; }
+}
+function renderCashfreeStatus(){
+  const host = document.getElementById('cashfreeStatus'); if(!host) return;
+  if(cashfreeConnected){
+    const env = cashfreeStatus && cashfreeStatus.environment === 'production' ? '' : ' (sandbox)';
+    const needsReauth = cashfreeStatus && cashfreeStatus.needs_reauth;
+    const syncText = needsReauth
+      ? 'Reconnect needed — Cashfree rejected the stored keys'
+      : (cashfreeStatus && cashfreeStatus.last_success_at ? 'Last synced ' + fmtDate(cashfreeStatus.last_success_at) : 'Connected, syncing tonight');
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Cashfree' + env + '</div>' +
+        '<div class="lr-meta">'+syncText+'</div>' +
+      '</div><span class="lr-tag ' + (needsReauth ? 'bad' : 'ok') + '">' + (needsReauth ? 'Action needed' : 'Connected') + '</span></div>';
+  } else {
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Cashfree</div>' +
+        '<div class="lr-meta">Not connected · optional, adds settled-payment and settlement detail nightly on top of your uploads</div>' +
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectCashfreeBtn">Connect</button></div></div>';
+    const btn = document.getElementById('connectCashfreeBtn');
+    if(btn) btn.addEventListener('click', openCashfreeModal);
+  }
+}
+function openCashfreeModal(){
+  const overlay = document.getElementById('cashfreeOverlay');
+  const host = document.getElementById('cashfreeContent');
+  host.innerHTML =
+    '<div class="detail-eyebrow">Connect data</div>' +
+    '<div class="detail-title">Connect Cashfree</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Pulls settled payments and settlement batches from Cashfree each night. Your manual upload stays the primary source — this is a supplement.</div>' +
+    '<div class="ledger-form">' +
+      '<div class="lf-title">Manual API key entry</div>' +
+      '<select id="cfEnv" style="margin-bottom:8px;"><option value="production">Production</option><option value="sandbox">Sandbox (test)</option></select>' +
+      '<input type="password" id="cfClientId" placeholder="App ID" style="margin-bottom:8px;">' +
+      '<input type="password" id="cfClientSecret" placeholder="Secret Key">' +
+      '<div style="font-size:11px; color:var(--text-2); margin:8px 0;">Get these from the Cashfree Merchant Dashboard → Developers → API Keys</div>' +
+      '<div class="note bad" id="cfError" style="display:none; margin-bottom:8px;"></div>' +
+      '<div class="note ok" id="cfSuccess" style="display:none; margin-bottom:8px;"></div>' +
+      '<button id="cfConnectBtn">Connect</button>' +
+    '</div>';
+  document.getElementById('cfConnectBtn').addEventListener('click', async () => {
+    const clientId = document.getElementById('cfClientId').value.trim();
+    const clientSecret = document.getElementById('cfClientSecret').value.trim();
+    const environment = document.getElementById('cfEnv').value;
+    const errorEl = document.getElementById('cfError');
+    const successEl = document.getElementById('cfSuccess');
+    const btn = document.getElementById('cfConnectBtn');
+    errorEl.style.display = 'none'; successEl.style.display = 'none';
+    if(!clientId || !clientSecret){ errorEl.textContent = 'Both fields required'; errorEl.style.display = 'block'; return; }
+    btn.disabled = true; btn.textContent = 'Connecting…';
+    try {
+      const { data:{ session } } = await sbClient.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch('/api/cashfree?action=connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ clientId, clientSecret, environment })
+      });
+      const data = await res.json().catch(() => ({}));
+      if(res.status === 401){ errorEl.textContent = 'Invalid credentials'; errorEl.style.display = 'block'; }
+      else if(!res.ok){ errorEl.textContent = data.error || 'Connection failed'; errorEl.style.display = 'block'; }
+      else {
+        successEl.textContent = '✓ Connected! Syncing now…'; successEl.style.display = 'block';
+        setTimeout(async () => { await refreshAll(); overlay.classList.add('hidden'); }, 1400);
+      }
+    } catch(err){ errorEl.textContent = 'Network error'; errorEl.style.display = 'block'; }
+    finally { btn.disabled = false; btn.textContent = 'Connect'; }
+  });
+  overlay.classList.remove('hidden');
+}
+document.getElementById('cashfreeClose').addEventListener('click', () => document.getElementById('cashfreeOverlay').classList.add('hidden'));
+document.getElementById('cashfreeOverlay').addEventListener('click', (e) => { if(e.target.id === 'cashfreeOverlay') e.currentTarget.classList.add('hidden'); });
+
 async function loadReceivables(){
   const { data, error } = await sbClient.from('receivables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
   if(error){ console.error('[margyn] loadReceivables:', error); return []; }
@@ -2072,6 +2210,7 @@ function renderProfile(){
   document.getElementById('pfIndustry').value = currentProfile.industry || '';
   document.getElementById('pfCity').value = currentProfile.city || '';
   renderRazorpayStatus();
+  renderCashfreeStatus();
 }
 document.getElementById('profileForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -3145,6 +3284,7 @@ async function callAskMargyn(message, history, focusLabel, findingTier){
   });
   if(!res.ok) throw new Error('Ask Margyn request failed: ' + res.status);
   const data = await res.json();
+  mtrack('ask_message_sent', { msg_len: (message || '').length });
   return data.reply;
 }
 
@@ -3280,6 +3420,7 @@ function renderLedgerFacts(){
 }
 function renderLedgerView(){
   renderLedgerFacts();
+  renderChaseCold();
   document.querySelectorAll('#ledgerTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.ltab === ledgerActiveTab));
   const addForm = document.getElementById('ledgerAddForm');
   const addTitle = document.getElementById('ledgerAddTitle');
@@ -5035,6 +5176,127 @@ async function disconnectZoho(){
   catch(e){ alert('Could not disconnect: ' + e.message); }
   await loadZohoVitals();
 }
+/* ============================================================
+   ODOO CONNECTOR — Odoo External API (JSON-RPC). Manual credential
+   entry (base URL + database + login + API key), the Razorpay
+   pattern, not OAuth. Everything synced is Signal-tier: one
+   self-reported books source, moves no vital on its own. Routed
+   through /api/zoho?action=odoo-* to stay under the function cap.
+   ============================================================ */
+async function loadOdooStatus(){
+  try {
+    const d = await zohoApi('/api/zoho?action=odoo-status');
+    odooConnected = d && d.connected === true;
+    odooStatus = odooConnected ? d : null;
+  } catch(e){
+    // A failed status check (cold start, transient 500) shouldn't masquerade
+    // as a disconnect — keep the last known state, same as the Zoho card.
+    console.error('[margyn] Odoo status check failed, keeping last known state:', e.message);
+  }
+  renderOdooStatus();
+}
+function renderOdooStatus(){
+  const host = document.getElementById('odooStatus'); if(!host) return;
+  if(odooConnected && odooStatus){
+    const s = odooStatus;
+    const needsReauth = !!s.needs_reauth;
+    const rec = s.receivables || {}, pay = s.payables || {};
+    let meta;
+    if(needsReauth){
+      meta = escapeHtml(s.instance || 'your Odoo instance') + ', API key rejected — reconnect to resume nightly syncing';
+    } else {
+      meta = escapeHtml(s.instance || 'Odoo') +
+             ' · ' + (rec.open_count || 0) + ' open invoices, ' + (pay.open_count || 0) + ' open bills' +
+             (s.last_success_at ? ', last synced ' + fmtDate(s.last_success_at) : '');
+    }
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Odoo</div>' +
+        '<div class="lr-meta">' + meta + '</div>' +
+      '</div><span class="lr-tag ' + (needsReauth ? 'bad' : 'ok') + '">' + (needsReauth ? 'Reconnect' : 'Connected') + '</span>' +
+      '<div class="lr-actions">' +
+        (needsReauth ? '<button class="lr-btn" id="odooReconnectBtn">Reconnect</button>'
+                     : '<button class="lr-btn" id="odooSyncBtn">Sync now</button>') +
+        '<button class="lr-btn danger" id="odooDisconnectBtn">Disconnect</button>' +
+      '</div></div>';
+    const sy = document.getElementById('odooSyncBtn'); if(sy) sy.addEventListener('click', syncOdooNow);
+    const rc = document.getElementById('odooReconnectBtn'); if(rc) rc.addEventListener('click', openOdooModal);
+    document.getElementById('odooDisconnectBtn').addEventListener('click', disconnectOdoo);
+  } else {
+    host.innerHTML =
+      '<div class="ledger-row"><div class="lr-main">' +
+        '<div class="lr-party">Odoo</div>' +
+        '<div class="lr-meta">Not connected · pulls open invoices and vendor bills from Odoo Accounting for receivables and payables aging</div>' +
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectOdooBtn">Connect</button></div></div>';
+    const btn = document.getElementById('connectOdooBtn');
+    if(btn) btn.addEventListener('click', openOdooModal);
+  }
+}
+function openOdooModal(){
+  const overlay = document.getElementById('odooOverlay');
+  const host = document.getElementById('odooContent');
+  host.innerHTML =
+    '<div class="detail-eyebrow">Connect data</div>' +
+    '<div class="detail-title">Connect Odoo</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">Reads your Odoo Accounting invoices and vendor bills each night. Read-only, and your manual upload stays the primary source. Works with Odoo Online, Odoo.sh and any self-hosted Odoo reachable over HTTPS.</div>' +
+    '<div class="ledger-form">' +
+      '<div class="lf-title">Odoo External API</div>' +
+      '<input type="text" id="odooUrl" placeholder="Odoo URL (acme.odoo.com)" style="margin-bottom:8px;">' +
+      '<input type="text" id="odooDb" placeholder="Database name" style="margin-bottom:8px;">' +
+      '<input type="text" id="odooLogin" placeholder="User login (email)" style="margin-bottom:8px;" autocomplete="off">' +
+      '<input type="password" id="odooKey" placeholder="API key" autocomplete="off">' +
+      '<div style="font-size:11px; color:var(--text-2); margin:8px 0;">Generate an API key in Odoo under your user avatar → Account Security → New API Key. On Odoo below v14, paste that user\'s password instead. Multi-company Odoo syncs the API user\'s default company.</div>' +
+      '<div class="note bad" id="odooError" style="display:none; margin-bottom:8px;"></div>' +
+      '<div class="note ok" id="odooSuccess" style="display:none; margin-bottom:8px;"></div>' +
+      '<button id="odooConnectBtn">Connect</button>' +
+    '</div>';
+  document.getElementById('odooConnectBtn').addEventListener('click', async () => {
+    const baseUrl = document.getElementById('odooUrl').value.trim();
+    const db = document.getElementById('odooDb').value.trim();
+    const login = document.getElementById('odooLogin').value.trim();
+    const apiKey = document.getElementById('odooKey').value.trim();
+    const errorEl = document.getElementById('odooError');
+    const successEl = document.getElementById('odooSuccess');
+    const btn = document.getElementById('odooConnectBtn');
+    errorEl.style.display = 'none'; successEl.style.display = 'none';
+    if(!baseUrl || !db || !login || !apiKey){ errorEl.textContent = 'All four fields are required'; errorEl.style.display = 'block'; return; }
+    btn.disabled = true; btn.textContent = 'Connecting…';
+    try {
+      const data = await zohoApi('/api/zoho?action=odoo-connect', {
+        method: 'POST',
+        body: JSON.stringify({ baseUrl, db, login, apiKey })
+      });
+      successEl.textContent = '✓ Connected' + (data.company_name ? ' — ' + data.company_name : '') + '. Syncing now…';
+      successEl.style.display = 'block';
+      setTimeout(async () => { await refreshAll(); overlay.classList.add('hidden'); }, 1500);
+    } catch(err){
+      errorEl.textContent = err.message || 'Connection failed';
+      errorEl.style.display = 'block';
+    } finally { btn.disabled = false; btn.textContent = 'Connect'; }
+  });
+  overlay.classList.remove('hidden');
+}
+async function syncOdooNow(){
+  const btn = document.getElementById('odooSyncBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
+  try {
+    await zohoApi('/api/zoho?action=odoo-sync', { method:'POST', body: JSON.stringify({}) });
+    await loadOdooStatus();
+  } catch(e){
+    if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
+  }
+  if(btn){ btn.disabled = false; btn.textContent = 'Sync now'; }
+}
+async function disconnectOdoo(){
+  if(!confirm('Disconnect Odoo? Your historical invoice and bill data stays visible in Margyn, but nothing new will sync until you reconnect.')) return;
+  const btn = document.getElementById('odooDisconnectBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
+  try { await zohoApi('/api/zoho?action=odoo-disconnect', { method:'POST', body: JSON.stringify({}) }); }
+  catch(e){ alert('Could not disconnect: ' + e.message); }
+  await loadOdooStatus();
+}
+document.getElementById('odooClose').addEventListener('click', () => document.getElementById('odooOverlay').classList.add('hidden'));
+document.getElementById('odooOverlay').addEventListener('click', (e) => { if(e.target.id === 'odooOverlay') e.currentTarget.classList.add('hidden'); });
 /* ---------- books tab ---------- */
 function zvSet(id, text){ const el = document.getElementById(id); if(el) el.textContent = text; }
 function zvFlag(id, cls, text){ const el = document.getElementById(id); if(!el) return; el.textContent = text || ''; el.className = 'pc-flag ' + (cls || ''); }
@@ -5235,6 +5497,7 @@ function renderReconLedger(){
         await zohoApi('/api/reconcile?action=resolve', { method:'POST', body: JSON.stringify({
           matchId: q.id, razorpayPaymentId: c.id, matchedAmount: q.amount
         })});
+        mtrack('mismatch_resolved_marked', { via: 'candidate_pick' });
         reconSummary = await loadReconSummary();
         renderReconLedger();
         renderReconBooksCard();
@@ -5691,6 +5954,7 @@ async function runBriefingGeneration(regenerate){
     });
     if(!res.ok) throw new Error('Briefing request failed: ' + res.status);
     const data = await res.json();
+    mtrack('briefing_opened', { regenerate: !!regenerate });
     const { error } = await sbClient.from('snapshots').update({ briefing: data.briefing, briefing_generated_at: new Date().toISOString() }).eq('id', latest.id);
     if(error) throw error;
     snapshots = await loadSnapshots();
@@ -5762,6 +6026,19 @@ async function renderAgents(){
     actions = '<button class="btn-primary" id="waDeployBtn">Deploy</button>';
   }
 
+  const chaseDep = agentDeployments['chase_agent'];
+  const chaseStatus = (chaseDep && chaseDep.status) || 'not_deployed';
+  let chaseActions;
+  if(chaseStatus === 'active'){
+    chaseActions = '<button class="btn-ghost" id="chasePauseBtn">Pause</button>' +
+                   '<span class="agent-configure-link" id="chaseConfigureLink">Configure</span>';
+  } else if(chaseStatus === 'paused'){
+    chaseActions = '<button class="btn-primary" id="chaseResumeBtn">Resume</button>' +
+                   '<span class="agent-configure-link" id="chaseConfigureLink">Configure</span>';
+  } else {
+    chaseActions = '<button class="btn-primary" id="chaseDeployBtn">Deploy</button>';
+  }
+
   host.innerHTML =
     '<div class="agent-card">' +
       '<div class="agent-card-head">' +
@@ -5772,6 +6049,16 @@ async function renderAgents(){
         agentBadge(waStatus) +
       '</div>' +
       '<div class="agent-card-actions">' + actions + '</div>' +
+    '</div>' +
+    '<div class="agent-card">' +
+      '<div class="agent-card-head">' +
+        '<div style="flex:1; min-width:0;">' +
+          '<h3>Payment Chase</h3>' +
+          '<div class="agent-desc">Chases overdue receivables on WhatsApp on a set cadence and tone, reads the replies, pauses on a promise to pay, and hands the ones that go cold back to you.</div>' +
+        '</div>' +
+        agentBadge(chaseStatus) +
+      '</div>' +
+      '<div class="agent-card-actions">' + chaseActions + '</div>' +
     '</div>' +
     '<div class="agent-card is-disabled">' +
       '<div class="agent-card-head">' +
@@ -5792,6 +6079,15 @@ async function renderAgents(){
   if(resume) resume.addEventListener('click', () => setAgentStatus('whatsapp_bell', 'active'));
   const cfg = document.getElementById('waConfigureLink');
   if(cfg) cfg.addEventListener('click', openWhatsappConfigure);
+
+  const cDep = document.getElementById('chaseDeployBtn');
+  if(cDep) cDep.addEventListener('click', startChaseDeploy);
+  const cPause = document.getElementById('chasePauseBtn');
+  if(cPause) cPause.addEventListener('click', () => setAgentStatus('chase_agent', 'paused'));
+  const cResume = document.getElementById('chaseResumeBtn');
+  if(cResume) cResume.addEventListener('click', () => setAgentStatus('chase_agent', 'active'));
+  const cCfg = document.getElementById('chaseConfigureLink');
+  if(cCfg) cCfg.addEventListener('click', openChaseConfigure);
 }
 
 /* ---------- modal plumbing ---------- */
@@ -6021,6 +6317,249 @@ async function saveWhatsappConfig(){
     note.className = 'note ok'; note.textContent = 'Saved.';
     setTimeout(closeAgentModal, 900);
   } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
+}
+
+/* ============================================================
+   PAYMENT CHASE AGENT
+   UI for the chase_agent deployment (agent_deployments.config) plus the
+   "Gone cold" panel and per-receivable chase timeline. All sending /
+   classification / cadence lives server-side in api/whatsapp.js
+   (?action=cron-chase) + api/_lib/chaseEngine.js — nothing here sends a
+   WhatsApp message. The client only reads whatsapp_chases /
+   whatsapp_chase_replies (SELECT-own RLS) and updates its own
+   whatsapp_chase_targets rows (owner UPDATE policy) for the row actions.
+   ============================================================ */
+const CHASE_DEFAULTS = {
+  tone_preset: 'friendly', escalation_steepness: 'standard',
+  days_before_due: [3], days_after_due: [3, 7, 14],
+  max_chases: 4, min_amount: 0, auto_include: 'overdue_only'
+};
+let chaseTargets = [];
+
+function chaseParseDayList(s){
+  return String(s || '').split(',').map(x => parseInt(x.trim(), 10)).filter(n => Number.isFinite(n) && n > 0);
+}
+function chaseDaysOverdue(due){
+  if(!due) return 0;
+  return Math.floor((Date.now() - new Date(String(due).slice(0,10) + 'T00:00:00Z')) / 86400000);
+}
+function chaseSeg(label, name, value, opts){
+  return '<div class="agent-fieldset"><span class="agent-fs-label">' + label + '</span>' +
+    '<span class="agent-seg" data-cseg="' + name + '">' +
+      opts.map(o => '<button data-val="' + o[0] + '" class="' + (o[0] === value ? 'on' : '') + '">' + o[1] + '</button>').join('') +
+    '</span></div>';
+}
+function chaseFormHtml(cfg){
+  const c = Object.assign({}, CHASE_DEFAULTS, cfg || {});
+  return chaseSeg('Tone', 'tone_preset', c.tone_preset, [['friendly','Friendly'],['firm','Firm']]) +
+    chaseSeg('Escalation speed', 'escalation_steepness', c.escalation_steepness, [['gentle','Gentle'],['standard','Standard'],['firm','Firm']]) +
+    '<div class="agent-fieldset"><span class="agent-fs-label">Cadence (days)</span>' +
+      '<div class="hint" style="margin-bottom:8px;">Comma-separated. Before-due sends a soft heads-up; after-due chases climb in urgency.</div>' +
+      '<label style="font-size:11px; color:var(--text-2);">Before due</label>' +
+      '<input type="text" id="chaseBefore" value="' + c.days_before_due.join(', ') + '" placeholder="3">' +
+      '<label style="font-size:11px; color:var(--text-2);">After due</label>' +
+      '<input type="text" id="chaseAfter" value="' + c.days_after_due.join(', ') + '" placeholder="3, 7, 14"></div>' +
+    '<div class="agent-fieldset"><span class="agent-fs-label">Max chases before it comes back to you</span>' +
+      '<input type="number" id="chaseMax" value="' + c.max_chases + '" min="1" max="8"></div>' +
+    '<div class="agent-fieldset"><span class="agent-fs-label">Only chase receivables above (₹)</span>' +
+      '<input type="number" id="chaseMinAmt" value="' + (c.min_amount || 0) + '" min="0"></div>' +
+    '<div class="agent-fieldset"><span class="agent-fs-label">Which receivables</span>' +
+      '<select id="chaseInclude"><option value="overdue_only"' + (c.auto_include !== 'all_open' ? ' selected' : '') + '>Overdue only (plus the pre-due heads-up)</option>' +
+      '<option value="all_open"' + (c.auto_include === 'all_open' ? ' selected' : '') + '>All open receivables</option></select></div>' +
+    '<div class="agent-ref-note">First contact goes out as a pre-approved WhatsApp utility template &ldquo;on behalf of ' + escapeHtml((currentProfile && currentProfile.company_name) || 'your business') + '&rdquo;. Customer numbers are read from your Customers &amp; Invoicing parties &mdash; a receivable with no matching party phone is listed but not messaged.</div>';
+}
+function chaseWireSegs(){
+  document.querySelectorAll('#agentContent .agent-seg[data-cseg]').forEach(seg => {
+    seg.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn));
+    }));
+  });
+}
+function chaseReadForm(prevCfg){
+  const seg = (name) => { const b = document.querySelector('#agentContent .agent-seg[data-cseg="' + name + '"] button.on'); return b ? b.getAttribute('data-val') : null; };
+  const before = chaseParseDayList(document.getElementById('chaseBefore').value);
+  const after = chaseParseDayList(document.getElementById('chaseAfter').value);
+  return Object.assign({}, prevCfg || {}, {
+    enabled: true,
+    tone_preset: seg('tone_preset') || 'friendly',
+    escalation_steepness: seg('escalation_steepness') || 'standard',
+    days_before_due: before.length ? before : [3],
+    days_after_due: after.length ? after : [3, 7, 14],
+    max_chases: Math.max(1, Math.min(8, parseInt(document.getElementById('chaseMax').value, 10) || 4)),
+    min_amount: Math.max(0, parseInt(document.getElementById('chaseMinAmt').value, 10) || 0),
+    auto_include: document.getElementById('chaseInclude').value,
+    updated_from: 'agents_tab'
+  });
+}
+function startChaseDeploy(){
+  openAgentModal(
+    '<div class="agent-modal-title">Deploy Payment Chase</div>' +
+    '<div class="hint">Runs once a day. It only ever messages the customers on your overdue receivables &mdash; never changes a balance, never touches your Pulse Score.</div>' +
+    chaseFormHtml(null) +
+    '<div class="btn-row"><button class="primary" id="chaseDeploySave">Deploy agent</button>' +
+    '<span class="note" id="chaseDeployNote"></span></div>'
+  );
+  chaseWireSegs();
+  document.getElementById('chaseDeploySave').addEventListener('click', () => persistChase('deploy'));
+}
+function openChaseConfigure(){
+  const dep = agentDeployments['chase_agent'] || {};
+  openAgentModal(
+    '<div class="agent-modal-title">Configure Payment Chase</div>' +
+    '<div class="hint">Changes apply from the next daily run. Contacts already mid-sequence keep their place in the cadence.</div>' +
+    chaseFormHtml(dep.config || {}) +
+    '<div class="btn-row"><button class="primary" id="chaseCfgSave">Save configuration</button>' +
+    '<span class="note" id="chaseCfgNote"></span></div>'
+  );
+  chaseWireSegs();
+  document.getElementById('chaseCfgSave').addEventListener('click', () => persistChase('configure'));
+}
+async function persistChase(mode){
+  const noteId = mode === 'deploy' ? 'chaseDeployNote' : 'chaseCfgNote';
+  const note = document.getElementById(noteId);
+  note.className = 'note'; note.textContent = 'Saving…';
+  const prev = (agentDeployments['chase_agent'] && agentDeployments['chase_agent'].config) || {};
+  const config = chaseReadForm(prev);
+  const nowIso = new Date().toISOString();
+  try {
+    if(mode === 'deploy'){
+      const { error } = await withTimeout(
+        sbClient.from('agent_deployments').upsert(
+          { user_id: currentUser.id, agent_id: 'chase_agent', status: 'active', config: config, deployed_at: nowIso, updated_at: nowIso },
+          { onConflict: 'user_id,agent_id' }),
+        20000, 'Deploying agent');
+      if(error) throw error;
+    } else {
+      const { error } = await withTimeout(
+        sbClient.from('agent_deployments').update({ config: config, updated_at: nowIso })
+          .eq('user_id', currentUser.id).eq('agent_id', 'chase_agent'),
+        20000, 'Saving configuration');
+      if(error) throw error;
+    }
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    setTimeout(() => { closeAgentModal(); renderAgents(); }, 800);
+  } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
+}
+
+/* ---------- Gone-cold panel ---------- */
+async function loadChaseTargets(){
+  if(!currentUser) return;
+  try {
+    const { data, error } = await sbClient.from('whatsapp_chase_targets').select('*').eq('user_id', currentUser.id);
+    if(error) throw error;
+    chaseTargets = data || [];
+  } catch(e){ console.error('[margyn] loadChaseTargets:', e); chaseTargets = []; }
+}
+function chaseIntentBadge(intent){
+  if(!intent) return '<span class="lr-tag">no reply</span>';
+  const map = {
+    paid_claim:['ok','claims paid'], promise_to_pay:['ok','promised'], disputed:['review','disputed'],
+    wrong_contact:['warn','wrong contact'], out_of_office:['','out of office'], no_response:['warn','no reply'],
+    unclear:['','unclear'], opt_out:['warn','opted out']
+  };
+  const m = map[intent] || ['', intent];
+  return '<span class="lr-tag ' + m[0] + '">' + m[1] + '</span>';
+}
+function chaseIsCold(t){
+  if(['stopped','resolved_paid','opted_out','wrong_contact'].includes(t.state)) return false;
+  if(t.state === 'disputed' || t.state === 'escalated_human') return true;
+  if(t.broken_promise_count > 0) return true;
+  return t.state === 'active' && (t.chases_sent || 0) >= 2 && !t.last_reply_at;
+}
+async function renderChaseCold(){
+  const card = document.getElementById('chaseColdCard');
+  if(!card) return;
+  if(ledgerActiveTab !== 'receivables'){ card.classList.add('hidden'); return; }
+  if(!currentUser){ card.classList.add('hidden'); return; }
+  if(!Object.keys(agentDeployments).length){ try { await loadAgentData(); } catch(e){} }
+  if(!agentDeployments['chase_agent']){ card.classList.add('hidden'); return; }
+  await loadChaseTargets();
+  const cold = chaseTargets.filter(chaseIsCold)
+    .sort((a,b) => (Number(b.amount)||0) * Math.max(1, chaseDaysOverdue(b.due_date)) - (Number(a.amount)||0) * Math.max(1, chaseDaysOverdue(a.due_date)));
+  if(!cold.length){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  document.getElementById('chaseColdTitle').textContent = 'Gone cold (' + cold.length + ')';
+  const rows = cold.map(t => {
+    const od = chaseDaysOverdue(t.due_date);
+    return '<tr data-cid="' + t.id + '">' +
+      '<td>' + escapeHtml(t.party_name || '—') + (t.contact_phone ? '' : ' <span class="lr-tag warn">no number</span>') + '</td>' +
+      '<td class="num">' + inr(t.amount) + '</td>' +
+      '<td>' + (od > 0 ? od + 'd overdue' : '—') + '</td>' +
+      '<td>' + (t.chases_sent || 0) + '</td>' +
+      '<td>' + (t.last_chase_at ? fmtDay(t.last_chase_at) : '—') + '</td>' +
+      '<td>' + chaseIntentBadge(t.last_reply_intent) + '</td>' +
+      '<td><div class="lr-actions">' +
+        '<button class="lr-btn" data-cact="timeline">Timeline</button>' +
+        '<button class="lr-btn" data-cact="takeover">Take over</button>' +
+        '<button class="lr-btn" data-cact="paid">Mark paid</button>' +
+        '<button class="lr-btn danger" data-cact="stop">Stop</button>' +
+      '</div></td></tr>';
+  }).join('');
+  document.getElementById('chaseColdList').innerHTML =
+    '<table class="ledger-table"><thead><tr><th>Customer</th><th class="num">Amount</th><th>Overdue</th><th>Chases</th><th>Last chase</th><th>Last reply</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+  document.querySelectorAll('#chaseColdList tr[data-cid]').forEach(tr => {
+    const t = cold.find(x => x.id === tr.dataset.cid);
+    tr.querySelectorAll('[data-cact]').forEach(btn => btn.addEventListener('click', () => chaseRowAction(btn.dataset.cact, t)));
+  });
+}
+async function chaseRowAction(act, t){
+  if(act === 'timeline') return openChaseTimeline(t);
+  if(act === 'takeover'){
+    await chaseUpdateTarget(t.id, { state: 'escalated_human', resolution: 'Taken over by the founder from Gone cold.', next_chase_at: null });
+    const od = chaseDaysOverdue(t.due_date);
+    const msg = 'Hi ' + (t.party_name || '') + ', ' + ((currentProfile && currentProfile.company_name) || 'we') + ' here regarding invoice ' + (t.invoice_ref || '') + ' for ' + inr(t.amount) + (od > 0 ? ', now ' + od + ' days overdue' : '') + '. Could we sort out payment this week?';
+    if(t.contact_phone) window.open('https://wa.me/' + String(t.contact_phone).replace(/[^0-9]/g,'') + '?text=' + encodeURIComponent(msg), '_blank');
+    else { navigator.clipboard && navigator.clipboard.writeText(msg); alert('No number on file — message copied to clipboard.'); }
+    return;
+  }
+  if(act === 'stop'){
+    if(!confirm('Stop chasing ' + (t.party_name || 'this customer') + '?')) return;
+    await chaseUpdateTarget(t.id, { state: 'stopped', resolution: 'Stopped by the founder.', next_chase_at: null });
+    return;
+  }
+  if(act === 'paid'){
+    await chaseUpdateTarget(t.id, { state: 'resolved_paid', resolution: 'Marked paid by the founder.', resolved_at: new Date().toISOString(), next_chase_at: null });
+    if(t.receivable_id){
+      try {
+        await sbClient.from('receivables').update({ status: 'settled', settled_at: new Date().toISOString(), settled_amount: t.amount, settled_kind: 'received' }).eq('id', t.receivable_id);
+        if(typeof refreshAll === 'function') await refreshAll();
+      } catch(e){ console.error('[margyn] chase mark paid receivable:', e); }
+    }
+    renderLedgerView();
+  }
+}
+async function chaseUpdateTarget(id, patch){
+  try {
+    const { error } = await sbClient.from('whatsapp_chase_targets').update(patch).eq('id', id).eq('user_id', currentUser.id);
+    if(error) throw error;
+    await renderChaseCold();
+  } catch(e){ alert(e.message || 'Could not update.'); }
+}
+async function openChaseTimeline(t){
+  openAgentModal('<div class="agent-modal-title">Chase history — ' + escapeHtml(t.party_name || '') + '</div><div class="loading">Loading…</div>');
+  let chases = [], replies = [];
+  try {
+    const [cRes, rRes] = await Promise.all([
+      sbClient.from('whatsapp_chases').select('*').eq('chase_target_id', t.id).order('created_at', { ascending: true }),
+      sbClient.from('whatsapp_chase_replies').select('*').eq('chase_target_id', t.id).order('created_at', { ascending: true })
+    ]);
+    chases = cRes.data || []; replies = rRes.data || [];
+  } catch(e){ console.error('[margyn] openChaseTimeline:', e); }
+  const items = []
+    .concat(chases.map(c => ({ ts: c.created_at, dir: 'out', head: 'Chase ' + c.chase_number + ' · ' + (c.escalation_tier || '').replace('_',' ') + (c.status !== 'sent' ? ' · ' + c.status : ''), body: c.message_body })))
+    .concat(replies.map(r => ({ ts: r.created_at, dir: 'in', head: 'Reply · ' + r.intent.replace('_',' ') + (r.promise_date ? ' (by ' + r.promise_date + ')' : ''), body: r.reply_text || '' })))
+    .sort((a,b) => new Date(a.ts) - new Date(b.ts));
+  const state = '<div class="hint" style="margin-bottom:10px;">Current: <strong>' + (t.state || '').replace('_',' ') + '</strong>' +
+    (t.next_chase_at && t.state === 'active' ? ' · next chase ' + fmtDay(t.next_chase_at) : '') +
+    (t.promise_to_pay_date ? ' · promised ' + t.promise_to_pay_date : '') + '</div>';
+  const body = items.length ? items.map(it =>
+    '<div style="padding:8px 0; border-bottom:1px solid var(--border);">' +
+      '<div style="font-size:11px; color:var(--text-2);">' + fmtDay(it.ts) + ' · ' + (it.dir === 'out' ? 'Margyn → customer' : 'customer → Margyn') + '</div>' +
+      '<div style="font-size:12px; font-weight:600; margin:2px 0;">' + escapeHtml(it.head) + '</div>' +
+      (it.body ? '<div style="font-size:12px; color:var(--text-1);">' + escapeHtml(it.body) + '</div>' : '') +
+    '</div>').join('') : '<div class="hint">No messages yet.</div>';
+  document.getElementById('agentContent').innerHTML =
+    '<div class="agent-modal-title">Chase history — ' + escapeHtml(t.party_name || '') + '</div>' + state + body;
 }
 
 /* ============================================================
