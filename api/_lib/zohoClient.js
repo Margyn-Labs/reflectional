@@ -435,6 +435,16 @@ function createSession(org) {
     const res = await fetch(url, {
       headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' }
     });
+    // A 401 here means Zoho rejected a call made with a *freshly refreshed*
+    // access token — the grant itself is dead (refresh token evicted, access
+    // revoked in Zoho, or the org is no longer reachable). This must surface as
+    // a ZohoAuthError so sync.js -> handleAuthFailure() flips the org to
+    // needs_reauth and the UI prompts a reconnect. Throwing a plain Error here
+    // let it be swallowed as a partial module failure, so the org stayed
+    // 'active' and 401'd silently every nightly run.
+    if (res.status === 401 || res.status === 403) {
+      throw new ZohoAuthError(`Zoho returned ${res.status} after a token refresh`);
+    }
     if (!res.ok) throw new Error(`Zoho retry returned ${res.status}`);
     return res.json();
   }
