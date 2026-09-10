@@ -2700,8 +2700,17 @@ function cmdkRender(){
       '<span class="hint">' + escapeHtml(it.hint || '') + '</span></div>';
   });
   list.innerHTML = html;
-  list.querySelectorAll('.cmdk-item').forEach(el => {
-    el.addEventListener('mouseenter', () => { cmdkIndex = Number(el.dataset.i); cmdkRender(); });
+  const items = list.querySelectorAll('.cmdk-item');
+  items.forEach(el => {
+    // NB: highlight on hover by toggling the class only. Re-running cmdkRender()
+    // here rebuilds every node between mousedown and mouseup, which cancels the
+    // click and makes palette items look dead.
+    el.addEventListener('mousemove', () => {
+      const i = Number(el.dataset.i);
+      if(i === cmdkIndex) return;
+      cmdkIndex = i;
+      items.forEach(x => x.classList.toggle('on', x === el));
+    });
     el.addEventListener('click', () => cmdkRun(Number(el.dataset.i)));
   });
   const on = list.querySelector('.cmdk-item.on');
