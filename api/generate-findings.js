@@ -405,23 +405,32 @@ const IMPORT_TARGETS = ['cash', 'revenue', 'net_profit', 'burn', 'gst_payable', 
 
 const IMPORT_SYSTEM = `You are Margyn's import mapper. You receive EITHER a spreadsheet dump (first rows of each sheet) OR a single business document (invoice, bill, receipt, bank/GST statement). Identify the financial figures and map each to exactly one Margyn destination.
 
+Everything is from the point of view of ONE business — "the user's business", named in the first user message. Every mapping decision depends on whose money it is.
+
 Destinations (use the exact token in "target"):
-- "cash"        point-in-time bank / cash closing balance
-- "revenue"     period revenue / total sales / income
-- "net_profit"  period net profit / profit after tax
-- "burn"        period operating expenses / total costs
-- "gst_payable" GST payable / net output tax for the period
-- "gst_leak"    GST input tax credit available but NOT yet claimed
-- "receivable"  money owed TO this business — one entry per customer/invoice, set "party"
-- "payable"     money this business OWES — one entry per vendor/bill, set "party"
+- "cash"        the user's business's point-in-time bank / cash closing balance
+- "revenue"     the user's business's period revenue / total sales / income
+- "net_profit"  the user's business's period net profit / profit after tax
+- "burn"        the user's business's period operating expenses / total costs
+- "gst_payable" the user's business's NET GST payable for a whole tax period (from a GST return / GSTR-3B / P&L line — NOT the tax on one invoice)
+- "gst_leak"    the user's business's input tax credit available but NOT yet claimed, for a period
+- "receivable"  money owed TO the user's business — one entry per customer invoice the user ISSUED. "party" = the customer (the other side), never the user's business.
+- "payable"     money the user's business OWES — one entry per vendor bill the user RECEIVED. "party" = the vendor (the other side), never the user's business.
 - "payments"    gross amount processed via a payment gateway (Razorpay/Cashfree/Shopify) in the period
+
+Direction test for a single invoice/bill — decide FIRST who owes whom:
+- If the user's business is the SELLER / "from" / the one to be paid → it's a "receivable", party = the buyer ("bill to" / customer).
+- If the user's business is the BUYER / "bill to" / the one who must pay → it's a "payable", party = the seller / vendor.
+- If you cannot tell which side the user's business is on, put it in "anomalies", do not guess.
 
 Rules:
 - One entry per figure. "amount" is a positive number of rupees, digits only (no symbols, no commas).
 - "due_date" only if the document states one, formatted YYYY-MM-DD, else null.
-- Only map a figure you are reasonably sure of. Put anything ambiguous, contradictory, negative, a projection/forecast rather than actuals, or clearly not a business-finance figure into "anomalies" with a one-line reason — do NOT force it into an entry.
+- The GST/CGST/SGST/IGST on a SINGLE sales or purchase invoice is NOT gst_payable and NOT gst_leak — it is one line of a period total that Margyn computes elsewhere. Put it in "anomalies" (severity "low"), never in "entries".
+- Put anything ambiguous, contradictory, negative, a projection/forecast rather than actuals, a fully-settled item (net zero), or clearly not the user's own finance figure into "anomalies" with a one-line reason — do NOT force it into an entry.
 - List sheet columns / document sections you saw but did not map in "unmapped".
 - Never invent a figure. Never compute a total from line items unless the source prints that total.
+- Keep every "reasoning" and "issue" string under 15 words.
 
 Output ONLY valid JSON, no prose before or after:
 {"entries":[{"target":"","label":"","amount":0,"party":null,"due_date":null,"confidence":0.0,"reasoning":""}],"anomalies":[{"issue":"","severity":"low"}],"unmapped":[""]}`;
@@ -438,11 +447,15 @@ async function handleParseImport(req, res, body) {
     const user = await sbAuthGet('/auth/v1/user', accessToken);
     if (!user || !user.id) { res.status(401).json({ error: 'Invalid session' }); return; }
 
+    const bizName = String(body.business || '').trim().slice(0, 120) || 'the user\'s business';
+    const bizGst = String(body.gstin || '').trim().slice(0, 20);
+    const whoLine = `The user's business is: "${bizName}"${bizGst ? ` (GSTIN ${bizGst})` : ''}. Map every figure from this business's point of view.\n\n`;
+
     let content;
     if (body.kind === 'workbook') {
       const skel = typeof body.skeleton === 'string' ? body.skeleton : JSON.stringify(body.skeleton || {});
       if (!skel || skel.length < 3) { res.status(400).json({ error: 'Empty spreadsheet' }); return; }
-      content = [{ type: 'text', text: 'Spreadsheet contents (first rows of each sheet, raw arrays):\n\n' + skel.slice(0, 60000) }];
+      content = [{ type: 'text', text: whoLine + 'Spreadsheet contents (first rows of each sheet, raw arrays):\n\n' + skel.slice(0, 60000) }];
     } else {
       const mime = String(body.mime || '');
       const data = String(body.base64 || '');
@@ -455,13 +468,13 @@ async function handleParseImport(req, res, body) {
       } else {
         res.status(400).json({ error: 'Unsupported file type' }); return;
       }
-      content.push({ type: 'text', text: 'This is a business document. Extract its financial figures per the schema.' });
+      content.push({ type: 'text', text: whoLine + 'This is a business document. Extract its financial figures per the schema, from this business\'s point of view.' });
     }
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: IMPORT_MODEL, max_tokens: 1600, system: IMPORT_SYSTEM, messages: [{ role: 'user', content }] })
+      body: JSON.stringify({ model: IMPORT_MODEL, max_tokens: 4096, system: IMPORT_SYSTEM, messages: [{ role: 'user', content }] })
     });
     if (!r.ok) { console.error('Anthropic import error:', r.status, await r.text()); res.status(502).json({ error: 'Could not read the file just now.' }); return; }
     const data = await r.json();
@@ -473,11 +486,36 @@ async function handleParseImport(req, res, body) {
   }
 }
 
-function sanitizeProposal(text) {
-  let parsed;
-  try {
-    parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
-  } catch (e) {
+// The model occasionally returns JSON that is truncated (hit max_tokens) or
+// fenced. Try a plain parse, then a salvage that closes any open string /
+// brackets so a cut-off response still yields the entries it did produce.
+function looseJsonParse(text) {
+  let t = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  const start = t.indexOf('{');
+  if (start > 0) t = t.slice(start);
+  try { return JSON.parse(t); } catch (e) { /* fall through to salvage */ }
+
+  const stack = [];
+  let inStr = false, esc = false;
+  for (const ch of t) {
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{' || ch === '[') stack.push(ch);
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let fixed = t;
+  if (inStr) fixed += '"';
+  fixed = fixed.replace(/,\s*"[A-Za-z_]*"?\s*:?\s*"?[^"{}\[\]]*$/, ''); // drop a trailing half-written field
+  fixed = fixed.replace(/,\s*$/, '');
+  for (let i = stack.length - 1; i >= 0; i--) fixed += stack[i] === '{' ? '}' : ']';
+  try { return JSON.parse(fixed); } catch (e) { return null; }
+}
+
+export function sanitizeProposal(text) {
+  const parsed = looseJsonParse(text);
+  if (!parsed || typeof parsed !== 'object') {
     return { entries: [], anomalies: [{ issue: 'Could not read structured data from this file.', severity: 'high' }], unmapped: [] };
   }
 
@@ -517,7 +555,7 @@ function sanitizeProposal(text) {
   return { entries, anomalies: anomalies.slice(0, 20), unmapped };
 }
 
-function normImportDate(v) {
+export function normImportDate(v) {
   if (!v) return null;
   const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? m[1] + '-' + m[2] + '-' + m[3] : null;
