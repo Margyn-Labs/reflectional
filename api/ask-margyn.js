@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { message, history, context } = req.body || {};
+  const { message, history, context, depth } = req.body || {};
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     res.status(400).json({ error: 'message is required' });
@@ -39,15 +39,23 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Model is configurable via Vercel env var so it can be changed without
-  // touching code — set ASK_MARGYN_MODEL and redeploy to switch it.
-  // e.g. 'claude-haiku-4-5-20251001' for a cheaper/faster narration model.
-  const model = process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5';
-  console.log('[ask-margyn] using model:', model);
+  // Response depth. The customer picks this in the chat composer; it changes
+  // how much the model writes and how much thread it carries, never how any
+  // figure is computed (the numbers are always deterministic, server-side).
+  // Each tier's model can still be pinned per-environment without a code change.
+  const DEPTH_PRESETS = {
+    quick:    { model: process.env.ASK_MARGYN_MODEL_QUICK || 'claude-haiku-4-5-20251001', max_tokens: 350, history: 4 },
+    balanced: { model: process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5',                 max_tokens: 500, history: 8 },
+    deep:     { model: process.env.ASK_MARGYN_MODEL_DEEP || 'claude-opus-5',              max_tokens: 900, history: 12 }
+  };
+  const depthKey = (typeof depth === 'string' && DEPTH_PRESETS[depth]) ? depth : 'balanced';
+  const preset = DEPTH_PRESETS[depthKey];
+  const model = preset.model;
+  console.log('[ask-margyn] depth:', depthKey, 'model:', model);
 
-  // Keep only the last 8 turns of history to bound cost/latency —
-  // this is a chat about a handful of numbers, not a long-running thread.
-  const trimmedHistory = Array.isArray(history) ? history.slice(-8) : [];
+  // Keep the thread bounded so cost and latency stay predictable. Deep carries
+  // more turns because follow-up questions are the point of that tier.
+  const trimmedHistory = Array.isArray(history) ? history.slice(-preset.history) : [];
   const messages = [
     ...trimmedHistory
       .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
@@ -67,7 +75,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 500,
+        max_tokens: preset.max_tokens,
         system: systemPrompt,
         messages
       })
@@ -87,7 +95,11 @@ export default async function handler(req, res) {
       .join('\n')
       .trim();
 
-    res.status(200).json({ reply: reply || "I couldn't generate a response there — try rephrasing that." });
+    res.status(200).json({
+      reply: reply || "I couldn't generate a response there, try rephrasing that.",
+      depth: depthKey,
+      model
+    });
   } catch (err) {
     console.error('ask-margyn error:', err);
     res.status(500).json({ error: 'Something went wrong' });
