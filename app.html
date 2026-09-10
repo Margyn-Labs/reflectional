@@ -1858,23 +1858,26 @@
     </div>
     <div class="panel active" id="panel-upload">
       <div class="card">
-        <h2>Upload your workbook</h2>
-        <div class="hint">One Excel file with seven sheets: <span class="mono">Bank Accounts</span>, <span class="mono">Receivables</span>, <span class="mono">Payables</span>, <span class="mono">P&amp;L Summary</span>, <span class="mono">GST ITC</span>, <span class="mono">Razorpay Settlements</span>, <span class="mono">Shopify Orders</span>.</div>
+        <h2>Upload a file</h2>
+        <div class="hint">An Excel/CSV workbook, or a single PDF / image — an invoice, a bill, a receipt, a statement. Margyn reads it and shows you where each figure goes before anything is saved.</div>
         <div class="dropzone" id="dropzone">
           <div class="dz-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
           </div>
           <div class="dz-label">Click to choose a file, or drag it here</div>
-          <div class="dz-sub">.xlsx or .csv</div>
-          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+          <div class="dz-sub">.xlsx, .csv, .pdf, .png, .jpg — up to 2 MB</div>
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg" />
           <div class="file-name" id="fileName"></div>
         </div>
         <a class="template-link" id="downloadTemplate" href="/Margyn_Data_Template.xlsx" download="Margyn_Data_Template.xlsx">Download the blank template →</a>
       </div>
       <div class="btn-row">
-        <button class="primary" id="computeFromFile" disabled>Compute &amp; save</button>
+        <button class="primary" id="aiParseBtn" disabled>Read this file with Margyn</button>
+        <button class="btn-ghost" id="computeFromFile" disabled>Use strict template instead</button>
         <span class="note" id="noteUpload"></span>
+        <span class="note" id="noteAiParse"></span>
       </div>
+      <div id="aiReview" class="hidden" style="margin-top:16px;"></div>
       <div class="import-summary hidden" id="importSummaryUpload" style="background:rgba(14,143,92,0.16); border:1px solid rgba(14,143,92,0.32); border-radius:12px; padding:14px 16px; margin-top:14px; font-size:13px; color:var(--text-1); line-height:1.6;"></div>
     </div>
     <div class="panel" id="panel-manual">
@@ -7722,6 +7725,8 @@ function prefillManualEntry(){
    FILE UPLOAD — dropzone, parsing, sheet-to-rows
    ============================================================ */
 let uploadedWorkbook = null;
+let uploadedDoc = null;               // { mime, base64, filename } for a PDF/image
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 dropzone.addEventListener('click', () => fileInput.click());
@@ -7732,19 +7737,207 @@ dropzone.addEventListener('drop', (e) => {
   if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
 });
 fileInput.addEventListener('change', () => { if(fileInput.files.length) handleFile(fileInput.files[0]); });
+function importFileKind(name){
+  const n = (name || '').toLowerCase();
+  if(n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.csv')) return 'workbook';
+  if(n.endsWith('.pdf')) return 'pdf';
+  if(n.endsWith('.png')) return 'png';
+  if(n.endsWith('.jpg') || n.endsWith('.jpeg')) return 'jpg';
+  return 'other';
+}
 function handleFile(file){
   const nameEl = document.getElementById('fileName');
-  nameEl.textContent = 'Reading ' + file.name + '…';
+  uploadedWorkbook = null; uploadedDoc = null;
+  document.getElementById('computeFromFile').disabled = true;
+  document.getElementById('aiParseBtn').disabled = true;
+  document.getElementById('noteAiParse').textContent = '';
+  document.getElementById('aiReview').classList.add('hidden');
+
+  const kind = importFileKind(file.name);
+  if(kind === 'other'){ nameEl.textContent = 'Unsupported file — use .xlsx, .csv, .pdf, .png or .jpg'; return; }
+  if(file.size > MAX_IMPORT_BYTES){ nameEl.textContent = 'That file is over 2 MB — trim or split it for now.'; return; }
+
   const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const data = new Uint8Array(e.target.result);
-      uploadedWorkbook = XLSX.read(data, { type:'array', cellDates:true });
+  if(kind === 'workbook'){
+    nameEl.textContent = 'Reading ' + file.name + '…';
+    reader.onload = (e) => {
+      try {
+        uploadedWorkbook = XLSX.read(new Uint8Array(e.target.result), { type:'array', cellDates:true });
+        nameEl.textContent = '✓ ' + file.name;
+        document.getElementById('computeFromFile').disabled = false;
+        document.getElementById('aiParseBtn').disabled = false;
+      } catch(err){ nameEl.textContent = 'Could not read file: ' + err.message; uploadedWorkbook = null; }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const mime = kind === 'pdf' ? 'application/pdf' : (kind === 'png' ? 'image/png' : 'image/jpeg');
+    nameEl.textContent = 'Loading ' + file.name + '…';
+    reader.onload = (e) => {
+      uploadedDoc = { mime, base64: String(e.target.result).split(',')[1] || '', filename: file.name };
       nameEl.textContent = '✓ ' + file.name;
-      document.getElementById('computeFromFile').disabled = false;
-    } catch(err){ nameEl.textContent = 'Could not read file: ' + err.message; uploadedWorkbook = null; document.getElementById('computeFromFile').disabled = true; }
-  };
-  reader.readAsArrayBuffer(file);
+      document.getElementById('aiParseBtn').disabled = false;
+    };
+    reader.readAsDataURL(file);
+  }
+}
+/* Compact "skeleton" of a workbook — first rows of each sheet as raw
+   arrays — small enough to send to the parser without shipping the whole
+   file or blowing the request-body limit. */
+function buildWorkbookSkeleton(wb){
+  const out = {};
+  (wb.SheetNames || []).slice(0, 12).forEach(name => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:null, blankrows:false });
+    out[name] = rows.slice(0, 25).map(r => (r || []).slice(0, 20));
+  });
+  return JSON.stringify(out);
+}
+function impEsc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+const IMPORT_TARGET_LABELS = {
+  cash:'Cash in bank', revenue:'Monthly revenue', net_profit:'Net profit', burn:'Operating expenses',
+  gst_payable:'GST payable', gst_leak:'Unclaimed GST ITC', receivable:'Receivable', payable:'Payable',
+  payments:'Gross payments processed'
+};
+let _importProposal = null;
+
+document.getElementById('aiParseBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('aiParseBtn'); const note = document.getElementById('noteAiParse');
+  if(!uploadedWorkbook && !uploadedDoc){ note.className = 'note bad'; note.textContent = 'No file loaded.'; return; }
+  btn.disabled = true; note.className = 'note'; note.textContent = 'Margyn is reading the file…';
+  document.getElementById('aiReview').classList.add('hidden');
+  try {
+    const { data:{ session } } = await sbClient.auth.getSession();
+    const token = session && session.access_token;
+    if(!token){ note.className = 'note bad'; note.textContent = 'Session expired — sign in again.'; btn.disabled = false; return; }
+    const payload = uploadedWorkbook
+      ? { kind:'workbook', skeleton: buildWorkbookSkeleton(uploadedWorkbook) }
+      : { kind:'document', mime: uploadedDoc.mime, base64: uploadedDoc.base64, filename: uploadedDoc.filename };
+    const res = await fetch('/api/generate-findings?action=parse-import', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok){ const t = await res.json().catch(() => ({})); throw new Error(t.error || ('Request failed: ' + res.status)); }
+    const { proposal } = await res.json();
+    renderImportReview(proposal);
+    note.textContent = '';
+  } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not read the file.'; }
+  finally { btn.disabled = false; }
+});
+
+function renderImportReview(proposal){
+  _importProposal = proposal || { entries:[], anomalies:[], unmapped:[] };
+  const host = document.getElementById('aiReview');
+  const entries = _importProposal.entries || [];
+  const anomalies = _importProposal.anomalies || [];
+  const unmapped = _importProposal.unmapped || [];
+  if(!entries.length && !anomalies.length){
+    host.innerHTML = '<div class="card"><h2>Nothing to import</h2><div class="hint">Margyn couldn’t find figures it recognises in this file.</div></div>';
+    host.classList.remove('hidden'); return;
+  }
+  let h = '<div class="card"><h2>Review what Margyn found</h2>'
+    + '<div class="hint">Untick anything that’s wrong. Nothing is saved until you press Confirm.</div>'
+    + '<div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">';
+  entries.forEach((e, i) => {
+    const low = (e.confidence || 0) < 0.6;
+    h += '<label style="display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--border-1); border-radius:10px; cursor:pointer;">'
+      + '<input type="checkbox" data-imp="' + i + '"' + (low ? '' : ' checked') + ' style="margin-top:3px; flex-shrink:0;">'
+      + '<span style="flex:1; font-size:13px; line-height:1.5;">'
+      + '<strong>' + impEsc(IMPORT_TARGET_LABELS[e.target] || e.target) + '</strong>'
+      + (e.party ? ' · ' + impEsc(e.party) : '')
+      + ' · <span class="mono">' + inr(e.amount) + '</span>'
+      + (e.due_date ? ' · due ' + impEsc(e.due_date) : '')
+      + (low ? ' <span style="color:var(--orange); font-weight:600;">· low confidence, check this</span>' : '')
+      + (e.reasoning ? '<br><span style="color:var(--text-3);">' + impEsc(e.reasoning) + '</span>' : '')
+      + '</span></label>';
+  });
+  h += '</div>';
+  if(anomalies.length){
+    h += '<div style="margin-top:16px;"><div class="app-eyebrow" style="color:var(--orange);">Flagged — not imported</div>'
+      + '<ul style="margin:8px 0 0; padding-left:18px; font-size:13px; color:var(--text-2); line-height:1.6;">';
+    anomalies.forEach(a => { h += '<li>' + impEsc(a.issue) + (a.severity === 'high' ? ' <strong>(check carefully)</strong>' : '') + '</li>'; });
+    h += '</ul></div>';
+  }
+  if(unmapped.length){
+    h += '<div style="margin-top:12px; font-size:12px; color:var(--text-3);">Ignored: ' + unmapped.map(impEsc).join(', ') + '</div>';
+  }
+  h += '<div class="btn-row" style="margin-top:18px;"><button class="primary" id="confirmImportBtn">Confirm import</button>'
+    + '<span class="note" id="noteConfirmImport"></span></div></div>';
+  host.innerHTML = h;
+  host.classList.remove('hidden');
+  document.getElementById('confirmImportBtn').addEventListener('click', applyImportProposal);
+}
+
+async function applyImportProposal(){
+  const btn = document.getElementById('confirmImportBtn'); const note = document.getElementById('noteConfirmImport');
+  btn.disabled = true; note.className = 'note'; note.textContent = 'Saving…';
+  try {
+    const chosen = [];
+    document.querySelectorAll('#aiReview input[data-imp]').forEach(cb => {
+      if(cb.checked) chosen.push(_importProposal.entries[Number(cb.dataset.imp)]);
+    });
+    if(!chosen.length){ note.className = 'note bad'; note.textContent = 'Nothing ticked.'; btn.disabled = false; return; }
+
+    const latest = snapshots[0] || {};
+    const scalars = {
+      cash: Number(latest.cash) || 0, revenue: Number(latest.revenue) || 0,
+      netProfit: Number(latest.net_profit) || 0, burn: Number(latest.burn) || 1,
+      gstPayable: Number(latest.gst_payable) || 0, gstLeak: Number(latest.gst_leak) || 0
+    };
+    const scalarKey = { cash:'cash', revenue:'revenue', net_profit:'netProfit', burn:'burn', gst_payable:'gstPayable', gst_leak:'gstLeak' };
+    const recvRows = [], payRows = [];
+    let payGross = 0;
+    chosen.forEach(e => {
+      if(scalarKey[e.target]){ scalars[scalarKey[e.target]] = e.amount; }
+      else if(e.target === 'receivable'){ recvRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload' }); }
+      else if(e.target === 'payable'){ payRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload' }); }
+      else if(e.target === 'payments'){ payGross += e.amount; }
+    });
+
+    if(recvRows.length){
+      await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
+      await sbClient.from('receivables').insert(recvRows);
+      await logLedgerEvent({ entityType:'receivable', event:'imported', source:'upload', note: recvRows.length + ' receivable(s) from AI file import' });
+    }
+    if(payRows.length){
+      await sbClient.from('payables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
+      await sbClient.from('payables').insert(payRows);
+      await logLedgerEvent({ entityType:'payable', event:'imported', source:'upload', note: payRows.length + ' payable(s) from AI file import' });
+    }
+    receivables = await loadReceivables(); payables = await loadPayables();
+    const { recvTotal, recv90, paySoon } = ledgerAggregates();
+
+    // Payments-tab source priority — mirror computeFromFile(): a figure in
+    // this import is a deliberate manual override; otherwise carry a live
+    // Razorpay block forward rather than blanking the tab.
+    let paymentsPayload = null, paymentsSource = null, settleRowsPayload = null, settleTrendPayload = null;
+    if(payGross > 0){
+      paymentsPayload = { gross: payGross, mdr: 0, failed: 0, total: 0, lag: 2, upiPct: 55 };
+      paymentsSource = 'manual';
+    } else if(razorpayConnected && snapshots.length && snapshots[0].payments_source === 'razorpay_live'){
+      paymentsPayload = snapshots[0].payments_data;
+      settleRowsPayload = snapshots[0].settlement_rows;
+      settleTrendPayload = snapshots[0].settlement_daily_trend;
+      paymentsSource = 'razorpay_live';
+    }
+
+    await saveSnapshot({
+      cash: scalars.cash, revenue: scalars.revenue, netProfit: scalars.netProfit, burn: scalars.burn,
+      gstLeak: scalars.gstLeak, gstPayable: scalars.gstPayable,
+      recvTotal, recv90, paySoon,
+      paymentsData: paymentsPayload, paymentsSource, settlementRows: settleRowsPayload, settlementDailyTrend: settleTrendPayload,
+      shopifyOrdersData: (snapshots[0] && snapshots[0].shopify_orders_data) || null,
+      source:'upload'
+    });
+    snapshots = await loadSnapshots();
+    paymentsData = paymentsPayload; settlementRows = settleRowsPayload; settlementDailyTrend = settleTrendPayload;
+    renderScores(); renderPayments(); renderFinancing(); renderSummary();
+
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    triggerFindingsGeneration();
+    showView('summary');
+  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); btn.disabled = false; }
 }
 function sheetToRows(wb, sheetName){
   const sheet = wb.Sheets[sheetName];
