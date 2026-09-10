@@ -7810,9 +7810,13 @@ document.getElementById('aiParseBtn').addEventListener('click', async () => {
     const { data:{ session } } = await sbClient.auth.getSession();
     const token = session && session.access_token;
     if(!token){ note.className = 'note bad'; note.textContent = 'Session expired — sign in again.'; btn.disabled = false; return; }
+    const biz = {
+      business: (currentProfile && currentProfile.company_name) || '',
+      gstin: (currentProfile && currentProfile.gst_number) || ''
+    };
     const payload = uploadedWorkbook
-      ? { kind:'workbook', skeleton: buildWorkbookSkeleton(uploadedWorkbook) }
-      : { kind:'document', mime: uploadedDoc.mime, base64: uploadedDoc.base64, filename: uploadedDoc.filename };
+      ? { kind:'workbook', skeleton: buildWorkbookSkeleton(uploadedWorkbook), ...biz }
+      : { kind:'document', mime: uploadedDoc.mime, base64: uploadedDoc.base64, filename: uploadedDoc.filename, ...biz };
     const res = await fetch('/api/generate-findings?action=parse-import', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
