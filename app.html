@@ -7889,15 +7889,17 @@ async function applyImportProposal(){
       netProfit: Number(latest.net_profit) || 0, burn: Number(latest.burn) || 1,
       gstPayable: Number(latest.gst_payable) || 0, gstLeak: Number(latest.gst_leak) || 0
     };
-    const scalarKey = { cash:'cash', revenue:'revenue', net_profit:'netProfit', burn:'burn', gst_payable:'gstPayable', gst_leak:'gstLeak' };
+    const scalarKey = { revenue:'revenue', net_profit:'netProfit', burn:'burn', gst_payable:'gstPayable', gst_leak:'gstLeak' };
     const recvRows = [], payRows = [];
-    let payGross = 0;
+    let payGross = 0, cashSeen = false, cashSum = 0;
     chosen.forEach(e => {
-      if(scalarKey[e.target]){ scalars[scalarKey[e.target]] = e.amount; }
+      if(e.target === 'cash'){ cashSeen = true; cashSum += e.amount; }   // multiple bank accounts → sum, don't overwrite
+      else if(scalarKey[e.target]){ scalars[scalarKey[e.target]] = e.amount; }
       else if(e.target === 'receivable'){ recvRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload' }); }
       else if(e.target === 'payable'){ payRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload' }); }
       else if(e.target === 'payments'){ payGross += e.amount; }
     });
+    if(cashSeen) scalars.cash = cashSum;
 
     if(recvRows.length){
       await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
