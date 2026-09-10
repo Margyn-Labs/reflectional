@@ -52,6 +52,17 @@ function isSelfReported(source) { return SELF_REPORTED_SOURCES.includes(source);
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
+  // Import-parser branch: same endpoint, different job. The client posts an
+  // uploaded file (a spreadsheet skeleton, or a base64 PDF/image) and gets
+  // back a proposal of where each figure should go. Nothing is written
+  // here — the client shows the proposal for accept/reject and does the
+  // Supabase writes itself, exactly like the strict-template upload path.
+  let _body = req.body;
+  if (typeof _body === 'string') { try { _body = JSON.parse(_body); } catch (e) { _body = null; } }
+  if ((req.query && req.query.action === 'parse-import') || (_body && (_body.kind === 'workbook' || _body.kind === 'document'))) {
+    return handleParseImport(req, res, _body || {});
+  }
+
   const authHeader = req.headers.authorization || '';
   const accessToken = authHeader.replace(/^Bearer\s+/i, '');
   if (!accessToken) { res.status(401).json({ error: 'Missing access token' }); return; }
@@ -377,4 +388,137 @@ function validateFinding(claim, evidence) {
     suggestedAction: typeof claim.suggestedAction === 'string' ? claim.suggestedAction.trim().slice(0, 300) : null,
     evidenceUsed: { primary: primary.key, corroborators: validCorroborators.map(m => m.key), corroboratorSources }
   };
+}
+
+/* ============================================================================
+   IMPORT PARSER — lean v0 (Excel/CSV skeleton OR a single PDF/image document)
+   ----------------------------------------------------------------------------
+   Same strict division of labour as the Findings pipeline: Claude only says
+   WHERE each figure belongs and how confident it is — it never returns a
+   total the client didn't already have, and this endpoint never writes to
+   any table. The client renders the proposal, the user accepts/rejects, and
+   the client's own RLS-scoped writes land the data (source:'upload'),
+   mirroring the computeFromFile() path in app.html.
+   ============================================================================ */
+const IMPORT_MODEL = process.env.IMPORT_MODEL || 'claude-sonnet-5';
+const IMPORT_TARGETS = ['cash', 'revenue', 'net_profit', 'burn', 'gst_payable', 'gst_leak', 'receivable', 'payable', 'payments'];
+
+const IMPORT_SYSTEM = `You are Margyn's import mapper. You receive EITHER a spreadsheet dump (first rows of each sheet) OR a single business document (invoice, bill, receipt, bank/GST statement). Identify the financial figures and map each to exactly one Margyn destination.
+
+Destinations (use the exact token in "target"):
+- "cash"        point-in-time bank / cash closing balance
+- "revenue"     period revenue / total sales / income
+- "net_profit"  period net profit / profit after tax
+- "burn"        period operating expenses / total costs
+- "gst_payable" GST payable / net output tax for the period
+- "gst_leak"    GST input tax credit available but NOT yet claimed
+- "receivable"  money owed TO this business — one entry per customer/invoice, set "party"
+- "payable"     money this business OWES — one entry per vendor/bill, set "party"
+- "payments"    gross amount processed via a payment gateway (Razorpay/Cashfree/Shopify) in the period
+
+Rules:
+- One entry per figure. "amount" is a positive number of rupees, digits only (no symbols, no commas).
+- "due_date" only if the document states one, formatted YYYY-MM-DD, else null.
+- Only map a figure you are reasonably sure of. Put anything ambiguous, contradictory, negative, a projection/forecast rather than actuals, or clearly not a business-finance figure into "anomalies" with a one-line reason — do NOT force it into an entry.
+- List sheet columns / document sections you saw but did not map in "unmapped".
+- Never invent a figure. Never compute a total from line items unless the source prints that total.
+
+Output ONLY valid JSON, no prose before or after:
+{"entries":[{"target":"","label":"","amount":0,"party":null,"due_date":null,"confidence":0.0,"reasoning":""}],"anomalies":[{"issue":"","severity":"low"}],"unmapped":[""]}`;
+
+async function handleParseImport(req, res, body) {
+  const authHeader = req.headers.authorization || '';
+  const accessToken = authHeader.replace(/^Bearer\s+/i, '');
+  if (!accessToken) { res.status(401).json({ error: 'Missing access token' }); return; }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) { console.error('ANTHROPIC_API_KEY not set'); res.status(500).json({ error: 'Server not configured' }); return; }
+
+  try {
+    const user = await sbAuthGet('/auth/v1/user', accessToken);
+    if (!user || !user.id) { res.status(401).json({ error: 'Invalid session' }); return; }
+
+    let content;
+    if (body.kind === 'workbook') {
+      const skel = typeof body.skeleton === 'string' ? body.skeleton : JSON.stringify(body.skeleton || {});
+      if (!skel || skel.length < 3) { res.status(400).json({ error: 'Empty spreadsheet' }); return; }
+      content = [{ type: 'text', text: 'Spreadsheet contents (first rows of each sheet, raw arrays):\n\n' + skel.slice(0, 60000) }];
+    } else {
+      const mime = String(body.mime || '');
+      const data = String(body.base64 || '');
+      if (!data) { res.status(400).json({ error: 'No file data' }); return; }
+      if (data.length > 3_200_000) { res.status(413).json({ error: 'File is too large — keep it under ~2 MB for now.' }); return; }
+      if (mime === 'application/pdf') {
+        content = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }];
+      } else if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(mime)) {
+        content = [{ type: 'image', source: { type: 'base64', media_type: mime, data } }];
+      } else {
+        res.status(400).json({ error: 'Unsupported file type' }); return;
+      }
+      content.push({ type: 'text', text: 'This is a business document. Extract its financial figures per the schema.' });
+    }
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: IMPORT_MODEL, max_tokens: 1600, system: IMPORT_SYSTEM, messages: [{ role: 'user', content }] })
+    });
+    if (!r.ok) { console.error('Anthropic import error:', r.status, await r.text()); res.status(502).json({ error: 'Could not read the file just now.' }); return; }
+    const data = await r.json();
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    res.status(200).json({ proposal: sanitizeProposal(text) });
+  } catch (err) {
+    console.error('parse-import error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+}
+
+function sanitizeProposal(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/```$/, '').trim());
+  } catch (e) {
+    return { entries: [], anomalies: [{ issue: 'Could not read structured data from this file.', severity: 'high' }], unmapped: [] };
+  }
+
+  const anomalies = [];
+  const entries = (Array.isArray(parsed.entries) ? parsed.entries : []).map(e => {
+    const target = e && IMPORT_TARGETS.includes(e.target) ? e.target : null;
+    if (!target) return null;
+    const amount = Number(e.amount);
+    if (!isFinite(amount) || amount <= 0) {
+      anomalies.push({ issue: 'Skipped "' + String(e.label || target).slice(0, 80) + '" — amount missing or not a positive number.', severity: 'med' });
+      return null;
+    }
+    let conf = Number(e.confidence);
+    if (!isFinite(conf)) conf = 0.5;
+    return {
+      target,
+      label: String(e.label || target).slice(0, 120),
+      amount: Math.round(amount * 100) / 100,
+      party: e.party ? String(e.party).slice(0, 120) : null,
+      due_date: normImportDate(e.due_date),
+      confidence: Math.max(0, Math.min(1, conf)),
+      reasoning: e.reasoning ? String(e.reasoning).slice(0, 300) : ''
+    };
+  }).filter(Boolean).slice(0, 40);
+
+  (Array.isArray(parsed.anomalies) ? parsed.anomalies : []).forEach(a => {
+    if (!a) return;
+    anomalies.push({
+      issue: String(a.issue || a).slice(0, 300),
+      severity: ['low', 'med', 'high'].includes(a.severity) ? a.severity : 'low'
+    });
+  });
+
+  const unmapped = (Array.isArray(parsed.unmapped) ? parsed.unmapped : [])
+    .map(u => String(u).slice(0, 200)).filter(Boolean).slice(0, 20);
+
+  return { entries, anomalies: anomalies.slice(0, 20), unmapped };
+}
+
+function normImportDate(v) {
+  if (!v) return null;
+  const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[1] + '-' + m[2] + '-' + m[3] : null;
 }
