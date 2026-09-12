@@ -305,6 +305,57 @@ const TEXT_PARSE_ADAPTERS = {
   aisensy: notImplementedParse('aisensy')
 };
 
+/* ------------------------------------------------------------------ */
+/* Inbound: a forwarded image/document (feeds the WhatsApp import path) */
+/* ------------------------------------------------------------------ */
+/**
+ * Returns null unless the payload is an inbound media message (image or
+ * document/file). Added 2026-09-12 for the WhatsApp import-suggestion
+ * feature — like gupshupParseInboundEvent/-Text above, this shape has
+ * never been exercised against a real Gupshup account in this build; the
+ * first live test may need a field-name fix here.
+ *
+ * @returns {null | {from: string, url: string, contentType: string,
+ *   caption: string, filename: string|null, wamid: string,
+ *   contextMessageId: string|null, timestampMs: number}}
+ */
+function parseInboundMedia(payload) {
+  const parser = MEDIA_PARSE_ADAPTERS[bspName()];
+  if (!parser) return null;
+  try { return parser(payload); } catch { return null; }
+}
+
+function gupshupParseInboundMedia(payload) {
+  // Gupshup's "Advanced" webhook wraps media the same way it wraps text/
+  // button events: { type: "message", payload: { type: "image"|"file",
+  // sender: {phone}, payload: { url, contentType, caption, name } } }.
+  if (!payload || payload.type !== 'message') return null;
+  const p = payload.payload;
+  if (!p || !['image', 'file', 'document'].includes(p.type)) return null;
+
+  const media = p.payload || {};
+  const url = media.url || '';
+  if (!url) return null;
+
+  return {
+    from: (p.sender && p.sender.phone) || p.source,
+    url,
+    contentType: media.contentType || media.mimeType || '',
+    caption: media.caption || '',
+    filename: media.name || null,
+    wamid: p.id,
+    contextMessageId: (p.context && p.context.id) || null,
+    timestampMs: payload.timestamp || Date.now()
+  };
+}
+
+const MEDIA_PARSE_ADAPTERS = {
+  gupshup: gupshupParseInboundMedia,
+  interakt: notImplementedParse('interakt'),
+  wati: notImplementedParse('wati'),
+  aisensy: notImplementedParse('aisensy')
+};
+
 /**
  * Map a normalized button id/text (as approved in the Closing Bell
  * template) to the whatsapp_replies.reply_type enum.
@@ -362,6 +413,7 @@ module.exports = {
   sendText,
   parseInboundEvent,
   parseInboundText,
+  parseInboundMedia,
   classifyReply,
   checkVerifyToken,
   verifyInboundRequest
