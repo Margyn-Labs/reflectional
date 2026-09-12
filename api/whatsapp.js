@@ -25,6 +25,7 @@ const bsp = require('./_lib/whatsappBsp');
 const { runConversation } = require('./_lib/whatsappAgent');
 const { track } = require('./_lib/track');
 const chase = require('./_lib/chaseEngine');
+const { runImportMapper } = require('./_lib/importMapper');
 
 module.exports = async function handler(req, res) {
   const action = (req.query && req.query.action) || '';
@@ -84,7 +85,16 @@ async function handleWebhookEvent(req, res) {
 
   const event = bsp.parseInboundEvent(payload);
   if (!event) {
-    // Not a button reply. If it's a free-text message, it's either a Margyn
+    // Not a button reply. Try a forwarded image/document next (the
+    // WhatsApp import-suggestion path, 2026-09-12) — a media message
+    // won't parse as either of the other two shapes, so this must run
+    // before the free-text fallback below.
+    const mediaEvent = bsp.parseInboundMedia(payload);
+    if (mediaEvent) {
+      await handleMediaInbound(res, mediaEvent);
+      return;
+    }
+    // Not media either. If it's a free-text message, it's either a Margyn
     // user talking to the conversational agent, or a customer replying to a
     // payment chase. Chase targets are checked FIRST — a customer's number is
     // never in `profiles`, and the conversational agent must never run for a
@@ -168,6 +178,155 @@ async function handleWebhookEvent(req, res) {
   }
 
   if (!res.headersSent) res.status(200).json({ received: true });
+}
+
+/* ------------------------------------------------------------------ */
+/* WhatsApp import path — a registered number forwards an invoice/bill/ */
+/* receipt (image or PDF). Added 2026-09-12.                            */
+/* ------------------------------------------------------------------ */
+// Bounds both abuse (a compromised/looping number) and Claude spend — same
+// spirit as the 2 MB client-side cap on the browser upload path.
+const WA_MAX_SUGGESTIONS_PER_DAY = 20;
+const WA_MAX_MEDIA_BYTES = 2 * 1024 * 1024;
+const WA_SUPPORTED_MEDIA_MIME = {
+  'image/jpeg': 'image/jpeg', 'image/png': 'image/png',
+  'image/webp': 'image/webp', 'image/gif': 'image/gif',
+  'application/pdf': 'application/pdf'
+};
+const WA_IMPORT_TARGET_LABEL = {
+  cash: 'Cash in bank', revenue: 'Revenue', net_profit: 'Net profit', burn: 'Operating expenses',
+  gst_payable: 'GST payable', gst_leak: 'Unclaimed GST ITC', receivable: 'Receivable',
+  payable: 'Payable', payments: 'Gross payments'
+};
+
+/**
+ * A forwarded image/PDF never writes straight to the ledger — it always
+ * lands in import_suggestions as status:'pending' and waits for the human
+ * to approve it in the app's Suggestions tab. This mirrors the "AI
+ * proposes, human decides" rule the browser upload path already follows;
+ * it matters MORE here since there's no live confirm-click moment on
+ * WhatsApp itself.
+ *
+ * NOTE (flagged, not fully verifiable pre-launch): the Gupshup media
+ * webhook shape (bsp.parseInboundMedia) and whether its media URLs are
+ * fetchable without extra auth have never been exercised against a real
+ * Gupshup account — same caveat the existing button/text parsers carry.
+ * Expect one field-name fix once a real forwarded photo hits this path.
+ */
+async function handleMediaInbound(res, mediaEvent) {
+  try {
+    const phone = normalizePhone(mediaEvent.from);
+    const matches = await selectRows(
+      'profiles',
+      `select=id,company_name,gst_number&whatsapp_phone=eq.${encodeURIComponent(phone)}`
+    );
+    if (!matches.length) {
+      // Not a registered number. Say nothing back — replying would confirm
+      // to a stranger which numbers ARE registered Margyn accounts.
+      res.status(200).json({ received: true, matched: false });
+      return;
+    }
+    const profile = matches[0];
+
+    const mime = WA_SUPPORTED_MEDIA_MIME[String(mediaEvent.contentType || '').split(';')[0].trim().toLowerCase()];
+    if (!mime) {
+      await bsp.sendText({ to: mediaEvent.from, text: 'Margyn can read JPG, PNG or PDF files right now — could you resend it as one of those?' });
+      res.status(200).json({ received: true, unsupported: true });
+      return;
+    }
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const todaysSuggestions = await selectRows(
+      'import_suggestions',
+      `select=id&user_id=eq.${profile.id}&received_at=gte.${encodeURIComponent(since)}`
+    ).catch(() => []);
+    if (todaysSuggestions.length >= WA_MAX_SUGGESTIONS_PER_DAY) {
+      await bsp.sendText({ to: mediaEvent.from, text: `You've hit today's limit of ${WA_MAX_SUGGESTIONS_PER_DAY} WhatsApp imports — try again tomorrow, or use the app.` });
+      res.status(200).json({ received: true, rate_limited: true });
+      return;
+    }
+
+    let base64;
+    try {
+      const fileRes = await fetch(mediaEvent.url);
+      if (!fileRes.ok) throw new Error('media fetch failed: ' + fileRes.status);
+      const arrayBuf = await fileRes.arrayBuffer();
+      if (arrayBuf.byteLength > WA_MAX_MEDIA_BYTES) {
+        await bsp.sendText({ to: mediaEvent.from, text: 'That file is over 2 MB — could you send a smaller version?' });
+        res.status(200).json({ received: true, too_large: true });
+        return;
+      }
+      base64 = Buffer.from(arrayBuf).toString('base64');
+    } catch (err) {
+      console.error('whatsapp media: download failed', err.message);
+      await bsp.sendText({ to: mediaEvent.from, text: "Couldn't download that file just now — mind resending it?" });
+      res.status(200).json({ received: true, download_failed: true });
+      return;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      console.error('whatsapp media: ANTHROPIC_API_KEY not set');
+      res.status(200).json({ received: true });
+      return;
+    }
+
+    let proposal;
+    try {
+      const result = await runImportMapper({ kind: 'document', mime, base64, business: profile.company_name, gstin: profile.gst_number }, apiKey);
+      proposal = result.proposal;
+    } catch (err) {
+      console.error('whatsapp media: mapper failed', err.message);
+      await bsp.sendText({ to: mediaEvent.from, text: "Couldn't read that file just now — try again in a bit, or upload it in the app instead." });
+      res.status(200).json({ received: true, mapper_failed: true });
+      return;
+    }
+
+    await insertRows('import_suggestions', [{
+      user_id: profile.id,
+      status: 'pending',
+      source: 'whatsapp',
+      proposal,
+      from_phone: mediaEvent.from,
+      wa_message_id: mediaEvent.wamid,
+      mime_type: mime,
+      received_at: new Date().toISOString()
+    }]);
+
+    track(profile.id, 'whatsapp_import_suggestion', {
+      entries: (proposal.entries || []).length,
+      anomalies: (proposal.anomalies || []).length
+    });
+
+    await bsp.sendText({ to: mediaEvent.from, text: summarizeForWhatsapp(proposal) });
+    res.status(200).json({ received: true, suggestion: true });
+  } catch (err) {
+    console.error('whatsapp media inbound failed:', err.message);
+    if (!res.headersSent) res.status(200).json({ received: true });
+  }
+}
+
+function summarizeForWhatsapp(proposal) {
+  const entries = proposal.entries || [];
+  const anomalies = proposal.anomalies || [];
+  if (!entries.length && !anomalies.length) {
+    return "Margyn couldn't find anything it recognised in that file.";
+  }
+  let msg;
+  if (entries.length) {
+    const lines = entries.slice(0, 5).map(e => {
+      const label = WA_IMPORT_TARGET_LABEL[e.target] || e.target;
+      const amount = '₹' + Math.round(e.amount).toLocaleString('en-IN');
+      return `• ${label}${e.party ? ' — ' + e.party : ''} — ${amount}`;
+    });
+    msg = 'Got it — found:\n' + lines.join('\n');
+    if (entries.length > 5) msg += `\n…and ${entries.length - 5} more`;
+  } else {
+    msg = 'Got it — nothing clear enough to import,';
+  }
+  if (anomalies.length) msg += `\n${anomalies.length} item(s) flagged for review.`;
+  msg += '\n\nOpen Margyn → Suggestions to approve or reject.';
+  return msg;
 }
 
 /* ------------------------------------------------------------------ */
