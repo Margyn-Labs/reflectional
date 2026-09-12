@@ -215,6 +215,25 @@ const WA_IMPORT_TARGET_LABEL = {
  */
 async function handleMediaInbound(res, mediaEvent) {
   try {
+    // Dedupe FIRST, before any other work — the BSP can (and, per the first
+    // live test, does) redeliver the same webhook event if it doesn't get a
+    // fast enough 200 back, and this handler's own chain (phone lookup +
+    // media download + a Claude vision call) easily runs long enough to
+    // trigger that. Without this check, every redelivery re-ran the whole
+    // pipeline: a duplicate suggestion row AND a duplicate WhatsApp reply
+    // per retry. Checked before the phone lookup specifically so a retry
+    // costs one cheap indexed SELECT, not a repeat Claude call.
+    if (mediaEvent.wamid) {
+      const already = await selectRows(
+        'import_suggestions',
+        `select=id&wa_message_id=eq.${encodeURIComponent(mediaEvent.wamid)}&limit=1`
+      ).catch(() => []);
+      if (already.length) {
+        res.status(200).json({ received: true, duplicate: true });
+        return;
+      }
+    }
+
     const phone = normalizePhone(mediaEvent.from);
     const matches = await selectRows(
       'profiles',
@@ -282,16 +301,29 @@ async function handleMediaInbound(res, mediaEvent) {
       return;
     }
 
-    await insertRows('import_suggestions', [{
-      user_id: profile.id,
-      status: 'pending',
-      source: 'whatsapp',
-      proposal,
-      from_phone: mediaEvent.from,
-      wa_message_id: mediaEvent.wamid,
-      mime_type: mime,
-      received_at: new Date().toISOString()
-    }]);
+    // onConflict + ignore-duplicates is a second, DB-level dedupe layer for
+    // the rare case where two redeliveries of the same wamid both pass the
+    // early SELECT check above before either has inserted (a genuine race,
+    // not just a slow-response retry). Requires the unique constraint on
+    // wa_message_id added in 2026-09-12b-import-suggestions-dedupe.sql.
+    const inserted = mediaEvent.wamid
+      ? await insertRows('import_suggestions', [{
+          user_id: profile.id, status: 'pending', source: 'whatsapp', proposal,
+          from_phone: mediaEvent.from, wa_message_id: mediaEvent.wamid,
+          mime_type: mime, received_at: new Date().toISOString()
+        }], { onConflict: 'wa_message_id' })
+      : await insertRows('import_suggestions', [{
+          user_id: profile.id, status: 'pending', source: 'whatsapp', proposal,
+          from_phone: mediaEvent.from, wa_message_id: null,
+          mime_type: mime, received_at: new Date().toISOString()
+        }]);
+
+    if (!inserted.length) {
+      // Lost the race — another concurrent delivery of this same wamid won
+      // and already sent the WhatsApp reply. Don't send a second one.
+      res.status(200).json({ received: true, duplicate: true });
+      return;
+    }
 
     track(profile.id, 'whatsapp_import_suggestion', {
       entries: (proposal.entries || []).length,
