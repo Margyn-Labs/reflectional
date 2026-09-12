@@ -1474,6 +1474,7 @@
       <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span><span class="tier-chip free">FREE</span><span class="nav-badge hidden" id="ledgerBadge"></span></button>
       <button data-view="invoicing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg><span>Invoicing</span><span class="tier-chip free">FREE</span></button>
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
+      <button data-view="suggestions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8M8 13h5"/></svg><span>Suggestions</span><span class="nav-badge hidden" id="suggestionsBadge"></span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
       <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span><span class="nav-badge hidden" id="tallyBadge"></span></button>
       <button data-view="analytics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg><span>Analytics</span></button>
@@ -1567,6 +1568,11 @@
         <div class="ledger-list-title" id="reconReviewTitle" style="margin-top:0; padding-top:0; border-top:none;">Payments needing review</div>
         <div class="hint" style="margin-bottom:10px;">The nightly reconciliation check found more than one possible Razorpay payment for these invoices, or the two sources didn't line up cleanly. They're left for a human to confirm rather than auto-marked as verified.</div>
         <div id="reconReviewList"></div>
+      </div>
+      <div class="card hidden" id="agentQueueCard">
+        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Agent queue <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span></div>
+        <div class="hint" style="margin-bottom:10px;">The Close &amp; Collections agent worked the reconciliation exceptions overnight. Each item below is a proposal &mdash; the money figure, why, and what to book. Nothing is applied until you approve it.</div>
+        <div id="agentQueueList"></div>
       </div>
       <div class="facts" id="ledgerFacts"></div>
       <div class="ledger-form hidden" id="ledgerAddForm">
@@ -1910,6 +1916,14 @@
         <span class="note" id="noteManual"></span>
       </div>
     </div>
+  </div>
+  <!-- ---------- 2b. SUGGESTIONS — pending AI proposals (currently: WhatsApp-forwarded files) ---------- -->
+  <div id="view-suggestions" class="hidden">
+    <div class="card">
+      <h2>Suggestions</h2>
+      <div class="hint">Forward an invoice, bill or receipt photo to your Margyn WhatsApp number from your registered number. Margyn reads it and drops a suggestion here — nothing is saved to your books until you approve it.</div>
+    </div>
+    <div id="suggestionsList" style="margin-top:16px;"></div>
   </div>
   <!-- ---------- 3. SCORES — "Diagnostics" (redesigned) ---------- -->
   <div id="view-scores" class="hidden">
@@ -2480,6 +2494,7 @@ let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker g
 let zohoVitals = null;       // last /api/zoho?action=vitals payload
 let zohoLedgerRows = { receivables: [], payables: [] }; // row-level open invoices/bills from the vitals payload — for the unified ledger + cross-source logic
 let reconSummary = null;     // last /api/reconcile?action=summary payload — read-only view of nightly reconciliation output
+let agentActions = null;     // last /api/reconcile?action=agent-actions payload — Close & Collections agent proposal queue
 let zohoPendingOrgRef = null;
 let zohoChosenOrgId = null;
 let shopifyConnected = false;  // Shopify connector — Custom App token, read-only
@@ -2628,9 +2643,10 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
 });
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 function showView(name){
-  ['summary','profile','ledger','invoicing','calculate','scores','history','payments','books','tally','analytics','connectors','settings','financing','agents'].forEach(v => { const el = document.getElementById('view-' + v); if(el){ el.classList.toggle('hidden', v !== name); if(v === name){ el.classList.remove('rd-fade'); void el.offsetWidth; el.classList.add('rd-fade'); } } });
+  ['summary','profile','ledger','invoicing','calculate','suggestions','scores','history','payments','books','tally','analytics','connectors','settings','financing','agents'].forEach(v => { const el = document.getElementById('view-' + v); if(el){ el.classList.toggle('hidden', v !== name); if(v === name){ el.classList.remove('rd-fade'); void el.offsetWidth; el.classList.add('rd-fade'); } } });
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  if(name === 'ledger'){ renderLedgerView(); renderReconLedger(); }
+  if(name === 'suggestions') renderSuggestionsView();
+  if(name === 'ledger'){ renderLedgerView(); renderReconLedger(); renderAgentQueue(); }
   if(name === 'invoicing'){ renderInvoicingView(); }
   if(name === 'books'){ if(typeof renderBooksHub === 'function') renderBooksHub(); else renderZohoBooksTab(); }
   if(name === 'tally') renderTallyTab();
@@ -2786,6 +2802,7 @@ async function refreshAll(){
   receivables = await loadReceivables();
   payables = await loadPayables();
   findings = await loadFindings();
+  pendingSuggestions = await loadPendingSuggestions(); renderSuggestionsBadge();
   khataParties = await loadKhataParties();
   khataEntries = await loadKhataEntries();
   khataInvoices = await loadKhataInvoices();
@@ -2806,11 +2823,12 @@ async function refreshAll(){
   await loadZohoVitals();
   await loadOdooStatus();
   reconSummary = await loadReconSummary();
+  agentActions = await loadAgentActions();
   await loadShopifyStatus();
   await loadTallyStatus();
   tallyData = await loadTallyData();
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
-  renderReconBooksCard(); renderReconLedger(); renderTallyTab();
+  renderReconBooksCard(); renderReconLedger(); renderAgentQueue(); renderTallyTab();
   if(typeof renderBooksHub === 'function') renderBooksHub();
   if(typeof renderConnectionsHub === 'function') renderConnectionsHub();
   if(typeof renderAnalyticsView === 'function') renderAnalyticsView();
@@ -7638,6 +7656,97 @@ function renderReconLedger(){
 }
 
 /* ============================================================
+   CLOSE & COLLECTIONS AGENT — the proposal queue.
+   The agent (api/reconcile.js?action=run-agent, nightly) works the
+   reconciliation exceptions and stages typed proposals. This surface
+   is the human approval step: nothing is applied until Approve.
+   ============================================================ */
+const AGENT_KIND_LABEL = {
+  reconcile_match: 'Match', journal: 'Journal', split: 'Split payment',
+  flag: 'Flag', itc_risk: 'GST / ITC', bad_debt: 'Bad debt', needs_human: 'Review'
+};
+async function loadAgentActions(){
+  try { return await zohoApi('/api/reconcile?action=agent-actions'); }
+  catch(e){ console.error('[margyn] loadAgentActions:', e.message); return null; }
+}
+function renderAgentQueue(){
+  const items = (agentActions && agentActions.actions) || [];
+  const badge = document.getElementById('ledgerBadge');
+  const reconQ = (reconSummary && reconSummary.connected && reconSummary.review_queue) || [];
+  if(badge){
+    const n = reconQ.length + items.length;
+    badge.textContent = n ? String(n) : '';
+    badge.classList.toggle('hidden', n === 0);
+  }
+  const card = document.getElementById('agentQueueCard');
+  const list = document.getElementById('agentQueueList');
+  const title = document.getElementById('agentQueueTitle');
+  if(!card || !list) return;
+  if(!items.length){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  if(title) title.innerHTML = 'Agent queue (' + items.length + ') <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span>';
+
+  list.innerHTML = items.map((a) => {
+    const kind = AGENT_KIND_LABEL[a.kind] || a.kind;
+    const conf = a.confidence != null ? Math.round(a.confidence * 100) + '% sure' : '';
+    const j = (a.proposal && a.proposal.journal) || null;
+    const alloc = (a.proposal && a.proposal.allocations) || null;
+    const draft = a.proposal && a.proposal.vendorQueryDraft;
+    let detail = '';
+    if(j && j.length){
+      detail = '<div class="hint" style="margin-top:8px; white-space:pre-line; font-family:\'IBM Plex Mono\',monospace; font-size:11.5px;">' +
+        j.map(l => escapeHtml(l.account) + '  ' + (l.debit ? 'Dr ' + inr(l.debit) : 'Cr ' + inr(l.credit))).join('\n') + '</div>';
+    } else if(alloc && alloc.length){
+      detail = '<div class="hint" style="margin-top:8px;">' +
+        alloc.map(x => escapeHtml(x.invoiceRef || x.booksRef || '—') + ' → ' + inr(x.amount)).join('<br>') + '</div>';
+    } else if(draft){
+      detail = '<div class="hint" style="margin-top:8px; font-style:italic;">Draft to vendor: “' + escapeHtml(draft.slice(0, 220)) + '…”</div>';
+    }
+    return '<div class="ledger-row" style="flex-wrap:wrap; align-items:flex-start;" data-agent-id="' + a.id + '">' +
+      '<div class="lr-main">' +
+        '<div class="lr-party">' + escapeHtml(a.title) +
+          '<span class="lr-tag review">' + escapeHtml(kind) + '</span>' +
+          (conf ? '<span class="lr-tag" style="background:var(--surface-2); color:var(--text-3);">' + conf + '</span>' : '') +
+        '</div>' +
+        '<div class="lr-meta" style="max-width:80ch;">' + escapeHtml(a.rationale || '') + '</div>' +
+        detail +
+        '<div style="margin-top:10px; display:flex; gap:8px;">' +
+          '<button class="btn-primary" style="padding:6px 14px; font-size:12px;" data-agent-do="approve">Approve</button>' +
+          '<button class="lr-btn" data-agent-do="reject">Dismiss</button>' +
+        '</div>' +
+      '</div>' +
+      (a.amount != null ? '<div class="lr-amount">' + inr(a.amount) + '</div>' : '') +
+      '</div>';
+  }).join('');
+
+  list.querySelectorAll('[data-agent-do]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const row = btn.closest('[data-agent-id]');
+      const id = row && row.dataset.agentId;
+      const decision = btn.dataset.agentDo;
+      if(!id) return;
+      row.querySelectorAll('button').forEach(b => b.disabled = true);
+      btn.textContent = decision === 'approve' ? 'Approving…' : 'Dismissing…';
+      try {
+        await zohoApi('/api/reconcile?action=agent-review', { method:'POST', body: JSON.stringify({ actionId: id, decision }) });
+        mtrack('close_agent_review', { decision, kind: (agentActions.actions.find(x => x.id === id) || {}).kind });
+        agentActions = await loadAgentActions();
+        renderAgentQueue();
+        if(decision === 'approve'){
+          reconSummary = await loadReconSummary();
+          renderReconLedger(); renderReconBooksCard();
+          toast('Approved — recorded for your books.', { kind:'good' });
+        }
+      } catch(err){
+        row.querySelectorAll('button').forEach(b => b.disabled = false);
+        btn.textContent = decision === 'approve' ? 'Approve' : 'Dismiss';
+        toast('Could not ' + decision + ': ' + (err.message || 'unknown error'), { kind:'bad' });
+      }
+    });
+  });
+}
+
+/* ============================================================
    AUTH — tab switching, login/signup, Google OAuth, logout
    ============================================================ */
 document.querySelectorAll('.auth-tab').forEach(t => t.addEventListener('click', () => {
@@ -7882,7 +7991,19 @@ async function applyImportProposal(){
       if(cb.checked) chosen.push(_importProposal.entries[Number(cb.dataset.imp)]);
     });
     if(!chosen.length){ note.className = 'note bad'; note.textContent = 'Nothing ticked.'; btn.disabled = false; return; }
-
+    await applyChosenImportEntries(chosen);
+    note.className = 'note ok'; note.textContent = 'Saved.';
+    triggerFindingsGeneration();
+    showView('summary');
+  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); btn.disabled = false; }
+}
+/* Shared write path for an accepted list of import entries — used by BOTH
+   the Upload-tab review card (applyImportProposal, above) and the
+   Suggestions tab (decideSuggestion, below — WhatsApp-sourced proposals).
+   Same source:'upload' delete-then-insert + ledger_events + snapshot save
+   as computeFromFile(); the two callers differ only in what they do with
+   the button/note DOM and whether they navigate away afterward. */
+async function applyChosenImportEntries(chosen){
     const latest = snapshots[0] || {};
     const scalars = {
       cash: Number(latest.cash) || 0, revenue: Number(latest.revenue) || 0,
@@ -7939,11 +8060,111 @@ async function applyImportProposal(){
     snapshots = await loadSnapshots();
     paymentsData = paymentsPayload; settlementRows = settleRowsPayload; settlementDailyTrend = settleTrendPayload;
     renderScores(); renderPayments(); renderFinancing(); renderSummary();
-
-    note.className = 'note ok'; note.textContent = 'Saved.';
-    triggerFindingsGeneration();
-    showView('summary');
-  } catch(err){ note.className = 'note bad'; note.textContent = 'Could not save: ' + (err.message || 'unknown error'); btn.disabled = false; }
+}
+/* ============================================================
+   SUGGESTIONS — the WhatsApp-forwarded-file review queue.
+   A number forwards an invoice/bill/receipt to the Margyn WhatsApp
+   number; api/whatsapp.js matches it to this account by whatsapp_phone,
+   runs the same importMapper used by the Upload tab, and parks the
+   result here as a `import_suggestions` row (status:'pending'). Nothing
+   from WhatsApp is ever written straight to the ledger — this queue is
+   the only door in, and every row's status transition (approved/rejected
+   + decided_at) IS the permanent log, nothing here is ever deleted.
+   ============================================================ */
+let pendingSuggestions = [];
+async function loadPendingSuggestions(){
+  try {
+    const { data, error } = await sbClient.from('import_suggestions').select('*')
+      .eq('user_id', currentUser.id).eq('status','pending').order('received_at', { ascending:false });
+    if(error){ console.error('[margyn] loadPendingSuggestions:', error); return []; }
+    return data || [];
+  } catch(e){ console.error('[margyn] loadPendingSuggestions:', e); return []; }
+}
+function renderSuggestionsBadge(){
+  const badge = document.getElementById('suggestionsBadge'); if(!badge) return;
+  const n = pendingSuggestions.length;
+  badge.textContent = n ? String(n) : '';
+  badge.classList.toggle('hidden', !n);
+}
+function renderSuggestionsView(){
+  const host = document.getElementById('suggestionsList'); if(!host) return;
+  if(!pendingSuggestions.length){
+    host.innerHTML = '<div class="card"><h2>No suggestions waiting</h2><div class="hint">Nothing forwarded yet. Send a photo of an invoice, bill or receipt to your Margyn WhatsApp number and it will show up here.</div></div>';
+    return;
+  }
+  host.innerHTML = pendingSuggestions.map((s, idx) => renderOneSuggestionCard(s, idx)).join('');
+  pendingSuggestions.forEach((s, idx) => {
+    const approveBtn = document.getElementById('sugApprove' + idx);
+    const rejectBtn = document.getElementById('sugReject' + idx);
+    if(approveBtn) approveBtn.addEventListener('click', () => decideSuggestion(s, idx, 'approved'));
+    if(rejectBtn) rejectBtn.addEventListener('click', () => decideSuggestion(s, idx, 'rejected'));
+  });
+}
+function renderOneSuggestionCard(s, idx){
+  const p = s.proposal || {}; const entries = p.entries || []; const anomalies = p.anomalies || [];
+  const when = s.received_at ? new Date(s.received_at).toLocaleString('en-IN') : '';
+  const fromLabel = s.from_phone ? waPrettyPhone(s.from_phone) : 'unknown number';
+  let h = '<div class="card" style="margin-bottom:16px;">'
+    + '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;">'
+    + '<h2 style="margin:0;">From WhatsApp · ' + impEsc(fromLabel) + '</h2>'
+    + '<span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; letter-spacing:.04em; color:var(--text-3);">' + impEsc(when) + '</span></div>';
+  if(!entries.length && !anomalies.length){
+    h += '<div class="hint" style="margin-top:10px;">Nothing recognisable in this file.</div>';
+  } else if(entries.length){
+    h += '<div style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">';
+    entries.forEach((e, i) => {
+      const low = (e.confidence || 0) < 0.6;
+      h += '<label style="display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--border-1); border-radius:10px; cursor:pointer;">'
+        + '<input type="checkbox" data-sug-entry="' + idx + ':' + i + '"' + (low ? '' : ' checked') + ' style="margin-top:3px; flex-shrink:0;">'
+        + '<span style="flex:1; font-size:13px; line-height:1.5;">'
+        + '<strong>' + impEsc(IMPORT_TARGET_LABELS[e.target] || e.target) + '</strong>'
+        + (e.party ? ' · ' + impEsc(e.party) : '') + ' · <span class="mono">' + inr(e.amount) + '</span>'
+        + (e.due_date ? ' · due ' + impEsc(e.due_date) : '')
+        + (low ? ' <span style="color:var(--orange); font-weight:600;">· low confidence, check this</span>' : '')
+        + '</span></label>';
+    });
+    h += '</div>';
+  }
+  if(anomalies.length){
+    h += '<div style="margin-top:14px;"><div class="app-eyebrow" style="color:var(--orange); margin-bottom:6px;">Flagged</div>'
+      + '<ul style="margin:0; padding-left:18px; font-size:13px; color:var(--text-2); line-height:1.6;">'
+      + anomalies.map(a => '<li>' + impEsc(a.issue) + '</li>').join('') + '</ul></div>';
+  }
+  h += '<div class="btn-row" style="margin-top:16px;">'
+    + (entries.length ? '<button class="primary" id="sugApprove' + idx + '">Approve &amp; import</button>' : '')
+    + '<button class="btn-ghost" id="sugReject' + idx + '">' + (entries.length ? 'Reject' : 'Dismiss') + '</button>'
+    + '<span class="note" id="sugNote' + idx + '"></span></div></div>';
+  return h;
+}
+async function decideSuggestion(sug, idx, decision){
+  const note = document.getElementById('sugNote' + idx);
+  const approveBtn = document.getElementById('sugApprove' + idx); const rejectBtn = document.getElementById('sugReject' + idx);
+  if(approveBtn) approveBtn.disabled = true; if(rejectBtn) rejectBtn.disabled = true;
+  if(note){ note.className = 'note'; note.textContent = decision === 'approved' ? 'Importing…' : 'Dismissing…'; }
+  try {
+    if(decision === 'approved'){
+      const chosen = [];
+      document.querySelectorAll('input[data-sug-entry^="' + idx + ':"]').forEach(cb => {
+        if(cb.checked){
+          const i = Number(cb.dataset.sugEntry.split(':')[1]);
+          const entry = ((sug.proposal && sug.proposal.entries) || [])[i];
+          if(entry) chosen.push(entry);
+        }
+      });
+      if(chosen.length) await applyChosenImportEntries(chosen);
+      triggerFindingsGeneration();
+    }
+    const { error } = await sbClient.from('import_suggestions')
+      .update({ status: decision, decided_at: new Date().toISOString() }).eq('id', sug.id);
+    if(error) throw error;
+    pendingSuggestions = await loadPendingSuggestions();
+    renderSuggestionsBadge();
+    renderSuggestionsView();
+    toast(decision === 'approved' ? 'Imported from WhatsApp' : 'Suggestion dismissed', {});
+  } catch(err){
+    if(note){ note.className = 'note bad'; note.textContent = 'Could not ' + (decision === 'approved' ? 'import' : 'dismiss') + ': ' + (err.message || 'unknown error'); }
+    if(approveBtn) approveBtn.disabled = false; if(rejectBtn) rejectBtn.disabled = false;
+  }
 }
 function sheetToRows(wb, sheetName){
   const sheet = wb.Sheets[sheetName];
