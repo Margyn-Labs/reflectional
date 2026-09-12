@@ -476,7 +476,17 @@ async function handleParseImport(req, res, body) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model: IMPORT_MODEL, max_tokens: 4096, system: IMPORT_SYSTEM, messages: [{ role: 'user', content }] })
     });
-    if (!r.ok) { console.error('Anthropic import error:', r.status, await r.text()); res.status(502).json({ error: 'Could not read the file just now.' }); return; }
+    if (!r.ok) {
+      const errBody = await r.text();
+      console.error('Anthropic import error:', r.status, errBody);
+      // Surface the real status (not the raw body — that can carry request
+      // internals) so a failure is diagnosable from the UI note alone,
+      // instead of needing to go dig through Vercel's function logs.
+      let reason = 'HTTP ' + r.status;
+      try { const parsedErr = JSON.parse(errBody); if (parsedErr && parsedErr.error && parsedErr.error.message) reason = parsedErr.error.message.slice(0, 140); } catch (e) { /* keep the status-only reason */ }
+      res.status(502).json({ error: 'Could not read the file just now (' + reason + ').' });
+      return;
+    }
     const data = await r.json();
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
     res.status(200).json({ proposal: sanitizeProposal(text) });
