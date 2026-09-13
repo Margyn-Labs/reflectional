@@ -33,6 +33,10 @@
       "schedule": "25 21 * * *"
     },
     {
+      "path": "/api/reconcile?action=run-agent",
+      "schedule": "35 21 * * *"
+    },
+    {
       "path": "/api/whatsapp?action=cron-opening",
       "schedule": "0 2 * * *"
     },
@@ -49,6 +53,7 @@
     "api/zoho.js": { "maxDuration": 300 },
     "api/shopify.js": { "maxDuration": 300 },
     "api/cashfree.js": { "maxDuration": 300 },
-    "api/whatsapp.js": { "maxDuration": 300 }
+    "api/whatsapp.js": { "maxDuration": 300 },
+    "api/reconcile.js": { "maxDuration": 300 }
   }
 }
