@@ -16,12 +16,14 @@ const {
   logConnectorEvent
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
+const { randomUUID } = require('crypto');
 const { matchPayments } = require('./_lib/reconcileMatcher');
 const {
   matchBooksRazorpay,
   matchBooksShopify,
   matchRazorpayShopify
 } = require('./_lib/reconcilerV2');
+const { runAgent } = require('./_lib/closeCollectionsAgent');
 
 const LOOKBACK_DAYS = 30;
 
@@ -327,13 +329,16 @@ async function loadBooksInvoices(userId, src) {
   if (src.source === 'zoho_books') {
     const rows = await selectRows(
       'zoho_invoices',
-      `select=invoice_id,invoice_number,invoice_date,date,total,customer_name,currency_code&org_ref=eq.${src.orgRef}&order=invoice_number.desc&limit=1000`
+      `select=invoice_id,invoice_number,invoice_date,date,due_date,total,balance,status,customer_name,currency_code&org_ref=eq.${src.orgRef}&order=invoice_number.desc&limit=1000`
     ).catch(() => []);
     return rows.map((i) => ({
       ref: i.invoice_id,
       number: i.invoice_number,
       amount: Number(i.total),
+      balance: i.balance != null ? Number(i.balance) : null,
+      status: i.status || null,
       date: i.invoice_date || i.date || null,
+      dueDate: i.due_date || null,
       currency: i.currency_code || 'INR',
       party: i.customer_name || null,
       fetchedAt: null
@@ -529,6 +534,204 @@ async function summaryV2ForUser(userId) {
   };
 }
 
+/* ====================================================================== */
+/* Close & Collections Agent — works the exceptions reconcilerV2 surfaces  */
+/* and stages typed proposals in public.agent_actions for human approval.  */
+/* Pure decision logic lives in api/_lib/closeCollectionsAgent.js.         */
+/* ====================================================================== */
+
+function countBy(rows, key) {
+  return rows.reduce((acc, r) => { acc[r[key]] = (acc[r[key]] || 0) + 1; return acc; }, {});
+}
+
+async function loadGatewayRefunds(userId) {
+  const rows = await selectRows(
+    'razorpay_refunds',
+    `select=refund_id,payment_id,amount,created_at&user_id=eq.${userId}&order=created_at.desc&limit=500`
+  ).catch(() => []);
+  return rows.map((r) => ({
+    id: r.refund_id, captureId: r.payment_id, amount: Number(r.amount || 0) / 100, date: r.created_at
+  }));
+}
+
+/** The books tool has already reconciled GSTR-2B — surface its at-risk rows. */
+async function loadItcRisks(orgRef) {
+  if (!orgRef) return [];
+  const [recon, bills] = await Promise.all([
+    selectRows('zoho_gstr2b_reconciliation', `select=bill_ref,bill_id,vendor_gstin,vendor_name,filing_period,match_status,itc_at_risk_amount&org_ref=eq.${orgRef}&order=filing_period.desc&limit=1000`).catch(() => []),
+    selectRows('zoho_bills', `select=id,bill_number,bill_date,vendor_name&org_ref=eq.${orgRef}&limit=2000`).catch(() => [])
+  ]);
+  const billById = new Map(bills.map((b) => [b.id, b]));
+  return recon
+    .filter((r) => /missing|mismatch|value|partial/i.test(r.match_status || '') || Number(r.itc_at_risk_amount) > 0)
+    .map((r) => {
+      const b = billById.get(r.bill_ref) || {};
+      return {
+        billRef: r.bill_ref || r.bill_id,
+        billNumber: b.bill_number || null,
+        vendor: r.vendor_name || b.vendor_name || null,
+        vendorGstin: r.vendor_gstin || null,
+        atRiskAmount: Number(r.itc_at_risk_amount || 0),
+        matchStatus: r.match_status || null,
+        billDate: b.bill_date || null
+      };
+    });
+}
+
+async function runAgentForUser(userId) {
+  const [booksSources, reauth] = await Promise.all([
+    detectBooksSources(userId),
+    connectorNeedsReauth(userId)
+  ]);
+  if (!booksSources.length) return { status: 'skipped', reason: 'no books source connected' };
+
+  const [rpRaw, refunds, allFindings] = await Promise.all([
+    selectRows('razorpay_transactions', `select=payment_id,amount,currency,status,method,fee,description,customer_email,created_at,synced_at&user_id=eq.${userId}&order=created_at.desc&limit=1000`).catch(() => []),
+    loadGatewayRefunds(userId),
+    selectRows('recon_findings', `select=pair,status,match_basis,source_a_ref,source_b_ref,amount_a,amount_b,currency,date_diff_days,reason,evidence,match_key,org_ref&user_id=eq.${userId}&order=updated_at.desc&limit=3000`).catch(() => [])
+  ]);
+  const gateway = reauth.razorpay ? [] : normRazorpay(rpRaw);
+  const runId = randomUUID();
+  const asOf = new Date().toISOString().slice(0, 10);
+
+  let allProps = [];
+  for (const src of booksSources) {
+    if (reauth[src.source]) continue;
+    const [payments, invoices, itcRisks] = await Promise.all([
+      loadBooksPayments(userId, src),
+      loadBooksInvoices(userId, src),
+      src.source === 'zoho_books' ? loadItcRisks(src.orgRef) : Promise.resolve([])
+    ]);
+    // recon_findings whose match_key belongs to this books source (prefixed) or
+    // the books-independent razorpay_shopify pair.
+    const srcFindings = allFindings.filter((f) =>
+      !f.match_key || f.match_key.startsWith(src.source + ':') || f.pair === 'razorpay_shopify');
+    const props = runAgent({
+      booksPayments: payments, invoices, gateway, gatewayRefunds: refunds,
+      itcRisks, reconFindings: srcFindings, asOf
+    });
+    props.forEach((p) => { p._orgRef = src.orgRef || null; });
+    allProps = allProps.concat(props);
+  }
+
+  const nowIso = new Date().toISOString();
+  const rows = allProps.map((p) => ({
+    user_id: userId, org_ref: p._orgRef || null, run_id: runId, agent: 'close_collections',
+    kind: p.kind, status: 'proposed',
+    confidence: p.confidence != null ? p.confidence : null,
+    proposal_key: p.proposalKey, title: p.title, rationale: p.rationale || null,
+    amount: p.amount != null ? p.amount : null, currency: p.currency || 'INR',
+    evidence: p.evidence || {}, proposal: p.proposal || {},
+    source_finding_key: p.sourceFindingKey || null, updated_at: nowIso
+  }));
+
+  // never resurrect a proposal a human has already actioned
+  const existing = await selectRows('agent_actions', `select=proposal_key,status&user_id=eq.${userId}&agent=eq.close_collections`).catch(() => []);
+  const locked = new Set(existing.filter((e) => e.status !== 'proposed').map((e) => e.proposal_key));
+  const fresh = rows.filter((r) => !locked.has(r.proposal_key));
+  if (fresh.length) {
+    await insertRows('agent_actions', fresh, { onConflict: 'user_id,agent,proposal_key', merge: true });
+  }
+
+  await logConnectorEvent({
+    userId, connectorType: 'reconciliation', operation: 'run-agent',
+    status: 'success', recordsSynced: fresh.length
+  });
+  return { status: 'ok', proposals: fresh.length, run_id: runId, by_kind: countBy(fresh, 'kind') };
+}
+
+async function runAgentAllUsers() {
+  const [zoho, tally] = await Promise.all([
+    selectRows('zoho_organizations', 'select=user_id&status=eq.active').catch(() => []),
+    selectRows('tally_installs', 'select=user_id&status=eq.active').catch(() => [])
+  ]);
+  const userIds = [...new Set([...zoho, ...tally].map((o) => o.user_id).filter(Boolean))];
+  const results = [];
+  for (const userId of userIds) {
+    try { results.push({ userId, ...(await runAgentForUser(userId)) }); }
+    catch (err) { results.push({ userId, status: 'error', reason: err.message }); }
+  }
+  return results;
+}
+
+async function agentActionsForUser(userId) {
+  const rows = await selectRows(
+    'agent_actions',
+    `select=id,kind,status,confidence,title,rationale,amount,currency,evidence,proposal,source_finding_key,created_at&user_id=eq.${userId}&agent=eq.close_collections&status=eq.proposed&order=confidence.desc.nullslast,created_at.desc&limit=200`
+  ).catch(() => []);
+  return {
+    count: rows.length,
+    by_kind: countBy(rows, 'kind'),
+    actions: rows
+  };
+}
+
+/**
+ * Pure — no I/O. Given an approved agent_actions.proposal, return the distinct
+ * zoho_invoices.invoice_id values Margyn's own tracking should mirror
+ * 'verified' onto. Two proposal shapes carry this:
+ *   - a single match:  proposal.match.invoiceRef
+ *   - a split/allocation across invoices: proposal.allocations[].invoiceRef
+ * Tally-sourced proposals never carry an invoiceRef (loadBooksPayments hard-
+ * codes invoiceRef: null for Tally, since tally_vouchers has no invoice-level
+ * link yet), so this is naturally a no-op for them — no source check needed.
+ */
+function invoiceRefsFromProposal(proposal) {
+  if (!proposal || typeof proposal !== 'object') return [];
+  const refs = new Set();
+  if (proposal.match && proposal.match.invoiceRef) refs.add(String(proposal.match.invoiceRef));
+  for (const a of proposal.allocations || []) {
+    if (a && a.invoiceRef) refs.add(String(a.invoiceRef));
+  }
+  return [...refs];
+}
+
+async function reviewAgentAction({ actionId, userId, decision }) {
+  if (!['approve', 'reject'].includes(decision)) throw new Error('decision must be "approve" or "reject"');
+  const rows = await selectRows('agent_actions', `select=*&id=eq.${actionId}&user_id=eq.${userId}&limit=1`);
+  if (!rows.length) throw new Error('Action not found');
+  const a = rows[0];
+  if (a.status !== 'proposed') throw new Error('Only a proposed action can be reviewed');
+
+  const nowIso = new Date().toISOString();
+  const patch = {
+    status: decision === 'approve' ? 'approved' : 'rejected',
+    reviewed_by: 'user', reviewed_at: nowIso
+  };
+  if (decision === 'approve') patch.applied_at = nowIso;
+  await updateRows('agent_actions', `id=eq.${actionId}`, patch);
+
+  // On approve we only mark the underlying reconcilerV2 exception resolved so it
+  // stops surfacing. v1 does NOT push journals to the books tool or move money —
+  // the proposal (journal lines, allocation) is recorded for the user to book.
+  const key = a.proposal && a.proposal.markVerified;
+  if (decision === 'approve' && key) {
+    await updateRows(
+      'recon_findings',
+      `user_id=eq.${userId}&match_key=eq.${encodeURIComponent(key)}`,
+      { status: 'verified', match_basis: 'agent_confirmed', verified_at: nowIso, updated_at: nowIso }
+    ).catch(() => {});
+  }
+
+  // Mirror onto Margyn's own zoho_invoices tracking column — same convenience
+  // mirror reconcileForUser/resolveManualMatch already write, so the Books tab
+  // reflects an agent-approved match without pushing anything to Zoho itself.
+  // Best-effort: never blocks the approve response, and org_ref must be known
+  // (it's set on every agent_actions row when the agent ran, see runAgentForUser).
+  if (decision === 'approve' && a.org_ref) {
+    const invoiceRefs = invoiceRefsFromProposal(a.proposal);
+    for (const invoiceId of invoiceRefs) {
+      await updateRows(
+        'zoho_invoices',
+        `org_ref=eq.${a.org_ref}&invoice_id=eq.${encodeURIComponent(invoiceId)}`,
+        { reconciliation_status: 'verified' }
+      ).catch(() => {});
+    }
+  }
+
+  return { status: 'ok', decision, actionId };
+}
+
 module.exports = async (req, res) => {
   const action = req.query.action;
 
@@ -616,10 +819,64 @@ module.exports = async (req, res) => {
     return;
   }
 
-  res.status(400).json({ error: 'Unknown action. Use ?action=run | run-v2 | summary | summary-v2 | resolve.' });
+  if (action === 'run-agent') {
+    const isCron = req.headers['authorization'] === `Bearer ${process.env.CRON_SECRET}`;
+    if (isCron) {
+      const results = await runAgentAllUsers();
+      res.status(200).json({ users_processed: results.length, results });
+      return;
+    }
+    const user = await getUserFromRequest(req);
+    if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    try {
+      const result = await runAgentForUser(user.id);
+      track(user.id, 'close_agent_run');
+      res.status(200).json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+    return;
+  }
+
+  if (action === 'agent-actions') {
+    const user = await getUserFromRequest(req);
+    if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    try {
+      const result = await agentActionsForUser(user.id);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+    return;
+  }
+
+  if (action === 'agent-review') {
+    const user = await getUserFromRequest(req);
+    if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    const { actionId, decision } = req.body || {};
+    if (!actionId || !decision) {
+      res.status(400).json({ error: 'actionId and decision are required' });
+      return;
+    }
+    try {
+      const result = await reviewAgentAction({ actionId, userId: user.id, decision });
+      track(user.id, 'close_agent_review', { decision });
+      res.status(200).json(result);
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+    return;
+  }
+
+  res.status(400).json({ error: 'Unknown action. Use ?action=run | run-v2 | run-agent | summary | summary-v2 | resolve | agent-actions | agent-review.' });
 };
 
 module.exports.reconcileForUser = reconcileForUser;
 module.exports.summaryForUser = summaryForUser;
 module.exports.reconcileV2ForUser = reconcileV2ForUser;
 module.exports.summaryV2ForUser = summaryV2ForUser;
+module.exports.runAgentForUser = runAgentForUser;
+module.exports.agentActionsForUser = agentActionsForUser;
+module.exports.reviewAgentAction = reviewAgentAction;
+module.exports.invoiceRefsFromProposal = invoiceRefsFromProposal;
