@@ -24,6 +24,7 @@ const {
   matchRazorpayShopify
 } = require('./_lib/reconcilerV2');
 const { runAgent } = require('./_lib/closeCollectionsAgent');
+const { runLlmTier } = require('./_lib/closeCollectionsLlmTier');
 
 const LOOKBACK_DAYS = 30;
 
@@ -606,12 +607,29 @@ async function runAgentForUser(userId) {
     // the books-independent razorpay_shopify pair.
     const srcFindings = allFindings.filter((f) =>
       !f.match_key || f.match_key.startsWith(src.source + ':') || f.pair === 'razorpay_shopify');
-    const props = runAgent({
+    const bundle = {
       booksPayments: payments, invoices, gateway, gatewayRefunds: refunds,
       itcRisks, reconFindings: srcFindings, asOf
-    });
+    };
+    const { proposals: props, exceptions } = runAgent(bundle, { includeExceptions: true });
     props.forEach((p) => { p._orgRef = src.orgRef || null; });
     allProps = allProps.concat(props);
+
+    // Tier 2 (LLM): only ever adds a proposal for something Tier 1 left
+    // unresolved, and only after it passes the same checker validated in
+    // tools/scenario-gen/ — a miss here just stays unresolved, same as
+    // today; a hit is one more resolved card in the queue. No-ops entirely
+    // without ANTHROPIC_API_KEY set (same env var every other Claude feature
+    // in this app already uses). Capped at 12 Claude calls per books source
+    // per run to bound latency and cost.
+    if (exceptions.length) {
+      const llm = await runLlmTier(bundle, exceptions, { maxCalls: 12 }).catch((err) => {
+        console.error('[closeCollectionsLlmTier] run failed:', err.message);
+        return { proposals: [] };
+      });
+      llm.proposals.forEach((p) => { p._orgRef = src.orgRef || null; });
+      allProps = allProps.concat(llm.proposals);
+    }
   }
 
   const nowIso = new Date().toISOString();
