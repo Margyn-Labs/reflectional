@@ -4,15 +4,17 @@
  * that are NOT a recognized Closing Bell button reply (free-text messages, or
  * a button reply that classified as 'unrecognized').
  *
- * READ-ONLY BY CONSTRUCTION. This flow can only:
- *   - answer a question using read-only tools, or
- *   - forward ("route") the message to a named stakeholder over WhatsApp.
- * It can NEVER move money, change a balance, or approve anything:
- *   1. no write-capable tool is wired in here,
- *   2. a regex guard short-circuits financial/approval intent BEFORE Claude
- *      is called, replying with a fixed "needs approval through the app" line,
- *   3. the system prompt states the rule explicitly.
- * Any future change that adds a write-capable tool to this file must be
+ * Read-only tools answer questions directly. Anything that would change
+ * something (approve an import, mark an invoice paid, pause the chase
+ * agent, log a ledger entry, stop/take-over a chase — the same action set
+ * Ask Margyn's web chat has, via _lib/marginActions.js) NEVER executes from
+ * a typed sentence. It only ever produces a confirm/cancel WhatsApp button
+ * message (whatsapp_pending_actions + bsp.sendButtons) — the actual write
+ * happens later, in api/whatsapp.js's webhook handler, only when that
+ * specific button is tapped. A regex guard still hard-blocks anything that
+ * reads as an actual money-movement command (pay/transfer/wire/refund/etc)
+ * before Claude is even called — Margyn never moves money, confirmed or not.
+ * Any future change to that guard or to marginActions.executeAction must be
  * treated as a security review, not a feature.
  *
  * Zero-npm: plain fetch() only, matching api/whatsapp.js and _lib/whatsappBsp.js.
@@ -25,6 +27,7 @@
 
 const { selectRows, insertRows, rpc } = require('./supabaseRest');
 const bsp = require('./whatsappBsp');
+const marginActions = require('./marginActions');
 
 const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -68,16 +71,22 @@ async function alreadyHandled(wamid) {
 }
 
 const APPROVAL_REQUIRED_REPLY =
-  "I can't action payments, approvals, or balance changes over WhatsApp — that has to go through the Margyn app where it's authenticated and logged. Anything else, I can help with here.";
+  "I can't move money or directly rewrite a balance over WhatsApp — that always has to go through the Margyn app. But I can put a confirm button in front of you right here for things like approvals, marking something paid, or logging an entry — just ask.";
 
-// Fast hard block. Only an unambiguous IMPERATIVE aimed at the agent to move
-// money / approve something is stopped before Claude. Questions ("how much
+// Fast hard block. Only an unambiguous IMPERATIVE to actually move money is
+// stopped before Claude — approving an import, marking something paid,
+// pausing an agent, or logging an entry are legitimate propose_action
+// targets now (see marginActions.js) and are deliberately NOT caught here;
+// they still can't execute from typed text alone, since propose_action only
+// ever produces a confirm/cancel button, never an immediate write. Real
+// money movement (pay/transfer/wire/refund/etc) has no propose_action
+// counterpart at all — Margyn never does that, confirmed or not — so it
+// stays hard-blocked before Claude is even called. Questions ("how much
 // have I paid in GST?") and relay requests ("tell my AP person...") are not
-// caught here — Claude handles those, and it has no write tools regardless.
-// A false negative is still safe: Claude cannot action anything and the
-// system prompt refuses. So bias toward not blocking legitimate messages.
-const FINANCIAL_COMMAND_RE = /^\s*(?:(?:please|pls|plz|kindly|hey\s+margyn|margyn|can\s+you|could\s+you|would\s+you|i\s+want\s+(?:you\s+)?to|i\s+need\s+(?:you\s+)?to)[\s,]+)*(?:go\s+(?:and\s+)?)?(pay|approve|transfer|remit|settle|disburse|refund|reimburse|authoris|authoriz|release\s+(?:the\s+)?funds?|wire|send\s+(?:the\s+)?(?:money|payment|funds))\b/i;
-const FINANCIAL_MUTATION_RE = /\b(?:adjust|update|change|set|correct|reduce|increase)\s+[\w\s'-]{0,25}\bbalance\b|\bmark(?:ed|ing)?\s+[\w\s#'-]{0,25}\bpaid\b/i;
+// caught here — Claude handles those. A false negative here is still safe:
+// there is no tool that can move money regardless of what Claude decides.
+const FINANCIAL_COMMAND_RE = /^\s*(?:(?:please|pls|plz|kindly|hey\s+margyn|margyn|can\s+you|could\s+you|would\s+you|i\s+want\s+(?:you\s+)?to|i\s+need\s+(?:you\s+)?to)[\s,]+)*(?:go\s+(?:and\s+)?)?(pay|transfer|remit|disburse|refund|reimburse|release\s+(?:the\s+)?funds?|wire|send\s+(?:the\s+)?(?:money|payment|funds))\b/i;
+const FINANCIAL_MUTATION_RE = /\b(?:adjust|correct)\s+[\w\s'-]{0,25}\bbalance\b/i;
 
 // ...but NOT when the message asks the agent to relay/forward to a person
 // ("tell my AP person the bill needs paying", "ask AR to chase receivables").
@@ -159,6 +168,12 @@ const TOOLS = [
   }
 ];
 
+// Full tool set offered to Claude: the read-only tools above (get_vitals,
+// list_receivables, etc.) plus marginActions' own read tools and its one
+// terminal propose_action tool. See execTool below for how propose_action
+// is intercepted before it ever reaches a normal tool-result round trip.
+const ALL_TOOLS = [...TOOLS, ...marginActions.TOOLS];
+
 /* ------------------------------------------------------------------ */
 /* Entry point                                                         */
 /* ------------------------------------------------------------------ */
@@ -231,6 +246,12 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
       toolUses.length ? toolUses.map(t => ({ name: t.name, input: t.input })) : null
     );
 
+    const proposal = toolUses.find(t => marginActions.isProposeAction(t.name));
+    if (proposal) {
+      await handleProposal(proposal.input || {}, { profileId, fromPhone, textOut });
+      return;
+    }
+
     if (data.stop_reason === 'tool_use' && toolUses.length) {
       messages.push({ role: 'assistant', content: blocks });
       const results = [];
@@ -256,6 +277,54 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
   const fallback = "Sorry — I couldn't work that one out over WhatsApp. Try rephrasing, or open the Margyn app.";
   await persist(profileId, 'assistant', fallback, null);
   await sendReply(fromPhone, fallback);
+}
+
+/**
+ * Claude has resolved a specific action. This NEVER executes it — it either
+ * (a) sends a confirm/cancel button message and records a pending row for
+ * api/whatsapp.js's webhook handler to resolve when the button is tapped, or
+ * (b) for a multi-item review, just lists the candidates as text, since
+ * WhatsApp buttons can't offer a multi-select — that stays an app-only flow.
+ */
+async function handleProposal(p, { profileId, fromPhone, textOut }) {
+  if (p.type === 'list_for_review') {
+    const items = (p.payload && p.payload.items) || [];
+    const lines = items.map((it, i) => `${i + 1}. ${it.label || it.type}`).join('\n');
+    const text = (textOut ? textOut + '\n\n' : '') + (lines || p.human_summary || 'Nothing matched.') +
+      (items.length ? '\n\nOpen the Margyn app to review and confirm these together.' : '');
+    await persist(profileId, 'assistant', text, null);
+    await sendReply(fromPhone, text.slice(0, MAX_REPLY_CHARS));
+    return;
+  }
+
+  const summary = p.human_summary || 'Confirm this action?';
+  let pending;
+  try {
+    pending = await marginActions.createPendingAction({
+      userId: profileId, fromPhone, type: p.type,
+      targetId: p.target_id, targetKind: p.target_kind, payload: p.payload,
+      humanSummary: summary
+    });
+  } catch (e) {
+    console.error('[whatsappAgent] createPendingAction failed:', e.message);
+    await sendReply(fromPhone, "Couldn't set that up just now — try again, or use the app.");
+    return;
+  }
+
+  const sendRes = await bsp.sendButtons({
+    to: fromPhone,
+    text: summary,
+    buttons: [{ id: 'confirm', title: 'Confirm ✅' }, { id: 'cancel', title: 'Cancel ❌' }]
+  });
+
+  if (!sendRes.ok) {
+    console.error('[whatsappAgent] sendButtons failed:', sendRes.error);
+    await sendReply(fromPhone, summary + "\n\n(Couldn't attach a confirm button here — reply back to have Margyn ask again, or use the app.)");
+    return;
+  }
+
+  await marginActions.setPendingActionMessageId(pending.id, sendRes.messageId);
+  await persist(profileId, 'assistant', summary, null);
 }
 
 /** Send an outbound WhatsApp reply, logging (not throwing) on failure so a
@@ -285,7 +354,7 @@ async function callClaude(apiKey, system, messages) {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools: TOOLS, messages })
+    body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools: ALL_TOOLS, messages })
   });
   if (!res.ok) {
     const t = await res.text();
@@ -319,7 +388,7 @@ EXAMPLES (shape, not numbers):
 "are we fine on cash" -> "Can't see the bank yet. From Razorpay, ₹X settled this week; books show ₹Y. Want the mismatches?"
 "what's wrong with invoice 1042" -> "Mismatch. Zoho 1042 is ₹50,000; Razorpay payment pay_abc is ₹49,100 on the same day. IDs don't line up cleanly."
 
-You can do exactly two things:
+You can do three things:
 1. ANSWER using your read-only tools:
    - get_vitals — Pulse Score + the six vitals (cash, receivables aging, payables due, GST/ITC leakage, net margin, runway) + cash/revenue/profit
    - list_receivables / list_payables — open receivables/payables merged across the app ledger + Zoho + Tally, each row source-tagged, with agree/conflict flags. Where sources agree, say so; where they conflict, give each number; never add per-source totals together.
@@ -327,12 +396,15 @@ You can do exactly two things:
    - get_findings — issues Margyn has flagged
    - get_invoice_status — one invoice by number
    - get_stakeholder — the AR / AP / owner contact
+   - list_pending_import_suggestions / list_pending_agent_actions / list_open_ledger_items / list_chase_targets / get_chase_agent_config — the same lookups Ask Margyn's web chat has, to find a specific row before proposing something be done to it
 2. ROUTE the message to the right person with route_message when it is really meant for someone else (customer chasing a payment -> AR, vendor/bill question -> AP, anything else the owner should see -> owner). After routing, tell the sender you have passed it on and to whom.
+3. PROPOSE an action with propose_action — approve/reject an import, approve/dismiss an agent-queue item, pause/resume/reconfigure the chase agent, mark a ledger item or a chase target paid, log a new ledger entry, stop chasing someone, or send a one-off chase reminder. Calling this NEVER executes anything — it sends the sender a WhatsApp button to tap. Only the tapped button, never a typed reply, makes the write happen. Use the list_* tools first if you need to resolve which specific row the sender means.
 
 Pick the right tool: for "how much is overdue", "receivables 30/60/90 days", "who should I chase", "what bills are due" use list_receivables / list_payables and read the per-item days — do NOT answer those from the single 90-day figure in get_vitals. Use get_vitals for the scores and the headline totals.
 
-HARD RULE — you have NO ability to take any financial or approval action and must never imply otherwise. You cannot make, schedule or confirm a payment, move funds, change or adjust a balance, approve or sign off on anything, or write anything back to the books. If the sender asks YOU to do any of that, do NOT call any tool — reply only with exactly this line: "${APPROVAL_REQUIRED_REPLY}"
-Relaying is different and allowed: "tell my AP person the Acme bill needs paying" or "chase Acme on the overdue payment" is a routing request — use route_message to forward it to the right person. You are passing a message to a human, not actioning anything.
+HARD RULE — you cannot make, schedule or confirm an actual payment, move funds, or freely rewrite a balance figure, ever, confirmed or not — there is no tool for any of that. If the sender asks YOU to do one of those specifically, do NOT call any tool — reply only with exactly this line: "${APPROVAL_REQUIRED_REPLY}"
+Everything else that changes Margyn's own data (approvals, marking paid, logging entries, the chase agent) is fine to propose — propose_action always requires an explicit button tap before anything actually changes, so there is no harm in proposing when the sender's intent is clear.
+Relaying is different and allowed: "tell my AP person the Acme bill needs paying" is a routing request — use route_message to forward it to the right person; you are passing a message to a human, not actioning anything. But "chase Acme on the overdue payment" — the sender asking Margyn itself to chase — is now a propose_action (send_one_off_chase), not a route_message.
 
 Other rules:
 - You know which business this is (${companyName}) but not which individual is texting. If asked "do you know who I am", say you identify the business by its registered WhatsApp number and work off its Margyn data — don't just say you have no idea.
@@ -357,7 +429,9 @@ async function execTool(name, input, ctx) {
     if (name === 'get_invoice_status') return await toolGetInvoiceStatus(input, ctx);
     if (name === 'get_stakeholder') return await toolGetStakeholder(input, ctx);
     if (name === 'route_message') return await toolRouteMessage(input, ctx);
-    return { error: `Unknown tool ${name}` };
+    // marginActions' own read tools (list_pending_import_suggestions, etc.) —
+    // propose_action itself never reaches here, it's intercepted in the loop above.
+    return await marginActions.execReadTool(name, input, ctx.profileId);
   } catch (e) {
     console.error(`[whatsappAgent] tool ${name} threw:`, e.message);
     return { error: 'That lookup failed just now.' };
