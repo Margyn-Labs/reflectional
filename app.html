@@ -1273,7 +1273,23 @@
 
   .ask-main{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; overflow:hidden; min-width:0; }
   .ask-main-head{ padding:14px 20px; border-bottom:1px solid var(--border-1); display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .ask-main-head .amh-hl{ display:flex; align-items:center; gap:11px; min-width:0; }
   .ask-main-head .amh-l{ min-width:0; }
+  /* Agent avatar — a distinct icon glyph per agent (never a distinct hue:
+     orange is reserved product-wide for "AI-generated narrative", so every
+     agent shares that same wash/border and differentiates by shape only,
+     see api/_lib/agentRegistry.js for the roster). Pops in with a small
+     overshoot whenever the active agent changes (new conversation, or a
+     handoff mid-thread) — see agentPop() in JS. */
+  .agent-avatar{ flex-shrink:0; width:34px; height:34px; border-radius:50%; background:var(--orange-wash); border:1px solid rgba(204,91,52,0.28); display:flex; align-items:center; justify-content:center; color:var(--orange); position:relative; }
+  .agent-avatar svg{ width:17px; height:17px; }
+  .agent-avatar::after{ content:''; position:absolute; right:-1px; bottom:-1px; width:9px; height:9px; border-radius:50%; background:var(--emerald); border:2px solid var(--surf-1); }
+  @keyframes agentPopIn{ 0%{ transform:scale(.35); opacity:0; } 60%{ transform:scale(1.12); opacity:1; } 100%{ transform:scale(1); } }
+  .agent-avatar.pop{ animation:agentPopIn .42s cubic-bezier(.22,1.4,.36,1); }
+  @media (prefers-reduced-motion: reduce){ .agent-avatar.pop{ animation:none; } }
+  .agent-avatar.sm{ width:22px; height:22px; }
+  .agent-avatar.sm svg{ width:11px; height:11px; }
+  .agent-avatar.sm::after{ width:6px; height:6px; }
   .ask-main-head .amh-t{ font-weight:800; font-size:15px; letter-spacing:-.02em; color:var(--text-0); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ask-main-head .amh-s{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--text-3); margin-top:3px; }
   .ask-ground{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
@@ -1286,12 +1302,22 @@
   .ask-stream .margyn-msg.user{ align-self:flex-end; max-width:74%; background:var(--text-0); color:#fff; border-radius:14px 14px 4px 14px; padding:12px 15px; font-size:13.5px; margin-top:18px; }
   .ask-stream .margyn-msg.user:first-child{ margin-top:0; }
   .ask-stream .margyn-msg.assistant{ align-self:stretch; max-width:none; background:transparent; border:none; border-left:2px solid var(--orange); border-radius:0;
-    padding:2px 0 2px 16px; margin-top:16px; font-size:13.5px; color:var(--text-0); position:relative; }
-  .ask-stream .margyn-msg.assistant::before{ content:attr(data-agent); display:block; font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.16em; color:var(--orange); margin-bottom:6px; }
+    padding:2px 0 2px 16px; margin-top:18px; font-size:13.5px; color:var(--text-0); position:relative; }
+  .ask-stream .margyn-msg.assistant .msg-head{ display:flex; align-items:center; gap:7px; margin-bottom:7px; }
+  .ask-stream .margyn-msg.assistant .msg-agent-name{ font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--orange); }
+  .ask-stream .margyn-msg.assistant .msg-body{ white-space:pre-wrap; }
   .ask-stream .margyn-msg.assistant.loading{ background:transparent; border-left-color:var(--border-2); font-style:normal; color:var(--text-3); }
-  .ask-stream .margyn-msg.assistant.loading::after{ content:'●●●'; letter-spacing:3px; font-size:9px; color:var(--text-3); animation:askDots 1.1s ease-in-out infinite; display:inline-block; }
+  .ask-stream .margyn-msg.assistant.loading .msg-agent-name{ color:var(--text-3); }
+  .ask-stream .margyn-msg.assistant.loading .msg-body::after{ content:'●●●'; letter-spacing:3px; font-size:9px; color:var(--text-3); animation:askDots 1.1s ease-in-out infinite; display:inline-block; }
   @keyframes askDots{ 0%,100%{ opacity:.3; } 50%{ opacity:1; } }
-  .margyn-msg.handoff{ align-self:center; max-width:none; background:transparent; border:none; padding:4px 0; margin:6px 0; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); text-align:center; white-space:normal; }
+  /* The loading-state avatar breathes while its agent is "thinking" — reads
+     as live rather than a static placeholder, same idea as Grok's animated
+     orb during generation. Swapped for a clean 'pop' once the reply lands
+     (see revealText/appendChatBubble). */
+  @keyframes agentBreathe{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.6; transform:scale(.92); } }
+  .margyn-msg.assistant.loading .msg-head .agent-avatar{ animation:agentBreathe 1.3s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce){ .margyn-msg.assistant.loading .msg-head .agent-avatar{ animation:none; } }
+  .margyn-msg.handoff{ align-self:center; max-width:none; background:transparent; border:none; padding:6px 0; margin:8px 0; display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); white-space:normal; }
   .msg-actions{ display:flex; gap:4px; margin:8px 0 0 18px; opacity:0; transition:opacity var(--dur-2) var(--ease-out); }
   .margyn-msg.assistant:hover + .msg-actions, .msg-actions:hover{ opacity:1; }
   .msg-actions button{ border:none; background:transparent; color:var(--text-3); font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
@@ -2031,9 +2057,12 @@
       </aside>
       <section class="ask-main" id="historyThreadOpen">
         <div class="ask-main-head">
-          <div class="amh-l">
-            <div class="amh-t" id="askThreadTitle">New conversation</div>
-            <div class="amh-s" id="askThreadMeta">Grounded in your connected data</div>
+          <div class="amh-hl">
+            <div class="agent-avatar" id="askThreadAvatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
+            <div class="amh-l">
+              <div class="amh-t" id="askThreadTitle">New conversation</div>
+              <div class="amh-s" id="askThreadMeta">Grounded in your connected data</div>
+            </div>
           </div>
           <div class="ask-ground" id="askGround"></div>
         </div>
@@ -3849,11 +3878,37 @@ const CHAT_CONTEXT_CAP = 8;
 const threadAgentMap = new Map();
 function getThreadAgent(tk){ return threadAgentMap.get(tk) || 'margyn'; }
 const AGENT_META = {
-  margyn: { name:'Margyn', sub:'Grounded in your connected data' },
-  chase:  { name:'Chase Agent', sub:'Collections — chasing overdue receivables' },
-  close:  { name:'Close Agent', sub:'Reconciliation — the Agent Queue' },
-  import: { name:'Import Agent', sub:'Triaging pending invoices & bills' }
+  margyn: { name:'Margyn', sub:'Grounded in your connected data', icon:'margyn' },
+  chase:  { name:'Chase Agent', sub:'Collections — chasing overdue receivables', icon:'chase' },
+  close:  { name:'Close Agent', sub:'Reconciliation — the Agent Queue', icon:'close' },
+  import: { name:'Import Agent', sub:'Triaging pending invoices & bills', icon:'import' }
 };
+/* One glyph per agent — never a distinct hue (orange stays the single
+   "AI-generated narrative" colour product-wide, per the locked palette in
+   :root). Feather-style, 24x24, stroke=currentColor, matching every other
+   icon already in this file. */
+const AGENT_ICON_SVG = {
+  margyn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  chase:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+  close:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  import: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+};
+function agentAvatarInner(agentId){ return AGENT_ICON_SVG[agentId] || AGENT_ICON_SVG.margyn; }
+/* Render (or update) the header avatar for the active agent. Only plays the
+   pop-in animation when the agent actually changed — reused on every
+   askSetTitle call, most of which don't touch the agent at all. */
+let _lastHeaderAgentId = null;
+function setThreadAvatar(agentId){
+  const el = document.getElementById('askThreadAvatar'); if(!el) return;
+  const id = agentId || 'margyn';
+  el.innerHTML = agentAvatarInner(id);
+  el.classList.remove('pop');
+  if(id !== _lastHeaderAgentId){
+    void el.offsetWidth; // restart animation even if same class was already applied once
+    el.classList.add('pop');
+  }
+  _lastHeaderAgentId = id;
+}
 
 async function saveChatMessage(threadKey, vital, role, content, agentId){
   try {
@@ -3983,25 +4038,43 @@ document.addEventListener('click', (e) => {
    loop in ask-margyn.js would need to stream per-iteration) that isn't
    justified until this stops feeling fast enough. */
 function revealText(el, text, threadEl){
+  const target = el.querySelector('.msg-body') || el;
   return new Promise(resolve => {
     const words = text.split(' ');
     let i = 0;
-    el.textContent = '';
+    target.textContent = '';
     const tick = () => {
       i += 2; // 2 words/tick reads as fluent without dragging out long replies
-      el.textContent = words.slice(0, i).join(' ');
+      target.textContent = words.slice(0, i).join(' ');
       if(threadEl) threadEl.scrollTop = threadEl.scrollHeight;
       if(i < words.length){ setTimeout(tick, 22); } else { resolve(); }
     };
-    if(words.length <= 1){ el.textContent = text; resolve(); } else { tick(); }
+    if(words.length <= 1){ target.textContent = text; resolve(); } else { tick(); }
   });
 }
 
-function appendChatBubble(threadEl, role, text, agentLabel){
+/* agentId (not a display name) for assistant/loading bubbles — resolved to
+   name + icon internally so every call site just says who's talking. In the
+   main Ask Margyn workspace (.ask-stream) each assistant bubble gets a real
+   avatar + name header; elsewhere (the per-vital mini chat) it stays a
+   plain bubble, unchanged — that surface never had per-agent identity and
+   isn't the multi-agent entry point. */
+function appendChatBubble(threadEl, role, text, agentId){
   const b = document.createElement('div');
   b.className = 'margyn-msg ' + role;
-  b.textContent = text;
-  if(role.indexOf('assistant') === 0) b.dataset.agent = (agentLabel || 'Margyn').toUpperCase();
+  const isAssistant = role.indexOf('assistant') === 0;
+  const inStream = threadEl.classList.contains('ask-stream');
+  if(isAssistant && inStream){
+    const id = agentId || 'margyn';
+    const meta = AGENT_META[id] || AGENT_META.margyn;
+    b.dataset.agent = id;
+    b.innerHTML =
+      '<div class="msg-head"><span class="agent-avatar sm">' + agentAvatarInner(id) + '</span><span class="msg-agent-name">' + escapeHtml(meta.name) + '</span></div>' +
+      '<div class="msg-body"></div>';
+    if(text) b.querySelector('.msg-body').textContent = text;
+  } else {
+    b.textContent = text;
+  }
   threadEl.appendChild(b);
   threadEl.scrollTop = threadEl.scrollHeight;
   return b;
@@ -4020,8 +4093,7 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
     historyRef.push({ role:'user', content: msg });
     if(tk) saveChatMessage(tk, fl, 'user', msg);
     const agentId = getThreadAgent(tk);
-    const agentLabel = (AGENT_META[agentId] || AGENT_META.margyn).name;
-    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', '', agentLabel);
+    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', '', agentId);
     const submitBtn = formEl.querySelector('button');
     submitBtn.disabled = true;
     try {
@@ -4033,13 +4105,16 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
       if(tk) saveChatMessage(tk, fl, 'assistant', reply, agentId);
       if(data.handoff && data.handoff.agentId){
         threadAgentMap.set(tk, data.handoff.agentId);
-        const meta = AGENT_META[data.handoff.agentId] || { name: data.handoff.agentName || data.handoff.agentId, sub:'' };
+        const hoAgentId = data.handoff.agentId;
+        const meta = AGENT_META[hoAgentId] || { name: data.handoff.agentName || hoAgentId, sub:'', icon:'margyn' };
         const divider = document.createElement('div');
         divider.className = 'margyn-msg handoff';
-        divider.textContent = '→ Now with ' + meta.name;
+        divider.innerHTML = '<span class="agent-avatar sm">' + agentAvatarInner(hoAgentId) + '</span><span>Now with ' + escapeHtml(meta.name) + '</span>';
         threadEl.appendChild(divider);
         threadEl.scrollTop = threadEl.scrollHeight;
-        askSetTitle(meta.name, meta.sub);
+        const popAvatar = divider.querySelector('.agent-avatar');
+        requestAnimationFrame(() => popAvatar.classList.add('pop'));
+        askSetTitle(meta.name, meta.sub, hoAgentId);
       }
       if(data.actionCard && data.actionCard.type){
         const cardEl = document.createElement('div');
@@ -4472,9 +4547,10 @@ function askGroundChips(){
   bits.unshift('<span class="gchip"><i></i>Your ledger</span>');
   host.innerHTML = bits.slice(0, 4).join('') + (bits.length > 4 ? '<span class="gchip">+' + (bits.length - 4) + '</span>' : '');
 }
-function askSetTitle(title, meta){
+function askSetTitle(title, meta, agentId){
   const t = document.getElementById('askThreadTitle'); if(t) t.textContent = title;
   const m = document.getElementById('askThreadMeta'); if(m) m.textContent = meta || 'Grounded in your connected data';
+  if(agentId) setThreadAvatar(agentId);
 }
 function renderAskEmpty(){
   const stream = document.getElementById('historyThreadMessages'); if(!stream) return;
@@ -4495,7 +4571,7 @@ function askNewConversation(focus){
   askPageThreadKey = newGlobalThreadKey();
   askPageHistory.length = 0;
   askPageFocus = focus || null;
-  askSetTitle(focus ? focus : 'New conversation', focus ? 'Focused on ' + focus : 'Grounded in your connected data');
+  askSetTitle(focus ? focus : 'New conversation', focus ? 'Focused on ' + focus : 'Grounded in your connected data', 'margyn');
   renderAskEmpty();
   askRewireComposer();
   document.querySelectorAll('#historyThreadList .chat-history-row').forEach(r => r.classList.remove('on'));
@@ -4553,7 +4629,8 @@ function askDecorateStream(){
     row.className = 'msg-actions';
     row.innerHTML = '<button type="button" data-a="copy">Copy</button><button type="button" data-a="again">Ask again</button>';
     row.querySelector('[data-a="copy"]').addEventListener('click', () => {
-      if(navigator.clipboard) navigator.clipboard.writeText(msg.textContent || '');
+      const body = msg.querySelector('.msg-body');
+      if(navigator.clipboard) navigator.clipboard.writeText((body ? body.textContent : msg.textContent) || '');
       toast('Answer copied');
     });
     row.querySelector('[data-a="again"]').addEventListener('click', () => {
@@ -4648,20 +4725,19 @@ async function openHistoryThread(threadKey, label){
   const messagesEl = document.getElementById('historyThreadMessages');
   messagesEl.innerHTML = '';
   askPageThreadKey = threadKey;
-  askSetTitle(label || 'Conversation', 'Reopened, same context as when you left it');
+  askSetTitle(label || 'Conversation', 'Reopened, same context as when you left it', 'margyn');
   const historyRef = [];
   const past = await loadChatThread(threadKey, 200); // full read for browsing, API calls still cap at CHAT_CONTEXT_CAP
   let lastAgentId = 'margyn';
   past.forEach(m => {
-    const agentLabel = m.role === 'assistant' ? (AGENT_META[m.agent_id || 'margyn'] || AGENT_META.margyn).name : undefined;
-    appendChatBubble(messagesEl, m.role, m.content, agentLabel);
+    appendChatBubble(messagesEl, m.role, m.content, m.agent_id);
     historyRef.push({ role:m.role, content:m.content });
     if(m.role === 'assistant' && m.agent_id) lastAgentId = m.agent_id;
   });
   threadAgentMap.set(threadKey, lastAgentId);
   if(lastAgentId !== 'margyn'){
     const meta = AGENT_META[lastAgentId] || AGENT_META.margyn;
-    askSetTitle(label || meta.name, 'Reopened with ' + meta.name + ' — ' + meta.sub);
+    askSetTitle(label || meta.name, 'Reopened with ' + meta.name + ' — ' + meta.sub, lastAgentId);
   }
   askPageHistory.length = 0;
   historyRef.forEach(m => askPageHistory.push(m));
