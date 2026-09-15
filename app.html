@@ -1372,6 +1372,13 @@
   .ask-empty .ae-mark svg{ width:22px; height:22px; }
   .ask-empty h3{ font-size:17px; font-weight:800; letter-spacing:-.02em; color:var(--text-0); margin-bottom:6px; }
   .ask-empty p{ font-size:13px; color:var(--text-2); line-height:1.6; margin-bottom:18px; }
+  /* Live status echo on an agent-home empty state — same number as its
+     card in the Agents list, so the two never visually disagree. */
+  .ae-status-btn{ font:inherit; display:inline-flex; align-items:center; gap:9px; border:1px solid var(--border-1); border-radius:999px; padding:8px 16px; background:var(--surf-1); cursor:pointer; margin:0 auto 18px; transition:border-color var(--dur-1) var(--ease-out); }
+  .ae-status-btn:hover{ border-color:var(--emerald-bright); }
+  .ae-status-btn .ac-status{ font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.04em; color:var(--emerald-deep); }
+  .ae-status-btn .ae-status-cta{ font-size:12px; font-weight:700; color:var(--text-1); }
+  #askHomeEmptyStatus .ac-status.quiet{ display:block; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.04em; color:var(--text-3); margin-bottom:18px; }
   .ask-empty .ae-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; text-align:left; }
   @media (max-width:620px){ .ask-empty .ae-grid{ grid-template-columns:1fr; } }
   .ask-empty .ae-grid button{ border:1px solid var(--border-1); background:var(--surf-1); border-radius:10px; padding:11px 13px; font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600;
@@ -4063,7 +4070,22 @@ async function openAgentHome(agentId){
   const past = await loadChatThread(threadKey, 200);
   askPageHistory.length = 0;
   if(!past.length){
-    messagesEl.innerHTML = '<div class="ask-empty"><div class="ae-mark">' + agentAvatarInner(id) + '</div><h3>' + escapeHtml(meta.name) + '</h3><p>' + escapeHtml(AGENT_HOME_EMPTY[id] || '') + '</p></div>';
+    messagesEl.innerHTML = '<div class="ask-empty"><div class="ae-mark">' + agentAvatarInner(id) + '</div><h3>' + escapeHtml(meta.name) + '</h3><p>' + escapeHtml(AGENT_HOME_EMPTY[id] || '') + '</p><div id="askHomeEmptyStatus"></div></div>';
+    // The card you clicked already showed a live count (e.g. "1 pending
+    // import") — the greeting above was static and never actually said
+    // what that was, which read as the badge and the chat disagreeing.
+    // Surface the same live number here, with one tap to have the agent
+    // narrate the specifics rather than making you type the question.
+    const s = await agentStatusLine(id);
+    const statusEl = document.getElementById('askHomeEmptyStatus');
+    if(statusEl && s.text){
+      if(s.quiet){
+        statusEl.innerHTML = '<span class="ac-status quiet">' + escapeHtml(s.text) + '</span>';
+      } else {
+        statusEl.innerHTML = '<button type="button" class="ae-status-btn"><span class="ac-status">' + escapeHtml(s.text) + '</span><span class="ae-status-cta">Show me →</span></button>';
+        statusEl.querySelector('.ae-status-btn').addEventListener('click', () => askSubmitInPlace("What's pending right now?"));
+      }
+    }
   } else {
     past.forEach(m => {
       appendChatBubble(messagesEl, m.role, m.content, m.role === 'assistant' ? id : undefined);
@@ -4780,6 +4802,20 @@ function askWireComposerInput(input, form){
     }
   });
   grow();
+}
+/* Same mechanics as askSubmit below, minus the title/header rewrite — used
+   from an agent-home thread's empty state ("1 pending import → Show me")
+   where the header should keep showing the agent's identity, not get
+   replaced by the question text. */
+function askSubmitInPlace(q){
+  q = (q || '').trim(); if(!q) return;
+  const stream = document.getElementById('historyThreadMessages');
+  if(stream && stream.querySelector('.ask-empty')) stream.innerHTML = '';
+  const input = document.getElementById('historyThreadInput');
+  const form = document.getElementById('historyThreadForm');
+  if(!input || !form) return;
+  input.value = q;
+  form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable:true, bubbles:true }));
 }
 function askSubmit(q){
   q = (q || '').trim(); if(!q) return;
