@@ -40,7 +40,7 @@ const daysBetween = (a, b) => (a && b) ? Math.abs((new Date(a) - new Date(b)) / 
 const near = (a, b, tol) => Math.abs(Number(a) - Number(b)) <= (tol != null ? tol : 0.5);
 const gapRatio = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1);
 
-function runAgent(bundle) {
+function runAgent(bundle, opts) {
   const B = bundle || {};
   const asOf = B.asOf || new Date().toISOString().slice(0, 10);
   const booksPayments = B.booksPayments || [];
@@ -103,8 +103,30 @@ function runAgent(bundle) {
       const keys = [b.invoiceRef, inv && inv.number, inv && inv.ref].filter(Boolean).map(norm);
       return keys.some((k) => k.length >= 3 && hay.includes(k));
     });
+    let tds = null;
     if (named.length >= 2 && near(named.reduce((s, b) => s + b.amount, 0), g.amount, Math.max(2, g.amount * 0.005))) {
       combo = dedupeByInvoice(named);
+    } else if (named.length >= 2) {
+      // Same invoices, explicitly named in the settlement's own narration —
+      // so the row identification is already trustworthy — but the total
+      // doesn't land exactly: check whether it's net of one clean, known
+      // withholding rate instead (a single settlement covering several
+      // invoices at once, net of TDS, looks like N unrelated clean 1:1
+      // matches if you only ever look at one row at a time — this is the
+      // narration-gated fix for that; deliberately NOT a blind subset-sum
+      // search across the whole customer's open book, which produces false
+      // positives from coincidental amount collisions — see the sibling
+      // rule and its regression tests in tools/scenario-gen/closeAgent.js).
+      const namedCombo = dedupeByInvoice(named);
+      const namedSum = namedCombo.reduce((s, b) => s + b.amount, 0);
+      for (const k of KNOWN_TDS_RATES) {
+        const expected = money(namedSum * (1 - k.rate));
+        if (near(expected, g.amount, Math.max(2, g.amount * 0.003))) {
+          combo = namedCombo;
+          tds = { amount: money(namedSum - g.amount), section: k.section, rate: k.rate };
+          break;
+        }
+      }
     }
     if (!combo) {
       const pool = openBooks().filter((b) => {
@@ -116,17 +138,22 @@ function runAgent(bundle) {
     }
     if (!combo || combo.length < 2) continue;
 
+    const tdsNote = tds ? ` (net of ${(tds.rate * 100).toFixed(tds.rate < 0.01 ? 1 : 0)}% TDS, ${tds.section} — books show face value, settlement is net of ₹${tds.amount} withheld)` : '';
     push({
-      kind: 'split', confidence: 0.8,
+      kind: 'split', confidence: tds ? 0.82 : 0.8,
       proposalKey: `split:${g.id}`,
       sourceFindingKey: null,
-      title: `Split ₹${money(g.amount)} across ${combo.length} invoices`,
-      rationale: `One gateway payment (${g.id}) equals the sum of ${combo.length} open invoices for ${pg || 'this customer'}. Allocate it across them.`,
+      title: `Split ₹${money(g.amount)} across ${combo.length} invoices${tds ? ' (net of TDS)' : ''}`,
+      rationale: `One gateway payment (${g.id}) — named in its own description — covers ${combo.length} open invoices for ${pg || 'this customer'}${tdsNote}. Allocate it across them${tds ? ' and book the TDS separately' : ''}.`,
       amount: money(g.amount), currency: g.currency || 'INR',
-      evidence: { gateway: { id: g.id, amount: g.amount, date: g.date }, booksRefs: combo.map((b) => b.ref) },
+      evidence: {
+        gateway: { id: g.id, amount: g.amount, date: g.date }, booksRefs: combo.map((b) => b.ref),
+        ...(tds ? { adjustment: { type: 'tds', amount: tds.amount, section: tds.section } } : {})
+      },
       proposal: {
         match: { gatewayId: g.id },
-        allocations: combo.map((b) => ({ invoiceRef: b.invoiceRef, booksRef: b.ref, amount: money(b.amount) }))
+        allocations: combo.map((b) => ({ invoiceRef: b.invoiceRef, booksRef: b.ref, amount: money(b.amount) })),
+        ...(tds ? { adjustments: [{ type: 'tds', amount: tds.amount, section: tds.section }] } : {})
       },
       _bp: combo.map((b) => String(b.ref)), _g: [String(g.id)]
     });
@@ -422,7 +449,31 @@ function runAgent(bundle) {
     });
   }
 
-  return out.map((o) => { delete o._bp; delete o._g; return o; });
+  const proposals = out.map((o) => { delete o._bp; delete o._g; return o; });
+
+  // opts.includeExceptions (used by closeCollectionsLlmTier.js, the Tier-2
+  // pass): everything still unclaimed after all layers above ran — reuses
+  // openBooks()'s existing exclusions (verified, claimed, cleanly-matched)
+  // rather than recomputing them, so this can never drift from what Tier 1
+  // actually left behind. Kept off by default so runAgent()'s return shape
+  // (a plain array) is unchanged for every existing caller/test.
+  if (opts && opts.includeExceptions) {
+    const exceptions = openBooks().map((bp) => {
+      let party = partyOfBooks(bp);
+      let gatewayHint = null;
+      if (!party && !bp.invoiceRef) {
+        // no invoice ref -> nothing to resolve the party from directly; fall
+        // back to a same-amount, near-date free gateway capture purely as a
+        // party-resolution + context hint (mirrors L10's own on-account
+        // matcher). Does not claim the row.
+        const g = freeGateway().find((x) => near(x.amount, bp.amount) && daysBetween(x.date, bp.date) <= 8);
+        if (g) { gatewayHint = g.id; party = partyOfGateway(g); }
+      }
+      return { ref: bp.ref, amount: bp.amount, date: bp.date, currency: bp.currency, invoiceRef: bp.invoiceRef, mode: bp.mode, party, gatewayHint };
+    });
+    return { proposals, exceptions };
+  }
+  return proposals;
 }
 
 /* ---- gap classification (ported from tools/scenario-gen/closeAgent.js) ---- */
