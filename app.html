@@ -468,6 +468,13 @@
   .finding-explain:hover{ border-color:var(--emerald-bright); color:var(--emerald); }
   .finding-explain:disabled{ opacity:.5; cursor:default; }
   .finding-provenance{ font-size:11px; color:var(--text-3); margin-top:8px; line-height:1.4; }
+  .action-card{ border:1px solid var(--border-1); border-left:2px solid var(--blue); border-radius:var(--radius-control); padding:13px 15px; margin-bottom:12px; background:var(--surf-2); }
+  .action-card-summary{ font-size:13px; line-height:1.55; color:var(--text-0); margin-bottom:10px; }
+  .action-card-items{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  .action-card-item{ font-size:12.5px; color:var(--text-1); display:flex; align-items:center; gap:8px; }
+  .action-card .action-confirm{ margin-right:8px; }
+  .action-card .action-confirm:disabled, .action-card .action-cancel:disabled{ opacity:.5; cursor:default; }
+  .action-card-done{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-3); margin-bottom:12px; }
   .source-badge{ display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; font-weight:700; padding:3px 9px; border-radius:6px; background:var(--surf-2); color:var(--text-3); border:1px solid var(--border-1); }
   .source-badge.self-reported{ color:var(--orange); border-color:var(--orange); }
   .source-badge.connector{ color:var(--emerald); border-color:var(--emerald-bright); }
@@ -1280,10 +1287,11 @@
   .ask-stream .margyn-msg.user:first-child{ margin-top:0; }
   .ask-stream .margyn-msg.assistant{ align-self:stretch; max-width:none; background:transparent; border:none; border-left:2px solid var(--orange); border-radius:0;
     padding:2px 0 2px 16px; margin-top:16px; font-size:13.5px; color:var(--text-0); position:relative; }
-  .ask-stream .margyn-msg.assistant::before{ content:'MARGYN'; display:block; font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.16em; color:var(--orange); margin-bottom:6px; }
+  .ask-stream .margyn-msg.assistant::before{ content:attr(data-agent); display:block; font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.16em; color:var(--orange); margin-bottom:6px; }
   .ask-stream .margyn-msg.assistant.loading{ background:transparent; border-left-color:var(--border-2); font-style:normal; color:var(--text-3); }
   .ask-stream .margyn-msg.assistant.loading::after{ content:'●●●'; letter-spacing:3px; font-size:9px; color:var(--text-3); animation:askDots 1.1s ease-in-out infinite; display:inline-block; }
   @keyframes askDots{ 0%,100%{ opacity:.3; } 50%{ opacity:1; } }
+  .margyn-msg.handoff{ align-self:center; max-width:none; background:transparent; border:none; padding:4px 0; margin:6px 0; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); text-align:center; white-space:normal; }
   .msg-actions{ display:flex; gap:4px; margin:8px 0 0 18px; opacity:0; transition:opacity var(--dur-2) var(--ease-out); }
   .margyn-msg.assistant:hover + .msg-actions, .msg-actions:hover{ opacity:1; }
   .msg-actions button{ border:none; background:transparent; color:var(--text-3); font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
@@ -3832,9 +3840,24 @@ document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e
    matching the cap ask-margyn.js already enforces server-side. */
 const CHAT_CONTEXT_CAP = 8;
 
-async function saveChatMessage(threadKey, vital, role, content){
+/* Which agent (Margyn the CFO, or a specialist — Chase/Close/Import) is
+   currently active per conversation thread. Keyed by threadKey so each
+   conversation keeps its own agent state; a new thread (askNewConversation)
+   always starts back at Margyn. Server confirms/drives the actual switch
+   via handoff_to_agent (see api/_lib/agentRegistry.js) — this map just
+   remembers which agent's turn it is for the next message in this thread. */
+const threadAgentMap = new Map();
+function getThreadAgent(tk){ return threadAgentMap.get(tk) || 'margyn'; }
+const AGENT_META = {
+  margyn: { name:'Margyn', sub:'Grounded in your connected data' },
+  chase:  { name:'Chase Agent', sub:'Collections — chasing overdue receivables' },
+  close:  { name:'Close Agent', sub:'Reconciliation — the Agent Queue' },
+  import: { name:'Import Agent', sub:'Triaging pending invoices & bills' }
+};
+
+async function saveChatMessage(threadKey, vital, role, content, agentId){
   try {
-    await sbClient.from('chat_messages').insert({ user_id: currentUser.id, thread_key: threadKey, vital: vital || null, role, content });
+    await sbClient.from('chat_messages').insert({ user_id: currentUser.id, thread_key: threadKey, vital: vital || null, role, content, agent_id: agentId || 'margyn' });
   } catch(e){ console.error('[margyn] saveChatMessage:', e); }
 }
 
@@ -3952,10 +3975,33 @@ document.addEventListener('click', (e) => {
   openMargynFocused(el.dataset.margynTopic, valueEl ? valueEl.textContent : null);
 });
 
-function appendChatBubble(threadEl, role, text){
+/* Perceived streaming: the reply arrives whole (one blocking API call —
+   see api/ask-margyn.js), but revealing it word-by-word instead of dumping
+   the full block at once reads as live rather than batch, matching what
+   every mainstream chat product does. Cheap and purely client-side; a real
+   token-streamed response from the server is a bigger change (the tool-use
+   loop in ask-margyn.js would need to stream per-iteration) that isn't
+   justified until this stops feeling fast enough. */
+function revealText(el, text, threadEl){
+  return new Promise(resolve => {
+    const words = text.split(' ');
+    let i = 0;
+    el.textContent = '';
+    const tick = () => {
+      i += 2; // 2 words/tick reads as fluent without dragging out long replies
+      el.textContent = words.slice(0, i).join(' ');
+      if(threadEl) threadEl.scrollTop = threadEl.scrollHeight;
+      if(i < words.length){ setTimeout(tick, 22); } else { resolve(); }
+    };
+    if(words.length <= 1){ el.textContent = text; resolve(); } else { tick(); }
+  });
+}
+
+function appendChatBubble(threadEl, role, text, agentLabel){
   const b = document.createElement('div');
   b.className = 'margyn-msg ' + role;
   b.textContent = text;
+  if(role.indexOf('assistant') === 0) b.dataset.agent = (agentLabel || 'Margyn').toUpperCase();
   threadEl.appendChild(b);
   threadEl.scrollTop = threadEl.scrollHeight;
   return b;
@@ -3973,18 +4019,39 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
     const historySnapshot = historyRef.slice(-CHAT_CONTEXT_CAP);
     historyRef.push({ role:'user', content: msg });
     if(tk) saveChatMessage(tk, fl, 'user', msg);
-    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', '');
+    const agentId = getThreadAgent(tk);
+    const agentLabel = (AGENT_META[agentId] || AGENT_META.margyn).name;
+    const loadingBubble = appendChatBubble(threadEl, 'assistant loading', '', agentLabel);
     const submitBtn = formEl.querySelector('button');
     submitBtn.disabled = true;
     try {
-      const reply = await callAskMargyn(msg, historySnapshot, fl);
-      loadingBubble.textContent = reply;
+      const data = await callAskMargyn(msg, historySnapshot, fl, null, agentId);
+      const reply = data.reply;
       loadingBubble.classList.remove('loading');
+      await revealText(loadingBubble, reply, threadEl);
       historyRef.push({ role:'assistant', content: reply });
-      if(tk) saveChatMessage(tk, fl, 'assistant', reply);
+      if(tk) saveChatMessage(tk, fl, 'assistant', reply, agentId);
+      if(data.handoff && data.handoff.agentId){
+        threadAgentMap.set(tk, data.handoff.agentId);
+        const meta = AGENT_META[data.handoff.agentId] || { name: data.handoff.agentName || data.handoff.agentId, sub:'' };
+        const divider = document.createElement('div');
+        divider.className = 'margyn-msg handoff';
+        divider.textContent = '→ Now with ' + meta.name;
+        threadEl.appendChild(divider);
+        threadEl.scrollTop = threadEl.scrollHeight;
+        askSetTitle(meta.name, meta.sub);
+      }
+      if(data.actionCard && data.actionCard.type){
+        const cardEl = document.createElement('div');
+        cardEl.innerHTML = actionCardHtml(data.actionCard);
+        const card = cardEl.firstElementChild;
+        threadEl.appendChild(card);
+        wireActionCardConfirm(card, data.actionCard);
+        threadEl.scrollTop = threadEl.scrollHeight;
+      }
       if(showNavHint) appendGoToChip(threadEl, findViewHint(fl));
     } catch(err){
-      loadingBubble.textContent = "Couldn't reach Margyn just now, try again in a moment.";
+      loadingBubble.textContent = (err && /chat limit/i.test(err.message)) ? err.message : "Couldn't reach Margyn just now, try again in a moment.";
       loadingBubble.classList.remove('loading');
     } finally {
       submitBtn.disabled = false;
@@ -4025,6 +4092,134 @@ function wireFindingExplain(cardEl, f, threadEl, historyRef){
     saveChatMessage('finding:' + f.id, f.vital, 'assistant', text);
     btn.remove();
   });
+}
+
+/* Ask Margyn action cards — the chat can PROPOSE approving an import,
+   dismissing a reconciliation flag, pausing the chase agent, logging a
+   ledger entry, etc. (api/ask-margyn.js's propose_action tool) but never
+   executes anything itself. This card is the confirm/cancel gate: nothing
+   in runProposedAction fires until the user clicks Confirm, and every
+   branch below reuses the exact write path the matching tab button already
+   uses — decideSuggestion's approve logic, the Agent Queue's agent-review
+   fetch, setAgentStatus, the Ledger tab's settle/create helpers, and
+   chaseUpdateTarget/chaseTakeOver/chaseMarkPaid. No new write logic here
+   beyond create_ledger_item, which mirrors the existing ledgerAddBtn insert. */
+function actionCardHtml(actionCard){
+  if(actionCard.type === 'list_for_review'){
+    const items = (actionCard.payload && actionCard.payload.items) || [];
+    const rows = items.map((it, i) =>
+      '<label class="action-card-item"><input type="checkbox" data-review-idx="' + i + '" checked> ' + escapeHtml(it.label || it.type) + '</label>'
+    ).join('');
+    return '<div class="action-card" data-action-type="list_for_review">' +
+      '<div class="action-card-summary">' + escapeHtml(actionCard.humanSummary || 'Review these items:') + '</div>' +
+      '<div class="action-card-items">' + rows + '</div>' +
+      '<button class="primary action-confirm">Confirm selected</button>' +
+      '<button class="btn-ghost action-cancel">Cancel</button>' +
+    '</div>';
+  }
+  return '<div class="action-card" data-action-type="' + escapeHtml(actionCard.type) + '">' +
+    '<div class="action-card-summary">' + escapeHtml(actionCard.humanSummary || 'Confirm this action?') + '</div>' +
+    '<button class="primary action-confirm">Confirm</button>' +
+    '<button class="btn-ghost action-cancel">Cancel</button>' +
+  '</div>';
+}
+
+function wireActionCardConfirm(cardEl, actionCard){
+  const confirmBtn = cardEl.querySelector('.action-confirm');
+  const cancelBtn = cardEl.querySelector('.action-cancel');
+  if(cancelBtn) cancelBtn.addEventListener('click', () => cardEl.remove());
+  if(!confirmBtn) return;
+  confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true; if(cancelBtn) cancelBtn.disabled = true;
+    confirmBtn.textContent = 'Working…';
+    try {
+      if(actionCard.type === 'list_for_review'){
+        const items = (actionCard.payload && actionCard.payload.items) || [];
+        const checked = Array.from(cardEl.querySelectorAll('input[data-review-idx]'))
+          .filter(cb => cb.checked).map(cb => items[Number(cb.dataset.reviewIdx)]).filter(Boolean);
+        for(const it of checked) await runProposedAction(it);
+        cardEl.outerHTML = '<div class="action-card-done">Done — ' + checked.length + ' item(s) actioned.</div>';
+      } else {
+        await runProposedAction(actionCard);
+        cardEl.outerHTML = '<div class="action-card-done">Done.</div>';
+      }
+    } catch(err){
+      confirmBtn.textContent = 'Confirm';
+      confirmBtn.disabled = false; if(cancelBtn) cancelBtn.disabled = false;
+      toast('Could not do that: ' + (err.message || 'unknown error'), { kind:'bad' });
+    }
+  });
+}
+
+/* The only place any of these six new-ish writes actually happen. Every
+   branch either calls an existing app function unchanged, or (for
+   create_ledger_item) mirrors one inline — see the comment above. */
+async function runProposedAction(action){
+  const type = action.type;
+  if(type === 'approve_suggestion' || type === 'reject_suggestion'){
+    const { data: sug, error } = await sbClient.from('import_suggestions').select('*').eq('id', action.targetId).single();
+    if(error || !sug) throw new Error('Could not find that import suggestion.');
+    if(type === 'approve_suggestion'){
+      const entries = (sug.proposal && sug.proposal.entries) || [];
+      if(entries.length) await applyChosenImportEntries(entries);
+      triggerFindingsGeneration();
+    }
+    const { error: uErr } = await sbClient.from('import_suggestions')
+      .update({ status: type === 'approve_suggestion' ? 'approved' : 'rejected', decided_at: new Date().toISOString() })
+      .eq('id', sug.id);
+    if(uErr) throw uErr;
+    pendingSuggestions = await loadPendingSuggestions();
+    if(typeof renderSuggestionsView === 'function') renderSuggestionsView();
+    return;
+  }
+  if(type === 'approve_agent_action' || type === 'dismiss_agent_action'){
+    const decision = type === 'approve_agent_action' ? 'approve' : 'reject';
+    await zohoApi('/api/reconcile?action=agent-review', { method:'POST', body: JSON.stringify({ actionId: action.targetId, decision }) });
+    if(typeof loadAgentActions === 'function') await loadAgentActions();
+    if(typeof renderAgentQueue === 'function') renderAgentQueue();
+    return;
+  }
+  if(type === 'pause_chase_agent') return setAgentStatus('chase_agent', 'paused');
+  if(type === 'resume_chase_agent') return setAgentStatus('chase_agent', 'active');
+  if(type === 'update_chase_agent_config'){
+    const dep = (typeof agentDeployments !== 'undefined' && agentDeployments['chase_agent']) || {};
+    const newConfig = Object.assign({}, dep.config || {}, action.payload || {});
+    const { error } = await sbClient.from('agent_deployments')
+      .update({ config: newConfig, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id).eq('agent_id', 'chase_agent');
+    if(error) throw error;
+    if(typeof renderAgents === 'function') renderAgents();
+    return;
+  }
+  if(type === 'mark_ledger_item_paid'){
+    const table = action.targetKind === 'payable' ? 'payables' : 'receivables';
+    const { data: row, error } = await sbClient.from(table).select('*').eq('id', action.targetId).single();
+    if(error || !row) throw new Error('Could not find that ledger item.');
+    return table === 'payables' ? ledgerSettlePayable(row) : ledgerSettleReceivable(row);
+  }
+  if(type === 'create_ledger_item'){
+    const p = action.payload || {};
+    const table = action.targetKind === 'payable' ? 'payables' : 'receivables';
+    const { error } = await sbClient.from(table).insert({
+      user_id: currentUser.id, party_name: p.party || 'Unknown', amount: Number(p.amount) || 0,
+      due_date: p.due_date || null, status: 'open', source: 'manual'
+    });
+    if(error) throw error;
+    await logLedgerEvent({ entityType: table === 'payables' ? 'payable' : 'receivable', event:'created', partyName: p.party, amount: p.amount, source:'manual' });
+    receivables = await loadReceivables(); payables = await loadPayables();
+    if(typeof saveLedgerSnapshot === 'function') await saveLedgerSnapshot();
+    if(typeof renderLedgerView === 'function') renderLedgerView();
+    return;
+  }
+  if(type === 'stop_chasing_party'){
+    return chaseUpdateTarget(action.targetId, { state:'stopped', resolution:'Stopped via Ask Margyn.', next_chase_at:null });
+  }
+  if(type === 'mark_chase_target_paid' || type === 'send_one_off_chase'){
+    const { data: t, error } = await sbClient.from('whatsapp_chase_targets').select('*').eq('id', action.targetId).single();
+    if(error || !t) throw new Error('Could not find that chase.');
+    return type === 'mark_chase_target_paid' ? chaseMarkPaid(t) : chaseTakeOver(t);
+  }
+  throw new Error('Unknown action type: ' + type);
 }
 
 /* per-vital finding + fallback ask, injected at the bottom of the open detail modal.
@@ -4456,7 +4651,18 @@ async function openHistoryThread(threadKey, label){
   askSetTitle(label || 'Conversation', 'Reopened, same context as when you left it');
   const historyRef = [];
   const past = await loadChatThread(threadKey, 200); // full read for browsing, API calls still cap at CHAT_CONTEXT_CAP
-  past.forEach(m => { appendChatBubble(messagesEl, m.role, m.content); historyRef.push({ role:m.role, content:m.content }); });
+  let lastAgentId = 'margyn';
+  past.forEach(m => {
+    const agentLabel = m.role === 'assistant' ? (AGENT_META[m.agent_id || 'margyn'] || AGENT_META.margyn).name : undefined;
+    appendChatBubble(messagesEl, m.role, m.content, agentLabel);
+    historyRef.push({ role:m.role, content:m.content });
+    if(m.role === 'assistant' && m.agent_id) lastAgentId = m.agent_id;
+  });
+  threadAgentMap.set(threadKey, lastAgentId);
+  if(lastAgentId !== 'margyn'){
+    const meta = AGENT_META[lastAgentId] || AGENT_META.margyn;
+    askSetTitle(label || meta.name, 'Reopened with ' + meta.name + ' — ' + meta.sub);
+  }
   askPageHistory.length = 0;
   historyRef.forEach(m => askPageHistory.push(m));
   // Prefer the vital recorded on the messages themselves over parsing the
@@ -4686,7 +4892,7 @@ function buildMargynContext(focusLabel){
   };
 }
 
-async function callAskMargyn(message, history, focusLabel, findingTier){
+async function callAskMargyn(message, history, focusLabel, findingTier, agentId){
   const context = buildMargynContext(focusLabel);
   if(findingTier) context.focusFindingTier = findingTier;
   let depth = (typeof askDepth === 'function' ? askDepth() : 'balanced');
@@ -4699,15 +4905,25 @@ async function callAskMargyn(message, history, focusLabel, findingTier){
       if(typeof reflectAskDepth === 'function') reflectAskDepth();
     }
   }
+  const { data: { session } } = await sbClient.auth.getSession();
   const res = await fetch('/api/ask-margyn', {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ message, history, context, depth })
+    headers:{
+      'Content-Type':'application/json',
+      ...(session ? { 'Authorization':'Bearer ' + session.access_token } : {})
+    },
+    body: JSON.stringify({ message, history, context, depth, agentId: agentId || 'margyn' })
   });
-  if(!res.ok) throw new Error('Ask Margyn request failed: ' + res.status);
+  if(!res.ok){
+    if(res.status === 429){
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || "You've hit today's chat limit. Resets tomorrow.");
+    }
+    throw new Error('Ask Margyn request failed: ' + res.status);
+  }
   const data = await res.json();
   mtrack('ask_message_sent', { msg_len: (message || '').length });
-  return data.reply;
+  return data;
 }
 
 /* ============================================================
@@ -9073,31 +9289,35 @@ async function renderChaseCold(){
     tr.querySelectorAll('[data-cact]').forEach(btn => btn.addEventListener('click', () => chaseRowAction(btn.dataset.cact, t)));
   });
 }
+/* Extracted so both the Gone-cold row buttons AND the Ask Margyn chat
+   action cards can send a one-off chase / mark a chase paid through the
+   exact same write path — see wireActionCardConfirm's runProposedAction. */
+async function chaseTakeOver(t){
+  await chaseUpdateTarget(t.id, { state: 'escalated_human', resolution: 'Taken over by the founder.', next_chase_at: null });
+  const od = chaseDaysOverdue(t.due_date);
+  const msg = 'Hi ' + (t.party_name || '') + ', ' + ((currentProfile && currentProfile.company_name) || 'we') + ' here regarding invoice ' + (t.invoice_ref || '') + ' for ' + inr(t.amount) + (od > 0 ? ', now ' + od + ' days overdue' : '') + '. Could we sort out payment this week?';
+  if(t.contact_phone) window.open('https://wa.me/' + String(t.contact_phone).replace(/[^0-9]/g,'') + '?text=' + encodeURIComponent(msg), '_blank');
+  else { navigator.clipboard && navigator.clipboard.writeText(msg); toast('No number on file', { kind:'info', sub:'Message copied to your clipboard.' }); }
+}
+async function chaseMarkPaid(t){
+  await chaseUpdateTarget(t.id, { state: 'resolved_paid', resolution: 'Marked paid by the founder.', resolved_at: new Date().toISOString(), next_chase_at: null });
+  if(t.receivable_id){
+    try {
+      await sbClient.from('receivables').update({ status: 'settled', settled_at: new Date().toISOString(), settled_amount: t.amount, settled_kind: 'received' }).eq('id', t.receivable_id);
+      if(typeof refreshAll === 'function') await refreshAll();
+    } catch(e){ console.error('[margyn] chase mark paid receivable:', e); }
+  }
+  renderLedgerView();
+}
 async function chaseRowAction(act, t){
   if(act === 'timeline') return openChaseTimeline(t);
-  if(act === 'takeover'){
-    await chaseUpdateTarget(t.id, { state: 'escalated_human', resolution: 'Taken over by the founder from Gone cold.', next_chase_at: null });
-    const od = chaseDaysOverdue(t.due_date);
-    const msg = 'Hi ' + (t.party_name || '') + ', ' + ((currentProfile && currentProfile.company_name) || 'we') + ' here regarding invoice ' + (t.invoice_ref || '') + ' for ' + inr(t.amount) + (od > 0 ? ', now ' + od + ' days overdue' : '') + '. Could we sort out payment this week?';
-    if(t.contact_phone) window.open('https://wa.me/' + String(t.contact_phone).replace(/[^0-9]/g,'') + '?text=' + encodeURIComponent(msg), '_blank');
-    else { navigator.clipboard && navigator.clipboard.writeText(msg); toast('No number on file', { kind:'info', sub:'Message copied to your clipboard.' }); }
-    return;
-  }
+  if(act === 'takeover') return chaseTakeOver(t);
   if(act === 'stop'){
     if(!confirm('Stop chasing ' + (t.party_name || 'this customer') + '?')) return;
     await chaseUpdateTarget(t.id, { state: 'stopped', resolution: 'Stopped by the founder.', next_chase_at: null });
     return;
   }
-  if(act === 'paid'){
-    await chaseUpdateTarget(t.id, { state: 'resolved_paid', resolution: 'Marked paid by the founder.', resolved_at: new Date().toISOString(), next_chase_at: null });
-    if(t.receivable_id){
-      try {
-        await sbClient.from('receivables').update({ status: 'settled', settled_at: new Date().toISOString(), settled_amount: t.amount, settled_kind: 'received' }).eq('id', t.receivable_id);
-        if(typeof refreshAll === 'function') await refreshAll();
-      } catch(e){ console.error('[margyn] chase mark paid receivable:', e); }
-    }
-    renderLedgerView();
-  }
+  if(act === 'paid') return chaseMarkPaid(t);
 }
 async function chaseUpdateTarget(id, patch){
   try {
