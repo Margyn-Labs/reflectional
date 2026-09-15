@@ -1271,6 +1271,43 @@
   .ask-threads .chr-label{ color:var(--text-3); }
   .ask-threads .chr-preview{ font-size:12.5px; font-weight:600; color:var(--text-0); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
+  /* Agents / Chats tab switcher — same segmented-control language as
+     .ask-depth, full-width to fit the sidebar. */
+  .ask-tabs{ display:flex; gap:2px; margin:12px 12px 0; padding:3px; background:var(--surf-2); border:1px solid var(--border-1); border-radius:999px; flex-shrink:0; }
+  .ask-tabs button{ flex:1; border:none; background:transparent; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-3); padding:7px 0; border-radius:999px; cursor:pointer; transition:background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
+  .ask-tabs button:hover:not(.on){ color:var(--text-1); }
+  .ask-tabs button.on{ background:var(--surf-1); color:var(--text-0); box-shadow:var(--shadow-xs); }
+
+  /* Agents tab — one persistent, always-there card per agent (Margyn + the
+     specialists). Opening a card is a different thing from "+ New
+     conversation": it's always the SAME thread for that agent, so its
+     history accumulates instead of starting fresh every time. See
+     openAgentHome()/agent-home: thread keys in JS. */
+  .ask-agents-grid{ flex:1; overflow-y:auto; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .agent-card{ display:flex; align-items:center; gap:11px; padding:11px; border:1px solid var(--border-1); border-radius:12px; cursor:pointer; text-align:left; background:var(--surf-1); font:inherit; width:100%; transition:border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out); }
+  .agent-card:hover{ border-color:var(--emerald-bright); background:var(--surf-2); }
+  .agent-card.on{ background:var(--emerald-wash); border-color:var(--emerald-bright); }
+  .agent-card .ac-body{ display:flex; flex-direction:column; min-width:0; gap:0; }
+  .agent-card .ac-name{ font-weight:800; font-size:13px; color:var(--text-0); }
+  .agent-card .ac-sub{ font-size:11px; color:var(--text-2); margin-top:1px; line-height:1.35; }
+  .agent-card .ac-status{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.04em; color:var(--emerald-deep); margin-top:4px; }
+  .agent-card .ac-status.quiet{ color:var(--text-3); }
+  .agent-card .agent-avatar{ width:38px; height:38px; }
+  .agent-card .agent-avatar svg{ width:19px; height:19px; }
+  /* Ambient idle animation — a soft halo that breathes continuously behind
+     the avatar so the card reads as alive at rest, not just on interaction
+     (this is the "animated character" request — kept as a restrained glow
+     rather than an illustrated mascot, staying inside the locked palette:
+     orange stays the single AI-agent colour product-wide). Runs at a lazy
+     3.6s cycle so four cards together don't feel busy. */
+  .agent-card .agent-avatar{ position:relative; }
+  .agent-card .agent-avatar::before{ content:''; position:absolute; inset:-5px; border-radius:50%; background:radial-gradient(circle, rgba(204,91,52,0.35) 0%, rgba(204,91,52,0) 70%); animation:agentHalo 3.6s ease-in-out infinite; z-index:-1; }
+  .agent-card:nth-child(2) .agent-avatar::before{ animation-delay:.5s; }
+  .agent-card:nth-child(3) .agent-avatar::before{ animation-delay:1s; }
+  .agent-card:nth-child(4) .agent-avatar::before{ animation-delay:1.5s; }
+  @keyframes agentHalo{ 0%,100%{ opacity:.35; transform:scale(.85); } 50%{ opacity:.85; transform:scale(1.15); } }
+  @media (prefers-reduced-motion: reduce){ .agent-card .agent-avatar::before{ animation:none; opacity:.5; } }
+
   .ask-main{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; overflow:hidden; min-width:0; }
   .ask-main-head{ padding:14px 20px; border-bottom:1px solid var(--border-1); display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
   .ask-main-head .amh-hl{ display:flex; align-items:center; gap:11px; min-width:0; }
@@ -1318,6 +1355,12 @@
   .margyn-msg.assistant.loading .msg-head .agent-avatar{ animation:agentBreathe 1.3s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce){ .margyn-msg.assistant.loading .msg-head .agent-avatar{ animation:none; } }
   .margyn-msg.handoff{ align-self:center; max-width:none; background:transparent; border:none; padding:6px 0; margin:8px 0; display:flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); white-space:normal; }
+  /* The jump-to-agent variant is a real button (agent-home threads route a
+     handoff to that agent's own home instead of switching identity in
+     place — see wireChatForm) — same label styling, made obviously
+     clickable. */
+  .margyn-msg.handoff.jump-agent{ font:inherit; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; border:1px solid var(--border-1); border-radius:999px; padding:7px 14px; background:var(--surf-1); transition:border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
+  .margyn-msg.handoff.jump-agent:hover{ border-color:var(--emerald-bright); color:var(--text-0); }
   .msg-actions{ display:flex; gap:4px; margin:8px 0 0 18px; opacity:0; transition:opacity var(--dur-2) var(--ease-out); }
   .margyn-msg.assistant:hover + .msg-actions, .msg-actions:hover{ opacity:1; }
   .msg-actions button{ border:none; background:transparent; color:var(--text-3); font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
@@ -1326,6 +1369,7 @@
 
   .ask-empty{ margin:auto; text-align:center; max-width:520px; padding:20px; }
   .ask-empty .ae-mark{ width:46px; height:46px; border-radius:14px; background:var(--orange-wash); color:var(--orange); display:grid; place-items:center; margin:0 auto 14px; }
+  .ask-empty .ae-mark svg{ width:22px; height:22px; }
   .ask-empty h3{ font-size:17px; font-weight:800; letter-spacing:-.02em; color:var(--text-0); margin-bottom:6px; }
   .ask-empty p{ font-size:13px; color:var(--text-2); line-height:1.6; margin-bottom:18px; }
   .ask-empty .ae-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; text-align:left; }
@@ -2046,14 +2090,19 @@
     </div>
     <div class="ask-shell">
       <aside class="ask-side">
-        <div class="ask-side-top">
+        <div class="ask-tabs" id="askTabs">
+          <button type="button" data-tab="agents" class="on">Agents</button>
+          <button type="button" data-tab="chats">Chats</button>
+        </div>
+        <div class="ask-side-top" id="askChatsTopBar" hidden>
           <button class="btn-primary" id="askNewChat" type="button">+ New conversation</button>
           <div class="ask-side-search">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" id="askThreadSearch" placeholder="Search conversations" autocomplete="off">
           </div>
         </div>
-        <div class="ask-threads" id="historyThreadList"></div>
+        <div class="ask-threads" id="historyThreadList" hidden></div>
+        <div class="ask-agents-grid" id="askAgentsList"></div>
       </aside>
       <section class="ask-main" id="historyThreadOpen">
         <div class="ask-main-head">
@@ -3910,6 +3959,123 @@ function setThreadAvatar(agentId){
   _lastHeaderAgentId = id;
 }
 
+/* ============================================================
+   AGENTS TAB — one persistent "home" thread per agent, distinct from the
+   ad hoc, topic-scoped threads in the Chats tab. Reuses the exact same
+   chat_messages/ask-margyn.js machinery as every other thread — the only
+   difference is the thread_key is deterministic (agent-home:<id>, one per
+   user per agent, always the same) instead of freshly generated, so a
+   given agent's conversation accumulates in one place over time instead of
+   starting clean every time you open it. See the plan discussed with VP:
+   Agents tab = stable identity (this thread is always that agent, and a
+   handoff away from it redirects to the target agent's own home rather
+   than rewriting this thread's identity); Chats tab = fluid identity
+   (handoff switches the SAME thread in place, unchanged from before).
+   ============================================================ */
+const AGENT_HOME_PREFIX = 'agent-home:';
+function agentHomeKey(agentId){ return AGENT_HOME_PREFIX + agentId; }
+function isAgentHomeThread(tk){ return typeof tk === 'string' && tk.indexOf(AGENT_HOME_PREFIX) === 0; }
+
+let askActiveTab = 'agents';
+function askActivateTab(name){
+  askActiveTab = name;
+  const tabsEl = document.getElementById('askTabs');
+  if(tabsEl) tabsEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  const chatsTop = document.getElementById('askChatsTopBar');
+  const chatsList = document.getElementById('historyThreadList');
+  const agentsList = document.getElementById('askAgentsList');
+  if(chatsTop) chatsTop.hidden = (name !== 'chats');
+  if(chatsList) chatsList.hidden = (name !== 'chats');
+  if(agentsList) agentsList.hidden = (name !== 'agents');
+  if(name === 'agents' && currentUser) renderAgentsTab();
+  if(name === 'chats' && currentUser) renderHistoryThreadList();
+}
+
+const AGENT_HOME_EMPTY = {
+  margyn: "I lead the team and see everything — vitals, Pulse Score, every connected source. Ask me anything, or I'll bring in a specialist when it's their lane.",
+  chase:  "I'm the Chase Agent. I own collections — who's overdue, who's being chased, and what to do about it. Ask me who's late, or tell me to pause/resume/adjust the chase.",
+  close:  "I'm the Close Agent. I own reconciliation — the proposals in your Agent Queue. Ask me to explain one, or approve/dismiss it here.",
+  import: "I'm the Import Agent. I own triage for invoices and bills forwarded over WhatsApp or uploaded. Ask what's pending, or approve/reject one."
+};
+
+/* Live one-line status per agent card. Fetched fresh every time the tab
+   opens rather than trusting whatever other tabs happened to load already
+   — four small queries is cheap and keeps this tab correct regardless of
+   nav history. */
+async function agentStatusLine(agentId){
+  try {
+    if(agentId === 'chase'){
+      const { data, error } = await sbClient.from('whatsapp_chase_targets').select('id').eq('user_id', currentUser.id).eq('state','active');
+      if(error) throw error;
+      const n = (data||[]).length;
+      return n ? { text: 'Chasing ' + n + ' ' + (n===1?'customer':'customers'), quiet:false } : { text:'Nothing being chased right now', quiet:true };
+    }
+    if(agentId === 'close'){
+      const payload = await loadAgentActions();
+      const n = (payload && payload.actions && payload.actions.length) || 0;
+      return n ? { text: n + ' pending in the queue', quiet:false } : { text:'Queue is clear', quiet:true };
+    }
+    if(agentId === 'import'){
+      const rows = await loadPendingSuggestions();
+      const n = (rows||[]).length;
+      return n ? { text: n + ' pending ' + (n===1?'import':'imports'), quiet:false } : { text:'Nothing waiting', quiet:true };
+    }
+    return { text:'Sees everything, leads the team', quiet:true };
+  } catch(e){
+    console.error('[margyn] agentStatusLine(' + agentId + '):', e);
+    return { text:'', quiet:true };
+  }
+}
+
+async function renderAgentsTab(){
+  const el = document.getElementById('askAgentsList'); if(!el || !currentUser) return;
+  const ids = ['margyn','chase','close','import'];
+  el.innerHTML = ids.map(id => {
+    const meta = AGENT_META[id] || AGENT_META.margyn;
+    return '<button type="button" class="agent-card" data-agent-home="' + id + '">' +
+      '<span class="agent-avatar">' + agentAvatarInner(id) + '</span>' +
+      '<span class="ac-body"><span class="ac-name">' + escapeHtml(meta.name) + '</span>' +
+      '<span class="ac-sub">' + escapeHtml(meta.sub) + '</span>' +
+      '<span class="ac-status quiet" data-status-for="' + id + '">…</span></span>' +
+    '</button>';
+  }).join('');
+  el.querySelectorAll('[data-agent-home]').forEach(card => {
+    card.addEventListener('click', () => openAgentHome(card.dataset.agentHome));
+  });
+  ids.forEach(async id => {
+    const s = await agentStatusLine(id);
+    const statusEl = el.querySelector('[data-status-for="' + id + '"]');
+    if(statusEl && s.text){ statusEl.textContent = s.text; statusEl.classList.toggle('quiet', !!s.quiet); }
+  });
+}
+
+async function openAgentHome(agentId){
+  const id = AGENT_META[agentId] ? agentId : 'margyn';
+  const meta = AGENT_META[id];
+  const threadKey = agentHomeKey(id);
+  const openEl = document.getElementById('historyThreadOpen'); if(openEl) openEl.classList.remove('hidden');
+  const messagesEl = document.getElementById('historyThreadMessages');
+  messagesEl.innerHTML = '';
+  askPageThreadKey = threadKey;
+  askPageFocus = null;
+  threadAgentMap.set(threadKey, id); // fixed — never overwritten by a handoff inside this thread, see wireChatForm
+  askSetTitle(meta.name, meta.sub, id);
+  const past = await loadChatThread(threadKey, 200);
+  askPageHistory.length = 0;
+  if(!past.length){
+    messagesEl.innerHTML = '<div class="ask-empty"><div class="ae-mark">' + agentAvatarInner(id) + '</div><h3>' + escapeHtml(meta.name) + '</h3><p>' + escapeHtml(AGENT_HOME_EMPTY[id] || '') + '</p></div>';
+  } else {
+    past.forEach(m => {
+      appendChatBubble(messagesEl, m.role, m.content, m.role === 'assistant' ? id : undefined);
+      askPageHistory.push({ role:m.role, content:m.content });
+    });
+  }
+  askRewireComposer();
+  askDecorateStream();
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  document.querySelectorAll('#askAgentsList .agent-card').forEach(c => c.classList.toggle('on', c.dataset.agentHome === id));
+}
+
 async function saveChatMessage(threadKey, vital, role, content, agentId){
   try {
     await sbClient.from('chat_messages').insert({ user_id: currentUser.id, thread_key: threadKey, vital: vital || null, role, content, agent_id: agentId || 'margyn' });
@@ -4104,17 +4270,31 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
       historyRef.push({ role:'assistant', content: reply });
       if(tk) saveChatMessage(tk, fl, 'assistant', reply, agentId);
       if(data.handoff && data.handoff.agentId){
-        threadAgentMap.set(tk, data.handoff.agentId);
         const hoAgentId = data.handoff.agentId;
         const meta = AGENT_META[hoAgentId] || { name: data.handoff.agentName || hoAgentId, sub:'', icon:'margyn' };
-        const divider = document.createElement('div');
-        divider.className = 'margyn-msg handoff';
-        divider.innerHTML = '<span class="agent-avatar sm">' + agentAvatarInner(hoAgentId) + '</span><span>Now with ' + escapeHtml(meta.name) + '</span>';
-        threadEl.appendChild(divider);
-        threadEl.scrollTop = threadEl.scrollHeight;
-        const popAvatar = divider.querySelector('.agent-avatar');
-        requestAnimationFrame(() => popAvatar.classList.add('pop'));
-        askSetTitle(meta.name, meta.sub, hoAgentId);
+        if(isAgentHomeThread(tk)){
+          // Agent-home threads keep a stable identity — a handoff here
+          // never rewrites whose thread this is (that would pollute this
+          // agent's own memory with someone else's lane). Point at that
+          // agent's own home instead, one click away.
+          const jump = document.createElement('button');
+          jump.type = 'button';
+          jump.className = 'margyn-msg handoff jump-agent';
+          jump.innerHTML = '<span class="agent-avatar sm">' + agentAvatarInner(hoAgentId) + '</span><span>Talk to ' + escapeHtml(meta.name) + ' →</span>';
+          jump.addEventListener('click', () => openAgentHome(hoAgentId));
+          threadEl.appendChild(jump);
+          threadEl.scrollTop = threadEl.scrollHeight;
+          requestAnimationFrame(() => jump.querySelector('.agent-avatar').classList.add('pop'));
+        } else {
+          threadAgentMap.set(tk, hoAgentId);
+          const divider = document.createElement('div');
+          divider.className = 'margyn-msg handoff';
+          divider.innerHTML = '<span class="agent-avatar sm">' + agentAvatarInner(hoAgentId) + '</span><span>Now with ' + escapeHtml(meta.name) + '</span>';
+          threadEl.appendChild(divider);
+          threadEl.scrollTop = threadEl.scrollHeight;
+          requestAnimationFrame(() => divider.querySelector('.agent-avatar').classList.add('pop'));
+          askSetTitle(meta.name, meta.sub, hoAgentId);
+        }
       }
       if(data.actionCard && data.actionCard.type){
         const cardEl = document.createElement('div');
@@ -4367,7 +4547,7 @@ async function renderChatHistoryList(thread){
   back.addEventListener('click', () => { currentGlobalThreadKey = 'global'; currentGlobalFocusLabel = null; thread.innerHTML = ''; renderGlobalFindings(thread); });
   thread.appendChild(back);
 
-  const summaries = await loadAllThreadSummaries();
+  const summaries = (await loadAllThreadSummaries()).filter(m => !isAgentHomeThread(m.thread_key));
   if(!summaries.length){
     appendChatBubble(thread, 'assistant', 'No past conversations yet.');
     return;
@@ -4568,6 +4748,7 @@ function renderAskEmpty(){
 /* Start a clean thread in the page workspace. */
 function askNewConversation(focus){
   const stream = document.getElementById('historyThreadMessages'); if(!stream) return;
+  if(askActiveTab !== 'chats') askActivateTab('chats');
   askPageThreadKey = newGlobalThreadKey();
   askPageHistory.length = 0;
   askPageFocus = focus || null;
@@ -4643,19 +4824,21 @@ function askDecorateStream(){
 }
 async function renderHistoryView(){
   const openEl = document.getElementById('historyThreadOpen');
-  const listEl = document.getElementById('historyThreadList');
   if(openEl) openEl.classList.remove('hidden');
-  if(listEl) listEl.classList.remove('hidden');
   reflectAskDepth();
   askGroundChips();
-  // Paint the conversation pane first; the thread rail is network-bound and
-  // must never hold the room you're actually looking at hostage.
-  if(!askPageThreadKey) askNewConversation();
+  askActivateTab(askActiveTab); // re-applies current tab's visibility; refreshes its list/statuses
+  // First visit this session lands on Margyn's own home thread (Agents tab
+  // default) rather than an ad hoc conversation — matches the sidebar
+  // defaulting to Agents. Returning to an already-open thread just rewires
+  // the composer instead of resetting anything.
+  if(!askPageThreadKey) await openAgentHome('margyn');
   else askRewireComposer();
-  await renderHistoryThreadList();
   askGroundChips();
 }
 (function wireAskWorkspace(){
+  const tabs = document.getElementById('askTabs');
+  if(tabs) tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => askActivateTab(b.dataset.tab)));
   const depth = document.getElementById('askDepth');
   if(depth) depth.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setAskDepth(b.dataset.d)));
   const nc = document.getElementById('askNewChat');
@@ -4698,7 +4881,10 @@ async function renderHistoryLedgerList(){
 async function renderHistoryThreadList(){
   const listEl = document.getElementById('historyThreadList');
   listEl.innerHTML = '<div class="hint">Loading…</div>';
-  const summaries = await loadAllThreadSummaries();
+  // Agent-home threads (Margyn/Chase/Close/Import's persistent conversations,
+  // see the Agents tab) live in the same chat_messages table but belong in
+  // that tab, not this ad hoc thread list.
+  const summaries = (await loadAllThreadSummaries()).filter(m => !isAgentHomeThread(m.thread_key));
   if(!summaries.length){
     listEl.innerHTML = '<div class="hint" style="padding:14px 11px;">No conversations yet. Ask something on the right, or tap any number anywhere in Margyn.</div>';
     return;
