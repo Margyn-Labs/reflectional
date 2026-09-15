@@ -14,6 +14,32 @@
 // started drifting apart.
 
 import { formatMargynContext } from './_lib/formatMargynContext.js';
+import { getUserFromRequest, selectRows } from './_lib/supabaseRest.js';
+import { isProposeAction, execReadTool } from './_lib/marginActions.js';
+import { getAgent, isHandoff } from './_lib/agentRegistry.js';
+
+const MAX_TOOL_ITERATIONS = 5;
+
+// Cost governance: token cost per turn is small (grounded context, capped
+// history), but uncapped chat is still a way to bleed money quietly at
+// scale. One cheap query against chat_messages (already written on every
+// turn — see saveChatMessage in app.html) rather than a new table. A
+// business genuinely needing more than this in a day is the exception to
+// go raise, not the default to design for.
+const DAILY_MESSAGE_CAP = Number(process.env.ASK_MARGYN_DAILY_CAP) || 200;
+async function overDailyCap(userId) {
+  const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
+  try {
+    const rows = await selectRows(
+      'chat_messages',
+      `select=id&user_id=eq.${userId}&role=eq.user&created_at=gte.${startOfDay.toISOString()}&limit=${DAILY_MESSAGE_CAP + 1}`
+    );
+    return rows.length > DAILY_MESSAGE_CAP;
+  } catch (e) {
+    console.error('[ask-margyn] rate-limit check failed, allowing through:', e.message);
+    return false;
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -21,7 +47,31 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { message, history, context, depth } = req.body || {};
+  // Auth: required so the action tools below (which read import_suggestions,
+  // agent_actions, whatsapp_chase_targets, agent_deployments) are scoped to
+  // the actual signed-in business, never to whatever `context` the client
+  // sends. Plain narration used to work without this — the frontend now
+  // always attaches a session token (see callAskMargyn in app.html).
+  let user;
+  try {
+    user = await getUserFromRequest(req);
+  } catch (e) {
+    console.error('[ask-margyn] auth check failed:', e.message);
+    res.status(500).json({ error: 'Server not configured' });
+    return;
+  }
+  if (!user || !user.id) {
+    res.status(401).json({ error: 'Not signed in' });
+    return;
+  }
+
+  const { message, history, context, depth, agentId } = req.body || {};
+  const agent = getAgent(agentId);
+
+  if (await overDailyCap(user.id)) {
+    res.status(429).json({ error: `You've hit today's chat limit (${DAILY_MESSAGE_CAP} messages). Resets tomorrow.` });
+    return;
+  }
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     res.status(400).json({ error: 'message is required' });
@@ -63,40 +113,93 @@ export default async function handler(req, res) {
     { role: 'user', content: message.trim().slice(0, 2000) }
   ];
 
-  const systemPrompt = buildSystemPrompt(context);
+  const systemPrompt = buildSystemPrompt(context, agent);
 
   try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: preset.max_tokens,
-        system: systemPrompt,
-        messages
-      })
-    });
+    let actionCard = null;
+    let handoff = null;
+    let finalText = '';
 
-    if (!anthropicRes.ok) {
-      const errText = await anthropicRes.text();
-      console.error('Anthropic API error:', anthropicRes.status, errText);
-      res.status(502).json({ error: 'AI service error' });
-      return;
+    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: preset.max_tokens,
+          system: systemPrompt,
+          tools: agent.tools,
+          messages
+        })
+      });
+
+      if (!anthropicRes.ok) {
+        const errText = await anthropicRes.text();
+        console.error('Anthropic API error:', anthropicRes.status, errText);
+        res.status(502).json({ error: 'AI service error' });
+        return;
+      }
+
+      const data = await anthropicRes.json();
+      const blocks = Array.isArray(data.content) ? data.content : [];
+      const toolUses = blocks.filter(b => b.type === 'tool_use');
+      const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+
+      const handoffCall = toolUses.find(t => isHandoff(t.name));
+      if (handoffCall) {
+        // Terminal, same shape as the propose_action break below: the agent
+        // decided this isn't its lane. Never looped back to Claude under the
+        // old agent — the frontend switches active agent and the user's next
+        // message carries the new agentId.
+        const h = handoffCall.input || {};
+        const target = getAgent(h.agent_id);
+        handoff = { agentId: target.id, agentName: target.name, reason: h.reason || '' };
+        finalText = textOut || h.reason || `Bringing in ${target.name}.`;
+        break;
+      }
+
+      const proposal = toolUses.find(t => isProposeAction(t.name));
+      if (proposal) {
+        // Terminal: never executed here, never looped back to Claude. The
+        // frontend renders a confirm/cancel card from this and only writes
+        // anything once the human clicks Confirm.
+        const p = proposal.input || {};
+        actionCard = {
+          type: p.type,
+          targetId: p.target_id || null,
+          targetKind: p.target_kind || null,
+          payload: p.payload || null,
+          humanSummary: p.human_summary || ''
+        };
+        finalText = textOut || p.human_summary || '';
+        break;
+      }
+
+      if (data.stop_reason === 'tool_use' && toolUses.length) {
+        messages.push({ role: 'assistant', content: blocks });
+        const results = [];
+        for (const tu of toolUses) {
+          const out = await execReadTool(tu.name, tu.input, user.id);
+          results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
+        }
+        messages.push({ role: 'user', content: results });
+        continue;
+      }
+
+      finalText = textOut;
+      break;
     }
 
-    const data = await anthropicRes.json();
-    const reply = (data.content || [])
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n')
-      .trim();
-
     res.status(200).json({
-      reply: reply || "I couldn't generate a response there, try rephrasing that.",
+      reply: finalText || "I couldn't generate a response there, try rephrasing that.",
+      actionCard,
+      handoff,
+      agentId: agent.id,
+      agentName: agent.name,
       depth: depthKey,
       model
     });
@@ -106,7 +209,7 @@ export default async function handler(req, res) {
   }
 }
 
-function buildSystemPrompt(context) {
+function buildSystemPrompt(context, agent) {
   const ctx = context || {};
   const focusVital = ctx.focusVital || null;
   const focusFindingTier = ctx.focusFindingTier || null;
@@ -128,7 +231,7 @@ function buildSystemPrompt(context) {
         : `\nThis message is the user asking you to explain a SIGNAL finding — only one connected source supports this read, nothing else confirms it. Say plainly this is a single-source signal that could be noise, not a confirmed driver, and suggest what a second source would need to show to confirm it.`)
     : '';
 
-  return `You are Margyn, an AI financial co-pilot built into the Margyn app for ${companyName}, a digital-native Indian business.
+  return `${agent.identity} You're built into the Margyn app for ${companyName}, a digital-native Indian business.
 
 This chat has no file, image, or document upload capability of any kind — the user can only type text. If a message reads like it could be asking you to read or describe an attachment ("what does this say", "read this", "what is this"), that is never actually what's happening here: it always means the dashboard number or finding described below. Never respond by asking for an image, screenshot, or document, and never say you don't see an attachment — there is never one to see. Answer from the data below instead.
 
@@ -218,5 +321,14 @@ Rules you must always follow:
 5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
 6. Keep replies under ~120 words unless the user explicitly asks for more detail.
 7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
-8. The "Past findings" list above is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back than what's listed, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.`;
+8. The "Past findings" list above is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back than what's listed, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.
+
+TAKING ACTION — you now have tools that can look things up (list_pending_import_suggestions, list_pending_agent_actions, list_open_ledger_items, list_chase_targets, get_chase_agent_config) and one tool, propose_action, that hands the user a confirm/cancel card. You never write anything yourself — propose_action only shows a card; the write happens only if the user clicks Confirm in the app.
+- Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the chase agent", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
+- If their message is vague about which row they mean ("approve that import", "the Acme one"), use the matching list_* tool first to find the specific row and its id before calling propose_action — never guess an id, and never propose an action against more than one row unless the user explicitly asked to review several at once (use type: "list_for_review" for that, with payload.items listing each candidate — the user still confirms individually or picks from the list, never a blind "do them all").
+- human_summary must say exactly what will happen in plain language, e.g. "Approve Acme's ₹50,000 invoice import" or "Stop chasing Ramesh for the ₹12,000 overdue invoice" — the user is deciding whether to click Confirm based on this sentence alone.
+- For create_ledger_item, resolve party/amount/due_date from what the user said and put them in payload — don't call a list tool first, there's nothing to look up.
+- Never propose or imply any action outside this tool set (no payments, no messaging a customer directly, nothing on WhatsApp from here) — this chat can only touch the six action types above.
+
+WORKING AS A TEAM — you're one of several agents (see your identity line above for which one). You also have handoff_to_agent: call it the moment a request is genuinely outside your own lane, rather than answering it yourself from general knowledge or guessing. Say one short plain sentence first naming who you're bringing in and why (e.g. "That's collections, let me bring in the Chase Agent"), then call the tool in the same turn — don't ask permission first, don't explain the mechanics of "handing off" to the user, just do it naturally like a colleague redirecting a question. Never call handoff_to_agent for a request that's actually answerable from the data already given to you above.`;
 }
