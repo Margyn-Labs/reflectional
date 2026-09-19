@@ -195,7 +195,7 @@ export function formatMargynContext(context) {
       `Sources present: ${present.join(', ') || 'none'}.`,
       dirLines('RECEIVABLES', xl.receivables),
       dirLines('PAYABLES', xl.payables),
-      'How to use this: where sources AGREE, you may state the figure with confidence and say which sources back it. Where they CONFLICT, give every source\'s number and the gap — never add them, never average, never pick one. Where only ONE source has an item it is Signal. Tally is always Signal on its own. Self-entered rows are the only ones that feed the Pulse Score.'
+      'How to use this: where sources AGREE, you may state the figure with confidence and say which sources back it. Where they CONFLICT, give every source\'s number and the gap — never add them, never average, never pick one. Where only ONE source has an item it is Signal. Tally is always Signal on its own. The Pulse Score takes the strongest source available per figure — two agreeing sources beat one connector, and one connector beats a hand-typed number — so say which tier a figure sits at rather than claiming connector data is excluded from the score.'
     ].filter(Boolean).join('\n');
   }
 
@@ -271,9 +271,52 @@ export function formatMargynContext(context) {
   if (rp) selfReportedBlocks.push('the Quick Ledger receivables/payables');
   if (payments && paymentsSource !== 'razorpay_live') selfReportedBlocks.push('the payments figures');
   if (shopify && snapshotSource === 'upload') selfReportedBlocks.push('the Shopify figures');
-  const provenanceLine = selfReportedBlocks.length
+  let provenanceLine = selfReportedBlocks.length
     ? `\nImportant: these are SELF-REPORTED (typed or uploaded by hand, not a live connector sync): ${selfReportedBlocks.join('; ')}. Say so plainly when accuracy, verification or "is this real data" comes up. Self-reported data can never corroborate itself or another self-reported figure — only an independently-operated connector can.`
     : '';
+
+  // Per-field provenance (snapshots.input_provenance) — present once the
+  // source resolver has built at least one `resolved` snapshot. This is the
+  // honest answer to "how much of my score is real data", so it replaces the
+  // blanket self-reported paragraph above rather than sitting alongside it.
+  const provFields = (provenance && provenance.fields) || null;
+  if (provFields) {
+    const FIELD_LABEL = {
+      cash: 'cash position', revenue: 'revenue', net_profit: 'net profit', burn: 'total spend',
+      gst_leak: 'GST/ITC leakage', gst_payable: 'GST payable', recv_total: 'receivables',
+      recv_90: 'receivables over 90d', pay_soon: 'payables due (30d)'
+    };
+    const byTier = { verified: [], connector: [], self: [] };
+    Object.keys(provFields).forEach((k) => {
+      const f = provFields[k] || {};
+      const tier = byTier[f.tier] ? f.tier : 'self';
+      const label = FIELD_LABEL[k] || k;
+      byTier[tier].push(
+        tier === 'verified' ? `${label} (${(f.agree || []).join(' + ')} agree)`
+      : tier === 'connector' ? `${label} (${f.source})`
+      : label
+      );
+    });
+    const parts = [];
+    if (byTier.verified.length) parts.push(`VERIFIED, two sources agree: ${byTier.verified.join('; ')}`);
+    if (byTier.connector.length) parts.push(`CONNECTED, one source: ${byTier.connector.join('; ')}`);
+    if (byTier.self.length) parts.push(`SELF-REPORTED, typed or uploaded: ${byTier.self.join('; ')}`);
+    const pct = provenance.confidence != null ? Math.round(provenance.confidence * 100) : null;
+    provenanceLine =
+      `\nScore provenance — every figure below feeds the Pulse Score, at the tier shown.` +
+      (pct !== null ? ` Overall confidence ${pct}%.` : '') +
+      `\n${parts.join('\n')}` +
+      `\nWhen asked how trustworthy a number is, name its tier. Never imply a connector figure is excluded from the score, and never state a CONNECTED or SELF-REPORTED figure with VERIFIED confidence.`;
+
+    const conflicts = provenance.conflicts;
+    if (Array.isArray(conflicts) && conflicts.length) {
+      provenanceLine += `\nSources disagreed on ${conflicts.length} figure(s); the stronger source was used and the gap left visible, never averaged: ` +
+        conflicts.map((c) => {
+          const vals = Object.keys(c.values || {}).map((k) => `${k} ${inr(c.values[k])}`).join(' vs ');
+          return `${FIELD_LABEL[c.field] || c.field} — ${vals} (${c.spread_pct}% apart, used ${c.chosen})`;
+        }).join('; ') + '.';
+    }
+  }
 
   return {
     companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock,
