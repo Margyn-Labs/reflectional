@@ -102,7 +102,7 @@
   @media (max-width:900px){ .tier-chip{ display:none; } }
   nav{ position:sticky; top:0; left:0; right:0; z-index:100; height:64px; background:var(--bg-page); border-bottom:1px solid var(--border-1); box-shadow:0 1px 0 rgba(11,18,32,0.03), 0 8px 24px -18px rgba(11,18,32,0.22); transition:box-shadow .2s ease; }
   .nav-inner{ max-width:none; margin:0; height:64px; padding:0 24px 0 0; display:flex; align-items:center; gap:0; }
-  .nav-brand{ display:flex; flex-direction:row; align-items:center; justify-content:center; gap:9px; height:64px; padding:0 16px; }
+  .nav-brand{ display:flex; flex-direction:row; align-items:center; justify-content:center; gap:9px; height:64px; padding:0 22px 0 10px; }
   .nav-logo{ font-family:'Manrope', sans-serif; font-size:18px; font-weight:800; letter-spacing:-0.02em; color:var(--text-0); line-height:1; }
   .nav-logo-mark{ display:block; height:21px; width:auto; flex-shrink:0; }
   @media (min-width:901px){
@@ -154,7 +154,10 @@
   .wrap:has(#view-invoicing:not(.hidden)) .app-head,
   .wrap:has(#view-settings:not(.hidden)) .app-head,
   .wrap:has(#view-history:not(.hidden)) .app-head,
-  .wrap:has(#view-ledger:not(.hidden)) .app-head{ display:none; }
+  .wrap:has(#view-ledger:not(.hidden)) .app-head,
+  .wrap:has(#view-payments:not(.hidden)) .app-head,
+  .wrap:has(#view-books:not(.hidden)) .app-head,
+  .wrap:has(#view-agents:not(.hidden)) .app-head{ display:none; }
   .app-eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--emerald-bright); margin-bottom:10px; font-weight:600; }
   .app-title{ font-family:'Manrope',sans-serif; font-weight:700; font-size:31px; letter-spacing:-0.02em; line-height:1.15; color:var(--text-0); }
   .app-sub{ margin-top:8px; font-size:14px; color:var(--text-2); }
@@ -403,7 +406,12 @@
   .mock-banner{ display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:var(--radius-control); background:var(--surf-2); border:1px solid var(--border-1); font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-1); margin-bottom:20px; font-weight:600; }
   .mock-banner::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--text-3); flex-shrink:0; }
   /* card stack -> one panel: a single border + shadow, hairline internal grid */
-  .pay-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px; margin-bottom:20px; background:var(--border-1); border:1px solid var(--border-1); border-radius:var(--radius-card); overflow:hidden; box-shadow:var(--shadow-sm); }
+  /* auto-fit, not a fixed 4-up: card count varies by data source (Odoo renders
+     3, Zoho and Tally render 6, Payments renders 8 column-units) — a fixed
+     column count leaves empty trailing cells whenever the count isn't a clean
+     multiple, which render as blank boxes since the grid's own background
+     shows through. auto-fit sizes columns to however many cards actually exist. */
+  .pay-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:1px; margin-bottom:20px; background:var(--border-1); border:1px solid var(--border-1); border-radius:var(--radius-card); overflow:hidden; box-shadow:var(--shadow-sm); }
   .pay-card{ position:relative; background:var(--surf-1); border:none; border-radius:0; padding:18px 20px; transition:background .12s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
   .pay-grid .pay-card:nth-child(n){ animation-delay:0s; }
   .pay-card:hover{ background:var(--surf-2); }
@@ -570,7 +578,7 @@
   .ask-margyn-body{ padding:16px 18px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
   .ask-margyn-foot{ padding:12px 14px; border-top:1px solid var(--border-1); flex-shrink:0; }
   @media (max-width:640px){ .ask-margyn-panel{ right:12px; left:12px; width:auto; bottom:84px; } .ask-margyn-fab{ right:16px; bottom:16px; } }
-  @media (max-width:900px){ .pay-grid{ grid-template-columns:repeat(2,1fr); } .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
+  @media (max-width:900px){ .pay-card.wide{ grid-column:span 2; } .summary-grid{ grid-template-columns:repeat(3,1fr) !important; } }
   .summary-grid{ grid-template-columns:repeat(5,1fr); margin-bottom:20px; }
   /* ---------- ledger UI (receivables / payables / settlements) ---------- */
   .ledger-form{ background:var(--surf-2); border:1px solid var(--border-1); border-radius:var(--radius-control); padding:16px 18px; margin-bottom:18px; }
@@ -715,7 +723,6 @@
     .fact{ padding:0 0 14px; }
     .fact + .fact{ border-left:none; border-top:1px solid var(--border-1); padding-top:14px; }
     .grid-2{grid-template-columns:1fr;}
-    .pay-grid{grid-template-columns:1fr 1fr;}
     .pay-card.wide{ grid-column:span 2; }
     .app-title{font-size:25px;}
     .wrap{padding:88px 20px 72px;}
@@ -836,7 +843,9 @@
   @media (max-width:820px){ .rd-pulse{ grid-template-columns:1fr; gap:20px; } }
 
   /* instrument row */
-  .rd-inst-row{ display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--border-1); border-radius:14px; background:var(--surf-1); box-shadow:var(--shadow-sm); overflow:hidden; }
+  /* auto-fit: the Customize picker lets a user pick fewer than 4 tiles here,
+     and a fixed 4-column grid would leave dangling empty cells in that case. */
+  .rd-inst-row{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); border:1px solid var(--border-1); border-radius:14px; background:var(--surf-1); box-shadow:var(--shadow-sm); overflow:hidden; }
   .rd-inst{ padding:20px 22px; border-right:1px solid var(--border-1); cursor:pointer; transition:background .14s ease; }
   .rd-inst:last-child{ border-right:none; }
   .rd-inst:hover{ background:var(--surf-2); }
@@ -846,7 +855,6 @@
   .rd-inst .d.up{ color:var(--emerald-bright); } .rd-inst .d.down{ color:var(--rose); } .rd-inst .d.flat{ color:var(--text-3); }
   .rd-inst .bar{ height:3px; border-radius:2px; background:var(--surf-3,#EFEEE8); margin-top:13px; overflow:hidden; }
   .rd-inst .bar i{ display:block; height:100%; background:var(--emerald); border-radius:2px; }
-  @media (max-width:900px){ .rd-inst-row{ grid-template-columns:repeat(2,1fr); } .rd-inst:nth-child(2){ border-right:none; } .rd-inst:nth-child(1),.rd-inst:nth-child(2){ border-bottom:1px solid var(--border-1); } }
 
   .rd-2col{ display:grid; grid-template-columns:1.05fr 1fr; gap:20px; }
   @media (max-width:960px){ .rd-2col{ grid-template-columns:1fr; } }
@@ -894,7 +902,11 @@
   .rd-typeset{ display:flex; gap:6px; }
   .rd-typeset button{ flex:1; border:1px solid var(--border-2); background:var(--surf-1); border-radius:6px; padding:9px 6px; font-size:11px; font-weight:700; color:var(--text-1); font-family:inherit; cursor:pointer; }
   .rd-typeset button.on{ border-color:var(--emerald); background:var(--emerald-wash); color:var(--emerald-bright); }
-  .rd-chart-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:18px; }
+  /* dense: half-width and full-width (combo) charts mix in whatever order the
+     user adds them, so the default row-by-row placement can strand a half-width
+     tile alone in a row with empty space beside it — dense backfills that gap
+     with a later tile instead of leaving it blank. */
+  .rd-chart-grid{ display:grid; grid-template-columns:repeat(6,1fr); grid-auto-flow:dense; gap:18px; }
   .ch-tile{ grid-column:span 3; background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); padding:22px 24px; display:flex; flex-direction:column; }
   .ch-tile.wide{ grid-column:span 6; }
   @media (max-width:1050px){ .rd-chart-grid{ grid-template-columns:1fr; } .ch-tile,.ch-tile.wide{ grid-column:auto; } .rd-builder .bb{ grid-template-columns:1fr; } }
@@ -918,7 +930,7 @@
   .lt-table{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); box-shadow:var(--shadow-sm); overflow:hidden; }
   .lt-head, .lt-row{ display:grid; grid-template-columns:2.4fr 1fr 0.9fr 1.1fr 1fr 60px; align-items:center; gap:14px; padding:13px 20px; }
   .lt-head{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); border-bottom:1px solid var(--border-1); }
-  .lt-row{ border-bottom:1px solid var(--border-1); transition:background .14s ease; }
+  .lt-row{ border-bottom:1px solid var(--border-1); transition:background .14s ease; cursor:pointer; }
   .lt-row:last-child{ border-bottom:none; }
   .lt-row:hover{ background:var(--surf-2); }
   .lt-party{ display:flex; align-items:center; gap:12px; min-width:0; }
@@ -1069,7 +1081,32 @@
   .top-avatar{ width:32px; height:32px; border-radius:50%; background:var(--emerald-wash); color:var(--emerald-deep); border:1px solid var(--emerald); display:grid; place-items:center;
     font-family:'Manrope',sans-serif; font-weight:800; font-size:12px; cursor:pointer; transition:transform var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); }
   .top-avatar:hover{ transform:translateY(-1px); box-shadow:var(--shadow-sm); }
-  @media (max-width:900px){ .top-k{ min-width:0; } .top-k .label, .top-k .kbd{ display:none; } .top-sync{ display:none; } }
+  /* ---------- org switcher: top-bar toggle, opens a short dropdown ---------- */
+  .org-switch{ position:relative; }
+  .org-switch-btn{ display:inline-flex; align-items:center; gap:8px; background:var(--surf-1); border:1px solid var(--border-1); color:var(--text-1);
+    padding:6px 10px 6px 8px; border-radius:8px; font-family:'Manrope',sans-serif; font-size:13px; font-weight:700; cursor:pointer; max-width:180px;
+    transition:border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out); }
+  .org-switch-btn:hover{ border-color:var(--border-2); background:var(--surf-2); }
+  .org-switch-btn .org-mark{ width:20px; height:20px; border-radius:5px; background:var(--emerald-wash); color:var(--emerald-deep); display:grid; place-items:center;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:800; flex-shrink:0; }
+  .org-switch-btn .org-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .org-switch-btn svg{ flex-shrink:0; color:var(--text-3); width:13px; height:13px; transition:transform var(--dur-1) var(--ease-out); }
+  .org-switch.open .org-switch-btn svg{ transform:rotate(180deg); }
+  .org-switch-menu{ position:absolute; top:calc(100% + 6px); left:0; min-width:240px; background:var(--surf-1); border:1px solid var(--border-1); border-radius:10px;
+    box-shadow:var(--shadow-md); padding:6px; z-index:120; display:none; }
+  .org-switch.open .org-switch-menu{ display:block; }
+  .org-switch-menu .osm-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; color:var(--text-3); padding:6px 8px 4px; }
+  .org-switch-menu .osm-row{ display:flex; align-items:center; gap:9px; padding:8px; border-radius:6px; cursor:default; font-size:13px; color:var(--text-1); }
+  .org-switch-menu .osm-row.is-current{ background:var(--surf-2); }
+  .org-switch-menu .osm-row .osm-mark{ width:22px; height:22px; border-radius:5px; background:var(--emerald-wash); color:var(--emerald-deep); display:grid; place-items:center;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:800; flex-shrink:0; }
+  .org-switch-menu .osm-meta{ flex:1; min-width:0; }
+  .org-switch-menu .osm-meta .osm-name{ font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .org-switch-menu .osm-meta .osm-sub{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--text-3); margin-top:1px; }
+  .org-switch-menu .osm-check{ color:var(--emerald); flex-shrink:0; }
+  .org-switch-menu .osm-divider{ height:1px; background:var(--border-1); margin:6px 2px; }
+  .org-switch-menu .osm-add{ display:flex; align-items:center; gap:9px; padding:8px; border-radius:6px; font-size:12.5px; color:var(--text-3); cursor:default; }
+  @media (max-width:900px){ .top-k{ min-width:0; } .top-k .label, .top-k .kbd{ display:none; } .top-sync{ display:none; } .org-switch-btn{ max-width:120px; } }
 
   /* ---------- sidebar refinement ---------- */
   .sidebar .pagenav button{ transition:background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); }
@@ -1135,10 +1172,11 @@
   .mx-group{ margin-bottom:22px; }
   .mx-group:last-child{ margin-bottom:0; }
   .mx-group-label{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-3); margin-bottom:10px; }
-  .mx-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-  @media (max-width:1240px){ .mx-grid{ grid-template-columns:repeat(3,1fr); } }
-  @media (max-width:900px){ .mx-grid{ grid-template-columns:repeat(2,1fr); } }
-  @media (max-width:560px){ .mx-grid{ grid-template-columns:1fr; } }
+  /* auto-fit: each category group has a different number of metrics, so a
+     fixed column count makes cards in a short last row stretch wider than
+     the same cards in a full row above — auto-fit keeps card width consistent
+     across every row regardless of how many metrics land in a group. */
+  .mx-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); gap:12px; }
   .mx-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:12px; box-shadow:var(--shadow-xs); padding:15px 16px 14px; overflow:hidden;
     transition:box-shadow var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
   .mx-card:hover{ box-shadow:var(--shadow-md); border-color:var(--border-2); transform:translateY(-1px); }
@@ -1242,6 +1280,39 @@
   .sc-spark .ss-delta{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; }
   .sc-spark .ss-delta.up{ color:var(--emerald-bright); } .sc-spark .ss-delta.down{ color:var(--rose); } .sc-spark .ss-delta.flat{ color:var(--text-3); }
   .sc-spark svg{ display:block; width:100%; height:44px; overflow:visible; }
+
+  /* ---------- vitals accordion: the one canonical place score × weight = points
+     lives, replacing what used to be the same math shown three separate ways
+     (contribution table, card grid, sparkline strip). One bordered row per
+     vital, reused verbatim for all six — Infineti's checks-accordion pattern. */
+  .sc-acc{ display:flex; flex-direction:column; gap:10px; }
+  .sv-acc-row{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:12px; overflow:hidden; transition:border-color var(--dur-2) var(--ease-out); }
+  .sv-acc-row.open{ border-color:var(--border-2); }
+  .sv-acc-row .sv-acc-head{ display:grid; grid-template-columns:3px 1.7fr 100px 56px 70px 60px 18px; align-items:center; gap:16px; padding:14px 18px; cursor:pointer; user-select:none; }
+  .sv-acc-row .sv-acc-accent{ align-self:stretch; border-radius:2px; background:var(--v-accent, var(--emerald)); }
+  .sv-acc-row .sv-acc-name{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .sv-acc-row .sv-acc-label{ font-size:13.5px; font-weight:700; color:var(--text-0); letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sv-acc-row .sv-acc-band{ font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; white-space:nowrap; flex-shrink:0; }
+  .sv-acc-row .sv-acc-band.good{ background:var(--emerald-wash); color:var(--emerald-bright); }
+  .sv-acc-row .sv-acc-band.warn{ background:var(--surf-2); color:var(--text-1); }
+  .sv-acc-row .sv-acc-band.bad{ background:var(--rose-wash); color:var(--rose); }
+  .sv-acc-row .sv-acc-spark{ display:block; width:100%; height:28px; overflow:visible; }
+  .sv-acc-row .sv-acc-score{ font-family:'IBM Plex Mono',monospace; font-size:13px; text-align:right; color:var(--text-1); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .sv-acc-row .sv-acc-score b{ color:var(--text-0); font-weight:700; }
+  .sv-acc-row .sv-acc-weight{ font-family:'IBM Plex Mono',monospace; font-size:11px; text-align:right; color:var(--text-3); }
+  .sv-acc-row .sv-acc-pts{ font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; text-align:right; color:var(--text-0); }
+  .sv-acc-row .sv-acc-chev{ color:var(--text-3); transition:transform var(--dur-1) var(--ease-out); justify-self:end; }
+  .sv-acc-row.open .sv-acc-chev{ transform:rotate(180deg); }
+  .sv-acc-row .sv-acc-body{ display:none; padding:0 18px 18px 37px; border-top:1px solid var(--border-1); }
+  .sv-acc-row.open .sv-acc-body{ display:block; padding-top:16px; }
+  .sv-acc-row .sv-acc-reading{ font-size:13px; color:var(--text-0); margin-bottom:8px; }
+  .sv-acc-row .sv-acc-explain{ font-size:13px; line-height:1.6; color:var(--text-2); max-width:64ch; }
+  .sv-acc-row .sv-acc-actions{ margin-top:14px; display:flex; gap:10px; }
+  @media (max-width:900px){
+    .sv-acc-row .sv-acc-head{ grid-template-columns:3px 1fr 56px 60px 18px; }
+    .sv-acc-row .sv-acc-spark, .sv-acc-row .sv-acc-weight{ display:none; }
+    .sv-acc-row .sv-acc-body{ padding-left:18px; }
+  }
 
   .sc-brief{ background:var(--orange-wash); border:1px solid rgba(204,91,52,.26); border-radius:16px; padding:26px 28px; }
   .sc-brief-tag{ display:inline-flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
@@ -1534,6 +1605,26 @@
     </a>
     <div style="flex:1;"></div>
     <div class="top-tools">
+      <div class="org-switch" id="orgSwitch">
+        <button class="org-switch-btn" id="orgSwitchBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          <span class="org-mark" id="orgSwitchMark">M</span>
+          <span class="org-name" id="orgSwitchName">Your business</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="org-switch-menu" id="orgSwitchMenu">
+          <div class="osm-label">Business</div>
+          <div class="osm-row is-current" id="orgSwitchCurrentRow">
+            <span class="osm-mark" id="orgSwitchCurrentMark">M</span>
+            <span class="osm-meta">
+              <div class="osm-name" id="orgSwitchCurrentName">Your business</div>
+              <div class="osm-sub" id="orgSwitchCurrentSub"></div>
+            </span>
+            <svg class="osm-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="osm-divider"></div>
+          <div class="osm-add">+ Add another business — coming soon</div>
+        </div>
+      </div>
       <button class="top-k" id="cmdkTrigger" type="button" aria-label="Search or ask Margyn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <span class="label">Jump to, or ask Margyn</span>
@@ -1690,12 +1781,12 @@
     </div>
     <!-- ===== khata: customers/vendors, invoicing, printing — the free acquisition-hook ledger ===== -->
     <div class="lsuper-panel" id="lsuper-khata">
-      <div class="section-head">
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-          <span class="tier-chip free" style="margin-left:0;">FREE</span>
-          <h2 style="margin-bottom:0;">Ledger &amp; invoicing</h2>
+      <div class="rd-head">
+        <div>
+          <div class="rd-eyebrow">Invoicing <span class="tier-chip free" style="margin-left:6px;">FREE</span></div>
+          <h1>Ledger &amp; invoicing</h1>
+          <div class="rd-sub">Customer &amp; vendor khata, GST invoicing and ageing, free forever. AI narration on top of these numbers is a Pro feature.</div>
         </div>
-        <div class="hint">Customer &amp; vendor khata, GST invoicing and ageing, free forever. AI narration on top of these numbers is a Pro feature.</div>
       </div>
       <div class="tabs" id="khataTabs">
         <button class="tab active" data-ktab="parties">Parties</button>
@@ -1936,8 +2027,8 @@
       <div class="rd-section-label">What each source feeds <span class="rd-note">Verified needs two independent sources</span></div>
       <div class="rd-card" style="padding:6px 20px;"><div style="overflow-x:auto;"><table class="hub-feed" id="connFeedTable"></table></div></div>
     </div>
-    <div class="section-head">
-      <h2>More connectors, on the way</h2>
+    <div class="rd-section" style="margin-bottom:0;">
+      <div class="rd-section-label">More connectors, on the way</div>
       <div class="hint">GST is next up: it unlocks input-credit reconciliation against your vendors' filings, cross-checked with your books. Bank data via the Account Aggregator framework follows. Tell us what you want to see and we'll prioritize it.</div>
     </div>
   </div>
@@ -2049,26 +2140,14 @@
         <div id="pulseTrendChart"></div>
       </div>
     </div>
-    <div class="pulse-breakdown" id="pulseBreakdown"></div>
-
     <div class="rd-section">
       <div class="rd-section-label">Financial indicators <span class="rd-note" id="scMetricsNote"></span></div>
       <div id="scMetrics"></div>
     </div>
 
-    <div class="rd-section">
-      <div class="rd-section-label">Where the points go <span class="rd-note">each vital's score times its weight</span></div>
-      <div class="sc-contrib rd-card" id="scContrib"></div>
-    </div>
-
-    <div class="rd-section">
-      <div class="rd-section-label">The six vitals <span class="rd-note">tap a card for the detail and to ask about it</span></div>
-      <div class="sc-vitals rd-stagger" id="vitalsGrid"></div>
-    </div>
-
-    <div class="rd-section">
-      <div class="rd-section-label">Each vital over time <span class="rd-note">score out of 100, most recent on the right</span></div>
-      <div class="sc-sparks" id="vitalsBarChart"></div>
+    <div class="rd-section" id="vitalsAccordionSection">
+      <div class="rd-section-label">The six vitals <span class="rd-note">score × weight = points. Expand a row for what it means and what's behind it.</span></div>
+      <div class="sc-acc" id="vitalsAccordion"></div>
     </div>
 
     <div class="rd-section" style="margin-bottom:0;">
@@ -2152,9 +2231,12 @@
   </div>
   <!-- ---------- 3d. PAYMENTS (NEW) ---------- -->
   <div id="view-payments" class="hidden">
-    <div class="section-head">
-      <h2>Payment health <span class="source-badge" id="paymentsSourceBadge" style="display:none; vertical-align:middle; margin-left:8px;"></span></h2>
-      <div class="hint">Your payment gateways in one place. Razorpay is the primary feed. Cashfree settlements are tracked alongside for cross-checking. Shopify orders are shown for reference and not yet scored.</div>
+    <div class="rd-head">
+      <div>
+        <div class="rd-eyebrow">Payments</div>
+        <h1>Payment health <span class="source-badge" id="paymentsSourceBadge" style="display:none; vertical-align:middle; margin-left:8px;"></span></h1>
+        <div class="rd-sub">Your payment gateways in one place. Razorpay is the primary feed. Cashfree settlements are tracked alongside for cross-checking. Shopify orders are shown for reference and not yet scored.</div>
+      </div>
     </div>
     <div class="srcseg" id="paymentsSourceTabs">
       <button data-src="all" class="active">All sources</button>
@@ -2226,9 +2308,12 @@
   </div>
   <!-- ---------- 3e. BOOKS (NEW) — Zoho Books connector ---------- -->
   <div id="view-books" class="hidden">
-    <div class="section-head">
-      <h2>Books</h2>
-      <div class="hint">Your accounting sources in one place. Zoho Books and Odoo are computed from the ledger itself. Tally is Signal, held until a bank feed or GST filing corroborates it. Only self-entered figures move your Pulse Score.</div>
+    <div class="rd-head">
+      <div>
+        <div class="rd-eyebrow">Books</div>
+        <h1>Books</h1>
+        <div class="rd-sub">Your accounting sources in one place. Zoho Books and Odoo are computed from the ledger itself. Tally is Signal, held until a bank feed or GST filing corroborates it. Only self-entered figures move your Pulse Score.</div>
+      </div>
     </div>
     <div class="srcseg" id="booksSourceTabs">
       <button data-src="all" class="active">All sources</button>
@@ -2395,9 +2480,12 @@
 
   <!-- ---------- AGENTS ---------- -->
   <div id="view-agents" class="hidden">
-    <div class="section-head">
-      <h2>Agents</h2>
-      <div class="hint">Automations you can deploy on top of your data. Each runs on its own once active. Deploying an agent never changes your snapshots or scores, it only decides what gets pushed to you and when.</div>
+    <div class="rd-head">
+      <div>
+        <div class="rd-eyebrow">Agents</div>
+        <h1>Automations on your data</h1>
+        <div class="rd-sub">Each runs on its own once active. Deploying an agent never changes your snapshots or scores, it only decides what gets pushed to you and when.</div>
+      </div>
     </div>
     <div id="agentCards"></div>
   </div>
@@ -2869,6 +2957,7 @@ function updateTopBar(){
     av.textContent = name.trim().split(/\s+/).slice(0,2).map(w => w[0]).join('').toUpperCase().slice(0,2) || 'M';
     av.title = (currentUser && currentUser.email) || '';
   }
+  updateOrgSwitch();
   const chip = document.getElementById('topSync');
   const txt = document.getElementById('topSyncText');
   if(!chip || !txt || typeof CONN_FEED_MAP === 'undefined') return;
@@ -2877,6 +2966,38 @@ function updateTopBar(){
   txt.textContent = live === 0 ? 'No sources' : (live + ' source' + (live === 1 ? '' : 's') + ' live');
   if(typeof askGroundChips === 'function') askGroundChips();
 }
+/* org switcher: today there is exactly one business per login (currentProfile),
+   so this always renders a single checked row — the UI is built to hold more
+   once the account model supports switching between businesses under one login. */
+function updateOrgSwitch(){
+  const name = (currentProfile && currentProfile.company_name) || 'Your business';
+  const initials = name.trim().split(/\s+/).slice(0,2).map(w => w[0]).join('').toUpperCase().slice(0,2) || 'M';
+  const sub = currentProfile ? [REV_LABEL[currentProfile.revenue_range], currentProfile.gst_number].filter(Boolean).join(' · ') : '';
+  const nameEl = document.getElementById('orgSwitchName'); if(nameEl) nameEl.textContent = name;
+  const markEl = document.getElementById('orgSwitchMark'); if(markEl) markEl.textContent = initials;
+  const curName = document.getElementById('orgSwitchCurrentName'); if(curName) curName.textContent = name;
+  const curMark = document.getElementById('orgSwitchCurrentMark'); if(curMark) curMark.textContent = initials;
+  const curSub = document.getElementById('orgSwitchCurrentSub'); if(curSub) curSub.textContent = sub || 'Current business';
+}
+(function wireOrgSwitch(){
+  const wrap = document.getElementById('orgSwitch'); if(!wrap) return;
+  const btn = document.getElementById('orgSwitchBtn');
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = wrap.classList.toggle('open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', e => {
+    if(wrap.classList.contains('open') && !wrap.contains(e.target)){
+      wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && wrap.classList.contains('open')){
+      wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+})();
 function renderInvoicingView(){
   const mount = document.getElementById('invoicingMount');
   const khata = document.getElementById('lsuper-khata');
@@ -3629,37 +3750,69 @@ function vitalScoreSeries(label){
   }).filter(v => v !== null);
 }
 function renderVitals(vitals, hasData){
-  const grid = document.getElementById('vitalsGrid'); if(!grid) return;
-  grid.innerHTML = '';
-  const prevSnap = snapshots[1];
-  vitals.forEach(v => {
+  renderVitalsAccordion(vitals, hasData);
+}
+/* One row per vital: score, weight and points (the math), a sparkline
+   (the trend), and an expandable body with the plain-English explanation
+   plus a link into the itemized ledger for the two vitals that have one.
+   This is the single place that math is shown — see togglePulseBreakdown. */
+function renderVitalsAccordion(vitals, hasData){
+  const host = document.getElementById('vitalsAccordion'); if(!host) return;
+  if(!hasData){
+    host.innerHTML = '<div class="rd-empty"><div class="e-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></div>' +
+      '<h4>No snapshot yet</h4><p>Add one under Upload &amp; calculate and each vital breaks down here.</p></div>';
+    return;
+  }
+  const itemized = { 'Receivables Aging':true, 'Payables Due (30d)':true };
+  host.innerHTML = vitals.map(v => {
     const accent = VITAL_ACCENTS[v.label] || '#5C6B7A';
     const score = Math.max(0, Math.min(100, v.score || 0));
-    const { main, suffix } = splitValue(v.value);
-    const weight = VITAL_WEIGHTS[v.label] || 0;
     const band = vitalBand(score);
-    const before = prevSnap ? (prevSnap.vitals || []).find(x => x.label === v.label) : null;
-    const d = (hasData && before) ? Math.round(score - (Number(before.score) || 0)) : null;
-    const el = document.createElement('div');
-    el.className = 'sc-vital' + (hasData ? '' : ' is-zero');
-    el.style.setProperty('--v-accent', accent);
-    el.innerHTML =
-      '<div class="sv-top"><span class="sv-label">' + escapeHtml(v.label) + '</span>' +
-        (hasData ? '<span class="sv-band ' + band.cls + '">' + band.label + '</span>' : '') + '</div>' +
-      '<div class="sv-value">' + main + '</div>' +
-      (suffix ? '<div class="sv-sub">' + escapeHtml(suffix) + '</div>' : '') +
-      '<div class="sv-track"><div class="sv-fill" data-target="' + score + '"></div></div>' +
-      '<div class="sv-foot"><span><b>' + Math.round(score) + '</b>/100' +
-        (d === null ? '' : ' · ' + (d > 0 ? '▲ +' + d : d < 0 ? '▼ ' + Math.abs(d) : 'flat')) + '</span>' +
-        '<span>' + Math.round(weight * 100) + '% of score</span></div>';
-    if(hasData) el.addEventListener('click', () => openVitalDetail(v, accent));
-    grid.appendChild(el);
+    const w = VITAL_WEIGHTS[v.label] || 0;
+    const pts = score * w;
+    const series = vitalScoreSeries(v.label).slice(-24);
+    let spark;
+    if(series.length < 2){
+      spark = '<svg class="sv-acc-spark" viewBox="0 0 100 28" preserveAspectRatio="none"><line x1="0" y1="14" x2="100" y2="14" stroke="var(--border-1)" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>';
+    } else {
+      const min = Math.min(...series), max = Math.max(...series), range = (max - min) || 1;
+      const pts2 = series.map((s, i) => (i / (series.length - 1) * 98 + 1).toFixed(1) + ',' + (26 - ((s - min) / range) * 22).toFixed(1)).join(' ');
+      spark = '<svg class="sv-acc-spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline points="' + pts2 + '" fill="none" stroke="' + accent + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>';
+    }
+    const actions = itemized[v.label]
+      ? '<div class="sv-acc-actions"><button class="btn-ghost sv-acc-open" data-label="' + escapeHtml(v.label) + '" type="button">Open itemized ledger &rarr;</button></div>'
+      : '';
+    return '<div class="sv-acc-row" style="--v-accent:' + accent + ';">' +
+      '<div class="sv-acc-head" data-label="' + escapeHtml(v.label) + '">' +
+        '<span class="sv-acc-accent"></span>' +
+        '<span class="sv-acc-name"><span class="sv-acc-label">' + escapeHtml(v.label) + '</span><span class="sv-acc-band ' + band.cls + '">' + band.label + '</span></span>' +
+        spark +
+        '<span class="sv-acc-score"><b>' + Math.round(score) + '</b>/100</span>' +
+        '<span class="sv-acc-weight">' + Math.round(w * 100) + '%</span>' +
+        '<span class="sv-acc-pts">' + pts.toFixed(1) + 'pt</span>' +
+        '<svg class="sv-acc-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
+      '</div>' +
+      '<div class="sv-acc-body"><div class="sv-acc-reading"><b style="color:var(--text-0);">Current reading: ' + v.value + '</b></div>' +
+        '<div class="sv-acc-explain">' + (VITAL_EXPLAIN[v.label] || '') + '</div>' + actions +
+      '</div>' +
+    '</div>';
+  }).join('');
+  host.querySelectorAll('.sv-acc-head').forEach(head => {
+    head.addEventListener('click', () => openVitalAccordionRow(head.closest('.sv-acc-row')));
   });
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    grid.querySelectorAll('.sv-fill').forEach(b => b.style.width = b.dataset.target + '%');
-  }));
-  renderScoreContribution(vitals, hasData);
-  renderVitalsBarChart(vitals, hasData);
+  host.querySelectorAll('.sv-acc-open').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const v = vitals.find(x => x.label === btn.dataset.label);
+      if(v) openVitalDetail(v, VITAL_ACCENTS[v.label] || '#5C6B7A');
+    });
+  });
+}
+function openVitalAccordionRow(row, forceOpen){
+  if(!row) return;
+  const open = forceOpen === true ? true : !row.classList.contains('open');
+  document.querySelectorAll('#vitalsAccordion .sv-acc-row.open').forEach(r => { if(r !== row) r.classList.remove('open'); });
+  row.classList.toggle('open', open);
 }
 /* The contribution ledger: how each vital's score, at its weight, adds up
    to the Pulse Score, and how many points each one is leaving on the table. */
@@ -4662,18 +4815,17 @@ function renderPulseBreakdown(){
     requestAnimationFrame(() => host.querySelectorAll('.pb-bar-fill').forEach(b => { b.style.width = b.dataset.w + '%'; }));
   }
 }
+/* "Show the math" no longer opens its own duplicate breakdown table —
+   it jumps to and opens the first row of the one canonical vitals
+   accordion below, so the score × weight = points math lives in exactly
+   one place on this page instead of three. */
 function togglePulseBreakdown(force){
   if(snapshots.length === 0) return;
-  const host = document.getElementById('pulseBreakdown');
-  const card = document.getElementById('pulseCard');
-  const open = force === true ? true : (force === false ? false : !host.classList.contains('open'));
-  host.classList.toggle('open', open);
-  card.classList.toggle('expanded', open);
-  if(open){
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      host.querySelectorAll('.pb-bar-fill').forEach(b => { b.style.width = b.dataset.w + '%'; });
-    }));
-  }
+  const section = document.getElementById('vitalsAccordionSection');
+  if(!section) return;
+  section.scrollIntoView({ behavior:'smooth', block:'start' });
+  const firstRow = document.querySelector('#vitalsAccordion .sv-acc-row');
+  if(firstRow && force !== false) openVitalAccordionRow(firstRow, true);
 }
 document.getElementById('pulseCard').addEventListener('click', (e) => {
   if(e.target.closest('.vital')) return;
@@ -5448,10 +5600,63 @@ function renderLedgerView(){
     const r = rows[Number(btn.dataset.idx)];
     if(!r || !r.editable) return;
     const isRecv = r.kind === 'recv';
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       if(btn.dataset.act === 'settle'){ isRecv ? ledgerSettleReceivable(r.raw) : ledgerSettlePayable(r.raw); }
       else if(window.confirm('Delete this entry?')){ isRecv ? ledgerRemoveReceivable(r.raw) : ledgerRemovePayable(r.raw); }
     });
+  });
+  host.querySelectorAll('.lt-row[data-idx]').forEach(row => {
+    const r = rows[Number(row.dataset.idx)];
+    if(!r) return;
+    row.addEventListener('click', () => openLedgerRowDetail(r));
+  });
+}
+/* Row detail: reuses the app's one generic detail modal (#detailOverlay /
+   #detailContent — the same shell openVitalDetail uses) instead of a new
+   component, and shows this entry's own ledger_events history inline so
+   provenance is visible without leaving the row. */
+function openLedgerRowDetail(r){
+  const overlay = document.getElementById('detailOverlay');
+  const modal = overlay.querySelector('.detail-modal');
+  modal.classList.remove('wide');
+  const host = document.getElementById('detailContent');
+  const isRecv = r.kind === 'recv';
+  const badge = isRecv ? recvBucket(r.due_date) : payUrgency(r.due_date);
+  const badgeCls = badge.tag === 'bad' ? 'bad' : badge.tag === 'ok' ? 'ok' : badge.tag ? 'warn' : '';
+  const srcMeta = (LEDGER_SOURCE_META[r.source] || { label: r.source });
+  const history = (ledgerEvents || []).filter(e => r.raw && e.entity_id === r.raw.id);
+  host.innerHTML =
+    '<div class="detail-eyebrow">' + (isRecv ? 'Receivable' : 'Payable') + '</div>' +
+    '<div class="detail-title">' + escapeHtml(r.party || 'Unnamed') + '</div>' +
+    '<div class="detail-score-row" style="align-items:baseline;">' +
+      '<div class="detail-score-num" style="color:var(--text-0); font-size:26px;">' + inr(r.amount) + '</div>' +
+      (badge.label ? '<span class="lt-pill ' + badgeCls + '" style="margin-left:12px;">' + badge.label + '</span>' : '') +
+    '</div>' +
+    '<div class="detail-body" style="margin-bottom:4px;">Due ' + (r.due_date ? fmtDay(r.due_date) : 'no date') +
+      ' &nbsp;·&nbsp; Source: <span class="source-badge">' + escapeHtml(srcMeta.label || r.source || 'manual') + '</span>' +
+      (r.ref ? ' &nbsp;·&nbsp; Ref ' + escapeHtml(r.ref) : '') + '</div>' +
+    '<div class="ledger-list-title">History</div>' +
+    (history.length
+      ? '<div class="rd-timeline">' + history.map(e =>
+          '<div class="rd-tl"><div class="t">' + escapeHtml((e.event || 'updated').replace(/^\w/, c => c.toUpperCase())) + (e.note ? ' — ' + escapeHtml(e.note) : '') + '</div>' +
+          '<div class="m">' + (e.created_at ? fmtDate(e.created_at) : '') + '</div></div>'
+        ).join('') + '</div>'
+      : '<div class="hint">No recorded events for this entry yet.</div>') +
+    (r.editable ? '<div class="btn-row" style="margin-top:18px;">' +
+      '<button class="btn-primary" id="ldrSettle">' + (isRecv ? 'Mark received' : 'Mark paid') + '</button>' +
+      '<button class="btn-ghost" id="ldrDelete">Delete</button></div>' : '');
+  overlay.classList.remove('hidden');
+  const settleBtn = document.getElementById('ldrSettle');
+  if(settleBtn) settleBtn.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    isRecv ? ledgerSettleReceivable(r.raw) : ledgerSettlePayable(r.raw);
+  });
+  const delBtn = document.getElementById('ldrDelete');
+  if(delBtn) delBtn.addEventListener('click', () => {
+    if(!window.confirm('Delete this entry?')) return;
+    overlay.classList.add('hidden');
+    isRecv ? ledgerRemoveReceivable(r.raw) : ledgerRemovePayable(r.raw);
   });
 }
 let ledgerAddOpen = false;
