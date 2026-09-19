@@ -220,6 +220,52 @@ const SETS = {
  * move touched in the last 45 days (so a just-paid invoice flips to paid here
  * too). Bounded + paged so a large book can't blow the function budget.
  */
+/* ------------------------------------------------------------------ */
+/* Cash / bank balance.                                                */
+/*                                                                     */
+/* Odoo has no "cash balance" field — liquidity is the sum of posted   */
+/* journal lines on bank/cash accounts. read_group does that server    */
+/* side in one call, so we never page move lines.                      */
+/*                                                                     */
+/* The account classifier moved between versions: Odoo 17+ has a flat  */
+/* `account_type` on account.account ('asset_cash'), 14-16 used        */
+/* `user_type_id` pointing at account.account.type whose `type` is     */
+/* 'liquidity'. Try the modern field, fall back to the legacy one, and */
+/* record which matched so a suspicious figure can be traced to the    */
+/* version assumption rather than guessed at.                          */
+/* ------------------------------------------------------------------ */
+const CASH_BASES = [
+  { basis: 'account_type',  field: 'account_id.account_type',        value: 'asset_cash' },
+  { basis: 'user_type_id',  field: 'account_id.user_type_id.type',   value: 'liquidity'  }
+];
+
+async function fetchCashBalance(baseUrl, db, uid, apiKey) {
+  for (const probe of CASH_BASES) {
+    try {
+      const domain = [
+        [probe.field, '=', probe.value],
+        ['parent_state', '=', 'posted']
+      ];
+      const groups = await execKw(
+        baseUrl, db, uid, apiKey, 'account.move.line', 'read_group',
+        [domain, ['balance:sum'], []], { lazy: false }
+      );
+      if (!Array.isArray(groups) || !groups.length) continue;
+      const g = groups[0];
+      const balance = num(g.balance);
+      if (balance === null || balance === undefined) continue;
+      return {
+        balance: Math.round(balance * 100) / 100,
+        basis: probe.basis,
+        accountCount: Number(g.__count) || 0
+      };
+    } catch {
+      // wrong field for this Odoo version, or no access — try the next probe
+    }
+  }
+  return null;
+}
+
 async function runSync(cred, opts) {
   opts = opts || {};
   const deadline = opts.deadlineMs || (Date.now() + 40000);
@@ -283,6 +329,25 @@ async function runSync(cred, opts) {
     }
   }
 
+  // Cash is a single aggregate, so it is cheap and always worth refreshing —
+  // but a failure here must never fail an otherwise-good invoice/bill sync.
+  let cash = null;
+  try {
+    cash = await fetchCashBalance(baseUrl, db, uid, apiKey);
+    if (cash) {
+      await insertRows('odoo_cash_balances', [{
+        cred_id: cred.id,
+        user_id: cred.user_id,
+        balance: cash.balance,
+        basis: cash.basis,
+        account_count: cash.accountCount,
+        as_of: now
+      }], { onConflict: 'cred_id', merge: true });
+    }
+  } catch (e) {
+    cash = null;
+  }
+
   await setConnectorStatus(cred.user_id, 'odoo', {
     needsReauth: false,
     lastSuccessAt: now,
@@ -300,7 +365,9 @@ async function runSync(cred, opts) {
     company_name: ctx.companyName,
     invoices: summary.invoices.upserted,
     bills: summary.bills.upserted,
-    has_gst: hasGst
+    has_gst: hasGst,
+    cash: cash ? cash.balance : null,
+    cash_basis: cash ? cash.basis : null
   };
 }
 
@@ -466,6 +533,16 @@ async function handleStatus(req, res) {
     return json(res, 500, { error: 'lookup_failed' });
   }
 
+  let cashRows = [];
+  try {
+    cashRows = await selectRows(
+      'odoo_cash_balances',
+      `select=balance,basis,account_count,as_of&cred_id=eq.${cred.id}&limit=1`
+    );
+  } catch (e) {
+    cashRows = [];
+  }
+
   const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
   const todayMs = Date.now();
   const dueMs = (d) => { const t = d ? new Date(d).getTime() : NaN; return Number.isNaN(t) ? null : t; };
@@ -515,6 +592,15 @@ async function handleStatus(req, res) {
     connected_at: cred.created_at,
     receivables: agg(invoices, 'customer_name'),
     payables: agg(bills, 'vendor_name'),
+    // Interim cash signal from the books' own liquidity accounts — replaced
+    // by the Account Aggregator bank feed when that lands.
+    cash_position: cashRows.length ? {
+      balance: round2(cashRows[0].balance),
+      basis: cashRows[0].basis || null,
+      account_count: cashRows[0].account_count || 0,
+      as_of: cashRows[0].as_of || null,
+      bank_data_available: true
+    } : { bank_data_available: false },
     provenance: 'signal'
   });
 }
