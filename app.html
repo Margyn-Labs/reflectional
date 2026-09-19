@@ -169,10 +169,6 @@
   .pagenav button.active svg{ opacity:1; color:#fff; }
   .nav-badge{ position:absolute; top:4px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:999px; background:var(--rose); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; font-family:'IBM Plex Mono',monospace; }
   .nav-badge.hidden{ display:none; }
-  /* Ledger's nav button already carries a FREE chip pinned right, so its review-queue
-     count sits inline after the label instead of absolutely-positioned over the chip. */
-  #ledgerBadge{ position:static; top:auto; right:auto; margin-left:6px; }
-  #ledgerBadge.hidden{ display:none; }
   /* ---------- app shell (desktop): fixed left rail, independently-scrolling content pane ---------- */
   .app-body{ display:flex; flex-direction:column; }
   .app-body .sidebar{ order:2; }
@@ -1041,6 +1037,27 @@
   .rd-sheet .sh-totbox .tr.grand{ border-top:1.5px solid #14181F; margin-top:6px; padding-top:10px; font-size:14px; font-weight:700; color:#14181F; }
   .rd-sheet .sh-foot{ margin-top:30px; padding-top:16px; border-top:1px solid #EEECE6; display:flex; justify-content:space-between; font-size:10.5px; color:#9AA1AD; font-family:'IBM Plex Mono',monospace; }
 
+  /* ---------- provenance / confidence ---------- */
+  .seg-count{ display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 5px; margin-left:7px;
+    border-radius:999px; background:var(--rose); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; }
+  .srcseg button.active .seg-count{ background:var(--rose); }
+  .conf-band{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:12px; padding-top:12px; border-top:1px solid var(--border-1); }
+  .conf-meter{ position:relative; width:104px; height:5px; border-radius:3px; background:var(--surf-3,#EFEEE8); overflow:hidden; flex-shrink:0; }
+  .conf-meter i{ display:block; height:100%; border-radius:3px; background:var(--emerald); transition:width .5s var(--ease-out); }
+  .conf-band.t-self .conf-meter i{ background:var(--text-3); }
+  .conf-band.t-connector .conf-meter i{ background:var(--sky); }
+  .conf-pct{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:700; color:var(--text-0); }
+  .conf-text{ font-size:11.5px; color:var(--text-2); line-height:1.45; }
+  .src-tag{ display:inline-flex; align-items:center; gap:4px; font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700;
+    letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:4px; background:var(--surf-2); color:var(--text-2); white-space:nowrap; }
+  .src-tag.verified{ background:var(--emerald-wash); color:var(--emerald-deep); }
+  .src-tag.connector{ background:var(--sky-light); color:var(--sky); }
+  .src-tag.self{ background:var(--surf-2); color:var(--text-3); }
+  .conflict-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--border-1); font-size:12px; }
+  .conflict-row:last-child{ border-bottom:none; }
+  .conflict-row .cf-field{ font-weight:700; color:var(--text-0); flex:1; min-width:0; }
+  .conflict-row .cf-vals{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-2); white-space:nowrap; }
+  .conflict-row .cf-spread{ font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:var(--rose); white-space:nowrap; }
   .rd-tag{ display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--surf-2); color:var(--text-2); }
   .rd-tag.ok{ background:var(--emerald-wash); color:var(--emerald-bright); }
   .rd-tag.blue{ background:var(--sky-light,#E3ECF5); color:var(--sky,#0B4B8C); }
@@ -1723,12 +1740,10 @@
       <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
       <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Ask Margyn</span></button>
       <div class="nav-group-label">Money</div>
-      <button data-view="ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg><span>Ledger</span><span class="tier-chip free">FREE</span><span class="nav-badge hidden" id="ledgerBadge"></span></button>
       <button data-view="invoicing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg><span>Invoicing</span><span class="tier-chip free">FREE</span></button>
       <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
-      <button data-view="suggestions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8M8 13h5"/></svg><span>Suggestions</span><span class="nav-badge hidden" id="suggestionsBadge"></span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
-      <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span><span class="nav-badge hidden" id="tallyBadge"></span></button>
+      <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
       <button data-view="analytics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg><span>Analytics</span></button>
       <div class="nav-group-label">Automation</div>
       <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Agents</span><span class="nav-badge hidden" id="agentsBadge"></span></button>
@@ -1769,6 +1784,11 @@
           <div class="rd-legend"><span>At risk 0</span><span>Caution 40</span><span>Healthy 70</span><span>100</span></div>
         </div>
         <button class="rd-link" id="verdictCta" type="button">See the full breakdown &rarr;</button>
+        <div class="conf-band hidden" id="sumConfBand">
+          <div class="conf-meter"><i id="sumConfFill" style="width:0%"></i></div>
+          <span class="conf-pct" id="sumConfPct">—</span>
+          <span class="conf-text" id="sumConfText"></span>
+        </div>
       </div>
     </div>
 
@@ -1802,13 +1822,8 @@
     <!-- Customers &amp; Invoicing moved to its own Invoicing page; this view is quick ledger only. -->
     <!-- ===== quick ledger (existing) ===== -->
     <div class="lsuper-panel active" id="lsuper-quick">
-      <div class="rd-head">
-        <div>
-          <div class="rd-eyebrow">Ledger <span class="tier-chip free" style="margin-left:6px;">FREE</span></div>
-          <h1>Receivables and payables</h1>
-          <div class="rd-sub">What customers owe you, what you owe vendors, and your cash balance, in one place. Mark an item cleared the moment it settles.</div>
-        </div>
-        <button class="btn-primary" id="ledgerAddToggle" type="button">+ Add entry</button>
+      <div class="rd-section-label" style="margin-bottom:14px;">Receivables and payables you keep yourself
+        <span class="rd-note"><button class="btn-primary" id="ledgerAddToggle" type="button" style="padding:7px 13px; font-size:12px;">+ Add entry</button></span>
       </div>
       <div class="tabs" id="ledgerTabs">
         <button class="tab active" data-ltab="all">All</button>
@@ -1816,16 +1831,10 @@
         <button class="tab" data-ltab="payables">Payables</button>
         <button class="tab" data-ltab="cash">Cash</button>
       </div>
-      <div class="card hidden" id="reconReviewCard">
-        <div class="ledger-list-title" id="reconReviewTitle" style="margin-top:0; padding-top:0; border-top:none;">Payments needing review</div>
-        <div class="hint" style="margin-bottom:10px;">The nightly reconciliation check found more than one possible Razorpay payment for these invoices, or the two sources didn't line up cleanly. They're left for a human to confirm rather than auto-marked as verified.</div>
-        <div id="reconReviewList"></div>
-      </div>
-      <div class="card hidden" id="agentQueueCard">
-        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Agent queue <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span></div>
-        <div class="hint" style="margin-bottom:10px;">The Close &amp; Collections agent worked the reconciliation exceptions overnight. Each item below is a proposal &mdash; the money figure, why, and what to book. Nothing is applied until you approve it.</div>
-        <div id="agentQueueList"></div>
-      </div>
+      <!-- The reconciliation review queue and the Close agent's proposal
+           queue used to sit here, which put agent output on three different
+           pages. Both now live on Agents > Queue alongside the import
+           suggestions. -->
       <div class="facts" id="ledgerFacts"></div>
       <div class="ledger-form hidden" id="ledgerAddForm">
         <div class="lf-title" id="ledgerAddTitle">Add receivable</div>
@@ -1844,7 +1853,7 @@
       <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
           <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
-          <select id="ledgerSourceFilter" style="font-size:11px; padding:5px 8px;">
+          <select id="ledgerSourceFilter" style="font-size:11px; padding:5px 8px; width:auto; min-width:150px; max-width:220px; flex:0 0 auto;">
             <option value="all">All sources</option>
             <option value="self">Manual / CSV</option>
             <option value="zoho">Zoho Books</option>
@@ -2169,14 +2178,6 @@
       </div>
     </div>
   </div>
-  <!-- ---------- 2b. SUGGESTIONS — pending AI proposals (currently: WhatsApp-forwarded files) ---------- -->
-  <div id="view-suggestions" class="hidden">
-    <div class="card">
-      <h2>Suggestions</h2>
-      <div class="hint">Forward an invoice, bill or receipt photo to your Margyn WhatsApp number from your registered number. Margyn reads it and drops a suggestion here — nothing is saved to your books until you approve it.</div>
-    </div>
-    <div id="suggestionsList" style="margin-top:16px;"></div>
-  </div>
   <!-- ---------- 3. SCORES — "Diagnostics" (redesigned) ---------- -->
   <div id="view-scores" class="hidden">
     <div class="rd-head">
@@ -2208,6 +2209,11 @@
           <span class="pulse-band-badge" id="pulseBandBadge"></span>
           <span class="pulse-delta" id="pulseDelta"></span>
           <span class="source-badge" id="pulseSourceBadge" style="display:none;"></span>
+          <div class="conf-band hidden" id="scConfBand" style="justify-content:center;">
+            <div class="conf-meter"><i id="scConfFill" style="width:0%"></i></div>
+            <span class="conf-pct" id="scConfPct">—</span>
+          </div>
+          <div class="conf-text" id="scConfText" style="text-align:center;"></div>
           <div class="pulse-tap-hint" id="pulseTapHint">Show the math<svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
         </div>
       </div>
@@ -2387,17 +2393,27 @@
     <div class="rd-head">
       <div>
         <div class="rd-eyebrow">Books</div>
-        <h1>Books</h1>
-        <div class="rd-sub">Your accounting sources in one place. Zoho Books and Odoo are computed from the ledger itself. Tally is Signal, held until a bank feed or GST filing corroborates it. Only self-entered figures move your Pulse Score.</div>
+        <h1>Your books, every source</h1>
+        <div class="rd-sub">Every accounting source in one place. Where two sources agree on a figure, Margyn treats it as verified and it carries your Pulse Score; where only one reports it, the score still uses it but says so. Disagreements are flagged, never averaged.</div>
       </div>
     </div>
     <div class="srcseg" id="booksSourceTabs">
       <button data-src="all" class="active">All sources</button>
+      <button data-src="manual">Manual<span class="tier-chip free" style="margin-left:6px;">FREE</span></button>
       <button data-src="zoho">Zoho Books</button>
       <button data-src="tally">Tally</button>
       <button data-src="odoo">Odoo</button>
     </div>
-    <div id="booksAllNote" class="hint hidden" style="margin-bottom:16px;">Showing every connected accounting source. Margyn never adds these together or picks one silently. Where two sources disagree on the same counterparty it is flagged, not averaged.</div>
+    <div id="booksAllNote" class="hint hidden" style="margin-bottom:16px;">Showing every connected accounting source. Margyn never adds these together. For each scoring figure it takes the strongest source available — two that agree beat one, and one connected source beats a number typed by hand — and flags anything that disagrees rather than averaging it.</div>
+    <div class="chart-card cc-wide hidden" id="srcConflictCard" style="margin-bottom:16px;">
+      <div class="cc-head"><h3>Sources that disagree</h3><span class="cc-sub dt-count" id="srcConflictSub"></span></div>
+      <div id="srcConflictList"></div>
+      <div class="hint" style="margin-top:12px;">Margyn used the stronger source for the score and left the difference here rather than splitting it. Cash from Tally and Odoo is the books' own bank and cash-in-hand total, with overdraft and cash-credit accounts left out &mdash; an interim signal until a bank feed replaces it. If two sources disagree on cash, that gap is usually uncleared items, not an error in either.</div>
+    </div>
+    <div id="booksManualBlocks" class="hidden">
+      <div class="hint" style="margin-bottom:14px;">Entries you keep by hand, plus anything imported from a CSV. These carry your Pulse Score wherever no connector reports the same figure &mdash; and where one does, the connector wins and the difference is flagged above.</div>
+      <div id="booksManualMount"></div>
+    </div>
     <div id="booksZohoBlocks">
     <div id="booksNotConnected" class="mock-banner hidden">Zoho Books isn't connected. Connect it under Connections to unlock receivables, payables, GST/ITC leakage and true net margin.</div>
     <div id="booksBackfillBanner" class="mock-banner hidden">First sync in progress. Margyn is pulling your last 12 months. This can take a few minutes on a busy set of books.</div>
@@ -2464,7 +2480,7 @@
     </div>
     </div>
     <div id="booksTallyBlocks" class="hidden">
-      <div class="hint" style="margin-bottom:14px;">Straight from TallyPrime, pulled by the desktop agent. Everything here is <strong>Signal</strong>. No figure here moves your Pulse Score on its own.</div>
+      <div class="hint" style="margin-bottom:14px;">Straight from TallyPrime, pulled by the desktop agent. Receivables, payables, sales and your bank + cash-in-hand balance all feed your Pulse Score, marked <strong>Connected</strong> until a second source corroborates them. Overdraft and cash-credit ledgers are excluded from the cash figure.</div>
       <div id="booksTallyMount"></div>
     </div>
     <div id="booksOdooBlocks" class="hidden">
@@ -2474,22 +2490,26 @@
   </div>
   <!-- ---------- 3b-ii. TALLY (content relocated into Books hub at runtime) ---------- -->
   <div id="view-tally" class="hidden">
-    <div class="section-head">
-      <h2>Tally</h2>
-      <div class="hint">Straight from your TallyPrime books, pulled by the desktop agent: ledger balances, transactions and outstanding bills. Everything here is <strong>Signal</strong> — one source, held until a bank feed or GST filing corroborates it. No figure here moves your Pulse Score on its own.</div>
-    </div>
+    <!-- #tallyTabContent is moved into #booksTallyMount at boot by
+         relocateTallyIntoBooks(); this wrapper only holds the markup. The
+         heading lives on the Books hub, so none is repeated here. -->
     <div id="tallyNotConnected" class="mock-banner hidden">Tally isn't connected. Connect it under Connectors to sync your ledgers, transactions and outstanding bills.</div>
     <div id="tallyTabContent" class="hidden">
       <div class="pay-grid">
         <div class="pay-card">
+          <div class="pc-label">Bank + cash in hand</div>
+          <div class="pc-value" id="tvCashVal">—</div>
+          <div class="pc-sub" id="tvCashSub">Feeds Cash Position and Working Capital Runway.</div>
+        </div>
+        <div class="pay-card">
           <div class="pc-label">Receivables outstanding</div>
           <div class="pc-value" id="tvRecvVal">—</div>
-          <div class="pc-sub">Unpaid customer bills, all ages. Signal.</div>
+          <div class="pc-sub">Unpaid customer bills, all ages. Feeds Receivables Aging.</div>
         </div>
         <div class="pay-card">
           <div class="pc-label">Payables due</div>
           <div class="pc-value" id="tvPayVal">—</div>
-          <div class="pc-sub">Open vendor bills still owed. Signal.</div>
+          <div class="pc-sub">Open vendor bills still owed. Feeds Payables Due.</div>
         </div>
         <div class="pay-card">
           <div class="pc-label">Overdue</div>
@@ -2560,10 +2580,49 @@
       <div>
         <div class="rd-eyebrow">Agents</div>
         <h1>Automations on your data</h1>
-        <div class="rd-sub">Each runs on its own once active. Deploying an agent never changes your snapshots or scores, it only decides what gets pushed to you and when.</div>
+        <div class="rd-sub">One roster, one queue, one place to talk to them. An agent never edits a figure by itself &mdash; it proposes, you approve, and only then does anything reach your books or your score.</div>
+      </div>
+      <div class="rd-asof"><span class="dot"></span><span id="agentsAsOf">&mdash;</span></div>
+    </div>
+    <div class="srcseg" id="agentTabs">
+      <button data-atab="queue" class="active">Queue<span class="seg-count hidden" id="agentQueueCount"></span></button>
+      <button data-atab="roster">Roster</button>
+      <button data-atab="chat">Conversations</button>
+    </div>
+
+    <div id="agentPanel-queue">
+      <div class="hint" style="margin-bottom:16px;">Everything your agents are waiting on, in one list. Nothing below has been applied &mdash; each item is a proposal until you approve it.</div>
+      <div class="card hidden" id="reconReviewCard">
+        <div class="ledger-list-title" id="reconReviewTitle" style="margin-top:0; padding-top:0; border-top:none;">Payments needing review</div>
+        <div class="hint" style="margin-bottom:10px;">The nightly reconciliation check found more than one possible Razorpay payment for these invoices, or the two sources didn't line up cleanly. They're left for a human to confirm rather than auto-marked as verified.</div>
+        <div id="reconReviewList"></div>
+      </div>
+      <div class="card hidden" id="agentQueueCard">
+        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Close &amp; Collections proposals <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span></div>
+        <div class="hint" style="margin-bottom:10px;">The Close &amp; Collections agent worked the reconciliation exceptions overnight. Each item below is a proposal &mdash; the money figure, why, and what to book.</div>
+        <div id="agentQueueList"></div>
+      </div>
+      <div class="card hidden" id="agentSuggestCard">
+        <div class="ledger-list-title" style="margin-top:0; padding-top:0; border-top:none;">Forwarded documents <span class="tier-chip free" style="margin-left:6px;">IMPORT</span></div>
+        <div class="hint" style="margin-bottom:10px;">Invoices, bills and receipts you forwarded to your Margyn WhatsApp number. The Import agent read each one and proposed where it goes.</div>
+        <div id="suggestionsList"></div>
+      </div>
+      <div class="rd-empty hidden" id="agentQueueEmpty">
+        <div class="e-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <h4>Nothing waiting on you</h4>
+        <p>When an agent finds a reconciliation it can't settle on its own, drafts a journal entry, or reads a document you forwarded, it lands here for approval.</p>
       </div>
     </div>
-    <div id="agentCards"></div>
+
+    <div id="agentPanel-roster" class="hidden">
+      <div class="hint" style="margin-bottom:16px;">Deploy, pause or configure each automation. Pausing stops the pushes and the proposals; it never deletes anything already in the queue.</div>
+      <div id="agentCards"></div>
+    </div>
+
+    <div id="agentPanel-chat" class="hidden">
+      <div class="hint" style="margin-bottom:16px;">Every agent is also someone you can talk to. Pick one to open its thread &mdash; Margyn leads and will hand off to a specialist when a question is squarely theirs.</div>
+      <div class="ask-agents-grid" id="agentChatList"></div>
+    </div>
   </div>
 
   <!-- ---------- INVOICING (promoted from Ledger > Customers & Invoicing) ---------- -->
@@ -2900,10 +2959,12 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
 });
 const REV_LABEL = { under_5cr:'Under ₹5 cr', '5_25cr':'₹5–25 cr', '25_50cr':'₹25–50 cr', '50_100cr':'₹50–100 cr', '100_200cr':'₹100–200 cr', over_200cr:'Over ₹200 cr' };
 function showView(name){
-  ['summary','profile','ledger','invoicing','calculate','suggestions','scores','history','payments','books','tally','analytics','connectors','settings','financing','agents'].forEach(v => { const el = document.getElementById('view-' + v); if(el){ el.classList.toggle('hidden', v !== name); if(v === name){ el.classList.remove('rd-fade'); void el.offsetWidth; el.classList.add('rd-fade'); } } });
+  // Ledger is now the Manual source on the Books hub. Old entry points
+  // (⌘K actions, vital drill-downs, agent deep links) still say 'ledger'.
+  if(name === 'ledger'){ booksActiveSource = 'manual'; name = 'books'; }
+  ['summary','profile','ledger','invoicing','calculate','scores','history','payments','books','tally','analytics','connectors','settings','financing','agents'].forEach(v => { const el = document.getElementById('view-' + v); if(el){ el.classList.toggle('hidden', v !== name); if(v === name){ el.classList.remove('rd-fade'); void el.offsetWidth; el.classList.add('rd-fade'); } } });
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-  if(name === 'suggestions') renderSuggestionsView();
-  if(name === 'ledger'){ renderLedgerView(); renderReconLedger(); renderAgentQueue(); }
+  if(name === 'ledger'){ renderLedgerView(); }
   if(name === 'invoicing'){ renderInvoicingView(); }
   if(name === 'books'){ if(typeof renderBooksHub === 'function') renderBooksHub(); else renderZohoBooksTab(); }
   if(name === 'tally') renderTallyTab();
@@ -2955,6 +3016,7 @@ function cmdkBuild(q){
     { label:'Create a new invoice', icon:CMDK_ICON.invoice, run:() => { showView('invoicing'); if(typeof showKhataTab === 'function') showKhataTab('invoice-new'); } },
     { label:'Add a receivable', icon:CMDK_ICON.plus, run:() => { ledgerActiveTab = 'receivables'; showView('ledger'); } },
     { label:'Add a payable', icon:CMDK_ICON.plus, run:() => { ledgerActiveTab = 'payables'; showView('ledger'); } },
+    { label:'Review the agent queue', icon:CMDK_ICON.plus, run:() => { agentsActiveTab = 'queue'; showView('agents'); } },
     { label:'Build a new chart', icon:CMDK_ICON.chart, run:() => { showView('analytics'); const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); } },
     { label:'Connect a data source', icon:CMDK_ICON.plug, run:() => showView('connectors') },
     { label:'Upload a workbook', icon:CMDK_ICON.upload, run:() => showView('calculate') }
@@ -3075,14 +3137,7 @@ function updateOrgSwitch(){
   });
 })();
 function renderInvoicingView(){
-  const mount = document.getElementById('invoicingMount');
-  const khata = document.getElementById('lsuper-khata');
-  if(mount && khata && khata.parentElement !== mount){
-    khata.classList.remove('lsuper-panel');
-    khata.classList.add('active');
-    mount.appendChild(khata);
-    const q = document.getElementById('lsuper-quick'); if(q) q.classList.add('active');
-  }
+  if(typeof relocateKhataIntoInvoicing === 'function') relocateKhataIntoInvoicing();
   if(typeof showKhataTab === 'function') showKhataTab(khataTab || 'parties');
   else if(typeof renderKhataParties === 'function') renderKhataParties();
 }
@@ -3117,6 +3172,11 @@ async function refreshAll(){
   await loadShopifyStatus();
   await loadTallyStatus();
   tallyData = await loadTallyData();
+  // Every connector global is loaded by this point. Rebuild the scoring
+  // inputs from the best source available per field; if that moved the
+  // picture, a fresh `resolved` snapshot is written and re-read so every
+  // render below sees the same numbers.
+  if(await resolveAndSaveSnapshot()){ snapshots = await loadSnapshots(); }
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
   renderReconBooksCard(); renderReconLedger(); renderAgentQueue(); renderTallyTab();
   if(typeof renderBooksHub === 'function') renderBooksHub();
@@ -3523,6 +3583,7 @@ function sourceLabel(source){
   if(source === 'manual') return 'Manual entry';
   if(source === 'upload') return 'CSV upload';
   if(source === 'ledger') return 'Ledger entry';
+  if(source === 'resolved') return 'Resolved from connected sources';
   return 'Connector-synced';
 }
 /* One provenance/reconciliation tag vocabulary, used everywhere a data
@@ -3586,6 +3647,7 @@ function renderScores(){
   document.getElementById('pulseAsOf').textContent = asOfText;
   const head = document.getElementById('scHeadline');
   if(head) head.textContent = hasData ? ('Why your Pulse Score is ' + pulseVal) : 'Your Pulse Score';
+  renderConfidence();
   renderScoreMetrics();
   renderVitals(hasData ? (latest.vitals || ZERO_VITALS) : ZERO_VITALS, hasData);
   renderHistory(snapshots);
@@ -3841,6 +3903,16 @@ function renderVitalsAccordion(vitals, hasData){
     return;
   }
   const itemized = { 'Receivables Aging':true, 'Payables Due (30d)':true };
+  const prov = (snapshots[0] || {}).input_provenance || null;
+  const TIER_TAG = { verified:'Verified', connector:'Connected', self:'Self-reported' };
+  const vitalSourceTag = label => {
+    const t = vitalTier(label, prov);
+    const names = (VITAL_INPUTS[label] || [])
+      .map(f => (prov && prov[INPUT_COLUMN[f] || f] || {}).source)
+      .filter((x, i, a) => x && x !== 'self' && a.indexOf(x) === i);
+    const title = names.length ? ('From ' + names.join(' + ')) : 'Entered or uploaded by hand';
+    return '<span class="src-tag ' + t + '" title="' + escapeHtml(title) + '">' + TIER_TAG[t] + '</span>';
+  };
   host.innerHTML = vitals.map(v => {
     const accent = VITAL_ACCENTS[v.label] || '#5C6B7A';
     const score = Math.max(0, Math.min(100, v.score || 0));
@@ -3862,7 +3934,7 @@ function renderVitalsAccordion(vitals, hasData){
     return '<div class="sv-acc-row" style="--v-accent:' + accent + ';">' +
       '<div class="sv-acc-head" data-label="' + escapeHtml(v.label) + '">' +
         '<span class="sv-acc-accent"></span>' +
-        '<span class="sv-acc-name"><span class="sv-acc-label">' + escapeHtml(v.label) + '</span><span class="sv-acc-band ' + band.cls + '">' + band.label + '</span></span>' +
+        '<span class="sv-acc-name"><span class="sv-acc-label">' + escapeHtml(v.label) + '</span><span class="sv-acc-band ' + band.cls + '">' + band.label + '</span>' + vitalSourceTag(v.label) + '</span>' +
         spark +
         '<span class="sv-acc-score"><b>' + Math.round(score) + '</b>/100</span>' +
         '<span class="sv-acc-weight">' + Math.round(w * 100) + '%</span>' +
@@ -4853,19 +4925,20 @@ initAskMargynGlobal();
    it was calculated — the six vitals, their weights and how they roll up.
    This is the actual scoring math (computePulseScore / VITAL_WEIGHTS),
    not an AI explanation. */
+/* togglePulseBreakdown() now scrolls to the one canonical vitals accordion
+   rather than building a second breakdown table, so the old #pulseBreakdown
+   container is gone from the markup. What still matters is that "Show the
+   math" is only offered when there IS math to show — with no snapshot the
+   toggle returns early, and the control was sitting there inviting a click
+   that did nothing. */
 function renderPulseBreakdown(){
-  const host = document.getElementById('pulseBreakdown');
-  if(!host) return;
   const card = document.getElementById('pulseCard');
   const hint = document.getElementById('pulseTapHint');
   const hasData = snapshots.length > 0;
-  if(!hasData){
-    host.classList.remove('open'); card.classList.remove('expanded');
-    if(hint) hint.style.display = 'none';
-    host.innerHTML = '';
-    return;
-  }
-  if(hint) hint.style.display = 'flex';
+  if(hint) hint.style.display = hasData ? 'flex' : 'none';
+  if(!hasData && card) card.classList.remove('expanded');
+  const host = document.getElementById('pulseBreakdown');
+  if(!host || !hasData) return;
   const latest = snapshots[0];
   const vitals = latest.vitals || ZERO_VITALS;
   let weightedTotal = 0;
@@ -5409,7 +5482,13 @@ function buildMargynContext(focusLabel){
     dataProvenance: hasData ? {
       source: latest.source,
       label: sourceLabel(latest.source),
-      selfReported: SELF_REPORTED_SOURCES.includes(latest.source)
+      selfReported: SELF_REPORTED_SOURCES.includes(latest.source),
+      // Per-field origin + tier, so the briefing can say which vitals are
+      // verified, which rest on one connector, and which are still typed.
+      fields: latest.input_provenance || null,
+      confidence: latest.confidence != null ? Number(latest.confidence) : null,
+      confidenceText: confidenceSummary(latest.input_provenance || null).text,
+      conflicts: latest.source_conflicts || null
     } : null,
     razorpayLive: razorpayLiveSummary,
     connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected, tally: !!tallyConnected },
@@ -6839,6 +6918,7 @@ function renderLedgerInsight(){
 }
 function renderSummary(){
   const strip = document.getElementById('kpiStrip'); if(!strip) return;
+  renderConfidence();
   const latest = snapshots[0] || null;
   const prev = snapshots[1] || null;
   const { recvTotal, recv90, paySoon } = ledgerAggregates();
@@ -7443,7 +7523,7 @@ async function revokeTallyInstall(installId){
   try {
     await tallyApi('/api/tally?action=revoke', { method:'POST', body: JSON.stringify({ installId }) });
     await loadTallyStatus();
-  } catch(e){ alert(e.message); }
+  } catch(e){ toast('Could not complete that', { kind:'bad', sub: e.message }); }
 }
 /* ---------- pairing modal ---------- */
 function openTallyModal(){
@@ -7549,12 +7629,11 @@ function renderTallyTab(){
   if(!notConn || !content) return;
 
   const d = tallyData;
-  const badge = document.getElementById('tallyBadge');
 
   if(!d || !d.connected){
     notConn.classList.remove('hidden');
     content.classList.add('hidden');
-    if(badge){ badge.textContent = ''; badge.classList.add('hidden'); }
+    tallyOverdueCount = 0; renderBooksBadge();
     return;
   }
   notConn.classList.add('hidden');
@@ -7562,6 +7641,15 @@ function renderTallyTab(){
 
   const b = d.bills || {}, v = d.vouchers || {}, led = d.ledgers || {};
 
+  const tCash = tallyCashBalance();
+  const tCashEl = document.getElementById('tvCashVal');
+  const tCashSub = document.getElementById('tvCashSub');
+  if(tCashEl) tCashEl.textContent = tCash ? inr(tCash.total) : 'Not available';
+  if(tCashSub){
+    tCashSub.textContent = tCash
+      ? (tCash.count + (tCash.count === 1 ? ' ledger' : ' ledgers') + ', overdraft excluded. Feeds Cash Position and Working Capital Runway.')
+      : 'No bank or cash-in-hand ledger carried a closing balance in this sync.';
+  }
   document.getElementById('tvRecvVal').textContent = inr(b.receivable_total || 0);
   document.getElementById('tvPayVal').textContent = inr(b.payable_total || 0);
   document.getElementById('tvOverdueVal').textContent = inr(b.overdue_total || 0);
@@ -7670,12 +7758,9 @@ function renderTallyTab(){
 
   wireDscroll(content);
 
-  // nav badge: overdue bill count
-  if(badge){
-    const odCount = (b.items || []).filter(x => x.overdue_days != null && x.overdue_days > 0).length;
-    if(odCount){ badge.textContent = odCount; badge.classList.remove('hidden'); }
-    else { badge.textContent = ''; badge.classList.add('hidden'); }
-  }
+  // nav badge: overdue bill count, folded into the single Books badge
+  tallyOverdueCount = (b.items || []).filter(x => x.overdue_days != null && x.overdue_days > 0).length;
+  renderBooksBadge();
 }
 /* ============================================================
    ZOHO BOOKS CONNECTOR (NEW) — OAuth 2.0, org-picker gated.
@@ -8037,33 +8122,110 @@ function zvSet(id, text){ const el = document.getElementById(id); if(el) el.text
 function zvFlag(id, cls, text){ const el = document.getElementById(id); if(!el) return; el.textContent = text || ''; el.className = 'pc-flag ' + (cls || ''); }
 let booksActiveSource = 'all'; // 'all', 'zoho', 'tally' or 'odoo'. Presentational source switch on the Books hub.
 function renderBooksHub(){
-  // Lazily relocate the standalone Tally view content into the Books hub, once.
-  const tMount = document.getElementById('booksTallyMount');
-  const tContent = document.getElementById('tallyTabContent');
-  const tNot = document.getElementById('tallyNotConnected');
-  if(tMount && tContent && tContent.parentElement !== tMount){
-    if(tNot) tMount.appendChild(tNot);
-    tMount.appendChild(tContent);
-  }
+  relocateTallyIntoBooks();
+  relocateLedgerIntoBooks();
+  const manual = document.getElementById('booksManualBlocks');
   const zoho = document.getElementById('booksZohoBlocks');
   const tally = document.getElementById('booksTallyBlocks');
   const odoo = document.getElementById('booksOdooBlocks');
   const recon = document.getElementById('zvReconCard');
   const allNote = document.getElementById('booksAllNote');
   const s = booksActiveSource;
+  if(manual) manual.classList.toggle('hidden', !(s === 'all' || s === 'manual'));
   if(zoho) zoho.classList.toggle('hidden', !(s === 'all' || s === 'zoho'));
   if(tally) tally.classList.toggle('hidden', !(s === 'all' || s === 'tally'));
   if(odoo) odoo.classList.toggle('hidden', !(s === 'all' || s === 'odoo'));
   if(allNote) allNote.classList.toggle('hidden', s !== 'all');
   document.querySelectorAll('#booksSourceTabs button').forEach(b => b.classList.toggle('active', b.dataset.src === s));
+  // The entries table inside the quick ledger has its own source filter that
+  // does the same job as these tabs — keep them in step so picking "Tally"
+  // up here doesn't leave a table below showing everything.
+  const lsf = document.getElementById('ledgerSourceFilter');
+  if(lsf){
+    const want = s === 'manual' ? 'self' : (s === 'all' ? 'all' : s);
+    if(lsf.value !== want && [...lsf.options].some(o => o.value === want)){
+      lsf.value = want;
+      ledgerSourceFilter = want;
+    }
+  }
+  renderSourceConflicts();
+  if(s === 'all' || s === 'manual'){ if(typeof renderLedgerView === 'function') renderLedgerView(); }
   renderZohoBooksTab();
   renderTallyTab();
   renderBooksOdooPanel();
   if(recon && (s === 'tally' || s === 'odoo')) recon.classList.add('hidden');
 }
+/* The Tally panels live in #view-tally in the source so the markup stays
+   readable, but they belong to the Books hub at runtime. This used to run
+   inside renderBooksHub(), which meant the move happened the first time the
+   user opened Books — a visible jump as the grid re-measured against its new
+   parent. Run it once at boot instead, before Books is ever painted. */
+function relocateTallyIntoBooks(){
+  const tMount = document.getElementById('booksTallyMount');
+  const tContent = document.getElementById('tallyTabContent');
+  const tNot = document.getElementById('tallyNotConnected');
+  if(!tMount || !tContent || tContent.parentElement === tMount) return;
+  if(tNot) tMount.appendChild(tNot);
+  tMount.appendChild(tContent);
+}
+/* The quick ledger (manual receivables/payables) is a source of accounting
+   truth like any other, so it belongs on the Books hub next to Zoho, Tally
+   and Odoo rather than on a nav item of its own — especially now that a
+   connector figure can outrank a hand-typed one. Same boot-time move as
+   Tally so nothing jumps on first paint. */
+function relocateLedgerIntoBooks(){
+  const mount = document.getElementById('booksManualMount');
+  const quick = document.getElementById('lsuper-quick');
+  if(!mount || !quick || quick.parentElement === mount) return;
+  quick.classList.remove('lsuper-panel');
+  quick.classList.add('active');
+  mount.appendChild(quick);
+}
+/* Invoicing had the same lazy-relocate-on-first-view pattern; hoist it too. */
+function relocateKhataIntoInvoicing(){
+  const mount = document.getElementById('invoicingMount');
+  const khata = document.getElementById('lsuper-khata');
+  if(!mount || !khata || khata.parentElement === mount) return;
+  khata.classList.remove('lsuper-panel');
+  khata.classList.add('active');
+  mount.appendChild(khata);
+}
+relocateTallyIntoBooks();
+relocateLedgerIntoBooks();
+relocateKhataIntoInvoicing();
 document.querySelectorAll('#booksSourceTabs button').forEach(b => b.addEventListener('click', () => {
   booksActiveSource = b.dataset.src; renderBooksHub();
 }));
+/* Cross-source disagreements recorded on the latest resolved snapshot.
+   Shown on the Books hub because that is where the competing sources live. */
+const CONFLICT_FIELD_LABEL = {
+  cash:'Cash position', revenue:'Revenue', net_profit:'Net profit', burn:'Total spend',
+  gst_leak:'GST/ITC leakage', gst_payable:'GST payable', recv_total:'Receivables',
+  recv_90:'Receivables over 90d', pay_soon:'Payables due (30d)'
+};
+const SOURCE_DISPLAY = { zoho:'Zoho Books', tally:'Tally', odoo:'Odoo', self:'Self-reported',
+                         manual:'Manual entry', upload:'CSV upload', ledger:'Ledger entry' };
+function renderSourceConflicts(){
+  const card = document.getElementById('srcConflictCard');
+  const list = document.getElementById('srcConflictList');
+  const sub  = document.getElementById('srcConflictSub');
+  if(!card || !list) return;
+  const conflicts = (snapshots[0] || {}).source_conflicts || [];
+  if(!conflicts.length){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  if(sub) sub.textContent = conflicts.length + (conflicts.length === 1 ? ' figure' : ' figures');
+  list.innerHTML = conflicts.map(c => {
+    const vals = Object.keys(c.values || {})
+      .map(k => (SOURCE_DISPLAY[k] || k) + ' ' + inr(c.values[k]))
+      .join('  ·  ');
+    return '<div class="conflict-row">' +
+      '<span class="cf-field">' + escapeHtml(CONFLICT_FIELD_LABEL[c.field] || c.field) + '</span>' +
+      '<span class="cf-vals">' + escapeHtml(vals) + '</span>' +
+      '<span class="cf-spread">' + (c.spread_pct || 0) + '% apart</span>' +
+      '<span class="src-tag connector">Used ' + escapeHtml(SOURCE_DISPLAY[c.chosen] || c.chosen) + '</span>' +
+    '</div>';
+  }).join('');
+}
 function renderBooksOdooPanel(){
   const host = document.getElementById('booksOdooMount'); if(!host) return;
   if(typeof odooConnected === 'undefined' || !odooConnected || !odooStatus){
@@ -8072,10 +8234,12 @@ function renderBooksOdooPanel(){
   }
   const s = odooStatus;
   const rec = s.receivables || {}, pay = s.payables || {};
+  const cash = s.cash_position || { bank_data_available: false };
   host.innerHTML =
     '<div class="pay-grid">' +
       '<div class="pay-card" data-margyn-topic="Odoo receivables"><div class="pc-label">Receivables outstanding</div><div class="pc-value">'+inr(rec.total || rec.amount || 0)+'</div><div class="pc-sub">'+(rec.open_count || 0)+' open invoices. Signal.</div></div>' +
       '<div class="pay-card" data-margyn-topic="Odoo payables"><div class="pc-label">Payables due</div><div class="pc-value">'+inr(pay.total || pay.amount || 0)+'</div><div class="pc-sub">'+(pay.open_count || 0)+' open bills. Signal.</div></div>' +
+      '<div class="pay-card" data-margyn-topic="Odoo cash"><div class="pc-label">Bank + cash</div><div class="pc-value">'+(cash.bank_data_available === false ? 'Not available' : inr(cash.balance || 0))+'</div><div class="pc-sub">'+(cash.bank_data_available === false ? 'Re-sync Odoo to pull liquidity account balances.' : ((cash.account_count || 0) + ' liquidity account(s). Feeds Cash Position.'))+'</div></div>' +
       '<div class="pay-card"><div class="pc-label">Instance</div><div class="pc-value" style="font-size:13px;">'+escapeHtml(s.instance || 'Odoo')+'</div><div class="pc-sub">'+(s.last_success_at ? 'Last synced ' + fmtDate(s.last_success_at) : 'Pending first sync')+'</div></div>' +
     '</div>';
 }
@@ -8335,18 +8499,33 @@ function renderSettingsView(){
   const del = document.getElementById('setDeleteAccount');
   if(del) del.addEventListener('click', () => { if(typeof confirmAccountDelete === 'function') confirmAccountDelete(); });
 }
+/* Books had TWO absolutely-positioned nav badges (#booksBadge for Zoho flags,
+   #tallyBadge for overdue Tally bills) pinned to the same coordinates, so
+   whichever rendered second hid the other. One badge, both signals: the '!'
+   for a Zoho problem wins over a plain count, because it is the more urgent
+   of the two. */
+let zohoBooksUrgent = false;
+let tallyOverdueCount = 0;
+function renderBooksBadge(){
+  const badge = document.getElementById('booksBadge'); if(!badge) return;
+  const text = zohoBooksUrgent ? '!' : (tallyOverdueCount ? String(tallyOverdueCount) : '');
+  badge.textContent = text;
+  badge.classList.toggle('hidden', !text);
+  badge.title = zohoBooksUrgent
+    ? 'Zoho Books flagged something that needs attention'
+    : (tallyOverdueCount ? tallyOverdueCount + ' overdue bill(s) in Tally' : '');
+}
 function renderZohoBooksTab(){
   const notConnected = document.getElementById('booksNotConnected');
   const backfill = document.getElementById('booksBackfillBanner');
   const content = document.getElementById('booksContent');
-  const badge = document.getElementById('booksBadge');
   if(!notConnected || !content) return;
 
   if(!zohoConnected || !zohoVitals){
     notConnected.classList.remove('hidden');
     backfill.classList.add('hidden');
     content.classList.add('hidden');
-    if(badge){ badge.textContent = ''; badge.classList.add('hidden'); }
+    zohoBooksUrgent = false; renderBooksBadge();
     return;
   }
   notConnected.classList.add('hidden');
@@ -8420,42 +8599,39 @@ function renderZohoBooksTab(){
   // Overdue customers — the line the owner can act on same day
   const od = document.getElementById('zvOverdueList');
   const overdue = v.top_overdue_customers || [];
-  od.innerHTML = overdue.length ? '' : '<div class="ledger-empty">Nothing overdue right now.</div>';
-  overdue.forEach(x => {
-    const row = document.createElement('div'); row.className = 'ledger-row';
-    row.innerHTML =
-      '<div class="lr-main"><div class="lr-party">' + escapeHtml(x.customer_name || 'Unnamed customer') + '</div>' +
-      '<div class="lr-meta">' + escapeHtml(x.invoice_number || '—') +
-      '<span class="lr-tag ' + (Number(x.days_overdue) > 90 ? 'bad' : 'warn') + '">' + x.days_overdue + 'd overdue</span></div></div>' +
-      '<div class="lr-amount">' + inr(x.balance) + '</div>';
-    od.appendChild(row);
-  });
+  od.innerHTML = overdue.length ? (
+    '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:112px"></colgroup>' +
+    '<thead><tr><th>Customer</th><th class="num">Balance</th></tr></thead><tbody>' +
+    overdue.map(x =>
+      '<tr><td><div class="dt-main">' + escapeHtml(x.customer_name || 'Unnamed customer') + '</div>' +
+      '<div class="dt-sub' + (Number(x.days_overdue) > 90 ? ' late' : '') + '">' +
+      escapeHtml(x.invoice_number || '—') + ' · ' + x.days_overdue + 'd overdue</div></td>' +
+      '<td class="num">' + inr(x.balance) + '</td></tr>'
+    ).join('') + '</tbody></table></div>'
+  ) : '<div class="ledger-empty">Nothing overdue right now.</div>';
 
   // Vendors creating ITC risk — vendor-level, because that is who you chase
   const vl = document.getElementById('zvVendorList');
   const vendors = v.gst_top_at_risk_vendors || [];
   const vsub = document.getElementById('zvVendorSub');
   if(vsub) vsub.textContent = g.filing_period ? ('Period ' + g.filing_period) : 'Latest filing period';
-  vl.innerHTML = vendors.length ? '' : '<div class="ledger-empty">No input credit at risk this period.</div>';
-  vendors.forEach(x => {
-    const row = document.createElement('div'); row.className = 'ledger-row';
-    row.innerHTML =
-      '<div class="lr-main"><div class="lr-party">' + escapeHtml(x.vendor_name || 'Unnamed vendor') + '</div>' +
-      '<div class="lr-meta">' + escapeHtml(x.vendor_gstin || 'GSTIN not recorded') + '</div></div>' +
-      '<div class="lr-amount">' + inr(x.at_risk) + '</div>';
-    vl.appendChild(row);
-  });
+  vl.innerHTML = vendors.length ? (
+    '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:112px"></colgroup>' +
+    '<thead><tr><th>Vendor</th><th class="num">At risk</th></tr></thead><tbody>' +
+    vendors.map(x =>
+      '<tr><td><div class="dt-main">' + escapeHtml(x.vendor_name || 'Unnamed vendor') + '</div>' +
+      '<div class="dt-sub">' + escapeHtml(x.vendor_gstin || 'GSTIN not recorded') + '</div></td>' +
+      '<td class="num">' + inr(x.at_risk) + '</td></tr>'
+    ).join('') + '</tbody></table></div>'
+  ) : '<div class="ledger-empty">No input credit at risk this period.</div>';
 
-  // Nav badge mirrors the Payments-tab convention: only fires on a real problem.
-  if(badge){
-    const urgent = flags.indexOf('gst_leakage_material') !== -1 ||
-                   flags.indexOf('cash_crunch_within_7_days') !== -1 ||
-                   flags.indexOf('needs_reauth') !== -1;
-    badge.textContent = urgent ? '!' : '';
-    badge.classList.toggle('hidden', !urgent);
-  }
+  zohoBooksUrgent = flags.indexOf('gst_leakage_material') !== -1 ||
+                    flags.indexOf('cash_crunch_within_7_days') !== -1 ||
+                    flags.indexOf('needs_reauth') !== -1;
+  renderBooksBadge();
 
   renderReconBooksCard();
+  wireDscroll(document.getElementById('booksZohoBlocks'));
 }
 
 /* ============================================================
@@ -8478,26 +8654,25 @@ function renderReconBooksCard(){
   const invs = (reconSummary && reconSummary.connected && reconSummary.invoices) || [];
   if(!invs.length){ card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
-  list.innerHTML = invs.map(inv => {
-    const verified = inv.reconciliation_status === 'verified';
-    const tag = verified
-      ? '<span class="lr-tag verified">✓ Matched to gateway</span>'
-      : '<span class="lr-tag review">Needs review</span>';
-    const amt = (verified && inv.verified_paid_amount != null) ? inv.verified_paid_amount : inv.total;
-    return '<div class="ledger-row"><div class="lr-main">' +
-      '<div class="lr-party">' + escapeHtml(inv.customer_name || 'Unnamed customer') + '</div>' +
-      '<div class="lr-meta">' + escapeHtml(inv.invoice_number || '—') + tag + '</div>' +
-      '</div><div class="lr-amount">' + inr(amt) + '</div></div>';
-  }).join('');
+  list.innerHTML =
+    '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:150px"><col style="width:112px"></colgroup>' +
+    '<thead><tr><th>Customer</th><th>Match</th><th class="num">Amount</th></tr></thead><tbody>' +
+    invs.map(inv => {
+      const verified = inv.reconciliation_status === 'verified';
+      const tag = verified
+        ? '<span class="lr-tag verified">✓ Matched to gateway</span>'
+        : '<span class="lr-tag review">Needs review</span>';
+      const amt = (verified && inv.verified_paid_amount != null) ? inv.verified_paid_amount : inv.total;
+      return '<tr><td><div class="dt-main">' + escapeHtml(inv.customer_name || 'Unnamed customer') + '</div>' +
+        '<div class="dt-sub">' + escapeHtml(inv.invoice_number || '—') + '</div></td>' +
+        '<td>' + tag + '</td>' +
+        '<td class="num">' + inr(amt) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
 }
 /* Ledger tab: the pending_review queue + a nav badge so it isn't invisible. */
 function renderReconLedger(){
   const queue = (reconSummary && reconSummary.connected && reconSummary.review_queue) || [];
-  const badge = document.getElementById('ledgerBadge');
-  if(badge){
-    badge.textContent = queue.length ? String(queue.length) : '';
-    badge.classList.toggle('hidden', queue.length === 0);
-  }
+  renderAgentsBadge();
   const card = document.getElementById('reconReviewCard');
   const list = document.getElementById('reconReviewList');
   const title = document.getElementById('reconReviewTitle');
@@ -8558,22 +8733,42 @@ async function loadAgentActions(){
   try { return await zohoApi('/api/reconcile?action=agent-actions'); }
   catch(e){ console.error('[margyn] loadAgentActions:', e.message); return null; }
 }
+/* One number for everything an agent is waiting on: reconciliation
+   exceptions + Close agent proposals + forwarded documents. Previously these
+   three drove two different nav badges on two different pages. */
+function agentQueueTotals(){
+  const proposals = ((agentActions && agentActions.actions) || []).length;
+  const recon = ((reconSummary && reconSummary.connected && reconSummary.review_queue) || []).length;
+  const imports = (typeof pendingSuggestions !== 'undefined' ? pendingSuggestions.length : 0);
+  return { proposals, recon, imports, total: proposals + recon + imports };
+}
+function renderAgentsBadge(){
+  const { total } = agentQueueTotals();
+  const badge = document.getElementById('agentsBadge');
+  if(badge){
+    badge.textContent = total ? String(total) : '';
+    badge.classList.toggle('hidden', total === 0);
+  }
+  const seg = document.getElementById('agentQueueCount');
+  if(seg){
+    seg.textContent = total ? String(total) : '';
+    seg.classList.toggle('hidden', total === 0);
+  }
+  const empty = document.getElementById('agentQueueEmpty');
+  if(empty) empty.classList.toggle('hidden', total > 0);
+  const asOf = document.getElementById('agentsAsOf');
+  if(asOf) asOf.textContent = total ? (total + (total === 1 ? ' item waiting' : ' items waiting')) : 'Queue clear';
+}
 function renderAgentQueue(){
   const items = (agentActions && agentActions.actions) || [];
-  const badge = document.getElementById('ledgerBadge');
-  const reconQ = (reconSummary && reconSummary.connected && reconSummary.review_queue) || [];
-  if(badge){
-    const n = reconQ.length + items.length;
-    badge.textContent = n ? String(n) : '';
-    badge.classList.toggle('hidden', n === 0);
-  }
+  renderAgentsBadge();
   const card = document.getElementById('agentQueueCard');
   const list = document.getElementById('agentQueueList');
   const title = document.getElementById('agentQueueTitle');
   if(!card || !list) return;
   if(!items.length){ card.classList.add('hidden'); return; }
   card.classList.remove('hidden');
-  if(title) title.innerHTML = 'Agent queue (' + items.length + ') <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span>';
+  if(title) title.innerHTML = 'Close &amp; Collections proposals (' + items.length + ') <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span>';
 
   list.innerHTML = items.map((a) => {
     const kind = AGENT_KIND_LABEL[a.kind] || a.kind;
@@ -8969,18 +9164,14 @@ async function loadPendingSuggestions(){
     return data || [];
   } catch(e){ console.error('[margyn] loadPendingSuggestions:', e); return []; }
 }
-function renderSuggestionsBadge(){
-  const badge = document.getElementById('suggestionsBadge'); if(!badge) return;
-  const n = pendingSuggestions.length;
-  badge.textContent = n ? String(n) : '';
-  badge.classList.toggle('hidden', !n);
-}
+/* Kept under its old name because several call sites fire it after an
+   approve/reject; it now updates the single Agents badge. */
+function renderSuggestionsBadge(){ renderAgentsBadge(); }
 function renderSuggestionsView(){
   const host = document.getElementById('suggestionsList'); if(!host) return;
-  if(!pendingSuggestions.length){
-    host.innerHTML = '<div class="card"><h2>No suggestions waiting</h2><div class="hint">Nothing forwarded yet. Send a photo of an invoice, bill or receipt to your Margyn WhatsApp number and it will show up here.</div></div>';
-    return;
-  }
+  const card = document.getElementById('agentSuggestCard');
+  if(card) card.classList.toggle('hidden', !pendingSuggestions.length);
+  if(!pendingSuggestions.length){ host.innerHTML = ''; return; }
   host.innerHTML = pendingSuggestions.map((s, idx) => renderOneSuggestionCard(s, idx)).join('');
   pendingSuggestions.forEach((s, idx) => {
     const approveBtn = document.getElementById('sugApprove' + idx);
@@ -9350,6 +9541,359 @@ const VITAL_WEIGHTS = { 'Cash Position':0.20, 'Receivables Aging':0.15, 'Payable
 function computePulseScore(vitals){
   return Math.round(vitals.reduce((s,v) => s + (v.score * (VITAL_WEIGHTS[v.label] || 0)), 0));
 }
+
+/* ============================================================
+   SOURCE RESOLUTION — which number actually feeds the Pulse Score.
+
+   The old rule was "only self-entered figures move the score", which meant a
+   number typed into a form outranked the same number pulled straight out of
+   the customer's TallyPrime or Zoho Books. That inverts the whole premise of
+   the connectors, so the rule is now:
+
+       verified (2+ sources agree)  >  connector (one source)  >  self-reported
+
+   Tiering governs how confident Margyn SAYS it is, not whether a figure is
+   allowed to count. The vitals arithmetic in computeVitals() is untouched —
+   this only decides which nine numbers go into it.
+
+   Disagreements are never averaged. When two sources differ by more than
+   CONFLICT_TOLERANCE the higher-tier one is used and the disagreement is
+   recorded on the snapshot for the Books conflict view and the AI context.
+   ============================================================ */
+const SOURCE_TIER = { verified:'verified', connector:'connector', self:'self' };
+const TIER_RANK  = { verified:3, connector:2, self:1 };
+const TIER_CONFIDENCE = { verified:1.0, connector:0.75, self:0.5 };
+const CONFLICT_TOLERANCE = 0.02;  // 2%, same tolerance crossLedgerGroups() uses
+
+/* Which snapshot inputs each vital reads. A vital is only as trustworthy as
+   its weakest input, so this drives the per-vital confidence badge. */
+const VITAL_INPUTS = {
+  'Cash Position':            ['cash', 'burn'],
+  'Receivables Aging':        ['recvTotal', 'recv90'],
+  'Payables Due (30d)':       ['paySoon', 'cash'],
+  'GST/ITC Leakage':          ['gstLeak', 'gstPayable'],
+  'Net Margin':               ['netProfit', 'revenue'],
+  'Working Capital Runway':   ['cash', 'recvTotal', 'paySoon', 'burn']
+};
+const SNAPSHOT_INPUT_FIELDS = ['cash','revenue','netProfit','burn','gstLeak','gstPayable','recvTotal','recv90','paySoon'];
+/* snapshot column name per input key, for reading the previous row back */
+const INPUT_COLUMN = {
+  cash:'cash', revenue:'revenue', netProfit:'net_profit', burn:'burn', gstLeak:'gst_leak',
+  gstPayable:'gst_payable', recvTotal:'recv_total', recv90:'recv_90', paySoon:'pay_soon'
+};
+
+/* ---------- what each connector can honestly supply ---------- */
+function zohoInputCandidates(){
+  if(!zohoConnected || !zohoVitals) return {};
+  const v = zohoVitals;
+  const r = v.receivables || {}, p = v.payables || {}, g = v.gst_leakage || {};
+  const m = v.net_margin || {}, w = v.working_capital_runway || {}, c = v.cash_position || {};
+  const out = {};
+  const put = (k, val) => { const n = Number(val); if(isFinite(n)) out[k] = n; };
+
+  // Cash only when Zoho actually has bank data — on plans without it the
+  // field comes back as a placeholder, not a balance.
+  if(c.bank_data_available !== false) put('cash', c.zoho_reported_balance);
+  put('recvTotal', r.total);
+  put('recv90', r.days_90_plus);
+  // payables_due_30d is the 30-day window the Payables Due vital wants;
+  // payables.total is all ages and would overstate it.
+  put('paySoon', w.payables_due_30d);
+  put('gstLeak', g.total_leakage);
+  put('revenue', m.income);
+  if(isFinite(Number(m.cogs)) || isFinite(Number(m.opex))){
+    const burn = (Number(m.cogs) || 0) + (Number(m.opex) || 0);
+    if(burn > 0) put('burn', burn);
+    if(isFinite(Number(m.income))) put('netProfit', Number(m.income) - burn);
+  }
+  // gst_payable is deliberately absent: Zoho reports leakage_pct against
+  // claimed ITC, not against GST payable, so deriving the denominator from it
+  // would be a guess. It stays self-reported until the GSTN channel lands.
+  return out;
+}
+
+/* Tally's bank and cash-in-hand ledgers, summed into one liquidity figure.
+
+   The sign convention is the hard part: different TallyPrime exports return a
+   debit bank balance as positive in one setup and negative in another, so a
+   naive sum can come out inverted. Rather than assume, take the dominant sign
+   across the liquidity ledgers as "money you have" and treat the minority
+   sign as overdrawn — most businesses have more accounts in credit than
+   overdrawn, so this self-calibrates to whichever convention the export uses.
+
+   Overdraft and cash-credit groups are excluded outright: an OD balance is
+   borrowed money, not cash, and counting it would inflate both Cash Position
+   and Working Capital Runway. This is an interim signal until the Account
+   Aggregator bank feed replaces it. */
+const TALLY_LIQUID_GROUP = /(bank account|cash-?in-?hand|cash in hand)/i;
+const TALLY_BORROW_GROUP = /(\bo\/?d\b|overdraft|occ|cash credit|loan)/i;
+function tallyCashBalance(){
+  const items = (tallyData && tallyData.ledgers && tallyData.ledgers.items) || [];
+  const liquid = items.filter(x =>
+    x.closing_balance != null &&
+    TALLY_LIQUID_GROUP.test(String(x.parent || '')) &&
+    !TALLY_BORROW_GROUP.test(String(x.parent || '')) &&
+    !TALLY_BORROW_GROUP.test(String(x.name || ''))
+  );
+  if(!liquid.length) return null;
+  let pos = 0, neg = 0;
+  liquid.forEach(x => { const n = Number(x.closing_balance) || 0; if(n > 0) pos++; else if(n < 0) neg++; });
+  // whichever sign most liquidity ledgers carry is the "in credit" direction
+  const sign = neg > pos ? -1 : 1;
+  const total = liquid.reduce((sum, x) => sum + ((Number(x.closing_balance) || 0) * sign), 0);
+  return { total, count: liquid.length, inverted: sign === -1 };
+}
+
+function tallyInputCandidates(){
+  if(!tallyData || !tallyData.connected) return {};
+  const b = tallyData.bills || {}, v = tallyData.vouchers || {};
+  const out = {};
+  const put = (k, val) => { const n = Number(val); if(isFinite(n)) out[k] = n; };
+  const cash = tallyCashBalance();
+  if(cash && cash.total > 0) put('cash', cash.total);
+  put('recvTotal', b.receivable_total);
+  // 90+ has to be derived — Tally gives per-bill overdue_days, not buckets.
+  if(Array.isArray(b.items)){
+    const over90 = b.items
+      .filter(x => x.direction === 'receivable' && Number(x.overdue_days) > 90)
+      .reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+    put('recv90', over90);
+    const soon = b.items
+      .filter(x => x.direction === 'payable' && (x.due_date == null || daysFromToday(x.due_date) <= 30))
+      .reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+    put('paySoon', soon);
+  } else {
+    put('paySoon', b.payable_total);
+  }
+  put('revenue', v.sales_30d);
+  return out;
+}
+
+function odooInputCandidates(){
+  if(typeof odooConnected === 'undefined' || !odooConnected || !odooStatus) return {};
+  const rec = odooStatus.receivables || {}, pay = odooStatus.payables || {};
+  const out = {};
+  const put = (k, val) => { const n = Number(val); if(isFinite(n)) out[k] = n; };
+  put('recvTotal', rec.total != null ? rec.total : rec.amount);
+  put('paySoon', pay.total != null ? pay.total : pay.amount);
+  // Aggregate balance of Odoo's liquidity accounts, computed server-side in
+  // api/_odoo/odoo.js. Absent on a connection that hasn't re-synced since the
+  // cash aggregation shipped, so guard on bank_data_available.
+  const c = odooStatus.cash_position || {};
+  if(c.bank_data_available !== false && Number(c.balance) > 0) put('cash', c.balance);
+  return out;
+}
+
+/* Self-reported baseline: the latest snapshot's own figures, with the quick
+   ledger's live aggregates overriding receivables/payables (that is what
+   saveLedgerSnapshot already did, kept so manual entry still works exactly as
+   before when nothing is connected). */
+function selfInputCandidates(){
+  const latest = snapshots[0];
+  if(!latest) return {};
+  const { recvTotal, recv90, paySoon } = ledgerAggregates();
+  const hasLedgerRows = receivables.length > 0 || payables.length > 0;
+  return {
+    cash: Number(latest.cash) || 0,
+    revenue: Number(latest.revenue) || 0,
+    netProfit: Number(latest.net_profit) || 0,
+    burn: Number(latest.burn) || 0,
+    gstLeak: Number(latest.gst_leak) || 0,
+    gstPayable: Number(latest.gst_payable) || 0,
+    recvTotal: hasLedgerRows ? recvTotal : (Number(latest.recv_total) || 0),
+    recv90:    hasLedgerRows ? recv90    : (Number(latest.recv_90) || 0),
+    paySoon:   hasLedgerRows ? paySoon   : (Number(latest.pay_soon) || 0)
+  };
+}
+
+/* Resolve one field across everything that offered a value for it. */
+function resolveField(field, offers){
+  // offers: [{ source, value, tier }] — connector offers first, self last
+  const connectorOffers = offers.filter(o => o.tier === 'connector');
+  const selfOffer = offers.find(o => o.tier === 'self');
+
+  if(!connectorOffers.length){
+    return selfOffer
+      ? { value: selfOffer.value, source: selfOffer.source, tier: 'self', conflict: null }
+      : null;
+  }
+
+  // Two or more connectors that agree within tolerance = Verified.
+  let chosen = connectorOffers[0], tier = 'connector', agree = null, conflict = null;
+  if(connectorOffers.length > 1){
+    const vals = connectorOffers.map(o => o.value);
+    const max = Math.max.apply(null, vals.map(Math.abs));
+    const spread = Math.max.apply(null, vals) - Math.min.apply(null, vals);
+    if(spread <= Math.max(1, max * CONFLICT_TOLERANCE)){
+      tier = 'verified';
+      agree = connectorOffers.map(o => o.source);
+    } else {
+      // Flagged, never averaged. CONNECTOR_PRIORITY decides which one is used.
+      const values = {};
+      connectorOffers.forEach(o => { values[o.source] = o.value; });
+      conflict = {
+        field: INPUT_COLUMN[field] || field,
+        values,
+        chosen: chosen.source,
+        spread_pct: max ? Math.round((spread / max) * 1000) / 10 : 0
+      };
+    }
+  }
+  return { value: chosen.value, source: chosen.source, tier, agree, conflict };
+}
+
+/* Books-grade sources rank above gateway/ops sources for the same figure.
+   Zoho first because its vitals are computed server-side from full postings;
+   Tally next (one source, no filing corroboration); Odoo last because the
+   connector currently exposes totals only. */
+const CONNECTOR_PRIORITY = ['zoho', 'tally', 'odoo'];
+
+function resolveSnapshotInputs(){
+  const bySource = {
+    zoho:  zohoInputCandidates(),
+    tally: tallyInputCandidates(),
+    odoo:  odooInputCandidates()
+  };
+  const self = selfInputCandidates();
+
+  const inputs = {}, provenance = {}, conflicts = [];
+  let any = false;
+
+  SNAPSHOT_INPUT_FIELDS.forEach(field => {
+    const offers = [];
+    CONNECTOR_PRIORITY.forEach(src => {
+      const v = bySource[src] ? bySource[src][field] : undefined;
+      if(v !== undefined && isFinite(v)) offers.push({ source: src, value: v, tier: 'connector' });
+    });
+    if(self[field] !== undefined) offers.push({ source: 'self', value: self[field], tier: 'self' });
+
+    const r = resolveField(field, offers);
+    if(!r) return;
+    inputs[field] = r.value;
+    provenance[INPUT_COLUMN[field] || field] = r.agree
+      ? { source: r.source, tier: r.tier, agree: r.agree }
+      : { source: r.source, tier: r.tier };
+    if(r.conflict) conflicts.push(r.conflict);
+    if(r.tier !== 'self') any = true;
+  });
+
+  return { inputs, provenance, conflicts, hasConnectorInput: any };
+}
+
+/* Paint the confidence band on Summary and Scores from the latest snapshot. */
+function renderConfidence(){
+  const latest = snapshots[0] || null;
+  const prov = latest ? latest.input_provenance : null;
+  const sum = latest ? confidenceSummary(prov) : null;
+  [['sumConfBand','sumConfFill','sumConfPct','sumConfText'],
+   ['scConfBand','scConfFill','scConfPct','scConfText']].forEach(([bandId, fillId, pctId, textId]) => {
+    const band = document.getElementById(bandId);
+    const fill = document.getElementById(fillId);
+    const pct  = document.getElementById(pctId);
+    const text = document.getElementById(textId);
+    if(!band) return;
+    if(!sum){ band.classList.add('hidden'); if(text) text.textContent = ''; return; }
+    band.classList.remove('hidden');
+    band.className = 'conf-band t-' + sum.tier + (bandId === 'scConfBand' ? '' : '');
+    if(bandId === 'scConfBand') band.style.justifyContent = 'center';
+    if(fill) fill.style.width = sum.pct + '%';
+    if(pct)  pct.textContent = sum.pct + '% confidence';
+    if(text) text.textContent = sum.text;
+  });
+}
+
+/* Per-vital tier = the weakest tier among that vital's inputs. */
+function vitalTier(label, provenance){
+  const fields = VITAL_INPUTS[label] || [];
+  if(!fields.length || !provenance) return 'self';
+  let worst = 'verified';
+  fields.forEach(f => {
+    const p = provenance[INPUT_COLUMN[f] || f];
+    const t = (p && p.tier) || 'self';
+    if(TIER_RANK[t] < TIER_RANK[worst]) worst = t;
+  });
+  return worst;
+}
+
+/* Snapshot confidence: the vital weights applied to each vital's tier, so a
+   single-source Cash Position costs more confidence than a single-source GST
+   figure — which matches what the weights already say about the score. */
+function snapshotConfidence(provenance){
+  if(!provenance) return TIER_CONFIDENCE.self;
+  let total = 0;
+  Object.keys(VITAL_WEIGHTS).forEach(label => {
+    total += (VITAL_WEIGHTS[label] || 0) * TIER_CONFIDENCE[vitalTier(label, provenance)];
+  });
+  return Math.round(total * 100) / 100;
+}
+
+/* Human summary for the confidence line under the score. */
+function confidenceSummary(provenance){
+  const labels = Object.keys(VITAL_WEIGHTS);
+  if(!provenance){
+    return { pct: 50, text: 'All six vitals are self-reported. Connect a source to raise this.', tier:'self' };
+  }
+  const counts = { verified:0, connector:0, self:0 };
+  labels.forEach(l => { counts[vitalTier(l, provenance)]++; });
+  const pct = Math.round(snapshotConfidence(provenance) * 100);
+  const parts = [];
+  if(counts.verified) parts.push(counts.verified + ' verified across two sources');
+  if(counts.connector) parts.push(counts.connector + ' from one connected source');
+  if(counts.self) parts.push(counts.self + ' self-reported');
+  const tier = counts.self === labels.length ? 'self' : (counts.verified ? 'verified' : 'connector');
+  return { pct, tier, text: 'Of six vitals: ' + parts.join(', ') + '.' };
+}
+
+/* ---------- write a resolved snapshot when the picture actually changes ---------- */
+function inputsMateriallyDiffer(inputs, latest){
+  if(!latest) return true;
+  return SNAPSHOT_INPUT_FIELDS.some(f => {
+    if(inputs[f] === undefined) return false;
+    const prev = Number(latest[INPUT_COLUMN[f]]) || 0;
+    const next = Number(inputs[f]) || 0;
+    const scale = Math.max(Math.abs(prev), Math.abs(next), 1);
+    return Math.abs(next - prev) > scale * 0.005;   // 0.5%
+  });
+}
+
+/* Called from refreshAll once every connector global is loaded. Returns true
+   when it wrote a new snapshot, so the caller can reload. */
+async function resolveAndSaveSnapshot(){
+  if(!currentUser) return false;
+  const latest = snapshots[0];
+  // A resolved snapshot still needs a baseline for the fields no connector
+  // supplies (GST payable, and cash/P&L when only Tally or Odoo is on).
+  if(!latest) return false;
+
+  const { inputs, provenance, conflicts, hasConnectorInput } = resolveSnapshotInputs();
+  if(!hasConnectorInput) return false;          // nothing connected: manual flow is unchanged
+  if(!inputsMateriallyDiffer(inputs, latest)) return false;
+
+  // Burn drives three divisions in computeVitals; never let a connector hand
+  // it a zero and turn runway into 0 months.
+  if(!(Number(inputs.burn) > 0)) inputs.burn = Number(latest.burn) || 1;
+
+  const carryPayments = latest.payments_data ? {
+    paymentsData: latest.payments_data, paymentsSource: latest.payments_source || 'manual',
+    settlementRows: latest.settlement_rows, settlementDailyTrend: latest.settlement_daily_trend
+  } : {};
+
+  try {
+    await saveSnapshot(Object.assign({}, inputs, carryPayments, {
+      source: 'resolved', provenance, conflicts, confidence: snapshotConfidence(provenance)
+    }));
+    await logLedgerEvent({
+      entityType: 'snapshot', event: 'resolved', source: 'connector',
+      note: 'Pulse Score recalculated from connected sources (' +
+            Object.keys(provenance).filter(k => provenance[k].tier !== 'self').length +
+            ' of ' + SNAPSHOT_INPUT_FIELDS.length + ' inputs)'
+    });
+    return true;
+  } catch(e){
+    console.error('[margyn] resolveAndSaveSnapshot:', e.message);
+    return false;
+  }
+}
 async function saveSnapshot(inputs){
   const vitals = computeVitals(inputs);
   const pulseScore = computePulseScore(vitals);
@@ -9358,6 +9902,9 @@ async function saveSnapshot(inputs){
     burn: inputs.burn, gst_leak: inputs.gstLeak, gst_payable: inputs.gstPayable,
     recv_total: inputs.recvTotal, recv_90: inputs.recv90, pay_soon: inputs.paySoon,
     vitals, pulse_score: pulseScore, source: inputs.source || 'manual',
+    input_provenance: inputs.provenance || null,
+    confidence: inputs.confidence != null ? inputs.confidence : TIER_CONFIDENCE.self,
+    source_conflicts: (inputs.conflicts && inputs.conflicts.length) ? inputs.conflicts : null,
     payments_data: inputs.paymentsData || null,
     payments_source: inputs.paymentsData ? (inputs.paymentsSource || 'manual') : null,
     payments_updated_at: inputs.paymentsData ? new Date().toISOString() : null,
@@ -9426,6 +9973,9 @@ let agentStakeholders = [];
 async function loadAgentData(){
   agentDeployments = {};
   agentStakeholders = [];
+  // Every other load* guards on currentUser; this one didn't, so any call
+  // before auth resolved threw twice into the console instead of no-opping.
+  if(!currentUser) return;
   try {
     const { data } = await sbClient.from('agent_deployments').select('*').eq('user_id', currentUser.id);
     (data || []).forEach(r => { agentDeployments[r.agent_id] = r; });
@@ -9442,8 +9992,55 @@ function agentBadge(status){
   return '<span class="agent-badge notdeployed">Not deployed</span>';
 }
 
+let agentsActiveTab = 'queue';
+function setAgentsTab(tab){
+  agentsActiveTab = tab;
+  ['queue','roster','chat'].forEach(t => {
+    const panel = document.getElementById('agentPanel-' + t);
+    if(panel) panel.classList.toggle('hidden', t !== tab);
+  });
+  document.querySelectorAll('#agentTabs button').forEach(b => b.classList.toggle('active', b.dataset.atab === tab));
+  if(tab === 'queue'){ renderReconLedger(); renderAgentQueue(); renderSuggestionsView(); }
+  if(tab === 'roster') renderAgentRoster();
+  if(tab === 'chat') renderAgentChatList();
+}
+document.querySelectorAll('#agentTabs button').forEach(b => b.addEventListener('click', () => setAgentsTab(b.dataset.atab)));
+
+/* Conversations tab: tiles that open the agent's own thread on Ask Margyn.
+   Deliberately NOT a second chat UI — one composer, one thread store. */
+function renderAgentChatList(){
+  const el = document.getElementById('agentChatList'); if(!el || !currentUser) return;
+  const ids = ['margyn','chase','close','import'];
+  el.innerHTML = ids.map(id => {
+    const meta = AGENT_META[id] || AGENT_META.margyn;
+    return '<button type="button" class="ap-tile" data-agent-open="' + id + '">' +
+      '<span class="agent-avatar">' + agentAvatarInner(id) + '</span>' +
+      '<span class="ac-body"><span class="ac-name">' + escapeHtml(meta.name) + '</span>' +
+      '<span class="ac-sub">' + escapeHtml(meta.sub) + '</span>' +
+      '<span class="ac-status quiet" data-chat-status="' + id + '">…</span></span>' +
+    '</button>';
+  }).join('');
+  el.querySelectorAll('[data-agent-open]').forEach(card => {
+    card.addEventListener('click', () => { showView('history'); openAgentHome(card.dataset.agentOpen); });
+  });
+  ids.forEach(async id => {
+    const st = await agentStatusLine(id);
+    const n = el.querySelector('[data-chat-status="' + id + '"]');
+    if(n && st.text){ n.textContent = st.text; n.classList.toggle('quiet', !!st.quiet); }
+  });
+}
+
+/* Entry point for the whole page: paint the active tab, keep the badge true. */
 async function renderAgents(){
+  if(!currentUser) return;
+  renderAgentsBadge();
+  setAgentsTab(agentsActiveTab);
+  if(agentsActiveTab === 'roster') return;          // renderAgentRoster already ran
+  await renderAgentRoster();
+}
+async function renderAgentRoster(){
   const host = document.getElementById('agentCards');
+  if(!host || !currentUser) return;
   host.innerHTML = '<div class="loading">Loading agents…</div>';
   await loadAgentData();
   const wa = agentDeployments['whatsapp_bell'];
@@ -9624,7 +10221,7 @@ async function setAgentStatus(agentId, status){
       20000, 'Updating agent');
     if(error) throw error;
     renderAgents();
-  } catch(err){ alert(err.message || 'Could not update the agent.'); }
+  } catch(err){ toast('Could not update the agent', { kind:'bad', sub: err.message || '' }); }
 }
 
 /* ---------- configure flow ---------- */
@@ -9749,7 +10346,7 @@ async function deleteStakeholder(id){
     if(error) throw error;
     agentStakeholders = agentStakeholders.filter(s => s.id !== id);
     renderStakeholderList();
-  } catch(e){ alert(e.message || 'Could not remove contact.'); }
+  } catch(e){ toast('Could not remove contact', { kind:'bad', sub: e.message || '' }); }
 }
 
 async function saveWhatsappConfig(){
@@ -9997,7 +10594,7 @@ async function chaseUpdateTarget(id, patch){
     const { error } = await sbClient.from('whatsapp_chase_targets').update(patch).eq('id', id).eq('user_id', currentUser.id);
     if(error) throw error;
     await renderChaseCold();
-  } catch(e){ alert(e.message || 'Could not update.'); }
+  } catch(e){ toast('Could not update', { kind:'bad', sub: e.message || '' }); }
 }
 async function openChaseTimeline(t){
   openAgentModal('<div class="agent-modal-title">Chase history — ' + escapeHtml(t.party_name || '') + '</div><div class="loading">Loading…</div>');
