@@ -186,7 +186,12 @@
       display:flex; flex-direction:column; padding:28px 14px 20px; border-right:1px solid var(--border-1);
       background:var(--surf-1);
     }
-    .app-body .wrap{ order:1; max-width:none; margin:0; padding:44px 48px 96px; flex:1; min-width:0; height:100%; overflow-y:auto; }
+    .app-body .wrap{ order:1; max-width:none; margin:0; padding:32px 40px 88px; flex:1; min-width:0; height:100%; overflow-y:auto; }
+    /* A measured content column. Without this every view stretched to the full
+       viewport on a large monitor, which is what made the app read as "spread
+       out": 1700px-wide cards, 9-column metric grids, ragged trailing gaps.
+       Brex/Ramp/Mercury all cap the working column around 1200-1280px. */
+    .app-body .wrap > [id^="view-"]{ max-width:1240px; margin-inline:auto; }
     .sidebar .pagenav{
       flex-direction:column; align-items:stretch; gap:2px; padding:0; border-radius:0; margin-bottom:0;
       background:transparent; border:none;
@@ -207,12 +212,13 @@
     .sidebar .pagenav button{ padding:10px 12px; font-size:13px; }
   }
   @media (min-width:1400px){
-    .app-body .wrap{ padding-left:64px; padding-right:64px; }
+    .app-body .wrap{ padding-left:56px; padding-right:56px; }
   }
   .card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:26px 28px; margin-bottom:22px; box-shadow:var(--shadow-sm); transition:border-color .2s ease, box-shadow .2s ease; }
   .card:hover{ border-color:var(--border-2); }
   .card h2{font-family:'Manrope',sans-serif; font-weight:700; font-size:19px; letter-spacing:-0.01em; margin-bottom:6px; color:var(--text-0);}
-  .section-head{ margin-bottom:22px; margin-top:8px; }
+  .section-head{ margin-bottom:18px; margin-top:0; padding-bottom:14px; border-bottom:1px solid var(--border-1); }
+  .section-head .hint{ max-width:78ch; }
   .section-head h2{font-family:'Manrope',sans-serif; font-weight:700; font-size:20px; margin-bottom:6px; color:var(--text-0);}
   .section-head .hint{ margin-bottom:0; }
   .hint{font-size:13px; color:var(--text-2); margin-bottom:20px; line-height:1.6;}
@@ -321,13 +327,13 @@
   .dx-panel-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-2); margin-bottom:12px; }
   .dx-chart{ height:150px; }
   .dx-chart svg{ width:100%; height:100%; display:block; }
-  .dx-panel .hbar-list{ gap:11px; }
-  .dx-panel .hbar-row{ gap:10px; }
-  .dx-panel .hbar-label{ width:118px; font-size:10px; letter-spacing:0; line-height:1.25; }
+  .dx-panel .hbar-list{ gap:9px; }
+  .dx-panel .hbar-row{ gap:10px; grid-template-columns:118px minmax(0,1fr) auto; }
+  .dx-panel .hbar-label{ width:auto; font-size:10px; letter-spacing:0; line-height:1.25; white-space:normal; }
   .dx-panel .hbar-track{ height:8px; }
-  .dx-panel .hbar-val{ width:26px; font-size:11px; }
+  .dx-panel .hbar-val{ width:auto; min-width:26px; font-size:11px; }
   .dx-panel .trend-empty{ padding:24px 0; text-align:left; }
-  @media (max-width:760px){ .dx-two{ grid-template-columns:1fr; gap:32px; } .dx-panel .hbar-label{ width:120px; } }
+  @media (max-width:760px){ .dx-two{ grid-template-columns:1fr; gap:32px; } .dx-panel .hbar-row{ grid-template-columns:110px minmax(0,1fr) auto; } }
   /* briefing — the AI-generated narrative, a plain card with one orange marker */
   .dx-briefing{ border:1px solid var(--border-1); background:var(--surf-1); border-radius:var(--radius-card); padding:28px 30px; box-shadow:var(--shadow-sm); }
   .dx-briefing .app-eyebrow{ color:var(--orange); margin-bottom:10px; display:flex; align-items:center; gap:7px; }
@@ -411,14 +417,22 @@
      column count leaves empty trailing cells whenever the count isn't a clean
      multiple, which render as blank boxes since the grid's own background
      shows through. auto-fit sizes columns to however many cards actually exist. */
-  .pay-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:1px; margin-bottom:20px; background:var(--border-1); border:1px solid var(--border-1); border-radius:var(--radius-card); overflow:hidden; box-shadow:var(--shadow-sm); }
-  .pay-card{ position:relative; background:var(--surf-1); border:none; border-radius:0; padding:18px 20px; transition:background .12s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
+  /* Gapped, self-bordered tiles. The old version painted the *container* in
+     --border-1 and relied on 1px gaps to draw the hairlines, so any row that
+     did not divide evenly (6 tiles in a 5-up grid) rendered the leftover
+     tracks as a large beige slab. Tiles now carry their own border, so an
+     unfilled trailing slot is simply page background. */
+  .pay-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:18px; }
+  @media (max-width:1080px){ .pay-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:620px){ .pay-grid{ grid-template-columns:1fr; } }
+  .pay-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:10px; padding:14px 16px 15px; box-shadow:var(--shadow-xs); transition:border-color .12s ease, box-shadow .12s ease; animation:cardIn .55s cubic-bezier(.16,1,.3,1) backwards; }
+  .pay-card:hover{ border-color:var(--border-2); box-shadow:var(--shadow-sm); }
   .pay-grid .pay-card:nth-child(n){ animation-delay:0s; }
   .pay-card:hover{ background:var(--surf-2); }
   .pay-card.wide{ grid-column:span 2; }
-  .pay-card .pc-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-2); font-weight:600; margin-bottom:10px; }
-  .pay-card .pc-value{ font-family:'IBM Plex Mono',monospace; font-size:25px; font-weight:600; color:var(--text-0); margin-bottom:6px; }
-  .pay-card .pc-sub{ font-size:12px; color:var(--text-2); line-height:1.5; }
+  .pay-card .pc-label{ font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); font-weight:700; margin-bottom:7px; }
+  .pay-card .pc-value{ font-family:'IBM Plex Mono',monospace; font-size:21px; font-weight:600; letter-spacing:-.025em; color:var(--text-0); margin-bottom:5px; line-height:1.15; }
+  .pay-card .pc-sub{ font-size:11.5px; color:var(--text-3); line-height:1.45; }
   .pay-card .pc-flag{ display:inline-block; margin-top:10px; font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; }
   .pc-flag.ok{ background:rgba(14,143,92,0.2); color:#0E8F5C; }
   .pc-flag.warn{ background:var(--caution-bg); color:var(--caution); }
@@ -429,8 +443,8 @@
   .method-legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:middle; }
   .pay-empty{ text-align:center; padding:40px 20px; color:var(--text-2); font-size:13.5px; line-height:1.7; }
   /* ---------- charts (SVG, neon green, transparent) ---------- */
-  .chart-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:26px 28px; margin-bottom:22px; box-shadow:var(--shadow-sm); }
-  .chart-card .cc-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:8px; }
+  .chart-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:var(--radius-card); padding:16px 18px 18px; margin-bottom:22px; box-shadow:var(--shadow-sm); }
+  .chart-card .cc-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; padding-bottom:11px; border-bottom:1px solid var(--border-1); flex-wrap:wrap; gap:8px; }
   .chart-card h3{ font-family:'Manrope',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.005em; color:var(--text-0); }
   .chart-card .cc-sub{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:.06em; font-variant-numeric:tabular-nums; }
   .bar-chart{ display:flex; align-items:flex-end; gap:10px; height:150px; padding-top:10px; }
@@ -439,12 +453,43 @@
   .bar-chart .bc-col:hover .bc-bar{ filter:brightness(1.25); }
   .bar-chart .bc-val{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-1); font-weight:600; }
   .bar-chart .bc-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--text-2); text-transform:uppercase; letter-spacing:.03em; }
-  .hbar-list{ display:flex; flex-direction:column; gap:14px; }
-  .hbar-row{ display:flex; align-items:center; gap:12px; }
-  .hbar-label{ width:150px; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-1); font-weight:600; text-align:right; }
-  .hbar-track{ flex:1; height:16px; border-radius:8px; background:var(--surf-2); overflow:hidden; position:relative; }
-  .hbar-fill{ height:100%; border-radius:8px; background:var(--emerald); transition:width .6s cubic-bezier(.22,1,.36,1); }
-  .hbar-val{ width:52px; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-0); font-weight:700; }
+  /* ---------- dense data table ----------------------------------------
+     Long record lists (transactions, bills, ledger balances) used to render
+     as an unbounded stack of 46px "ledger-row" cards, so a card with 40 rows
+     was 1800px tall and the page became an endless swipe. They are tables
+     now: a fixed-height scroll body with a sticky header, tabular-nums money
+     flush right, one row per record. The card keeps its own height. */
+  .dscroll{ max-height:308px; overflow-y:auto; overflow-x:hidden; margin-right:-4px; padding-right:4px;
+    /* a soft bottom edge so a clipped row reads as "more below", not as a
+       row that got chopped in half */
+    -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent);
+            mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent); }
+  .dscroll.at-end, .dscroll.fits{ -webkit-mask-image:none; mask-image:none; }
+  .dscroll.short{ max-height:212px; }
+  table.dtable{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  table.dtable th{ position:sticky; top:0; z-index:1; background:var(--surf-1); text-align:left;
+    font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.11em;
+    text-transform:uppercase; color:var(--text-3); padding:0 0 7px; border-bottom:1px solid var(--border-1); white-space:nowrap; }
+  table.dtable th.num, table.dtable td.num{ text-align:right; }
+  table.dtable td{ padding:8px 0; border-bottom:1px solid var(--border-1); vertical-align:middle; }
+  table.dtable tbody tr:last-child td{ border-bottom:none; }
+  table.dtable tbody tr[data-row]{ cursor:pointer; }
+  table.dtable tbody tr[data-row]:hover td{ background:var(--surf-2); }
+  table.dtable td.num{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; color:var(--text-0); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .dt-main{ font-size:12.5px; font-weight:700; color:var(--text-0); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dt-sub{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text-3); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dt-sub.late{ color:var(--rose); }
+  .dt-pad{ padding-left:10px; }
+  .dt-count{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-3); }
+
+  .hbar-list{ display:flex; flex-direction:column; gap:9px; }
+  /* grid, not flex: label / track / value land on the same three columns in
+     every row, and the value column is flush with the card's right edge. */
+  .hbar-row{ display:grid; grid-template-columns:minmax(72px,104px) minmax(0,1fr) auto; align-items:center; gap:12px; }
+  .hbar-label{ width:auto; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-1); font-weight:600; text-align:left; letter-spacing:.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hbar-track{ height:8px; border-radius:3px; background:var(--surf-2); overflow:hidden; position:relative; }
+  .hbar-fill{ height:100%; border-radius:3px; background:var(--emerald); transition:width .6s cubic-bezier(.22,1,.36,1); }
+  .hbar-val{ width:auto; min-width:34px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-0); font-weight:600; }
   .trend-svg{ width:100%; height:130px; display:block; }
   .trend-empty{ text-align:center; padding:30px 10px; color:var(--text-2); font-size:13px; line-height:1.6; }
   /* ---------- vital detail overlay ---------- */
@@ -727,7 +772,8 @@
     .app-title{font-size:25px;}
     .wrap{padding:88px 20px 72px;}
     .pagenav button{ font-size:12px; padding:11px 6px; }
-    .hbar-label{ width:96px; font-size:10.5px; }
+    .hbar-row{ grid-template-columns:minmax(64px,88px) minmax(0,1fr) auto; }
+    .hbar-label{ width:auto; font-size:10.5px; }
     .kpi-strip{ flex-wrap:wrap; }
     .stat-strip{ padding:4px 16px; }
     .summary-head{ flex-direction:column; align-items:flex-start; }
@@ -819,20 +865,20 @@
      Direction signed off from app-redesign-mock.html. New classes are
      prefixed rd- / lt- / ch- / hub- to avoid clashing with legacy CSS.
      ============================================================ */
-  .rd-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:20px 28px; flex-wrap:wrap; margin-bottom:32px; padding-bottom:20px; border-bottom:1px solid var(--border-1); }
+  .rd-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px 28px; flex-wrap:wrap; margin-bottom:22px; padding-bottom:16px; border-bottom:1px solid var(--border-1); }
   .rd-head .rd-eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:var(--emerald-bright); }
-  .rd-head h1{ font-family:'Manrope',sans-serif; font-size:28px; font-weight:800; letter-spacing:-.032em; margin:8px 0 5px; color:var(--text-0); }
+  .rd-head h1{ font-family:'Manrope',sans-serif; font-size:25px; font-weight:800; letter-spacing:-.032em; margin:6px 0 4px; color:var(--text-0); }
   .rd-head .rd-sub{ color:var(--text-2); font-size:13px; max-width:56ch; line-height:1.55; }
   .rd-asof{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); display:flex; align-items:center; gap:7px; }
   .rd-asof .dot{ width:6px; height:6px; border-radius:50%; background:var(--emerald); }
-  .rd-section{ margin-bottom:34px; }
-  .rd-section-label{ font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-2); display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:13px; margin-bottom:18px; border-bottom:1px solid var(--border-1); }
+  .rd-section{ margin-bottom:26px; }
+  .rd-section-label{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-2); display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:9px; margin-bottom:13px; border-bottom:1px solid var(--border-1); }
   .rd-section-label .rd-note{ font-weight:500; letter-spacing:.04em; color:var(--text-3); text-transform:none; }
 
   /* pulse hero */
-  .rd-pulse{ display:grid; grid-template-columns:auto 1fr; gap:34px; align-items:center; background:linear-gradient(180deg,#fff,#fcfcfa); border:1px solid var(--border-1); border-radius:16px; padding:28px 30px; box-shadow:var(--shadow-sm); margin-bottom:26px; }
-  .rd-pulse .rd-score{ font-family:'IBM Plex Mono',monospace; font-size:74px; font-weight:600; line-height:.9; letter-spacing:-.04em; color:var(--text-0); }
-  .rd-pulse .rd-band{ font-size:22px; font-weight:800; letter-spacing:-.02em; margin-bottom:4px; }
+  .rd-pulse{ display:grid; grid-template-columns:auto 1fr; gap:28px; align-items:center; background:linear-gradient(180deg,#fff,#fcfcfa); border:1px solid var(--border-1); border-radius:14px; padding:20px 24px; box-shadow:var(--shadow-sm); margin-bottom:22px; }
+  .rd-pulse .rd-score{ font-family:'IBM Plex Mono',monospace; font-size:60px; font-weight:600; line-height:.9; letter-spacing:-.04em; color:var(--text-0); }
+  .rd-pulse .rd-band{ font-size:19px; font-weight:800; letter-spacing:-.02em; margin-bottom:3px; }
   .rd-pulse .rd-delta{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-2); }
   .rd-pulse .rd-link{ margin-top:14px; display:inline-block; color:var(--emerald-bright); font-weight:700; font-size:12.5px; text-decoration:none; background:none; border:none; cursor:pointer; padding:0; font-family:inherit; }
   .rd-scale{ margin-top:14px; }
@@ -846,7 +892,7 @@
   /* auto-fit: the Customize picker lets a user pick fewer than 4 tiles here,
      and a fixed 4-column grid would leave dangling empty cells in that case. */
   .rd-inst-row{ display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); border:1px solid var(--border-1); border-radius:14px; background:var(--surf-1); box-shadow:var(--shadow-sm); overflow:hidden; }
-  .rd-inst{ padding:20px 22px; border-right:1px solid var(--border-1); cursor:pointer; transition:background .14s ease; }
+  .rd-inst{ padding:15px 18px 16px; border-right:1px solid var(--border-1); cursor:pointer; transition:background .14s ease; }
   .rd-inst:last-child{ border-right:none; }
   .rd-inst:hover{ background:var(--surf-2); }
   .rd-inst .l{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); margin-bottom:10px; }
@@ -856,15 +902,17 @@
   .rd-inst .bar{ height:3px; border-radius:2px; background:var(--surf-3,#EFEEE8); margin-top:13px; overflow:hidden; }
   .rd-inst .bar i{ display:block; height:100%; background:var(--emerald); border-radius:2px; }
 
-  .rd-2col{ display:grid; grid-template-columns:1.05fr 1fr; gap:20px; }
+  .rd-2col{ display:grid; grid-template-columns:1.05fr 1fr; gap:14px; align-items:stretch; }
+  .rd-2col > .rd-card{ display:flex; flex-direction:column; min-width:0; }
+  .rd-2col > .rd-card > :last-child{ flex:1; min-height:0; }
   @media (max-width:960px){ .rd-2col{ grid-template-columns:1fr; } }
-  .rd-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); padding:24px 26px; }
-  .rd-card-h{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:18px; }
+  .rd-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); padding:16px 18px 18px; }
+  .rd-card-h{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:14px; padding-bottom:11px; border-bottom:1px solid var(--border-1); }
   .rd-card-h h2{ font-family:'Manrope',sans-serif; font-size:16px; font-weight:800; letter-spacing:-.02em; color:var(--text-0); }
   .rd-card-h .sub{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-3); }
 
   /* attention */
-  .rd-attn{ display:flex; gap:13px; padding:13px 2px; border-bottom:1px solid var(--border-1); cursor:pointer; }
+  .rd-attn{ display:flex; gap:12px; padding:11px 0; border-bottom:1px solid var(--border-1); cursor:pointer; }
   .rd-attn:last-child{ border-bottom:none; }
   .rd-attn .ic{ width:26px; height:26px; border-radius:7px; display:grid; place-items:center; flex-shrink:0; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:13px; }
   .rd-attn .ic.bad{ background:var(--rose-wash,#F4E3DE); color:var(--rose); }
@@ -997,11 +1045,16 @@
   .rd-tag.ok{ background:var(--emerald-wash); color:var(--emerald-bright); }
   .rd-tag.blue{ background:var(--sky-light,#E3ECF5); color:var(--sky,#0B4B8C); }
   /* break the "stacked full-width cards" monotony on Payments / Books / Tally */
-  #paymentsRzpBlocks, #booksContent, #tallyTabContent, #booksOdooMount{ display:grid; grid-template-columns:repeat(auto-fit, minmax(330px, 1fr)); gap:16px; align-items:start; }
+  /* Two equal columns, not auto-fit masonry. auto-fit gave 3-4 uneven tracks
+     on a wide screen and left every row ragged; paired cards now line up and
+     their scroll bodies are the same height, so the column bottoms agree. */
+  #paymentsRzpBlocks, #booksContent, #tallyTabContent, #booksOdooMount{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
   #paymentsRzpBlocks > .pay-grid, #booksContent > .pay-grid, #tallyTabContent > .pay-grid,
-  #paymentsRzpBlocks > .chart-card:nth-of-type(1), #booksContent > #zvInsightsCard, #tallyTabContent > .chart-card:nth-of-type(1){ grid-column:1 / -1; }
+  #booksOdooMount > .pay-grid,
+  #paymentsRzpBlocks > .chart-card.cc-wide, #booksContent > .chart-card.cc-wide, #tallyTabContent > .chart-card.cc-wide,
+  #paymentsRzpBlocks > #zvInsightsCard, #booksContent > #zvInsightsCard{ grid-column:1 / -1; }
   #paymentsRzpBlocks > .chart-card, #booksContent > .chart-card, #tallyTabContent > .chart-card{ margin:0; }
-  @media (max-width:820px){ #paymentsRzpBlocks, #booksContent, #tallyTabContent{ grid-template-columns:1fr; } }
+  @media (max-width:900px){ #paymentsRzpBlocks, #booksContent, #tallyTabContent, #booksOdooMount{ grid-template-columns:1fr; } }
   /* Ask Margyn page */
   .rd-ask{ display:flex; gap:10px; background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); padding:10px 10px 10px 18px; }
   .rd-ask input{ flex:1; border:none; background:transparent; font-family:'Manrope',sans-serif; font-size:14.5px; color:var(--text-0); outline:none; }
@@ -1169,23 +1222,39 @@
   .rd-linkbtn{ background:none; border:none; padding:0 0 0 8px; font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em;
     text-transform:uppercase; color:var(--emerald-bright); cursor:pointer; }
   .rd-linkbtn:hover{ text-decoration:underline; }
-  .mx-group{ margin-bottom:22px; }
-  .mx-group:last-child{ margin-bottom:0; }
-  .mx-group-label{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-3); margin-bottom:10px; }
-  /* auto-fit: each category group has a different number of metrics, so a
-     fixed column count makes cards in a short last row stretch wider than
-     the same cards in a full row above — auto-fit keeps card width consistent
-     across every row regardless of how many metrics land in a group. */
-  .mx-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); gap:12px; }
-  .mx-card{ position:relative; background:var(--surf-1); border:1px solid var(--border-1); border-radius:12px; box-shadow:var(--shadow-xs); padding:15px 16px 14px; overflow:hidden;
-    transition:box-shadow var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
-  .mx-card:hover{ box-shadow:var(--shadow-md); border-color:var(--border-2); transform:translateY(-1px); }
-  .mx-label{ font-family:'IBM Plex Mono',monospace; font-size:8.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); margin-bottom:8px; }
-  .mx-value{ font-family:'IBM Plex Mono',monospace; font-size:20px; font-weight:500; letter-spacing:-.03em; color:var(--text-0); line-height:1.1; }
-  .mx-delta{ font-family:'IBM Plex Mono',monospace; font-size:10px; margin-top:5px; }
+  /* ---------- indicator wall -----------------------------------------
+     Was a grid of ~24 identical tiles across six groups. Because every
+     group holds a different number of indicators (Tax has one, Liquidity
+     has seven) an auto-fill grid left every group's last row ragged, and on
+     a wide monitor that meant eight columns of tile with three tiles in it.
+     It reads as one register now: grouped rows, aligned columns, the value
+     and delta flush right where the eye scans for them. */
+  .mx-panel{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm); overflow:hidden; }
+  .mx-group{ margin:0; }
+  .mx-group-label{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-2);
+    background:var(--surf-2); padding:8px 18px; border-bottom:1px solid var(--border-1); border-top:1px solid var(--border-1); }
+  .mx-group:first-child .mx-group-label{ border-top:none; }
+  .mx-grid{ display:block; }
+  .mx-card{ position:relative; display:grid; grid-template-columns:minmax(0,1fr) 104px 128px 104px; align-items:center; gap:18px;
+    padding:11px 18px; border-bottom:1px solid var(--border-1); cursor:default;
+    transition:background var(--dur-1) var(--ease-out); }
+  .mx-group:last-child .mx-card:last-child{ border-bottom:none; }
+  .mx-card:hover{ background:var(--surf-2); }
+  .mx-label{ font-family:'Manrope',sans-serif; font-size:13px; font-weight:700; letter-spacing:-.01em; text-transform:none; color:var(--text-0); margin-bottom:0; }
+  .mx-why{ font-size:11px; color:var(--text-3); line-height:1.4; margin:2px 0 0; padding:0; border:none;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mx-spark{ display:block; width:100%; height:22px; margin:0; opacity:.9; }
+  .mx-value{ font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; letter-spacing:-.02em; color:var(--text-0); line-height:1.1; text-align:right; }
+  .mx-value.na{ color:var(--text-3); font-weight:500; }
+  .mx-delta{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; margin-top:0; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .mx-delta.up{ color:var(--emerald-bright); } .mx-delta.down{ color:var(--rose); } .mx-delta.flat{ color:var(--text-3); }
-  .mx-spark{ display:block; width:100%; height:26px; margin-top:10px; opacity:.85; }
-  .mx-why{ font-size:11px; color:var(--text-3); line-height:1.45; margin-top:9px; padding-top:9px; border-top:1px solid var(--border-1); }
+  @media (max-width:860px){
+    .mx-card{ grid-template-columns:minmax(0,1fr) auto; gap:6px 14px; padding:11px 14px; }
+    .mx-spark{ display:none; }
+    .mx-value{ grid-column:2; }
+    .mx-delta{ grid-column:2; }
+    .mx-group-label{ padding:8px 14px; }
+  }
   .mp-body{ max-height:min(52vh,440px); overflow-y:auto; padding-right:4px; }
   .mp-sec{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--text-3); padding:14px 0 8px; }
   .mp-sec:first-child{ padding-top:0; }
@@ -1207,7 +1276,7 @@
      small-multiple sparklines, AI briefing in the orange register.
      ============================================================ */
   #view-scores{ max-width:none; }
-  .sc-hero{ display:grid; grid-template-columns:340px 1fr; gap:18px; margin-bottom:8px; align-items:stretch; }
+  .sc-hero{ display:grid; grid-template-columns:300px minmax(0,1fr); gap:14px; margin-bottom:8px; align-items:stretch; }
   @media (max-width:960px){ .sc-hero{ grid-template-columns:1fr; } }
   .sc-gauge{ background:linear-gradient(180deg,#fff,#fcfcfa); border:1px solid var(--border-1); border-radius:14px; box-shadow:var(--shadow-sm);
     padding:24px 22px 20px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; }
@@ -2295,7 +2364,7 @@
         <span class="pc-flag" id="payMethodFlag"></span>
       </div>
     </div>
-    <div class="chart-card">
+    <div class="chart-card cc-wide">
       <div class="cc-head"><h3>Gross settled, last 7 days</h3><span class="cc-sub" id="paySettleTrendSub">₹ per day</span></div>
       <div class="bar-chart" id="paySettleBarChart"></div>
     </div>
@@ -2438,25 +2507,25 @@
           <div class="pc-sub">Cash actually collected in the last 30 days.</div>
         </div>
         <div class="pay-card">
-          <div class="pc-label">Synced from Tally</div>
+          <div class="pc-label">Vouchers synced</div>
           <div class="pc-value" id="tvCountsVal">—</div>
           <div class="pc-sub" id="tvAsOf">—</div>
         </div>
       </div>
       <div class="chart-card">
-        <div class="cc-head"><h3>Transactions by type</h3><span class="cc-sub">All vouchers pulled so far</span></div>
+        <div class="cc-head"><h3>Transactions by type</h3><span class="cc-sub" id="tvByTypeSub">All vouchers pulled so far</span></div>
         <div class="hbar-list" id="tvByTypeChart"></div>
       </div>
       <div class="chart-card">
-        <div class="cc-head"><h3>Outstanding bills</h3><span class="cc-sub">Most overdue first</span></div>
+        <div class="cc-head"><h3>Outstanding bills</h3><span class="cc-sub dt-count" id="tvBillsSub">Most overdue first</span></div>
         <div id="tvBillsList"></div>
       </div>
       <div class="chart-card">
-        <div class="cc-head"><h3>Recent transactions</h3><span class="cc-sub">Newest first</span></div>
+        <div class="cc-head"><h3>Recent transactions</h3><span class="cc-sub dt-count" id="tvVouchersSub">Newest first</span></div>
         <div id="tvVouchersList"></div>
       </div>
       <div class="chart-card">
-        <div class="cc-head"><h3>Ledger balances</h3><span class="cc-sub">Largest first</span></div>
+        <div class="cc-head"><h3>Ledger balances</h3><span class="cc-sub dt-count" id="tvLedgersSub">Largest first</span></div>
         <div id="tvLedgersList"></div>
       </div>
     </div>
@@ -3640,14 +3709,15 @@ function metricCardHtml(key, latest, prev){
     const mn = Math.min(...series), mx = Math.max(...series), rg = (mx - mn) || 1;
     const pts = series.map((s, i) => (i / (series.length - 1) * 96 + 2).toFixed(1) + ',' + (26 - ((s - mn) / rg) * 22).toFixed(1)).join(' ');
     const col = dCls === 'down' ? 'var(--rose)' : 'var(--emerald)';
-    spark = '<svg class="mx-spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>';
+    spark = '<svg class="mx-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>';
   }
+  const vTxt = metricFormat(v, m.unit);
   return '<div class="mx-card" data-margyn-topic="' + escapeHtml(m.label) + '">' +
-    '<div class="mx-label">' + escapeHtml(m.label) + '</div>' +
-    '<div class="mx-value">' + escapeHtml(metricFormat(v, m.unit)) + '</div>' +
+    '<div><div class="mx-label">' + escapeHtml(m.label) + '</div>' +
+    '<div class="mx-why">' + escapeHtml(m.why) + '</div></div>' +
+    '<div>' + (spark || '') + '</div>' +
+    '<div class="mx-value' + (v === null ? ' na' : '') + '">' + escapeHtml(vTxt) + '</div>' +
     '<div class="mx-delta ' + dCls + '">' + escapeHtml(dTxt) + '</div>' +
-    spark +
-    '<div class="mx-why">' + escapeHtml(m.why) + '</div>' +
   '</div>';
 }
 /* The Scores indicator wall, grouped, driven by the customer's selection. */
@@ -3670,7 +3740,7 @@ function renderScoreMetrics(){
     html += '<div class="mx-group"><div class="mx-group-label">' + escapeHtml(g) + '</div><div class="mx-grid">' +
       keys.map(k => metricCardHtml(k, latest, prev)).join('') + '</div></div>';
   });
-  host.innerHTML = html || '<div class="ledger-empty">Nothing selected. Use Customize to pick the indicators you want here.</div>';
+  host.innerHTML = html ? ('<div class="mx-panel">' + html + '</div>') : '<div class="ledger-empty">Nothing selected. Use Customize to pick the indicators you want here.</div>';
 }
 /* ---------- metric picker ---------- */
 let metricPickerSurface = 'scores';
@@ -7459,6 +7529,20 @@ document.getElementById('tallyOverlay').addEventListener('click', (e) => {
   if(e.target.id === 'tallyOverlay'){ e.currentTarget.classList.add('hidden'); if(tallyPairPollTimer){ clearInterval(tallyPairPollTimer); tallyPairPollTimer = null; } }
 });
 /* ---------- Tally tab (mirrors the Books tab; data from api/tally.js?action=summary) ---------- */
+/* The bottom fade on a .dscroll body is decorative: switch it off when the
+   list already fits, or once the reader has reached the end, so the last row
+   is never dimmed for no reason. */
+function wireDscroll(root){
+  (root || document).querySelectorAll('.dscroll').forEach(el => {
+    const sync = () => {
+      const fits = el.scrollHeight - el.clientHeight <= 1;
+      el.classList.toggle('fits', fits);
+      el.classList.toggle('at-end', !fits && (el.scrollHeight - el.scrollTop - el.clientHeight) <= 2);
+    };
+    if(!el.dataset.dscrollWired){ el.addEventListener('scroll', sync, { passive:true }); el.dataset.dscrollWired = '1'; }
+    sync();
+  });
+}
 function renderTallyTab(){
   const notConn = document.getElementById('tallyNotConnected');
   const content = document.getElementById('tallyTabContent');
@@ -7483,13 +7567,18 @@ function renderTallyTab(){
   document.getElementById('tvOverdueVal').textContent = inr(b.overdue_total || 0);
   document.getElementById('tvSalesVal').textContent = inr(v.sales_30d || 0);
   document.getElementById('tvReceiptsVal').textContent = inr(v.receipts_30d || 0);
-  document.getElementById('tvCountsVal').textContent = (led.count || 0) + ' ledgers · ' + (v.count || 0) + ' vouchers · ' + (b.count || 0) + ' bills';
-  document.getElementById('tvAsOf').textContent = d.as_of ? ('as of ' + fmtDate(d.as_of)) : 'sync pending';
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+  document.getElementById('tvCountsVal').textContent = plural(v.count || 0, 'voucher', 'vouchers');
+  document.getElementById('tvAsOf').textContent =
+    plural(led.count || 0, 'ledger', 'ledgers') + ' · ' + plural(b.count || 0, 'bill', 'bills') +
+    (d.as_of ? (' · as of ' + fmtDate(d.as_of)) : ' · sync pending');
 
   // transactions by type
   const byType = Object.entries(v.by_type || {}).sort((a, c) => c[1] - a[1]);
   const maxT = Math.max.apply(null, byType.map(x => x[1]).concat([1]));
   const chart = document.getElementById('tvByTypeChart');
+  const btSub = document.getElementById('tvByTypeSub');
+  if(btSub) btSub.textContent = (v.count || 0) + ' vouchers · ' + byType.length + ' types';
   chart.innerHTML = '';
   if(!byType.length){ chart.innerHTML = '<div class="ledger-empty">No transactions synced yet.</div>'; }
   byType.forEach(([t, n]) => {
@@ -7503,17 +7592,25 @@ function renderTallyTab(){
 
   // outstanding bills
   const bills = (b.items || []).slice().sort((a, c) => (c.overdue_days || 0) - (a.overdue_days || 0) || (c.amount || 0) - (a.amount || 0));
-  document.getElementById('tvBillsList').innerHTML = bills.length ? bills.map((x, i) => {
-    const meta = (x.overdue_days != null && x.overdue_days > 0)
-      ? (x.overdue_days + ' days overdue')
-      : (x.due_date ? ('due ' + fmtDate(x.due_date)) : '');
-    const tag = x.direction === 'payable' ? '<span class="lr-tag warn">Payable</span>' : '<span class="lr-tag ok">Receivable</span>';
-    return '<div class="ledger-row" data-bill-idx="' + i + '"><div class="lr-main">' +
-      '<div class="lr-party">' + escapeHtml(x.party_name || 'Unknown') + '</div>' +
-      '<div class="lr-meta">' + (x.bill_ref ? ('Ref ' + escapeHtml(x.bill_ref) + ' · ') : '') + meta + '</div>' +
-    '</div>' + tag + '<div class="lr-amount">' + inr(x.amount || 0) + '</div></div>';
-  }).join('') : '<div class="ledger-empty">No outstanding bills.</div>';
-  document.querySelectorAll('#tvBillsList .ledger-row[data-bill-idx]').forEach(row => {
+  const billsSub = document.getElementById('tvBillsSub');
+  if(billsSub) billsSub.textContent = bills.length ? (bills.length + (bills.length === 1 ? ' bill' : ' bills') + ' · most overdue first') : 'most overdue first';
+  document.getElementById('tvBillsList').innerHTML = bills.length ? (
+    '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:88px"><col style="width:104px"></colgroup>' +
+    '<thead><tr><th>Party</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>' +
+    bills.map((x, i) => {
+      const meta = (x.overdue_days != null && x.overdue_days > 0)
+        ? (x.overdue_days + ' days overdue')
+        : (x.due_date ? ('due ' + fmtDate(x.due_date)) : '');
+      const late = (x.overdue_days != null && x.overdue_days > 0) ? ' late' : '';
+      const tag = x.direction === 'payable' ? '<span class="lr-tag warn">Payable</span>' : '<span class="lr-tag ok">Receivable</span>';
+      return '<tr data-row data-bill-idx="' + i + '">' +
+        '<td><div class="dt-main">' + escapeHtml(x.party_name || 'Unknown') + '</div>' +
+        '<div class="dt-sub' + late + '">' + (x.bill_ref ? ('Ref ' + escapeHtml(x.bill_ref) + ' · ') : '') + meta + '</div></td>' +
+        '<td>' + tag + '</td>' +
+        '<td class="num">' + inr(x.amount || 0) + '</td></tr>';
+    }).join('') + '</tbody></table></div>'
+  ) : '<div class="ledger-empty">No outstanding bills.</div>';
+  document.querySelectorAll('#tvBillsList tr[data-bill-idx]').forEach(row => {
     const x = bills[Number(row.dataset.billIdx)];
     row.addEventListener('click', () => openTallyRowDetail('Bill', x.party_name || 'Unknown', x.amount, [
       x.bill_ref ? ['Reference', x.bill_ref] : null,
@@ -7525,13 +7622,19 @@ function renderTallyTab(){
 
   // recent transactions
   const rec = v.recent || [];
-  document.getElementById('tvVouchersList').innerHTML = rec.length ? rec.map((x, i) =>
-    '<div class="ledger-row" data-voucher-idx="' + i + '"><div class="lr-main">' +
-      '<div class="lr-party">' + escapeHtml(x.voucher_type || 'Voucher') + (x.voucher_number ? (' #' + escapeHtml(x.voucher_number)) : '') + '</div>' +
-      '<div class="lr-meta">' + (x.date ? fmtDate(x.date) : '') + (x.party_name ? (' · ' + escapeHtml(x.party_name)) : '') + '</div>' +
-    '</div><div class="lr-amount">' + inr(x.amount || 0) + '</div></div>'
-  ).join('') : '<div class="ledger-empty">No transactions synced yet.</div>';
-  document.querySelectorAll('#tvVouchersList .ledger-row[data-voucher-idx]').forEach(row => {
+  const vouchSub = document.getElementById('tvVouchersSub');
+  if(vouchSub) vouchSub.textContent = rec.length ? (rec.length + ' shown · newest first') : 'newest first';
+  document.getElementById('tvVouchersList').innerHTML = rec.length ? (
+    '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:104px"></colgroup>' +
+    '<thead><tr><th>Voucher</th><th class="num">Amount</th></tr></thead><tbody>' +
+    rec.map((x, i) =>
+      '<tr data-row data-voucher-idx="' + i + '">' +
+        '<td><div class="dt-main">' + escapeHtml(x.voucher_type || 'Voucher') + (x.voucher_number ? (' #' + escapeHtml(x.voucher_number)) : '') + '</div>' +
+        '<div class="dt-sub">' + (x.date ? fmtDate(x.date) : '') + (x.party_name ? (' · ' + escapeHtml(x.party_name)) : '') + '</div></td>' +
+        '<td class="num">' + inr(x.amount || 0) + '</td></tr>'
+    ).join('') + '</tbody></table></div>'
+  ) : '<div class="ledger-empty">No transactions synced yet.</div>';
+  document.querySelectorAll('#tvVouchersList tr[data-voucher-idx]').forEach(row => {
     const x = rec[Number(row.dataset.voucherIdx)];
     row.addEventListener('click', () => openTallyRowDetail(x.voucher_type || 'Voucher', x.party_name || (x.voucher_number ? '#' + x.voucher_number : 'Voucher'), x.amount, [
       x.voucher_number ? ['Voucher number', x.voucher_number] : null,
@@ -7543,14 +7646,20 @@ function renderTallyTab(){
   // ledger balances
   const ledItems = (led.items || []).filter(x => x.closing_balance != null)
     .slice().sort((a, c) => Math.abs(c.closing_balance) - Math.abs(a.closing_balance)).slice(0, 40);
-  document.getElementById('tvLedgersList').innerHTML = ledItems.length ? ledItems.map((x, i) => {
-    const bal = Number(x.closing_balance);
-    return '<div class="ledger-row" data-led-idx="' + i + '"><div class="lr-main">' +
-      '<div class="lr-party">' + escapeHtml(x.name) + '</div>' +
-      '<div class="lr-meta">' + escapeHtml(x.parent || '') + '</div>' +
-    '</div><div class="lr-amount">' + inr(Math.abs(bal)) + (bal < 0 ? ' Cr' : ' Dr') + '</div></div>';
-  }).join('') : '<div class="ledger-empty">No closing balances yet — some Tally setups return these blank; the connector still records ledger names and groups.</div>';
-  document.querySelectorAll('#tvLedgersList .ledger-row[data-led-idx]').forEach(row => {
+  const ledSub = document.getElementById('tvLedgersSub');
+  if(ledSub) ledSub.textContent = ledItems.length ? (ledItems.length + ' of ' + (led.count || ledItems.length) + ' · largest first') : 'largest first';
+  document.getElementById('tvLedgersList').innerHTML = ledItems.length ? (
+    '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:116px"></colgroup>' +
+    '<thead><tr><th>Ledger</th><th class="num">Closing balance</th></tr></thead><tbody>' +
+    ledItems.map((x, i) => {
+      const bal = Number(x.closing_balance);
+      return '<tr data-row data-led-idx="' + i + '">' +
+        '<td><div class="dt-main">' + escapeHtml(x.name) + '</div>' +
+        '<div class="dt-sub">' + escapeHtml(x.parent || '') + '</div></td>' +
+        '<td class="num">' + inr(Math.abs(bal)) + (bal < 0 ? ' Cr' : ' Dr') + '</td></tr>';
+    }).join('') + '</tbody></table></div>'
+  ) : '<div class="ledger-empty">No closing balances yet — some Tally setups return these blank; the connector still records ledger names and groups.</div>';
+  document.querySelectorAll('#tvLedgersList tr[data-led-idx]').forEach(row => {
     const x = ledItems[Number(row.dataset.ledIdx)];
     const bal = Number(x.closing_balance);
     row.addEventListener('click', () => openTallyRowDetail('Ledger', x.name, Math.abs(bal), [
@@ -7558,6 +7667,8 @@ function renderTallyTab(){
       ['Balance type', bal < 0 ? 'Credit' : 'Debit']
     ]));
   });
+
+  wireDscroll(content);
 
   // nav badge: overdue bill count
   if(badge){
