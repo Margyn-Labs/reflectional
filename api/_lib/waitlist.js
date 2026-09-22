@@ -1,4 +1,8 @@
-// api/waitlist.js
+// api/_lib/waitlist.js — moved from repo-root waitlist.js (2026-09-23).
+// A root-level .js is never deployed as a function, so /api/waitlist 404'd in
+// prod. No free function slot (12/12), so this is dispatched from
+// api/ops.js?action=waitlist, and vercel.json rewrites /api/waitlist to it.
+//
 // Serverless function (Vercel Node runtime). Writes landing-page waitlist
 // signups into Supabase using the SERVICE ROLE key, which never reaches the
 // browser. Talks to Supabase's REST API directly — no npm dependency needed.

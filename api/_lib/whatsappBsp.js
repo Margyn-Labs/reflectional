@@ -209,6 +209,97 @@ const SEND_TEXT_ADAPTERS = {
 };
 
 /* ------------------------------------------------------------------ */
+/* Outbound: session-window interactive buttons (Ask Margyn confirm/   */
+/* cancel cards over WhatsApp)                                         */
+/* ------------------------------------------------------------------ */
+/**
+ * Unlike sendTemplate's Closing Bell buttons — which must be pre-approved
+ * as part of the template — these are WhatsApp's session-message "quick
+ * reply" buttons: free-form text + up to 3 buttons, sendable only inside an
+ * open 24h customer-care window (same constraint as sendText), no
+ * per-message approval needed. This is what lets Ask Margyn put a
+ * genuinely dynamic confirm card ("Approve Acme's ₹50,000 import?") in
+ * front of someone on WhatsApp instead of requiring a fixed template body.
+ *
+ * NOTE (same caveat as the rest of this file): Gupshup's quick_reply
+ * message shape below has never been exercised against a real Gupshup
+ * account in this build — verify the field names against Gupshup's current
+ * docs on first live test, and check the button-reply webhook actually
+ * echoes back the `id` we send (gupshupParseInboundEvent below assumes it
+ * does, via the same button_reply shape as Closing Bell's template buttons).
+ *
+ * @param {{to: string, text: string, buttons: {id: string, title: string}[]}} opts
+ * @returns {Promise<{ok: boolean, messageId?: string, error?: string}>}
+ */
+async function sendButtons({ to, text, buttons }) {
+  const adapter = SEND_BUTTONS_ADAPTERS[bspName()];
+  if (!adapter) {
+    return { ok: false, error: `No button-send adapter configured for WHATSAPP_BSP=${bspName()}` };
+  }
+  return adapter({ to, text, buttons: (buttons || []).slice(0, 3) });
+}
+
+async function gupshupSendButtons({ to, text, buttons }) {
+  const apiKey = process.env.GUPSHUP_API_KEY;
+  const source = process.env.GUPSHUP_SOURCE_NUMBER;
+  const appName = process.env.GUPSHUP_APP_NAME;
+
+  if (!apiKey || !source || !appName) {
+    return { ok: false, error: 'Gupshup credentials not configured (GUPSHUP_API_KEY / GUPSHUP_SOURCE_NUMBER / GUPSHUP_APP_NAME)' };
+  }
+  const destination = normalizeDestination(to);
+  if (destination.length < 11 || destination.length > 15) {
+    return { ok: false, error: `Invalid destination number "${to}"` };
+  }
+
+  const body = new URLSearchParams({
+    channel: 'whatsapp',
+    source,
+    destination,
+    'src.name': appName,
+    message: JSON.stringify({
+      type: 'quick_reply',
+      content: { type: 'text', text: String(text || '').slice(0, 1024) },
+      options: (buttons || []).map(b => ({ type: 'text', title: String(b.title || '').slice(0, 20), id: b.id }))
+    })
+  });
+
+  let res;
+  try {
+    res = await fetch('https://api.gupshup.io/wa/api/v1/msg', {
+      method: 'POST',
+      headers: {
+        apikey: apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: body.toString()
+    });
+  } catch (err) {
+    return { ok: false, error: `Network error calling Gupshup: ${err.message}` };
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok || !data || data.status !== 'submitted') {
+    return { ok: false, error: `Gupshup button send failed: ${res.status} ${JSON.stringify(data)}` };
+  }
+
+  return { ok: true, messageId: data.messageId };
+}
+
+const SEND_BUTTONS_ADAPTERS = {
+  gupshup: gupshupSendButtons,
+  interakt: notImplementedSend('interakt'),
+  wati: notImplementedSend('wati'),
+  aisensy: notImplementedSend('aisensy')
+};
+
+/* ------------------------------------------------------------------ */
 /* Inbound: normalize a webhook payload into a common shape            */
 /* ------------------------------------------------------------------ */
 /**
@@ -411,6 +502,7 @@ function verifyInboundRequest(req, rawBody) {
 module.exports = {
   sendTemplate,
   sendText,
+  sendButtons,
   parseInboundEvent,
   parseInboundText,
   parseInboundMedia,

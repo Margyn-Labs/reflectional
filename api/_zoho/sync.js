@@ -390,6 +390,86 @@ const COLLECTION_SPECS = [
   }
 ];
 
+// ------------------------------------------------- deleted-at-source sweep
+
+/**
+ * Delta sync only sees records whose last_modified_time moved — a record
+ * DELETED in Zoho never shows up again, so an open invoice/bill deleted there
+ * kept its balance here forever and inflated aging (2026-09-23 audit).
+ *
+ * Weekly, for invoices and bills: list every id Zoho still has (unfiltered
+ * list = all statuses, so voided/paid ones are present and handled by delta),
+ * and any row we still hold as OPEN (balance > 0) that Zoho no longer has at
+ * all is marked balance 0 / status 'deleted_at_source'. `total` is kept, so
+ * the original amount stays auditable. Every open-items reader filters on
+ * balance > 0, so no reader needs to change.
+ *
+ * Fails safe: a truncated listing, an API error, or a sweep that would close
+ * most of the open book (a Zoho-side glitch, wrong org) all skip the sweep.
+ */
+const SWEEP_EVERY_MS = 6.5 * 24 * 3600 * 1000;
+const SWEEP_MAX_PAGES = 150;   // 30,000 records; beyond that we skip, never guess
+const SWEEP_SPECS = [
+  { module: 'invoices', path: 'books/v3/invoices', key: 'invoices', idField: 'invoice_id', table: 'zoho_invoices' },
+  { module: 'bills', path: 'books/v3/bills', key: 'bills', idField: 'bill_id', table: 'zoho_bills' }
+];
+
+async function sweepDeletedAtSource(session, org, userId, results) {
+  const last = await getSyncCursor(org.id, 'deleted_sweep');
+  if (last && Date.now() - new Date(last).getTime() < SWEEP_EVERY_MS) return;
+
+  for (const s of SWEEP_SPECS) {
+    const opStart = Date.now();
+    try {
+      const open = await selectRows(s.table, `select=${s.idField}&org_ref=eq.${org.id}&balance=gt.0&limit=10000`);
+      if (!open.length) continue;
+
+      const remote = new Set();
+      let complete = false;
+      for (let page = 1; page <= SWEEP_MAX_PAGES; page++) {
+        const data = await session.apiGet(s.path, { page: String(page), per_page: '200' });
+        const batch = data[s.key] || [];
+        for (const r of batch) if (r[s.idField]) remote.add(String(r[s.idField]));
+        const ctx = data.page_context || {};
+        if (!ctx.has_more_page) { complete = true; break; }
+        if (batch.length === 0) break; // "more pages" but an empty page: don't trust it
+        await sleep(700);
+      }
+      if (!complete) throw new Error('listing exceeded sweep cap; skipped');
+
+      const missing = open.map((r) => String(r[s.idField])).filter((id) => !remote.has(id));
+      if (!missing.length) continue;
+      if (open.length >= 10 && missing.length > open.length * 0.5) {
+        throw new Error(`would close ${missing.length}/${open.length} open ${s.module}; skipped as a likely Zoho-side glitch`);
+      }
+      for (let i = 0; i < missing.length; i += 100) {
+        const ids = missing.slice(i, i + 100).join(',');
+        const filter = `org_ref=eq.${org.id}&${s.idField}=in.(${ids})`;
+        await updateRows(s.table, filter, { balance: 0, synced_at: new Date().toISOString() });
+        // Status label is best-effort: if a CHECK constraint rejects it, the
+        // balance-0 patch above has already done the part that matters.
+        await updateRows(s.table, filter, { status: 'deleted_at_source' }).catch(() => {});
+      }
+      results[s.module + '_deleted_at_source'] = missing.length;
+      await logConnectorEvent({
+        userId, connectorType: 'zoho_books', operation: 'sweep_' + s.module,
+        status: 'success', recordsSynced: missing.length, syncDurationMs: Date.now() - opStart
+      });
+    } catch (err) {
+      if (err instanceof ZohoAuthError) throw err;
+      await logConnectorEvent({
+        userId, connectorType: 'zoho_books', operation: 'sweep_' + s.module,
+        status: 'error', errorMessage: err.message
+      });
+      // Record the attempt so a persistent failure retries weekly, not on
+      // every nightly run (each attempt can cost up to SWEEP_MAX_PAGES calls).
+      await setSyncCursor(org.id, 'deleted_sweep', new Date().toISOString(), 'error');
+      return;
+    }
+  }
+  await setSyncCursor(org.id, 'deleted_sweep', new Date().toISOString(), 'success');
+}
+
 // -------------------------------------------------------------- core sync
 
 async function syncZohoForUser(userId, mode) {
@@ -420,6 +500,11 @@ async function syncZohoForUser(userId, mode) {
   }
 
   await syncJournalEntries(session, org, userId, syncMode, results, errors);
+
+  // Deleted-at-source sweep: delta runs only (a backfill just pulled fresh).
+  if (syncMode === 'delta') {
+    await sweepDeletedAtSource(session, org, userId, results);
+  }
 
   // Persist plan-level flags discovered during the run.
   const orgPatch = {};
