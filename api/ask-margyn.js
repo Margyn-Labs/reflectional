@@ -15,7 +15,7 @@
 
 import { formatMargynContext } from './_lib/formatMargynContext.js';
 import { getUserFromRequest, selectRows } from './_lib/supabaseRest.js';
-import { isProposeAction, execReadTool } from './_lib/marginActions.js';
+import { isProposeAction, execReadTool, validateProposal } from './_lib/marginActions.js';
 import { getAgent, isHandoff } from './_lib/agentRegistry.js';
 
 const MAX_TOOL_ITERATIONS = 5;
@@ -167,7 +167,15 @@ export default async function handler(req, res) {
         // Terminal: never executed here, never looped back to Claude. The
         // frontend renders a confirm/cancel card from this and only writes
         // anything once the human clicks Confirm.
-        const p = proposal.input || {};
+        let p = proposal.input || {};
+        // Same guard as WhatsApp: no card unless the target is one real row
+        // this user owns (a name is resolved to its id).
+        const checked = await validateProposal(p, user.id);
+        if (!checked.ok) {
+          finalText = checked.message;
+          break;
+        }
+        p = checked.proposal;
         actionCard = {
           type: p.type,
           targetId: p.target_id || null,
