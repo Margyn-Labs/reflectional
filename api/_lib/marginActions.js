@@ -184,6 +184,61 @@ async function toolGetChaseAgentConfig(userId) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Proposal validation — before any confirm card is shown               */
+/* ------------------------------------------------------------------ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TARGET_TABLE = {
+  mark_ledger_item_paid: (p) => (p.target_kind === 'payable' ? 'payables' : 'receivables'),
+  approve_suggestion: () => 'import_suggestions',
+  reject_suggestion: () => 'import_suggestions',
+  approve_agent_action: () => 'agent_actions',
+  dismiss_agent_action: () => 'agent_actions',
+  stop_chasing_party: () => 'whatsapp_chase_targets',
+  mark_chase_target_paid: () => 'whatsapp_chase_targets',
+  send_one_off_chase: () => 'whatsapp_chase_targets'
+};
+const NAME_SEARCHABLE = { receivables: 'status=eq.open', payables: 'status=eq.open', whatsapp_chase_targets: null };
+
+/**
+ * Make sure a proposal points at one real row this user owns BEFORE a
+ * confirm card goes out. The model sometimes puts a name ("meridian") where
+ * the row id belongs; the card then looks fine but Confirm can never work
+ * (2026-09-23). A name is resolved to its row when exactly one open row
+ * matches; otherwise the caller gets a plain message to send instead.
+ *
+ * @returns {Promise<{ok:true, proposal:object} | {ok:false, message:string}>}
+ */
+async function validateProposal(p, userId) {
+  const tableFor = TARGET_TABLE[p && p.type];
+  if (!tableFor) return { ok: true, proposal: p };           // no row target (create, pause, config, list_for_review)
+  const table = tableFor(p);
+  const raw = String(p.target_id || '').trim();
+
+  if (UUID_RE.test(raw)) {
+    const rows = await selectRows(table, `select=id&id=eq.${raw}&user_id=eq.${userId}&limit=1`).catch(() => []);
+    if (rows.length) return { ok: true, proposal: p };
+    return { ok: false, message: "I couldn't find that item any more. It may already be done. Ask me to list what's open." };
+  }
+
+  const name = raw || String((p.payload && (p.payload.party || p.payload.party_name)) || '').trim();
+  if (!name || !(table in NAME_SEARCHABLE)) {
+    return { ok: false, message: "I couldn't pin down which item you mean. Ask me to list them first, then tell me which one." };
+  }
+  const extra = NAME_SEARCHABLE[table] ? '&' + NAME_SEARCHABLE[table] : '';
+  const rows = await selectRows(
+    table,
+    `select=id,party_name,amount&user_id=eq.${userId}${extra}&party_name=ilike.*${encodeURIComponent(name)}*&limit=6`
+  ).catch(() => []);
+  if (rows.length === 1) return { ok: true, proposal: Object.assign({}, p, { target_id: rows[0].id }) };
+  if (!rows.length) {
+    const what = table === 'payables' ? 'open payable' : table === 'receivables' ? 'open receivable' : 'chase';
+    return { ok: false, message: `I couldn't find an ${what} for "${name}" in your Margyn ledger. It may already be marked paid, or it lives in Zoho, Tally or Odoo, which have to be updated there.` };
+  }
+  const list = rows.slice(0, 5).map((r, i) => `${i + 1}. ${r.party_name}${r.amount != null ? ' (₹' + Number(r.amount).toLocaleString('en-IN') + ')' : ''}`).join('\n');
+  return { ok: false, message: `More than one match for "${name}":\n${list}\nWhich one?` };
+}
+
+/* ------------------------------------------------------------------ */
 /* WhatsApp confirm/cancel handshake                                   */
 /* ------------------------------------------------------------------ */
 /**
@@ -386,6 +441,6 @@ async function executeAction(action, userId) {
 }
 
 module.exports = {
-  TOOLS, isProposeAction, execReadTool,
+  TOOLS, isProposeAction, execReadTool, validateProposal,
   createPendingAction, setPendingActionMessageId, findPendingAction, findLatestPendingAction, resolvePendingAction, executeAction
 };

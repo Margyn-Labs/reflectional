@@ -297,6 +297,16 @@ async function handleProposal(p, { profileId, fromPhone, textOut }) {
     return;
   }
 
+  // Never send a card whose Confirm can't work: the target must be one real
+  // row this user owns (a name is resolved to its row id here).
+  const checked = await marginActions.validateProposal(p, profileId);
+  if (!checked.ok) {
+    await persist(profileId, 'assistant', checked.message, null);
+    await sendReply(fromPhone, checked.message);
+    return;
+  }
+  p = checked.proposal;
+
   const summary = p.human_summary || 'Confirm this action?';
   let pending;
   try {
