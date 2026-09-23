@@ -181,7 +181,7 @@ const ALL_TOOLS = [...TOOLS, ...marginActions.TOOLS];
  * @param {{ profileId: string, fromPhone: string, text: string,
  *           contextMessageId?: string|null }} opts
  */
-async function runConversation({ profileId, fromPhone, sender, text, wamid }) {
+async function runConversation({ profileId, fromPhone, sender, canAct = true, text, wamid }) {
   const cleanText = String(text || '').trim().slice(0, MAX_INBOUND_CHARS);
   if (!profileId || !cleanText) return;
 
@@ -218,7 +218,11 @@ async function runConversation({ profileId, fromPhone, sender, text, wamid }) {
   }
 
   const messages = await buildMessages(profileId, fromPhone, cleanText);
-  const system = buildSystemPrompt(companyName, sender);
+  // Without the Act permission the propose tool isn't offered at all, and
+  // the prompt says so, so Margyn explains instead of trying.
+  const tools = canAct ? ALL_TOOLS : ALL_TOOLS.filter(t => !marginActions.isProposeAction(t.name));
+  const system = buildSystemPrompt(companyName, sender) + (canAct ? '' :
+    '\n\nThis person has read-only access: you cannot propose any action for them. If they ask for a change (mark paid, approve, log an entry, chase someone), say their number is set up to ask questions only and the account owner can allow actions under Settings > People. Routing a message to someone is still fine.');
   const phoneLabel = fromPhone ? '+' + String(fromPhone).replace(/[^\d]/g, '') : 'a WhatsApp contact';
   const ctx = {
     profileId,
@@ -230,7 +234,7 @@ async function runConversation({ profileId, fromPhone, sender, text, wamid }) {
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     let data;
     try {
-      data = await callClaude(apiKey, system, messages);
+      data = await callClaude(apiKey, system, messages, tools);
     } catch (e) {
       console.error('[whatsappAgent] Claude call failed:', e.message);
       break;
@@ -247,7 +251,7 @@ async function runConversation({ profileId, fromPhone, sender, text, wamid }) {
       toolUses.length ? toolUses.map(t => ({ name: t.name, input: t.input })) : null
     );
 
-    const proposal = toolUses.find(t => marginActions.isProposeAction(t.name));
+    const proposal = canAct && toolUses.find(t => marginActions.isProposeAction(t.name));
     if (proposal) {
       await handleProposal(proposal.input || {}, { profileId, fromPhone, textOut });
       return;
@@ -359,7 +363,7 @@ async function sendReply(to, text) {
 /* ------------------------------------------------------------------ */
 /* Claude call                                                         */
 /* ------------------------------------------------------------------ */
-async function callClaude(apiKey, system, messages) {
+async function callClaude(apiKey, system, messages, tools = ALL_TOOLS) {
   const res = await fetch(ANTHROPIC_URL, {
     method: 'POST',
     headers: {
@@ -367,7 +371,7 @@ async function callClaude(apiKey, system, messages) {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01'
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools: ALL_TOOLS, messages })
+    body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools, messages })
   });
   if (!res.ok) {
     const t = await res.text();

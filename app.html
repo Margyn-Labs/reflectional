@@ -605,13 +605,27 @@
   .ppl-add-foot{ display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:12px; flex-wrap:wrap; }
   .ppl-check{ display:flex; align-items:center; gap:9px; font-family:'Manrope',sans-serif; font-size:12.5px; letter-spacing:0; text-transform:none; color:var(--text-1); font-weight:600; cursor:pointer; margin:0; }
   .ppl-check input{ width:auto; margin:0; accent-color:var(--emerald); }
+  .ppl-perm-line{ grid-column:2 / -1; margin-top:-4px; }
+  .ppl-perms{ display:flex; flex-wrap:wrap; gap:6px; }
+  .ppl-chip{ display:inline-flex; align-items:center; gap:5px; font-family:'Manrope',sans-serif; font-size:11.5px; font-weight:700; padding:5px 11px; border-radius:999px; border:1px solid var(--border-2); background:var(--surf-1); color:var(--text-2); cursor:pointer; transition:background .15s ease, border-color .15s ease, color .15s ease; }
+  .ppl-chip:hover:not(:disabled){ border-color:var(--text-2); color:var(--text-0); }
+  .ppl-chip.on{ background:var(--emerald-wash); border-color:rgba(14,143,92,.35); color:var(--emerald); }
+  .ppl-chip.on:hover:not(:disabled){ border-color:var(--emerald); color:var(--emerald); }
+  .ppl-chip.bell.on{ background:#E3ECF5; border-color:rgba(11,75,140,.3); color:#0B4B8C; }
+  .ppl-chip.dim:not(.on){ opacity:.55; }
+  .ppl-chip:disabled{ cursor:default; opacity:.8; }
+  .ppl-chip:focus-visible{ outline:2px solid var(--emerald); outline-offset:2px; }
+  .ppl-add-perms{ display:flex; align-items:center; gap:12px; margin-top:12px; flex-wrap:wrap; }
+  .ppl-add-lbl{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-2); }
+  .ppl-add .ppl-check{ margin-top:12px; }
+  .ppl-banner{ font-size:12.5px; color:var(--text-1); background:var(--surf-2); border-radius:10px; padding:10px 14px; margin:12px 0 2px; line-height:1.5; }
   .ppl-summary{ display:flex; gap:22px; padding:14px 0 12px; border-bottom:1px solid var(--border-1); flex-wrap:wrap; }
   .ppl-summary div{ font-size:12px; color:var(--text-2); }
   .ppl-summary b{ display:block; font-family:'IBM Plex Mono',monospace; font-size:18px; font-weight:600; color:var(--text-0); font-variant-numeric:tabular-nums; margin-bottom:2px; }
-  .ppl-note{ font-size:12px; line-height:1.55; color:var(--text-2); padding:12px 0 4px; }
+  .ppl-note{ font-size:12px; line-height:1.55; color:var(--text-2); padding:12px 0 4px; max-width:84ch; }
   @media (max-width:720px){
     .ppl-row{ grid-template-columns:36px minmax(0,1fr); row-gap:8px; }
-    .ppl-row > .ppl-phone, .ppl-row > .ppl-act, .ppl-row > .ppl-ctl{ grid-column:2; justify-content:flex-start; }
+    .ppl-row > .ppl-phone, .ppl-row > .ppl-act, .ppl-row > .ppl-ctl, .ppl-row > .ppl-perm-line{ grid-column:2; justify-content:flex-start; margin-top:0; }
     .ppl-add-grid, .ppl-edit{ grid-template-columns:1fr; }
   }
   /* toggle switch */
@@ -10027,7 +10041,7 @@ document.getElementById('regenerateBriefing').addEventListener('click', () => ru
    but the cron will keep sending until that filter is added server-side.
    ============================================================ */
 const AGENT_VITALS = ['Cash Position','Receivables Aging','Payables Due (30d)','GST/ITC Leakage','Net Margin','Working Capital Runway'];
-const WA_FREQ_LABELS = { opening:'Opening Bell only', closing:'Closing Bell only', both:'Both bells', custom:'Custom schedule' };
+const WA_FREQ_LABELS = { opening:'Opening Bell only', closing:'Closing Bell only', both:'Both bells', none:'No Bells to this number', custom:'Custom schedule' };
 let agentDeployments = {};
 let agentStakeholders = [];
 
@@ -10105,20 +10119,61 @@ async function renderAgents(){
    business_stakeholders — the same rows as the Bell's AR/AP routing list,
    so a person is added once and shows up everywhere.
 
-     is_primary       names profiles.whatsapp_phone (always has access)
-     whatsapp_access  this number can chat with Margyn on this account
-     last_message_at / message_count   bumped by api/whatsapp.js
+   Per-number access lives in business_stakeholders.permissions and is
+   enforced server-side by api/_lib/memberAccess.js:
+     ask / act / forward / opening_bell / closing_bell
+   whatsapp_access is kept = ask || forward ("can send things in"); the
+   webhook's one-account-per-number index keys on it.
 
-   api/whatsapp.js resolves an inbound number to the account + the person, so
-   Margyn greets them by name and keeps each person's thread separate.
+   The primary number (profiles.whatsapp_phone) always has ask/act/forward.
+   Its Bell chips read and write the Bell agent's config.frequency, so the
+   Agents tab and this list can never disagree.
    ============================================================ */
 const PEOPLE_ROLE_LABEL = { owner:'Owner', AR:'Receivables (AR)', AP:'Payables (AP)', finance:'Finance', other:'Other' };
+const PEOPLE_PERMS = [
+  { key:'ask',          label:'Ask',           desc:'Ask Margyn about the numbers' },
+  { key:'act',          label:'Act',           desc:'Confirm changes Margyn proposes (mark paid, approve). Needs Ask' },
+  { key:'forward',      label:'Forward',       desc:'Forward invoices and bills to import' },
+  { key:'opening_bell', label:'Opening Bell',  desc:'Morning briefing', bell:true },
+  { key:'closing_bell', label:'Closing Bell',  desc:'Evening briefing', bell:true }
+];
+/* What a new person starts with, by role. Bells always start off: they need
+   the person's consent first. */
+const PEOPLE_ROLE_DEFAULTS = {
+  owner:   { ask:true, act:true,  forward:true },
+  AR:      { ask:true, act:false, forward:true },
+  AP:      { ask:true, act:false, forward:true },
+  finance: { ask:true, act:false, forward:true },
+  other:   {}
+};
 let peopleEditingId = null;
 
 function lsGetStr(k){ try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } }
-function peopleHasAccess(p){ return !!(p && (p.is_primary || p.whatsapp_access)); }
+
+/* Mirrors api/_lib/memberAccess.js memberPerms(). */
+function peoplePerms(p){
+  if(!p) return {};
+  if(p.is_primary){
+    const f = peopleBellFrequency();
+    return { ask:true, act:true, forward:true, opening_bell: f === 'both' || f === 'opening', closing_bell: f === 'both' || f === 'closing' };
+  }
+  const raw = (p.permissions && typeof p.permissions === 'object') ? p.permissions : {};
+  if(!PEOPLE_PERMS.some(x => x.key in raw)) return p.whatsapp_access ? { ask:true, act:true, forward:true } : {};
+  return { ask:!!raw.ask, act:!!raw.ask && !!raw.act, forward:!!raw.forward, opening_bell:!!raw.opening_bell, closing_bell:!!raw.closing_bell };
+}
+function peopleBellDeployed(){
+  const d = agentDeployments && agentDeployments['whatsapp_bell'];
+  return !!(d && d.status === 'active');
+}
+/* The primary number's Bells = the Bell agent's frequency. No deployment
+   means no Bells to anyone yet. */
+function peopleBellFrequency(){
+  const d = agentDeployments && agentDeployments['whatsapp_bell'];
+  if(!d || d.status !== 'active') return 'none';
+  return (d.config && d.config.frequency) || 'both';
+}
 function peopleInitials(name){
-  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  const parts = String(name || '?').replace(/\([^)]*\)/g, ' ').replace(/[^\p{L}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean);
   return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length-1][0] : '')).toUpperCase();
 }
 function peopleAgo(iso){
@@ -10133,7 +10188,7 @@ function peopleAgo(iso){
 /* Supabase errors -> something a founder can act on. */
 function peopleErr(e){
   const code = e && e.code, msg = (e && e.message) || '';
-  if(code === '23505' && /access_phone/.test(msg)) return 'That number already has Margyn access on another account.';
+  if(code === '23505' && /access_phone/.test(msg)) return 'That number can already send things to Margyn on another account. It can still get the Bells here.';
   if(code === '23505' && /one_primary/.test(msg)) return 'This account already has a primary number.';
   if(code === '42703' || code === 'PGRST204' || /column .* does not exist|schema cache/i.test(msg)) return 'People settings are still being switched on for your account. Try again in a few minutes.';
   return msg || 'Could not save.';
@@ -10141,10 +10196,13 @@ function peopleErr(e){
 
 async function loadPeople(){
   if(!currentUser) return agentStakeholders;
-  const { data, error } = await sbClient.from('business_stakeholders').select('*')
-    .eq('business_id', currentUser.id).order('created_at', { ascending:true });
-  if(error){ console.error('[margyn] loadPeople:', error); return agentStakeholders; }
-  agentStakeholders = data || [];
+  const [ppl, dep] = await Promise.all([
+    sbClient.from('business_stakeholders').select('*').eq('business_id', currentUser.id).order('created_at', { ascending:true }),
+    sbClient.from('agent_deployments').select('*').eq('user_id', currentUser.id).eq('agent_id', 'whatsapp_bell').maybeSingle()
+  ]);
+  if(ppl.error) console.error('[margyn] loadPeople:', ppl.error);
+  else agentStakeholders = ppl.data || [];
+  if(!dep.error && dep.data) agentDeployments['whatsapp_bell'] = dep.data;
   return agentStakeholders;
 }
 
@@ -10179,13 +10237,30 @@ async function savePrimaryPerson(name, digits){
   renderPeopleMounts();
 }
 
+/* Chip row. `perms` = current access; `lockCore` greys out ask/act/forward
+   (the primary number always has them). */
+function peopleChipsHtml(perms, opts){
+  opts = opts || {};
+  return '<div class="ppl-perms">' + PEOPLE_PERMS.map(x => {
+    const on = !!perms[x.key];
+    const locked = opts.lockCore && !x.bell;
+    const dim = x.key === 'act' && !perms.ask;
+    return '<button type="button" class="ppl-chip' + (on ? ' on' : '') + (x.bell ? ' bell' : '') + (dim ? ' dim' : '') + '"' +
+      ' data-perm="' + x.key + '" aria-pressed="' + on + '"' + (locked ? ' disabled' : '') +
+      ' title="' + escapeHtml(locked ? 'The primary number always has this' : x.desc) + '">' +
+      (x.bell ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>' : '') +
+      escapeHtml(x.label) + '</button>';
+  }).join('') + '</div>';
+}
+
 function peopleRowHtml(p){
-  const access = peopleHasAccess(p);
+  const perms = peoplePerms(p);
+  const any = PEOPLE_PERMS.some(x => perms[x.key]);
   if(peopleEditingId === p.id){
     const roleOpts = Object.keys(PEOPLE_ROLE_LABEL).map(r =>
       '<option value="' + r + '"' + (p.role === r ? ' selected' : '') + '>' + PEOPLE_ROLE_LABEL[r] + '</option>').join('');
     return '<div class="ppl-row" data-pid="' + p.id + '">' +
-      '<div class="ppl-av' + (access ? ' on' : '') + '">' + escapeHtml(peopleInitials(p.name)) + '</div>' +
+      '<div class="ppl-av' + (any ? ' on' : '') + '">' + escapeHtml(peopleInitials(p.name)) + '</div>' +
       '<div class="ppl-edit" style="grid-column:2 / 5;">' +
         '<input class="ppl-in" data-f="name" value="' + escapeHtml(p.name === 'Owner' && p.is_primary ? '' : p.name) + '" placeholder="Full name">' +
         '<input class="ppl-in mono" data-f="phone" inputmode="numeric" value="' + escapeHtml(waPrettyPhone(p.phone)) + '"' + (p.is_primary ? ' disabled title="Change the primary number from the WhatsApp Bell agent"' : '') + '>' +
@@ -10194,32 +10269,31 @@ function peopleRowHtml(p){
       '<div class="ppl-ctl"><button class="ppl-link" data-act="cancel">Cancel</button><button class="btn-primary" data-act="save" style="padding:8px 14px; font-size:12.5px;">Save</button></div>' +
     '</div>';
   }
-  const tag = p.is_primary ? '<span class="rd-tag ok">Primary</span>'
-    : access ? '<span class="rd-tag ok">Can chat</span>'
-    : '<span class="rd-tag">Routing only</span>';
+  const tag = p.is_primary ? '<span class="rd-tag ok">Primary</span>' : (any ? '' : '<span class="rd-tag">Routing only</span>');
   const n = Number(p.message_count) || 0;
   const act = p.last_message_at
     ? '<b>' + n + '</b> message' + (n === 1 ? '' : 's') + '<br>Last ' + escapeHtml(peopleAgo(p.last_message_at))
-    : (access ? 'No messages yet' : 'Receives forwards only');
+    : ((perms.ask || perms.forward) ? 'No messages yet' : (any ? 'Bells only' : 'Gets routed messages only'));
   const needsName = p.is_primary && (!p.name || p.name === 'Owner');
   return '<div class="ppl-row" data-pid="' + p.id + '">' +
-    '<div class="ppl-av' + (access ? ' on' : '') + '">' + escapeHtml(peopleInitials(needsName ? '?' : p.name)) + '</div>' +
+    '<div class="ppl-av' + (any ? ' on' : '') + '">' + escapeHtml(peopleInitials(needsName ? '?' : p.name)) + '</div>' +
     '<div><div class="ppl-name"><span class="nm">' + (needsName ? '<button class="ppl-link" data-act="edit" style="font-size:13.5px; color:var(--emerald);">Add your name</button>' : escapeHtml(p.name)) + '</span>' + tag + '</div>' +
       '<span class="ppl-role">' + escapeHtml(PEOPLE_ROLE_LABEL[p.role] || p.role) + '</span></div>' +
     '<div class="ppl-phone">' + escapeHtml(waPrettyPhone(p.phone)) + '</div>' +
     '<div class="ppl-act">' + act + '</div>' +
     '<div class="ppl-ctl">' +
-      (p.is_primary ? '' :
-        '<span class="lbl">Chat</span><label class="rd-toggle" title="Can message Margyn for this business"><input type="checkbox" data-act="access"' + (access ? ' checked' : '') + '><span class="track"></span></label>') +
       '<button class="ppl-link" data-act="edit">Edit</button>' +
       (p.is_primary ? '' : '<button class="ppl-link bad" data-act="remove">Remove</button>') +
     '</div>' +
+    '<div class="ppl-perm-line">' + peopleChipsHtml(perms, { lockCore: p.is_primary }) + '</div>' +
   '</div>';
 }
 
 function peopleBlockHtml(){
   const list = agentStakeholders.slice().sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0));
-  const withAccess = list.filter(peopleHasAccess);
+  const permsOf = list.map(peoplePerms);
+  const canAsk = permsOf.filter(x => x.ask).length;
+  const onBells = permsOf.filter(x => x.opening_bell || x.closing_bell).length;
   const weekAgo = Date.now() - 7 * 86400000;
   const activeWeek = list.filter(p => p.last_message_at && new Date(p.last_message_at).getTime() >= weekAgo).length;
   const msgs = list.reduce((t, p) => t + (Number(p.message_count) || 0), 0);
@@ -10227,11 +10301,15 @@ function peopleBlockHtml(){
   const primPhone = currentProfile && currentProfile.whatsapp_phone;
 
   let html = '<div class="ppl-summary">' +
-    '<div><b>' + withAccess.length + '</b>Can chat with Margyn</div>' +
-    '<div><b>' + (list.length - withAccess.length) + '</b>Routing only</div>' +
+    '<div><b>' + canAsk + '</b>Can ask Margyn</div>' +
+    '<div><b>' + onBells + '</b>Get a Bell</div>' +
     '<div><b>' + activeWeek + '</b>Active this week</div>' +
     '<div><b>' + msgs + '</b>Messages to Margyn</div>' +
   '</div>';
+
+  if(!peopleBellDeployed() && list.length){
+    html += '<div class="ppl-banner">Bells go out once the WhatsApp Bell agent is deployed. You can set who gets them now. <button class="ppl-link" data-act="go-bell" style="color:var(--emerald);">Deploy the Bell</button></div>';
+  }
 
   if(!hasPrimary){
     html += '<div class="ppl-note">' + (primPhone
@@ -10256,11 +10334,10 @@ function peopleBlockHtml(){
       '<select class="ppl-in" data-new="role">' + Object.keys(PEOPLE_ROLE_LABEL).map(r => '<option value="' + r + '">' + PEOPLE_ROLE_LABEL[r] + '</option>').join('') + '</select>' +
       '<button class="btn-primary" data-act="add" style="padding:9px 16px; font-size:12.5px;">Add</button>' +
     '</div>' +
-    '<div class="ppl-add-foot">' +
-      '<label class="ppl-check"><input type="checkbox" data-new="access" checked> Can message Margyn for this business</label>' +
-      '<span class="note bad" data-err="add"></span>' +
-    '</div>' +
-    '<div class="ppl-note">A person with chat access sees this business\'s numbers on WhatsApp and can confirm actions Margyn proposes, so only add people you\'d give the app to. 10-digit Indian mobiles get +91 automatically. The Opening and Closing Bell still go to the primary number only.</div>' +
+    '<div class="ppl-add-perms"><span class="ppl-add-lbl">Access</span>' + peopleChipsHtml(PEOPLE_ROLE_DEFAULTS.owner) + '</div>' +
+    '<label class="ppl-check hidden" data-new-consent><input type="checkbox" data-new="consent"> They\'ve agreed to get WhatsApp briefings from Margyn on this number</label>' +
+    '<span class="note bad" data-err="add"></span>' +
+    '<div class="ppl-note"><b>Ask</b> lets them see this business\'s numbers on WhatsApp. <b>Act</b> lets them confirm changes like marking a bill paid. <b>Forward</b> lets them send in invoices and bills. The Bells go to anyone you tick. 10-digit Indian mobiles get +91 automatically.</div>' +
   '</div>';
   return html;
 }
@@ -10275,30 +10352,98 @@ function renderPeopleMounts(reload){
   }
   hosts.forEach(h => {
     h.innerHTML = peopleBlockHtml();
-    if(!h.dataset.pplBound){ h.addEventListener('click', peopleOnClick); h.addEventListener('change', peopleOnChange); h.dataset.pplBound = '1'; }
+    if(!h.dataset.pplBound){
+      h.addEventListener('click', peopleOnClick);
+      h.addEventListener('change', peopleOnAddRoleChange);
+      h.dataset.pplBound = '1';
+    }
   });
   if(document.getElementById('waStkList')) renderStakeholderList();
 }
 
-async function peopleOnChange(e){
-  const t = e.target;
-  if(t.getAttribute('data-act') !== 'access') return;
-  const id = t.closest('[data-pid]').getAttribute('data-pid');
-  const on = t.checked;
-  const { data, error } = await sbClient.from('business_stakeholders').update({ whatsapp_access: on }).eq('id', id).select().single();
-  if(error){ t.checked = !on; toast('Could not change access', { kind:'bad', sub: peopleErr(error) }); return; }
+/* Role picked in the add form -> reset the access chips to that role's defaults. */
+function peopleOnAddRoleChange(e){
+  if(e.target.getAttribute('data-new') !== 'role') return;
+  const host = e.currentTarget;
+  const wrap = host.querySelector('.ppl-add-perms .ppl-perms');
+  if(wrap) wrap.outerHTML = peopleChipsHtml(PEOPLE_ROLE_DEFAULTS[e.target.value] || {});
+  peopleSyncAddConsent(host);
+}
+function peopleAddPerms(host){
+  const perms = {};
+  host.querySelectorAll('.ppl-add-perms [data-perm]').forEach(b => { perms[b.getAttribute('data-perm')] = b.classList.contains('on'); });
+  if(!perms.ask) perms.act = false;
+  return perms;
+}
+function peopleSyncAddConsent(host){
+  const p = peopleAddPerms(host);
+  const c = host.querySelector('[data-new-consent]');
+  if(c) c.classList.toggle('hidden', !(p.opening_bell || p.closing_bell));
+}
+
+/* One chip on an existing person. */
+async function peopleTogglePerm(id, key){
+  const cur = agentStakeholders.find(p => p.id === id); if(!cur) return;
+  const perms = peoplePerms(cur);
+  const next = !perms[key];
+
+  // Primary number: only the Bells are editable, and they ARE the Bell
+  // agent's frequency.
+  if(cur.is_primary){
+    if(!peopleBellDeployed()){ startWhatsappDeploy(); return; }
+    const want = { ...perms, [key]: next };
+    const freq = want.opening_bell && want.closing_bell ? 'both' : want.opening_bell ? 'opening' : want.closing_bell ? 'closing' : 'none';
+    const dep = agentDeployments['whatsapp_bell'];
+    const config = { ...(dep.config || {}), frequency: freq, updated_from: 'people' };
+    const { error } = await sbClient.from('agent_deployments').update({ config: config, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id).eq('agent_id', 'whatsapp_bell');
+    if(error){ toast('Could not change the Bell', { kind:'bad', sub: peopleErr(error) }); return; }
+    dep.config = config;
+    renderPeopleMounts();
+    return;
+  }
+
+  const def = PEOPLE_PERMS.find(x => x.key === key);
+  const patch = {};
+  if(def.bell && next && !cur.bell_consent_at){
+    if(!confirm('Has ' + cur.name + ' agreed to get WhatsApp briefings from Margyn on ' + waPrettyPhone(cur.phone) + '? WhatsApp requires their opt-in before we send.')) return;
+    patch.bell_consent_at = new Date().toISOString();
+  }
+  const perms2 = { ...perms, [key]: next };
+  if(key === 'ask' && !next) perms2.act = false;     // Act needs Ask
+  if(key === 'act' && next) perms2.ask = true;
+  patch.permissions = { ask:!!perms2.ask, act:!!perms2.act, forward:!!perms2.forward, opening_bell:!!perms2.opening_bell, closing_bell:!!perms2.closing_bell };
+  patch.whatsapp_access = !!(perms2.ask || perms2.forward);
+  const { data, error } = await sbClient.from('business_stakeholders').update(patch).eq('id', id).select().single();
+  if(error){ toast('Could not change access', { kind:'bad', sub: peopleErr(error) }); return; }
   agentStakeholders = agentStakeholders.map(p => p.id === id ? data : p);
-  toast(on ? data.name + ' can now message Margyn' : data.name + ' can no longer message Margyn');
   renderPeopleMounts();
 }
 
 async function peopleOnClick(e){
-  const btn = e.target.closest('[data-act]'); if(!btn || btn.getAttribute('data-act') === 'access') return;
   const host = e.currentTarget;
+  const chip = e.target.closest('[data-perm]');
+  if(chip && !chip.disabled){
+    const row = chip.closest('[data-pid]');
+    if(row){ await peopleTogglePerm(row.getAttribute('data-pid'), chip.getAttribute('data-perm')); return; }
+    // add form: local toggle only, saved with Add
+    chip.classList.toggle('on');
+    const k = chip.getAttribute('data-perm');
+    const wrap = chip.parentElement;
+    if(k === 'ask' && !chip.classList.contains('on')) wrap.querySelector('[data-perm="act"]').classList.remove('on');
+    if(k === 'act' && chip.classList.contains('on')) wrap.querySelector('[data-perm="ask"]').classList.add('on');
+    wrap.querySelector('[data-perm="act"]').classList.toggle('dim', !wrap.querySelector('[data-perm="ask"]').classList.contains('on'));
+    wrap.querySelectorAll('[data-perm]').forEach(b => b.setAttribute('aria-pressed', b.classList.contains('on')));
+    peopleSyncAddConsent(host);
+    return;
+  }
+
+  const btn = e.target.closest('[data-act]'); if(!btn) return;
   const act = btn.getAttribute('data-act');
   const row = btn.closest('[data-pid]');
   const id = row && row.getAttribute('data-pid');
 
+  if(act === 'go-bell'){ showView('agents'); return; }
   if(act === 'edit'){ peopleEditingId = id; renderPeopleMounts(); return; }
   if(act === 'cancel'){ peopleEditingId = null; renderPeopleMounts(); return; }
 
@@ -10312,6 +10457,8 @@ async function peopleOnClick(e){
       const { digits, error: phErr } = waNormalizeMobile(row.querySelector('[data-f="phone"]').value);
       if(phErr){ toast('Check the number', { kind:'bad', sub: phErr }); return; }
       patch.phone = digits;
+      // A new number is a new person as far as WhatsApp opt-in goes.
+      if(digits !== cur.phone) patch.bell_consent_at = null;
     }
     btn.disabled = true;
     const { data, error } = await sbClient.from('business_stakeholders').update(patch).eq('id', id).select().single();
@@ -10325,7 +10472,7 @@ async function peopleOnClick(e){
 
   if(act === 'remove'){
     const cur = agentStakeholders.find(p => p.id === id); if(!cur) return;
-    if(!confirm('Remove ' + cur.name + ' from this account? They will no longer be able to message Margyn or receive routed messages.')) return;
+    if(!confirm('Remove ' + cur.name + ' from this account? They will no longer be able to message Margyn, get the Bells, or receive routed messages.')) return;
     const { error } = await sbClient.from('business_stakeholders').delete().eq('id', id);
     if(error){ toast('Could not remove', { kind:'bad', sub: peopleErr(error) }); return; }
     agentStakeholders = agentStakeholders.filter(p => p.id !== id);
@@ -10349,19 +10496,24 @@ async function peopleOnClick(e){
     const err = host.querySelector('[data-err="add"]'); err.textContent = '';
     const name = host.querySelector('[data-new="name"]').value.trim();
     const role = host.querySelector('[data-new="role"]').value;
-    const access = host.querySelector('[data-new="access"]').checked;
+    const perms = peopleAddPerms(host);
+    const wantsBell = perms.opening_bell || perms.closing_bell;
     const { digits, error: phErr } = waNormalizeMobile(host.querySelector('[data-new="phone"]').value);
     if(!name){ err.textContent = 'Name is required.'; return; }
     if(phErr){ err.textContent = phErr; return; }
     if(currentProfile && currentProfile.whatsapp_phone === digits){ err.textContent = 'That is already the primary number.'; return; }
     if(agentStakeholders.some(p => p.phone === digits)){ err.textContent = 'That number is already on the list. Edit it instead.'; return; }
+    if(wantsBell && !host.querySelector('[data-new="consent"]').checked){ err.textContent = 'Tick the consent box to send them the Bells, or untick the Bells.'; return; }
     btn.disabled = true;
     const { data, error } = await sbClient.from('business_stakeholders')
-      .insert({ business_id: currentUser.id, name: name, phone: digits, role: role, whatsapp_access: access }).select().single();
+      .insert({ business_id: currentUser.id, name: name, phone: digits, role: role,
+        permissions: perms, whatsapp_access: !!(perms.ask || perms.forward),
+        bell_consent_at: wantsBell ? new Date().toISOString() : null }).select().single();
     btn.disabled = false;
     if(error){ err.textContent = peopleErr(error); return; }
     agentStakeholders.push(data);
-    toast(name + ' added', { sub: access ? 'They can message Margyn now. Margyn will greet them by name.' : 'Routing only. Turn on Chat to let them message Margyn.' });
+    const can = PEOPLE_PERMS.filter(x => perms[x.key]).map(x => x.label);
+    toast(name + ' added', { sub: can.length ? 'Access: ' + can.join(', ') + '.' : 'Routing only. Tap a chip to give them access.' });
     renderPeopleMounts();
   }
 }
