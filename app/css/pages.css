@@ -181,3 +181,9 @@
 @media (max-width:600px){ .mg-field{ grid-template-columns:1fr; } }
 .mg-dl b.txt{ font-family:var(--font-ui); font-size:var(--f14); }
 .mg-dl > div:last-child:nth-child(odd){ grid-column:1 / -1; }
+
+/* Cash page (19d-cash.js) */
+.mg-grid tr.mg-cash-src td{ font-weight:600; background:var(--g25); }
+.mg-grid tr.mg-cash-acct td:nth-child(2){ padding-left:24px; }
+.mg-grid tr.mg-muted-row td{ color:var(--g500); }
+.mg-panel-h.mg-sub-h{ border-top:1px solid var(--g100); }

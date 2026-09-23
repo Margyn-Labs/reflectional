@@ -22,21 +22,53 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/Tally/.test(await p.textContent('#view-books .mg-scopeline')), 'page scope line says Tally');
 
   // 2. rail click updates URL, back button returns
-  await p.click('.pagenav button[data-view="payments"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/cash'), 'rail click Cash -> #/cash (' + p.url().split('#')[1] + ')');
+  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/cash') && JSON.stringify(await vis()) === '["view-cash"]', 'rail click Cash -> #/cash, the new Cash page (' + p.url().split('#')[1] + ')');
   await p.goBack(); await p.waitForTimeout(400);
   ok(JSON.stringify(await vis()) === '["view-books"]' && p.url().includes('#/ledger?src=tally'), 'Back returns to Ledger/Tally');
 
-  // 3. Scope bar source switch on Payments drives the page's own tabs
-  await p.click('.pagenav button[data-view="payments"]'); await p.waitForTimeout(300);
+  // 3. Scope bar source switch on Payment gateways (Cash -> Payment gateways) drives the page's own tabs
+  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(300);
+  await p.click('#view-cash .mg-ph-actions [data-go-page="payments"]'); await p.waitForTimeout(300);
+  ok(JSON.stringify(await vis()) === '["view-payments"]' && p.url().endsWith('#/payment-gateways'), 'Cash -> Payment gateways opens the old Payments view');
+  ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="cash"]').classList.contains('active')), 'Payment gateways keeps Cash lit in the rail');
   await p.click('#mgSrcBtn'); await p.waitForTimeout(150);
   ok(await p.isVisible('#mgSrcPop'), 'Sources menu opens');
   const opts = await p.$$eval('#mgSrcPop [data-mg-src]', x => x.map(e => e.dataset.mgSrc));
   ok(opts.join() === 'all,razorpay,cashfree', 'Payments sources listed: ' + opts);
   await p.click('#mgSrcPop [data-mg-src="razorpay"]'); await p.waitForTimeout(300);
   ok(await p.evaluate(() => paymentsActiveSource) === 'razorpay', 'picking Razorpay sets paymentsActiveSource');
-  ok(p.url().endsWith('#/cash?src=razorpay'), 'URL carries src=razorpay');
+  ok(p.url().endsWith('#/payment-gateways?src=razorpay'), 'URL carries src=razorpay');
   ok(!(await p.isVisible('#mgSrcPop')), 'menu closes after choice');
+
+  // 3b. Cash page: sources side by side, Tally ledgers one by one, forecast table, settlements
+  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
+  ok((await p.$$('#view-cash .mg-tile')).length === 4, 'Cash has 4 tiles');
+  const cashTiles = await p.$$eval('#view-cash .mg-tile-l', x => x.map(e => e.textContent));
+  ok(cashTiles.join('|') === 'Cash (reconciled)|In transit|Runway|Lowest point in 13 weeks', 'Cash tiles: ' + cashTiles.join(' | '));
+  ok(/₹[\d.]+ (Cr|L)/.test(await p.textContent('#view-cash .mg-tile:nth-child(2) .mg-tile-v')), 'In transit has a figure: ' + await p.textContent('#view-cash .mg-tile:nth-child(2) .mg-tile-v'));
+  const tallyAccts = await p.$$eval('#mgCashWhere tr[data-cash-acct="tally"] td:nth-child(2)', x => x.map(e => e.textContent));
+  ok(tallyAccts.length === 3 && /HDFC Bank CA 0021/.test(tallyAccts.join('|')) && !/OD/.test(tallyAccts.join('|')), 'Tally bank and cash ledgers listed one by one, OD excluded: ' + tallyAccts.join(' | '));
+  ok(/HDFC OD A\/c 5512/.test(await p.textContent('#mgCashBorrow')), 'OD ledger listed under Borrowing');
+  const where = await p.textContent('#mgCashWhere');
+  ok(!(await p.$('#mgCashWhere tfoot')) && !/Total/i.test(where), 'no total row across sources');
+  ok(/Zoho Books/.test(where) && /Razorpay/.test(where) && /Settled, on its way to your bank/.test(where) && /Captured, not yet settled/.test(where), 'Zoho, Tally and both Razorpay in-transit lines shown');
+  ok(/Coming via Account Aggregator/.test(where), 'bank feed row is honest: coming via Account Aggregator');
+  ok((await p.$$('#mgCashWhere tr[data-cash-src="tally"] .mg-bdg.pos')).length === 1, 'Tally balance agrees with reconciled cash (badge)');
+  ok((await p.$$('#mgFcTable tbody tr')).length === 13, 'forecast table has 13 weeks');
+  ok((await p.$$('#mgCashSettle tbody tr')).length === 12 && /Pending/.test(await p.textContent('#mgCashSettle')), 'settlements grid with status (one pending)');
+  ok(!(await p.$('#view-cash [data-idx]')) && !/Mark as settled/.test(await p.textContent('#view-cash')), 'no settle toggle on Cash (it is session-only)');
+  await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(200);
+  await p.fill('.mg-drawer input[data-fc="collectDelay"]', '40'); await p.waitForTimeout(250);
+  ok(/pay 40 days after/.test(await p.textContent('#view-cash')), 'Adjust from Cash updates the Cash forecast');
+  await p.click('.mg-drawer [data-fc-reset]'); await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+  await p.click('#mgSrcBtn'); await p.waitForTimeout(150);
+  const cashOpts = await p.$$eval('#mgSrcPop [data-mg-src]', x => x.map(e => e.dataset.mgSrc));
+  ok(cashOpts.join() === 'reconciled,zoho,tally,razorpay', 'Cash sources in the Scope bar: ' + cashOpts);
+  await p.click('#mgSrcPop [data-mg-src="tally"]'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/cash?src=tally') && !/Zoho Books/.test(await p.textContent('#mgCashWhere')) && (await p.textContent('#mgSrcVal')) === 'Tally', 'Scope bar Tally: Cash shows Tally only');
+  await p.click('#mgSrcBtn'); await p.click('#mgSrcPop [data-mg-src="reconciled"]'); await p.waitForTimeout(200);
+  ok(await p.evaluate(() => cmdkBuild('payment gateways').some(i => i.label === 'Payment gateways')), '⌘K still finds Payment gateways');
 
   // 4. Home: reconciled only, Sources menu explains and lists source health
   await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(300);

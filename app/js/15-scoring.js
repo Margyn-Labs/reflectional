@@ -149,6 +149,15 @@ function zohoInputCandidates(){
 const TALLY_LIQUID_GROUP = /(bank account|cash-?in-?hand|cash in hand)/i;
 const TALLY_BORROW_GROUP = /(\bo\/?d\b|overdraft|occ|cash credit|loan)/i;
 function tallyCashBalance(){
+  const t = tallyLiquidLedgers();
+  if(!t.liquid.length) return null;
+  const total = t.liquid.reduce((sum, x) => sum + x.balance, 0);
+  return { total, count: t.liquid.length, inverted: t.inverted };
+}
+/* The ledgers behind tallyCashBalance(), one by one, with the same sign
+   correction, plus borrowing ledgers (OD / cash credit / loans), which are
+   never cash. The Cash page lists these, so it can't disagree with the score. */
+function tallyLiquidLedgers(){
   const items = (tallyData && tallyData.ledgers && tallyData.ledgers.items) || [];
   const liquid = items.filter(x =>
     x.closing_balance != null &&
@@ -156,13 +165,20 @@ function tallyCashBalance(){
     !TALLY_BORROW_GROUP.test(String(x.parent || '')) &&
     !TALLY_BORROW_GROUP.test(String(x.name || ''))
   );
-  if(!liquid.length) return null;
   let pos = 0, neg = 0;
   liquid.forEach(x => { const n = Number(x.closing_balance) || 0; if(n > 0) pos++; else if(n < 0) neg++; });
   // whichever sign most liquidity ledgers carry is the "in credit" direction
   const sign = neg > pos ? -1 : 1;
-  const total = liquid.reduce((sum, x) => sum + ((Number(x.closing_balance) || 0) * sign), 0);
-  return { total, count: liquid.length, inverted: sign === -1 };
+  const borrow = items.filter(x =>
+    x.closing_balance != null && !/asset/i.test(String(x.parent || '')) &&
+    (TALLY_BORROW_GROUP.test(String(x.parent || '')) || (TALLY_LIQUID_GROUP.test(String(x.parent || '')) && TALLY_BORROW_GROUP.test(String(x.name || ''))))
+  );
+  return {
+    liquid: liquid.map(x => ({ name: x.name, parent: x.parent, balance: (Number(x.closing_balance) || 0) * sign })),
+    // shown as an amount owed: positive = owed to the bank
+    borrow: borrow.map(x => ({ name: x.name, parent: x.parent, balance: Math.abs(Number(x.closing_balance) || 0) })),
+    inverted: sign === -1
+  };
 }
 
 function tallyInputCandidates(){

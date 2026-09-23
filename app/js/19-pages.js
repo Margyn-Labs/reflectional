@@ -183,7 +183,7 @@ function mgRenderHome(){
   const runway = mgVital(s, 'Working Capital Runway'), runwayP = mgVital(p, 'Working Capital Runway');
   const rNow = runway ? parseFloat(runway.value) : null, rPrev = runwayP ? parseFloat(runwayP.value) : null;
   const tiles = !s ? '' : '<div class="mg-tiles">' +
-    mgTile({ label:'Cash', value:fmtINR(s.cash, 'tile'), full:fmtINR(s.cash), delta:p ? mgPct(Number(s.cash), Number(p.cash)) : null, goodUp:true, src:srcLine, go:'payments' }) +
+    mgTile({ label:'Cash', value:fmtINR(s.cash, 'tile'), full:fmtINR(s.cash), delta:p ? mgPct(Number(s.cash), Number(p.cash)) : null, goodUp:true, src:srcLine, go:'cash' }) +
     mgTile({ label:'Runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less payables due, over monthly spend',
       delta:(rNow != null && rPrev != null) ? rNow - rPrev : null, deltaText:(rNow != null && rPrev != null) ? Math.abs(rNow - rPrev).toFixed(1) + ' months' : '', goodUp:true, src:srcLine, go:'pulse' }) +
     mgTile({ label:'Receivables overdue', value:fmtINR(overdue, 'tile'), full:fmtINR(overdue), delta:null, note:nOver + ' customer' + (nOver === 1 ? '' : 's') + ' overdue', goodUp:false, src:srcLine, go:'receivables' }) +
@@ -379,7 +379,8 @@ function mgRenderNotifications(){
 /* ---------- page registry + events ---------- */
 const MG_OWN_RENDER = {
   home:mgRenderHome, receivables:() => mgRenderMoney('recv'), payables:() => mgRenderMoney('pay'),
-  customers:() => mgRenderParties('recv'), vendors:() => mgRenderParties('pay'), gst:mgRenderGst, audit:mgRenderAudit
+  customers:() => mgRenderParties('recv'), vendors:() => mgRenderParties('pay'), gst:mgRenderGst, audit:mgRenderAudit,
+  cash:() => mgRenderCash()
 };
 function mgRenderOwn(page){ const f = MG_OWN_RENDER[page]; if(f){ try { f(); } catch(e){ console.error('[margyn] render ' + page, e); } } }
 document.addEventListener('click', async e => {

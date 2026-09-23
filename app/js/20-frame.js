@@ -15,7 +15,8 @@
 const MG_PAGES = {
   home:{ slug:'home', own:true, group:'Overview', label:'Home' },
   inbox:{ slug:'inbox', base:'agents', group:'Overview', label:'Inbox', sub:'Everything waiting on your decision: agent proposals, payments to confirm and forwarded documents. Nothing is applied until you approve it.' },
-  payments:{ slug:'cash', base:'payments', group:'Money', label:'Cash', sub:'Settlements, fees and failed payments from your payment gateways.' },
+  cash:{ slug:'cash', own:true, group:'Money', label:'Cash' },
+  payments:{ slug:'payment-gateways', base:'payments', group:'Money', label:'Payment gateways', parent:'cash', sub:'Settlements, fees and failed payments from your payment gateways. Part of Cash.' },
   receivables:{ slug:'receivables', own:true, group:'Money', label:'Receivables' },
   payables:{ slug:'payables', own:true, group:'Money', label:'Payables' },
   gst:{ slug:'gst', own:true, group:'Money', label:'GST and tax' },
@@ -82,6 +83,7 @@ function mgSourceOptions(page){
 }
 function mgCurrentSource(page){
   if(MG_MONEY[page]) return mgMoneySrc;
+  if(page === 'cash') return mgCashMode();
   const cfg = MG_SRC[page]; if(!cfg) return null;
   try { return cfg.get(); } catch(e){ return 'all'; }
 }
@@ -92,6 +94,7 @@ function mgSetSource(page, key){
     if((page === 'customers' || page === 'vendors') && key !== 'reconciled'){ mgGo(page === 'customers' ? 'receivables' : 'payables'); return; }
     mgRenderOwn(page); mgRefreshScope(); mgWriteHash(false); return;
   }
+  if(page === 'cash'){ mgCashSrc = key; mgRenderOwn('cash'); mgRefreshScope(); mgWriteHash(false); return; }
   const cfg = MG_SRC[page]; if(!cfg) return;
   const b = document.querySelector(cfg.tabs + ' button[data-src="' + key + '"]');
   if(b) b.click(); // the page's own handler sets its state and re-renders
@@ -142,6 +145,8 @@ function mgScopeParts(page){
   } else if(MG_SRC[page]){
     const opts = mgSourceOptions(page);
     if(opts.length){ enabled = true; srcLabel = MG_SRC_LABEL[mgCurrentSource(page)] || mgCurrentSource(page); }
+  } else if(page === 'cash'){
+    enabled = true; const m = mgCashMode(); srcLabel = m === 'reconciled' ? 'Reconciled' : MG_CASH_SRC_NAME[m];
   } else if(page === 'home'){ enabled = true; }
   ['razorpay', 'cashfree', 'zoho', 'tally', 'odoo', 'shopify'].forEach(k => { const h = mgSourceHealth(k); if(h.on && h.warn) warn = true; });
   return { srcLabel, perLabel, enabled, warn };
@@ -164,6 +169,13 @@ function mgSourcesMenu(page){
       mgOptHtml('data-mg-src', 'compare', 'Compare', 'Source against source, side by side', '', cur === 'compare') +
       '<div class="mg-sep"></div><h6>Single source</h6>' +
       (mgMoneySources(dir).map(k => mgOptHtml('data-mg-src', k, MG_SRC_NAME[k], '', mgSourceHealth(k).text, cur === k, mgSourceHealth(k).warn, mgLogo(k))).join('') || '<div class="mg-note">No source has open items yet.</div>');
+  }
+  if(page === 'cash'){
+    const cur = mgCashMode();
+    return '<h6>How to view the data</h6>' +
+      mgOptHtml('data-mg-src', 'reconciled', 'Reconciled', 'Every source side by side, never added together', '', cur === 'reconciled') +
+      '<div class="mg-sep"></div><h6>Single source</h6>' +
+      (mgCashSourceOptions().map(k => mgOptHtml('data-mg-src', k, MG_CASH_SRC_NAME[k], '', k === 'manual' ? 'Entered by you' : mgSourceHealth(k).text, cur === k, mgSourceHealth(k).warn, mgLogo(k))).join('') || '<div class="mg-note">No cash source is connected yet.</div>');
   }
   if(MG_SRC[page]){
     const cur = mgCurrentSource(page);
@@ -265,7 +277,8 @@ showView = function(name){
     if(page === 'agents' && agentsActiveTab === 'queue') page = 'inbox';
     if(page === 'people') setTimeout(() => { const m = document.getElementById('setPeopleMount'); if(m) m.scrollIntoView({ block:'start' }); }, 60);
   }
-  document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === page));
+  const railKey = (MG_PAGES[page] && MG_PAGES[page].parent) || page;   // Payment gateways lights up Cash
+  document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === railKey));
   const changed = page !== mgCurrentView;
   mgCurrentView = page;
   mgCloseRail(); mgCloseAllPops(); mgRefreshScope();
@@ -315,6 +328,7 @@ function mgApplyRoute(){
   mgApplying = true;
   try {
     if(MG_MONEY[page]) mgMoneySrc = r.src || 'reconciled';
+    if(page === 'cash') mgCashSrc = r.src || 'reconciled';
     if(page === 'agents') agentsActiveTab = 'roster';
     showView(page);
     if(MG_SRC[page]){
