@@ -260,7 +260,10 @@ async function gupshupSendButtons({ to, text, buttons }) {
     message: JSON.stringify({
       type: 'quick_reply',
       content: { type: 'text', text: String(text || '').slice(0, 1024) },
-      options: (buttons || []).map(b => ({ type: 'text', title: String(b.title || '').slice(0, 20), id: b.id }))
+      // postbackText is the field Gupshup echoes back on the tap; without it
+      // the reply arrives looking like plain text ("Confirm ✅") and never
+      // reaches the pending-action handler (2026-09-23 loop bug).
+      options: (buttons || []).map(b => ({ type: 'text', title: String(b.title || '').slice(0, 20), postbackText: b.id, id: b.id }))
     })
   });
 
@@ -329,15 +332,18 @@ function gupshupParseInboundEvent(payload) {
   // hasn't been tested against a real Gupshup account in this build.
   if (!payload || payload.type !== 'message') return null;
   const p = payload.payload;
-  if (!p || p.type !== 'button_reply') return null;
+  // Template quick-replies arrive as button_reply; session quick_reply
+  // buttons (sendButtons) arrive as quick_reply. Accept both shapes.
+  if (!p || !['button_reply', 'quick_reply', 'button', 'interactive'].includes(p.type)) return null;
 
   const btn = p.payload || {};
   return {
     from: p.sender && p.sender.phone || p.source,
-    buttonId: btn.id || '',
-    buttonText: btn.title || '',
+    buttonId: btn.id || btn.postbackText || btn.reply || '',
+    buttonText: btn.title || btn.text || '',
     wamid: p.id,
     contextMessageId: (p.context && p.context.id) || null,
+    contextGsId: (p.context && p.context.gsId) || null,
     timestampMs: payload.timestamp || Date.now()
   };
 }
@@ -385,6 +391,7 @@ function gupshupParseInboundText(payload) {
     text: body.text || '',
     wamid: p.id,
     contextMessageId: (p.context && p.context.id) || null,
+    contextGsId: (p.context && p.context.gsId) || null,
     timestampMs: payload.timestamp || Date.now()
   };
 }

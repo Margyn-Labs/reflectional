@@ -144,20 +144,11 @@ async function handleWebhookEvent(req, res) {
     // button_reply events. Check for a matching pending action FIRST, by
     // the message it's replying to, before falling into the "any button
     // reply is a Closing Bell reply" assumption below.
-    const pending = await marginActions.findPendingAction(matches[0].id, event.contextMessageId);
+    const decision = actionDecision(event.buttonId + ' ' + (event.buttonText || ''));
+    let pending = await marginActions.findPendingAction(matches[0].id, [event.contextMessageId, event.contextGsId]);
+    if (!pending && decision) pending = await marginActions.findLatestPendingAction(matches[0].id);
     if (pending) {
-      const confirmed = /confirm/i.test(event.buttonId) || /confirm/i.test(event.buttonText || '');
-      const cancelled = /cancel/i.test(event.buttonId) || /cancel/i.test(event.buttonText || '');
-      const result = await marginActions.resolvePendingAction(pending, confirmed && !cancelled);
-      const replyText = !confirmed && !cancelled
-        ? "Didn't recognize that reply — tap Confirm or Cancel on the message above."
-        : result.executed
-          ? 'Done.'
-          : result.ok
-            ? 'Cancelled — nothing changed.'
-            : "That didn't go through: " + (result.error || 'unknown error') + '. Try again from the app.';
-      await bsp.sendText({ to: event.from, text: replyText });
-      track(matches[0].id, 'whatsapp_action_resolved', { type: pending.action_type, confirmed: !!(confirmed && !cancelled) });
+      await resolveActionReply(matches[0].id, event.from, pending, decision);
       res.status(200).json({ received: true, action: true });
       return;
     }
@@ -410,6 +401,21 @@ async function handleConversationalInbound(res, textEvent) {
     return;
   }
 
+  // A tapped Confirm/Cancel can arrive as a plain text message carrying the
+  // button's label. It answers the pending action and must never reach the
+  // agent, which would just propose the action again (2026-09-23 loop bug).
+  // Only an exact button label counts: a typed "yes" or "ok" never writes.
+  const decision = buttonLabelDecision(textEvent.text);
+  if (decision) {
+    let pending = await marginActions.findPendingAction(matches[0].id, [textEvent.contextMessageId, textEvent.contextGsId]);
+    if (!pending) pending = await marginActions.findLatestPendingAction(matches[0].id);
+    if (pending) {
+      await resolveActionReply(matches[0].id, textEvent.from, pending, decision);
+      if (!res.headersSent) res.status(200).json({ received: true, action: true });
+      return;
+    }
+  }
+
   try {
     await runConversation({
       profileId: matches[0].id,
@@ -426,6 +432,38 @@ async function handleConversationalInbound(res, textEvent) {
   }
 
   if (!res.headersSent) res.status(200).json({ received: true, conversational: true });
+}
+
+/** Text messages: only the exact labels sendButtons uses (emoji optional). */
+function buttonLabelDecision(text) {
+  const t = String(text || '').replace(/[\u2705\u274C\u2714\u2716\uFE0F]/g, '').trim().toLowerCase();
+  if (t === 'confirm') return 'confirm';
+  if (t === 'cancel') return 'cancel';
+  return null;
+}
+
+/** Button events: 'confirm' | 'cancel' | null from the button id/title. */
+function actionDecision(text) {
+  const t = String(text || '').toLowerCase().replace(/[^a-z ]/g, ' ').trim();
+  if (!t || t.split(/\s+/).length > 3) return null;
+  if (/\b(cancel|no|stop)\b/.test(t)) return 'cancel';
+  if (/\b(confirm|confirmed|yes|approve|ok|okay)\b/.test(t)) return 'confirm';
+  return null;
+}
+
+async function resolveActionReply(userId, from, pending, decision) {
+  if (!decision) {
+    await bsp.sendText({ to: from, text: "Didn't recognize that reply. Tap Confirm or Cancel on the message above." });
+    return;
+  }
+  const result = await marginActions.resolvePendingAction(pending, decision === 'confirm');
+  const replyText = result.executed
+    ? 'Done ✅' + (pending.human_summary ? '\n' + pending.human_summary : '')
+    : result.ok
+      ? 'Cancelled. Nothing changed.'
+      : "That didn't go through: " + (result.error || 'unknown error') + '. Try again from the app.';
+  await bsp.sendText({ to: from, text: replyText.trim() });
+  track(userId, 'whatsapp_action_resolved', { type: pending.action_type, confirmed: decision === 'confirm', ok: !!result.ok });
 }
 
 function normalizePhone(phone) {
