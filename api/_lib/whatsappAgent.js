@@ -313,13 +313,15 @@ async function handleProposal(p, { profileId, fromPhone, textOut }) {
 
   const sendRes = await bsp.sendButtons({
     to: fromPhone,
-    text: summary,
+    // Say plainly that nothing has happened yet: the bare summary ("Mark X as
+    // paid.") read as if it were already done (VP feedback 2026-09-23).
+    text: 'Waiting for your OK. Tap Confirm and I will:\n' + summary,
     buttons: [{ id: 'confirm', title: 'Confirm ✅' }, { id: 'cancel', title: 'Cancel ❌' }]
   });
 
   if (!sendRes.ok) {
     console.error('[whatsappAgent] sendButtons failed:', sendRes.error);
-    await sendReply(fromPhone, summary + "\n\n(Couldn't attach a confirm button here — reply back to have Margyn ask again, or use the app.)");
+    await sendReply(fromPhone, 'Not done yet: ' + summary + "\n\nI couldn't attach a Confirm button here. Ask me again, or do it from the app.");
     return;
   }
 
