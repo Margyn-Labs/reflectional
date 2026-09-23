@@ -12,6 +12,11 @@
  *                                                             ops_reader via OPS_METRICS_JWT
  *   POST /api/ops?action=waitlist              (public)       marketing-site waitlist signup
  *                                                             (served at /api/waitlist via rewrite)
+ *   GET  /api/ops?action=cron-cfo-pack         (CRON_SECRET)  daily: email the monthly CFO pack to
+ *                                                             accounts whose day has come
+ *                                                             (&user_id=<id> one account, &force=1 ignore the day)
+ *   POST /api/ops?action=cfo-pack-test         (user JWT)     email the pack to the signed-in user only
+ *                                                             (see api/_lib/cfoPack.js)
  *
  * AUTH
  *   - track: the partner user's own Supabase JWT (Authorization: Bearer ...).
@@ -38,6 +43,7 @@ const {
 } = require('./_lib/supabaseRest');
 const { track, ALLOWED_NAMES } = require('./_lib/track');
 const waitlist = require('./_lib/waitlist');
+const cfoPack = require('./_lib/cfoPack');
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -523,6 +529,40 @@ module.exports = async (req, res) => {
   // ---- waitlist: public marketing-site signup (reached via the
   // /api/waitlist rewrite in vercel.json; handler in _lib/waitlist.js) ----
   if (action === 'waitlist') return waitlist(req, res);
+
+  // ---- CFO pack: daily cron (CRON_SECRET) and a user's own test send ----
+  if (action === 'cron-cfo-pack') {
+    const expected = process.env.CRON_SECRET;
+    if (!expected) { res.status(500).json({ error: 'CRON_SECRET not configured' }); return; }
+    const authValid = req.headers['authorization'] === `Bearer ${expected}` || (req.query && req.query.cron_secret === expected);
+    if (!authValid) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    try {
+      const out = await cfoPack.runCron({ selectRows, insertRows, fetch }, {
+        userId: req.query.user_id || null, force: req.query.force === '1'
+      });
+      console.log('[cfo-pack] cron', JSON.stringify(out));
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(out);
+    } catch (err) {
+      console.error('[cfo-pack] cron failed:', err && err.message);
+      res.status(500).json({ error: 'cfo pack cron failed' });
+    }
+    return;
+  }
+  if (action === 'cfo-pack-test') {
+    if (req.method !== 'POST') { notFound(res); return; }
+    try {
+      const user = await getUserFromRequest(req);
+      if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const r = await cfoPack.sendTest({ selectRows, insertRows, fetch }, { user, period: body.period });
+      res.status(r.status).json(r.body);
+    } catch (err) {
+      console.error('[cfo-pack] test failed:', err && err.message);
+      res.status(500).json({ error: 'Could not send the test email.' });
+    }
+    return;
+  }
 
   // ---- everything else: founder allowlist, 404 if not ----
   const gate = await isOpsAdmin(req);

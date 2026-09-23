@@ -187,3 +187,27 @@
 .mg-grid tr.mg-cash-acct td:nth-child(2){ padding-left:24px; }
 .mg-grid tr.mg-muted-row td{ color:var(--g500); }
 .mg-panel-h.mg-sub-h{ border-top:1px solid var(--g100); }
+
+/* CFO pack (19e-cfopack.js): the document itself is styled by MG_PACK_CSS, shared with the PDF */
+.mg-pk-month{ display:inline-flex; align-items:center; gap:8px; font-size:var(--f13); color:var(--g600); }
+.mg-pk-month select, .mg-drawer select{ font:inherit; font-size:var(--f13); color:var(--g900); border:1px solid var(--g200); border-radius:6px; padding:6px 8px; background:#fff; }
+.mg-pk-strip{ margin-bottom:16px; }
+.mg-pk-strip .mg-li{ border-bottom:0; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.mg-pk-paper{ background:#fff; border:1px solid var(--g200); border-radius:8px; padding:40px 44px; max-width:900px; }
+.mg-pk-paper .pk-frame > thead, .mg-pk-paper .pk-frame > tfoot{ display:none; }   /* running header/footer: PDF only */
+.mg-pk-paper .pk-doc .pk-frame > tbody > tr > td{ padding-bottom:36px; }
+.mg-pk-add{ display:flex; gap:8px; margin:10px 0 4px; }
+.mg-pk-add input{ flex:1; min-width:0; font:inherit; font-size:var(--f13); border:1px solid var(--g200); border-radius:6px; padding:6px 8px; }
+@media (max-width:600px){
+  .mg-pk-paper{ padding:20px 16px; }
+  .mg-pk-paper .pk-tiles, .mg-pk-paper .pk-meta{ grid-template-columns:repeat(2, minmax(0, 1fr)) !important; }
+  .mg-pk-paper table.pk-t{ display:block; overflow-x:auto; }
+  .mg-pk-add{ flex-wrap:wrap; }
+}
+/* on screen nothing under 12px; the PDF keeps print sizes */
+.mg-pk-paper .pk-doc, .mg-pk-paper .pk-t{ font-size:13px; }
+.mg-pk-paper .pk-scope, .mg-pk-paper .pk-note, .mg-pk-paper .pk-tile-l, .mg-pk-paper .pk-tile-n, .mg-pk-paper .pk-meta span,
+.mg-pk-paper .pk-t th, .mg-pk-paper .pk-bdg, .mg-pk-paper .pk-ai-l, .mg-pk-paper .pk-empty{ font-size:12px; }
+.mg-pk-paper .pk-frame{ table-layout:fixed; }   /* never wider than the paper; wide tables scroll inside it on phones */
+.mg-pk-strip .mg-btn{ white-space:nowrap; flex:none; }
+.mg-pk-rec .mg-row-act{ opacity:1; margin-left:auto; }
