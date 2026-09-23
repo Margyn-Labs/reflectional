@@ -461,7 +461,10 @@ async function resolveActionReply(userId, from, pending, decision) {
     ? 'Done ✅' + (pending.human_summary ? '\n' + pending.human_summary : '')
     : result.ok
       ? 'Cancelled. Nothing changed.'
-      : "That didn't go through: " + (result.error || 'unknown error') + '. Try again from the app.';
+      : "That didn't go through, so nothing changed. Try again in a minute, or do it from the app.";
+  // The raw error (often a Postgres message) belongs in the logs, not in the
+  // user's WhatsApp.
+  if (!result.ok) console.error('[whatsapp] action failed', pending.action_type, pending.id, result.error);
   await bsp.sendText({ to: from, text: replyText.trim() });
   track(userId, 'whatsapp_action_resolved', { type: pending.action_type, confirmed: decision === 'confirm', ok: !!result.ok });
 }
