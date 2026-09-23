@@ -218,9 +218,9 @@ async function seedApp() {
         { invoice_id: 'zi4', invoice_number: 'INV-00270', customer_name: 'Casa Loma Trading', total: 431000, balance: 0, reconciliation_status: 'verified', verified_paid_amount: 431000 }
       ],
       review_queue: [
-        { id: 'rq1', invoice_ref: 'zi3', invoice_number: 'INV-00266', customer_name: 'Blue Door Interiors', amount: 1185000, reason: 'Two Razorpay payments of ₹5.9 L each, 3 days apart', same_source: false, date_diff_days: 3, candidates: ['pay_Q1a', 'pay_Q1b'] },
-        { id: 'rq2', invoice_ref: 'zi5', invoice_number: 'INV-00284', customer_name: 'Greenleaf Hospitality', amount: 318000, reason: 'Amount matches but payer name differs', same_source: false, date_diff_days: 1, candidates: ['pay_Q2a'] },
-        { id: 'rq3', invoice_ref: 'zi6', invoice_number: 'INV-00288', customer_name: 'Sahyadri Distributors', amount: 204000, reason: 'Short-paid by ₹4,080 (likely TDS)', same_source: false, date_diff_days: 0, candidates: ['pay_Q3a'] }
+        { id: 'rq1', invoice_ref: 'zi3', invoice_number: 'INV-00266', customer_name: 'Blue Door Interiors', amount: 1185000, reason: 'Two Razorpay payments of ₹5.9 L each, 3 days apart', same_source: false, date_diff_days: 3, candidates: [{ id:'pay_Q1a', amount:59250000, created_at: iso(12 * DAY), method:'upi' }, { id:'pay_Q1b', amount:59250000, created_at: iso(9 * DAY), method:'upi' }] },
+        { id: 'rq2', invoice_ref: 'zi5', invoice_number: 'INV-00284', customer_name: 'Greenleaf Hospitality', amount: 318000, reason: 'Amount matches but payer name differs', same_source: false, date_diff_days: 1, candidates: [{ id:'pay_Q2a', amount:31800000, created_at: iso(3 * DAY), method:'netbanking' }] },
+        { id: 'rq3', invoice_ref: 'zi6', invoice_number: 'INV-00288', customer_name: 'Sahyadri Distributors', amount: 204000, reason: 'Short-paid by ₹4,080 (likely TDS)', same_source: false, date_diff_days: 0, candidates: [{ id:'pay_Q3a', amount:19992000, created_at: iso(1 * DAY), method:'upi' }] }
       ]
     },
     'reconcile?action=agent-actions': {

@@ -14,9 +14,9 @@ nav.mg-top .nav-logo{ font-size:var(--f16); }
 .mg-menu{ display:none; }
 
 /* Scope bar: [Organisation][Sources][Period] as one segmented control */
-.mg-scope{ display:flex; align-items:stretch; height:36px; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0); min-width:0; }
+.mg-scope{ display:flex; align-items:stretch; height:36px; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0); min-width:0; flex:none; }
 .mg-sc{ position:relative; display:flex; min-width:0; flex:none; }
-.org-switch.mg-sc{ flex:0 1 auto; }
+.org-switch.mg-sc{ flex:none; }
 .org-switch-btn.mg-sc-btn{ max-width:340px; }
 .mg-sc + .mg-sc{ border-left:1px solid var(--g200); }
 .mg-sc-btn, .org-switch-btn.mg-sc-btn{ height:100%; display:flex; align-items:center; gap:8px; padding:0 12px; border:0; border-radius:0; background:none;
@@ -55,14 +55,19 @@ nav.mg-top .nav-logo{ font-size:var(--f16); }
 .mg-ent .mg-sub{ display:block; color:var(--g500); font-size:var(--f12); }
 
 /* top-bar buttons */
-nav.mg-top .top-k{ height:36px; min-width:220px; }
+nav.mg-top .top-k{ height:36px; width:320px; min-width:44px; flex:0 1 320px !important; } /* search gives way before the Scope bar */
+nav.mg-top .top-k .label{ overflow:hidden; text-overflow:ellipsis; }
 .mg-tb-btn{ height:36px; display:inline-flex; align-items:center; gap:6px; padding:0 10px; border:0; background:none; border-radius:var(--r-ctl);
   font:600 var(--f13)/1 var(--font-ui); color:var(--g900); cursor:pointer; white-space:nowrap; flex:none; }
 .mg-tb-btn:hover{ background:var(--g50); }
 .mg-tb-btn svg{ width:16px; height:16px; }
 .mg-tb-btn.mg-ai{ color:var(--ai); }
-nav.mg-top .top-sync{ height:32px; white-space:nowrap; flex:none; }
-nav.mg-top .top-k{ white-space:nowrap; flex:none; }
+/* Source health lives in the Scope bar dot and the bell now; chip kept for its ids. */
+nav.mg-top .top-sync{ display:none !important; }
+.mg-bell{ position:relative; flex:none; }
+.mg-bell-dot{ position:absolute; top:7px; right:7px; width:8px; height:8px; border-radius:50%; background:var(--neg); border:2px solid var(--g0); }
+.mg-bell-dot.hidden{ display:none; }
+nav.mg-top .top-k{ white-space:nowrap; }
 .mg-user{ position:relative; gap:0; }
 button.top-avatar{ font:700 var(--f12)/1 var(--font-ui); cursor:pointer; padding:0; }
 .mg-user-id{ padding:10px; }
@@ -76,8 +81,12 @@ button.top-avatar{ font:700 var(--f12)/1 var(--font-ui); cursor:pointer; padding
   .app-body{ height:calc(100vh - var(--top-h)); }
   .app-body .sidebar, .app-body .sidebar{ width:var(--rail-w); padding:12px 8px 12px; }
 }
-.sidebar .pagenav{ min-height:100%; }
-.sidebar .pagenav button{ font:500 var(--f14)/1.2 var(--font-ui); }
+/* One column that scrolls; the old .pagenav{flex-wrap:wrap} split a tall rail into two columns. */
+.sidebar .pagenav{ min-height:100%; flex-wrap:nowrap !important; }
+.sidebar .pagenav button{ font:500 var(--f14)/1.2 var(--font-ui); white-space:nowrap; }
+.sidebar .pagenav button span{ overflow:hidden; text-overflow:ellipsis; }
+/* Inbox shows a count, not an alarm (the mock's grey pill). */
+.sidebar #agentsBadge{ background:var(--g100); color:var(--g900); font-family:var(--font-num); }
 .sidebar .pagenav button svg{ stroke-width:1.75; }
 .sidebar .pagenav button.active{ font-weight:600; }
 .sidebar .pagenav button.mg-nav-hidden{ display:none !important; }
@@ -91,7 +100,7 @@ button.top-avatar{ font:700 var(--f12)/1 var(--font-ui); cursor:pointer; padding
 .rd-head .rd-eyebrow{ font:500 var(--f13)/1.3 var(--font-ui); color:var(--g500); margin-bottom:4px; }
 .rd-head h1{ font-size:var(--f24); font-weight:700; letter-spacing:-.01em; }
 .rd-head .rd-sub{ font-size:var(--f14); color:var(--g600); max-width:80ch; }
-.mg-scopeline{ display:inline-flex; align-items:center; gap:6px; margin-top:8px; font:500 var(--f12)/1.4 var(--font-ui); color:var(--g600);
+.mg-scopeline{ display:inline-flex; align-items:center; gap:6px; margin-top:8px; font:500 var(--f12)/1.4 var(--font-num); color:var(--g600);
   background:var(--g50); border:1px solid var(--g100); border-radius:4px; padding:2px 8px; }
 .mg-scopeline .mg-dot{ width:6px; height:6px; }
 /* The old global header only served views without their own .rd-head; every
@@ -123,11 +132,8 @@ header.app-head{ display:none !important; }
 /* ---------- responsive ---------- */
 /* Source health already shows as the dot in the Scope bar, so the sync chip
    and the search label are the first things to give way. */
-@media (max-width:1600px){
-  nav.mg-top .top-k{ min-width:0; }
-  nav.mg-top .top-k .label{ display:none; }
-  nav.mg-top .top-sync{ display:none; }
-}
+@media (max-width:1500px){ nav.mg-top .top-k{ width:260px; } }
+@media (max-width:1360px){ nav.mg-top .top-k{ width:auto; } nav.mg-top .top-k .label{ display:none; } }
 @media (max-width:1280px){
   .mg-tb-btn span{ display:none; }
   .mg-sc-btn .mg-k{ display:none; }
