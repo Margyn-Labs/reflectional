@@ -70,8 +70,8 @@ function fmtDay(iso){
 function scoreClass(s){ return s >= 70 ? 'score-good' : s >= 40 ? 'score-warn' : 'score-bad'; }
 function scoreBandCutoffs(){
   try {
-    const raw = localStorage.getItem('margyn_score_bands');
-    if(raw){ const o = JSON.parse(raw); if(o && Number(o.healthy) > Number(o.caution) && Number(o.caution) > 0) return { healthy:Number(o.healthy), caution:Number(o.caution) }; }
+    const o = typeof mgPrefGet === 'function' ? mgPrefGet('score_bands', null) : JSON.parse(localStorage.getItem('margyn_score_bands') || 'null');
+    if(o && Number(o.healthy) > Number(o.caution) && Number(o.caution) > 0) return { healthy:Number(o.healthy), caution:Number(o.caution) };
   } catch(e){}
   return { healthy:70, caution:40 };
 }
@@ -188,7 +188,7 @@ document.getElementById('onboardForm').addEventListener('submit', async (e) => {
     if(owner.error) throw new Error('WhatsApp number: ' + owner.error);
     const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
     if(error) throw error;
-    currentProfile = row;
+    currentProfile = Object.assign({}, currentProfile, row);
     // Name the person behind the account. With a number, this becomes the
     // primary WhatsApp line + its named people row; without one, the name is
     // kept to prefill the WhatsApp Bell setup later. Best-effort: a failure

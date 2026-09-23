@@ -60,20 +60,20 @@ function metricSeries(key, limit){
   const rows = (snapshots || []).slice(0, limit || 30).reverse();
   return rows.map(s => metricValue(key, s)).filter(v => v !== null && isFinite(v));
 }
-/* Which metrics each surface shows. Customer-chosen, kept per browser. */
+/* Which metrics each surface shows. Customer-chosen, saved to the account (19c-prefs.js). */
 const METRIC_DEFAULTS = {
   summary: ['cash', 'receivables', 'payablesSoon', 'netMargin'],
   scores:  ['netMargin', 'netProfit', 'opexRatio', 'cash', 'grossRunway', 'quickRatio', 'workingCapital', 'dso', 'dpo', 'ccc', 'receivables', 'recvOver90Pct', 'payablesSoon', 'gstLeakPct', 'mdrPct', 'settleLag']
 };
 function metricSelection(surface){
   try {
-    const raw = localStorage.getItem('margyn_metrics_' + surface);
-    if(raw){ const a = JSON.parse(raw); if(Array.isArray(a) && a.length) return a.filter(k => METRICS[k]); }
+    const a = (mgPrefGet('metrics', {}) || {})[surface];
+    if(Array.isArray(a) && a.length) return a.filter(k => METRICS[k]);
   } catch(e){}
   return METRIC_DEFAULTS[surface].slice();
 }
 function setMetricSelection(surface, keys){
-  try { localStorage.setItem('margyn_metrics_' + surface, JSON.stringify(keys)); } catch(e){}
+  mgPrefSet('metrics', Object.assign({}, mgPrefGet('metrics', {}), { [surface]:keys }));
 }
 /* A single indicator tile: value, movement against the previous snapshot,
    and a sparkline of its own history. */

@@ -20,10 +20,10 @@ const ANALYTICS_DEFAULTS = [
   { id:'d4', name:'Revenue vs net profit', type:'combo', metrics:['revenue','netprofit'], group:'Month' }
 ];
 function loadAnalyticsCharts(){
-  try { const raw = localStorage.getItem('margyn_analytics_charts'); if(raw){ const a = JSON.parse(raw); if(Array.isArray(a)) return a; } } catch(e){}
+  const a = mgPrefGet('analytics_charts', null); if(Array.isArray(a)) return a.slice();
   return ANALYTICS_DEFAULTS.slice();
 }
-function saveAnalyticsCharts(list){ try { localStorage.setItem('margyn_analytics_charts', JSON.stringify(list)); } catch(e){} }
+function saveAnalyticsCharts(list){ mgPrefSet('analytics_charts', list); }
 function analyticsRows(){
   const chron = (snapshots || []).slice().reverse(); // oldest first
   const days = { '1m':31, '1q':93, '1y':372, 'max':1e7 }[analyticsRange] || 93;
@@ -118,7 +118,7 @@ document.querySelectorAll('#analyticsRangeTabs button').forEach(b => b.addEventL
 /* ============================================================
    SETTINGS (new). Notification prefs, band-label preference,
    connected-source overview, consent copy, account controls.
-   Preferences persist in localStorage; the connectors and the
+   Preferences are saved to the account (19c-prefs.js); the connectors and the
    account-delete flow reuse existing handlers.
    ============================================================ */
 function lsGet(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e){ return d; } }
@@ -164,7 +164,7 @@ function renderSettingsView(){
     const c = Number(document.getElementById('setBandCaution').value);
     const note = document.getElementById('setBandNote');
     if(!(h > c && c > 0 && h <= 100)){ if(note){ note.textContent = 'Healthy must be above Caution, both within 1 to 100.'; note.className = 'note bad'; } return; }
-    lsSet('margyn_score_bands', JSON.stringify({ healthy:h, caution:c }));
+    mgPrefSet('score_bands', { healthy:h, caution:c });
     if(note){ note.textContent = ''; }
     toast('Scoring labels saved', { sub: 'Healthy at ' + h + ', Caution at ' + c });
     if(typeof renderScores === 'function') renderScores();
@@ -172,7 +172,7 @@ function renderSettingsView(){
   });
   const reset = document.getElementById('setBandReset');
   if(reset) reset.addEventListener('click', () => {
-    try { localStorage.removeItem('margyn_score_bands'); } catch(e){}
+    mgPrefSet('score_bands', null);
     renderSettingsView();
     if(typeof renderScores === 'function') renderScores();
     if(typeof renderSummary === 'function') renderSummary();

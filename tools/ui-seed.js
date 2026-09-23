@@ -23,7 +23,9 @@ async function seedApp() {
   // ---------- identity ----------
   currentUser = { id: UID, email: 'finance@anvaya.test', created_at: iso(120 * DAY) };
   currentProfile = { id: UID, company_name: 'Anvaya Home Goods Pvt Ltd', revenue_range: '25_50cr',
-    industry: 'D2C / Home & kitchen', city: 'Pune', gst_number: '27AAKCA1234F1Z5', whatsapp_phone: '919876543210' };
+    industry: 'D2C / Home & kitchen', city: 'Pune', gst_number: '27AAKCA1234F1Z5', whatsapp_phone: '919876543210',
+    preferences: Object.assign({}, window.__seedPrefs || {}) };
+  if (window.__seedNoPrefsColumn) delete currentProfile.preferences;   // code deployed before the SQL
 
   // ---------- snapshots: 8 monthly readings, latest first ----------
   // Pulse trends up; latest month has a receivables stretch the findings talk about.
@@ -157,15 +159,22 @@ async function seedApp() {
 
   // Table-aware query stub: any chained filter method returns the builder;
   // .eq() filters on fields the seeded row actually has (user/business ids are
-  // ignored). Writes resolve OK and change nothing. No network.
+  // ignored). Writes resolve OK and change nothing, except profiles.update(),
+  // which applies to the seeded row and is logged in window.__profileUpdates
+  // (so preference saves can be asserted). No network.
+  window.__profileUpdates = [];
   const IGNORE = { user_id: 1, business_id: 1 };
   sbClient.from = (table) => {
-    let rows = (TABLES[table] || []).slice();
+    let rows = (TABLES[table] || []).slice(), err = null;
     const b = new Proxy({}, {
       get(_, prop) {
-        if (prop === 'then') return (res, rej) => Promise.resolve({ data: rows, error: null }).then(res, rej);
+        if (prop === 'then') return (res, rej) => Promise.resolve({ data: err ? null : rows, error: err }).then(res, rej);
         if (prop === 'single' || prop === 'maybeSingle') return () => Promise.resolve({ data: rows[0] || null, error: null });
         if (prop === 'eq') return (k, v) => { if (!IGNORE[k]) rows = rows.filter(r => r[k] === undefined || r[k] === v); return b; };
+        if (prop === 'update' && table === 'profiles') return (payload) => {
+          if (window.__seedNoPrefsColumn && payload && 'preferences' in payload) { rows = []; err = { code: 'PGRST204', message: "Could not find the 'preferences' column of 'profiles' in the schema cache" }; return b; }
+          window.__profileUpdates.push(JSON.parse(JSON.stringify(payload))); Object.assign(TABLES.profiles[0], payload); rows = []; return b;
+        };
         if (prop === 'insert' || prop === 'update' || prop === 'upsert' || prop === 'delete') return () => { rows = []; return b; };
         return () => b;
       }
