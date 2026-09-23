@@ -181,7 +181,7 @@ const ALL_TOOLS = [...TOOLS, ...marginActions.TOOLS];
  * @param {{ profileId: string, fromPhone: string, text: string,
  *           contextMessageId?: string|null }} opts
  */
-async function runConversation({ profileId, fromPhone, text, wamid }) {
+async function runConversation({ profileId, fromPhone, sender, text, wamid }) {
   const cleanText = String(text || '').trim().slice(0, MAX_INBOUND_CHARS);
   if (!profileId || !cleanText) return;
 
@@ -193,7 +193,7 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
 
   // Persist the inbound turn first (with its wamid, so a retry that arrives
   // after this point is caught by the persistent dedupe check above).
-  await persist(profileId, 'user', cleanText, null, wamid);
+  await persist({ profileId, phone: fromPhone }, 'user', cleanText, null, wamid);
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -204,7 +204,7 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
   // Hard financial-intent block: never reaches Claude, never touches a tool.
   // Skipped when the message is a relay request (see isHardFinancialCommand).
   if (isHardFinancialCommand(cleanText)) {
-    await persist(profileId, 'assistant', APPROVAL_REQUIRED_REPLY, null);
+    await persist({ profileId, phone: fromPhone }, 'assistant', APPROVAL_REQUIRED_REPLY, null);
     await sendReply(fromPhone, APPROVAL_REQUIRED_REPLY);
     return;
   }
@@ -217,12 +217,13 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
     // non-fatal — fall back to the generic label
   }
 
-  const messages = await buildMessages(profileId, cleanText);
-  const system = buildSystemPrompt(companyName);
+  const messages = await buildMessages(profileId, fromPhone, cleanText);
+  const system = buildSystemPrompt(companyName, sender);
+  const phoneLabel = fromPhone ? '+' + String(fromPhone).replace(/[^\d]/g, '') : 'a WhatsApp contact';
   const ctx = {
     profileId,
     inboundText: cleanText,
-    senderLabel: fromPhone ? '+' + String(fromPhone).replace(/[^\d]/g, '') : 'a WhatsApp contact'
+    senderLabel: sender && sender.name ? `${sender.name} (${phoneLabel})` : phoneLabel
   };
 
   let finalText = '';
@@ -240,7 +241,7 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
     const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
 
     await persist(
-      profileId,
+      { profileId, phone: fromPhone },
       'assistant',
       textOut,
       toolUses.length ? toolUses.map(t => ({ name: t.name, input: t.input })) : null
@@ -260,7 +261,7 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
         results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
       }
       messages.push({ role: 'user', content: results });
-      await persist(profileId, 'tool', JSON.stringify(results.map(r => r.content)), null);
+      await persist({ profileId, phone: fromPhone }, 'tool', JSON.stringify(results.map(r => r.content)), null);
       continue;
     }
 
@@ -275,7 +276,7 @@ async function runConversation({ profileId, fromPhone, text, wamid }) {
 
   // No usable answer (Claude error, or ran out of tool iterations).
   const fallback = "Sorry — I couldn't work that one out over WhatsApp. Try rephrasing, or open the Margyn app.";
-  await persist(profileId, 'assistant', fallback, null);
+  await persist({ profileId, phone: fromPhone }, 'assistant', fallback, null);
   await sendReply(fromPhone, fallback);
 }
 
@@ -292,7 +293,7 @@ async function handleProposal(p, { profileId, fromPhone, textOut }) {
     const lines = items.map((it, i) => `${i + 1}. ${it.label || it.type}`).join('\n');
     const text = (textOut ? textOut + '\n\n' : '') + (lines || p.human_summary || 'Nothing matched.') +
       (items.length ? '\n\nOpen the Margyn app to review and confirm these together.' : '');
-    await persist(profileId, 'assistant', text, null);
+    await persist({ profileId, phone: fromPhone }, 'assistant', text, null);
     await sendReply(fromPhone, text.slice(0, MAX_REPLY_CHARS));
     return;
   }
@@ -301,7 +302,7 @@ async function handleProposal(p, { profileId, fromPhone, textOut }) {
   // row this user owns (a name is resolved to its row id here).
   const checked = await marginActions.validateProposal(p, profileId);
   if (!checked.ok) {
-    await persist(profileId, 'assistant', checked.message, null);
+    await persist({ profileId, phone: fromPhone }, 'assistant', checked.message, null);
     await sendReply(fromPhone, checked.message);
     return;
   }
@@ -336,7 +337,7 @@ async function handleProposal(p, { profileId, fromPhone, textOut }) {
   }
 
   await marginActions.setPendingActionMessageId(pending.id, sendRes.messageId);
-  await persist(profileId, 'assistant', summary, null);
+  await persist({ profileId, phone: fromPhone }, 'assistant', summary, null);
 }
 
 /** Send an outbound WhatsApp reply, logging (not throwing) on failure so a
@@ -375,7 +376,20 @@ async function callClaude(apiKey, system, messages) {
   return res.json();
 }
 
-function buildSystemPrompt(companyName) {
+const MEMBER_ROLE_LABEL = { owner: 'an owner', AR: 'the receivables (AR) person', AP: 'the payables (AP) person', finance: 'on the finance team', other: 'a team member' };
+
+/** The identity line for the prompt. `sender` is the business_stakeholders
+ *  row resolved from the inbound number (api/whatsapp.js resolveSender), or
+ *  null when the number is the account's primary line with no name saved. */
+function senderLine(companyName, sender) {
+  if (sender && sender.name) {
+    const role = MEMBER_ROLE_LABEL[sender.role] || 'a team member';
+    return `- The person texting is ${sender.name}, ${role} at ${companyName}${sender.is_primary ? " (this is the account's primary WhatsApp number)" : ''}. You recognise them by the number they're texting from, which is saved on the account. Address them by first name when it's natural — don't open every reply with it. If asked "do you know who I am", say yes: ${sender.name}, ${role} at ${companyName}.`;
+  }
+  return `- You know which business this is (${companyName}) but not which individual is texting — no name is saved for this number yet. If asked "do you know who I am", say you identify the business by its registered WhatsApp number, and that they can add their name under Settings > People in the Margyn app so you'll know them next time.`;
+}
+
+function buildSystemPrompt(companyName, sender) {
   return `You are Margyn's WhatsApp assistant for ${companyName}, a digital-native Indian business. Someone from the business has messaged the Margyn WhatsApp line (the same line that sends the daily Opening Bell and Closing Bell briefings). Reply like a sharp finance teammate texting back — not a dashboard bot, not a consultant memo.
 
 VOICE:
@@ -421,7 +435,7 @@ Everything else that changes Margyn's own data (approvals, marking paid, logging
 Relaying is different and allowed: "tell my AP person the Acme bill needs paying" is a routing request — use route_message to forward it to the right person; you are passing a message to a human, not actioning anything. But "chase Acme on the overdue payment" — the sender asking Margyn itself to chase — is now a propose_action (send_one_off_chase), not a route_message.
 
 Other rules:
-- You know which business this is (${companyName}) but not which individual is texting. If asked "do you know who I am", say you identify the business by its registered WhatsApp number and work off its Margyn data — don't just say you have no idea.
+${senderLine(companyName, sender)}
 - Only state numbers, statuses or names that a tool actually returned. Never invent a figure, an invoice status, or a contact.
 - get_vitals returns real figures even when nothing is connected — data entered manually in the app still counts. Give the actual numbers. When data_source is "manual" or "upload", add one short caveat that they're self-reported and not yet connector-verified — do not refuse, hedge the whole answer, or claim the data is missing/empty/wrong.
 - If a tool genuinely returns an error or no data at all, say so plainly and suggest opening the Margyn app.
@@ -763,15 +777,20 @@ async function toolRouteMessage(input, ctx) {
 /* ------------------------------------------------------------------ */
 /* Conversation history                                                */
 /* ------------------------------------------------------------------ */
-async function buildMessages(profileId, cleanText) {
+async function buildMessages(profileId, fromPhone, cleanText) {
+  // Each person on the account gets their own thread: two partners texting
+  // the same line must not see each other's half-finished conversations.
+  // Rows from before 2026-09-23 have no from_phone and count for everyone.
+  // If the from_phone column doesn't exist yet (migration not run), fall
+  // back to the old account-wide history.
+  const base = `select=role,content&profile_id=eq.${profileId}&order=created_at.desc&limit=40`;
+  const phone = String(fromPhone || '').replace(/[^\d]/g, '');
   let rows = [];
   try {
-    rows = await selectRows(
-      'whatsapp_conversations',
-      `select=role,content&profile_id=eq.${profileId}&order=created_at.desc&limit=40`
-    );
+    rows = await selectRows('whatsapp_conversations',
+      phone ? `${base}&or=(from_phone.eq.${phone},from_phone.is.null)` : base);
   } catch (e) {
-    rows = [];
+    try { rows = await selectRows('whatsapp_conversations', base); } catch (e2) { rows = []; }
   }
 
   // Newest-first from the query -> oldest-first for the transcript. Keep only
@@ -802,17 +821,22 @@ async function buildMessages(profileId, cleanText) {
 /* ------------------------------------------------------------------ */
 /* Persistence — never throws (a logging failure must not break reply) */
 /* ------------------------------------------------------------------ */
-async function persist(profileId, role, content, toolCalls, waMessageId) {
+async function persist(thread, role, content, toolCalls, waMessageId) {
+  const row = {
+    profile_id: thread.profileId,
+    role,
+    content: content || '',
+    tool_calls: toolCalls || null,
+    wa_message_id: waMessageId || null
+  };
+  const phone = String(thread.phone || '').replace(/[^\d]/g, '');
   try {
-    await insertRows('whatsapp_conversations', [{
-      profile_id: profileId,
-      role,
-      content: content || '',
-      tool_calls: toolCalls || null,
-      wa_message_id: waMessageId || null
-    }]);
+    await insertRows('whatsapp_conversations', [phone ? { ...row, from_phone: phone } : row]);
   } catch (e) {
-    console.error('[whatsappAgent] persist failed:', e.message);
+    // from_phone column missing (migration not run yet) — keep the turn anyway.
+    if (!phone) { console.error('[whatsappAgent] persist failed:', e.message); return; }
+    try { await insertRows('whatsapp_conversations', [row]); }
+    catch (e2) { console.error('[whatsappAgent] persist failed:', e2.message); }
   }
 }
 

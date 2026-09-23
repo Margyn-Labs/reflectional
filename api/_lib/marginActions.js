@@ -287,11 +287,15 @@ async function findPendingAction(userId, contextIds) {
  * `withinMinutes`. Only ever used when the reply itself is an unambiguous
  * "confirm" or "cancel", so a stale proposal can't be executed by accident.
  */
-async function findLatestPendingAction(userId, withinMinutes = 30) {
+async function findLatestPendingAction(userId, withinMinutes = 30, fromPhone) {
   const since = new Date(Date.now() - withinMinutes * 60000).toISOString();
+  // With several people on one account, a bare "Confirm" only resolves a
+  // card that was sent to the same person (from_phone is stored as the raw
+  // BSP sender, which is what fromPhone is here too).
+  const who = fromPhone ? `&from_phone=eq.${encodeURIComponent(fromPhone)}` : '';
   const rows = await selectRows(
     'whatsapp_pending_actions',
-    `select=*&user_id=eq.${userId}&status=eq.pending&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=1`
+    `select=*&user_id=eq.${userId}&status=eq.pending&created_at=gte.${encodeURIComponent(since)}${who}&order=created_at.desc&limit=1`
   ).catch(() => []);
   return rows[0] || null;
 }

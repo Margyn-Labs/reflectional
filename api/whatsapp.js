@@ -115,10 +115,8 @@ async function handleWebhookEvent(req, res) {
   }
 
   try {
-    const matches = await selectRows(
-      'profiles',
-      `select=id&whatsapp_phone=eq.${encodeURIComponent(normalizePhone(event.from))}`
-    );
+    const sender = await resolveSender(event.from);
+    const matches = sender ? [{ id: sender.profileId }] : [];
 
     if (!matches.length) {
       // No Margyn user on this number — it may be a customer tapping the
@@ -146,7 +144,7 @@ async function handleWebhookEvent(req, res) {
     // reply is a Closing Bell reply" assumption below.
     const decision = actionDecision(event.buttonId + ' ' + (event.buttonText || ''));
     let pending = await marginActions.findPendingAction(matches[0].id, [event.contextMessageId, event.contextGsId]);
-    if (!pending && decision) pending = await marginActions.findLatestPendingAction(matches[0].id);
+    if (!pending && decision) pending = await marginActions.findLatestPendingAction(matches[0].id, 30, event.from);
     if (pending) {
       await resolveActionReply(matches[0].id, event.from, pending, decision);
       res.status(200).json({ received: true, action: true });
@@ -171,6 +169,7 @@ async function handleWebhookEvent(req, res) {
     }]);
 
     track(matches[0].id, 'whatsapp_inbound', { kind: 'button', reply_type: replyType }); // ops console
+    touchMember(sender.member);
 
     // An unrecognized button reply is treated as free text — hand it to the
     // conversational routing layer instead of just logging it.
@@ -179,6 +178,7 @@ async function handleWebhookEvent(req, res) {
         await runConversation({
           profileId: matches[0].id,
           fromPhone: event.from,
+          sender: sender.member,
           text: event.buttonText,
           wamid: event.wamid,
           contextMessageId: event.contextMessageId
@@ -249,11 +249,11 @@ async function handleMediaInbound(res, mediaEvent) {
       }
     }
 
-    const phone = normalizePhone(mediaEvent.from);
-    const matches = await selectRows(
+    const sender = await resolveSender(mediaEvent.from);
+    const matches = sender ? await selectRows(
       'profiles',
-      `select=id,company_name,gst_number&whatsapp_phone=eq.${encodeURIComponent(phone)}`
-    );
+      `select=id,company_name,gst_number&id=eq.${sender.profileId}`
+    ) : [];
     if (!matches.length) {
       // Not a registered number. Say nothing back — replying would confirm
       // to a stranger which numbers ARE registered Margyn accounts.
@@ -261,6 +261,7 @@ async function handleMediaInbound(res, mediaEvent) {
       return;
     }
     const profile = matches[0];
+    touchMember(sender.member);
 
     const mime = WA_SUPPORTED_MEDIA_MIME[String(mediaEvent.contentType || '').split(';')[0].trim().toLowerCase()];
     if (!mime) {
@@ -385,12 +386,10 @@ async function handleConversationalInbound(res, textEvent) {
   // the reply. That means the response can take ~8s, and the BSP may retry
   // the delivery in the meantime. Retries are made harmless by the wamid
   // dedupe in runConversation (persistent — checks whatsapp_conversations).
-  let matches;
+  let matches, sender;
   try {
-    matches = await selectRows(
-      'profiles',
-      `select=id&whatsapp_phone=eq.${encodeURIComponent(normalizePhone(textEvent.from))}`
-    );
+    sender = await resolveSender(textEvent.from);
+    matches = sender ? [{ id: sender.profileId }] : [];
   } catch (err) {
     console.error('whatsapp webhook: profile lookup failed', err.message);
     return;
@@ -408,7 +407,7 @@ async function handleConversationalInbound(res, textEvent) {
   const decision = buttonLabelDecision(textEvent.text);
   if (decision) {
     let pending = await marginActions.findPendingAction(matches[0].id, [textEvent.contextMessageId, textEvent.contextGsId]);
-    if (!pending) pending = await marginActions.findLatestPendingAction(matches[0].id);
+    if (!pending) pending = await marginActions.findLatestPendingAction(matches[0].id, 30, textEvent.from);
     if (pending) {
       await resolveActionReply(matches[0].id, textEvent.from, pending, decision);
       if (!res.headersSent) res.status(200).json({ received: true, action: true });
@@ -420,12 +419,14 @@ async function handleConversationalInbound(res, textEvent) {
     await runConversation({
       profileId: matches[0].id,
       fromPhone: textEvent.from,
+      sender: sender.member,
       text: textEvent.text,
       wamid: textEvent.wamid,
       contextMessageId: textEvent.contextMessageId
     });
     // ops console — inbound question + the agent's outbound reply
     track(matches[0].id, 'whatsapp_inbound', { kind: 'conversational', msg_len: String(textEvent.text || '').length });
+    touchMember(sender.member);
     track(matches[0].id, 'whatsapp_outbound', { kind: 'agent_reply' });
   } catch (err) {
     console.error('whatsapp webhook: conversational inbound failed', err.message);
@@ -471,6 +472,55 @@ async function resolveActionReply(userId, from, pending, decision) {
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/[^\d]/g, '');
+}
+
+/**
+ * Who is texting, and which account they belong to. Added 2026-09-23 for
+ * multi-member accounts (business_stakeholders.whatsapp_access).
+ *
+ *   1. profiles.whatsapp_phone — the account's primary number (unchanged
+ *      behaviour; the Bell crons still send only here).
+ *   2. business_stakeholders with whatsapp_access=true — an extra owner,
+ *      partner, or AR/AP person the account added under Settings > People.
+ *      A partial unique index keeps one access-phone to one account.
+ *
+ * `member` is that person's row (name + role), used so Margyn can greet them
+ * by name and keep each person's chat history separate. It is null for a
+ * primary number with no people row yet, and whenever the migration hasn't
+ * run — every member query is best-effort, so this degrades to the old
+ * profiles-only lookup rather than breaking the webhook.
+ * Returns { profileId, member } or null for an unknown number.
+ */
+async function resolveSender(from) {
+  const phone = normalizePhone(from);
+  if (!phone) return null;
+  const enc = encodeURIComponent(phone);
+  const profiles = await selectRows('profiles', `select=id&whatsapp_phone=eq.${enc}&limit=1`);
+  const memberCols = 'select=id,business_id,name,role,is_primary,message_count';
+  if (profiles.length) {
+    const profileId = profiles[0].id;
+    const rows = await selectRows(
+      'business_stakeholders',
+      `${memberCols}&business_id=eq.${profileId}&phone=eq.${enc}&order=is_primary.desc&limit=1`
+    ).catch(() => []);
+    return { profileId, member: rows[0] || null };
+  }
+  const rows = await selectRows(
+    'business_stakeholders',
+    `${memberCols}&phone=eq.${enc}&whatsapp_access=eq.true&limit=1`
+  ).catch(() => []);
+  if (!rows.length) return null;
+  return { profileId: rows[0].business_id, member: rows[0] };
+}
+
+/** Activity tracking for Settings > People. Fire-and-forget: a failed
+ *  counter bump must never cost the sender their reply. */
+function touchMember(member) {
+  if (!member || !member.id) return;
+  updateRows('business_stakeholders', `id=eq.${member.id}`, {
+    last_message_at: new Date().toISOString(),
+    message_count: (Number(member.message_count) || 0) + 1
+  }).catch((e) => console.error('whatsapp: member activity update failed', e.message));
 }
 
 /* ------------------------------------------------------------------ */
