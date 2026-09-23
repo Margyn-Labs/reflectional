@@ -142,7 +142,7 @@ function renderAgentQueue(){
     const draft = a.proposal && a.proposal.vendorQueryDraft;
     let detail = '';
     if(j && j.length){
-      detail = '<div class="hint" style="margin-top:8px; white-space:pre-line; font-family:\'IBM Plex Mono\',monospace; font-size:11.5px;">' +
+      detail = '<div class="hint" style="margin-top:8px; white-space:pre-line; font-family:\'IBM Plex Mono\',monospace; font-size:12px;">' +
         j.map(l => escapeHtml(l.account) + '  ' + (l.debit ? 'Dr ' + inr(l.debit) : 'Cr ' + inr(l.credit))).join('\n') + '</div>';
     } else if(alloc && alloc.length){
       detail = '<div class="hint" style="margin-top:8px;">' +

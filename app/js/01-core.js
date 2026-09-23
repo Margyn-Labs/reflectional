@@ -42,7 +42,19 @@ let tallyConnected = false;    // Tally connector — local Windows desktop agen
 let tallyInstalls = [];        // last /api/tally?action=status installs
 let tallyData = null;          // last /api/tally?action=summary — pre-aggregated bills/vouchers/ledgers, all Signal-tier
 let tallyPairPollTimer = null; // polls status every ~3s while the pairing modal is open
-function inr(n){ return '₹' + Math.round(Number(n)||0).toLocaleString('en-IN'); }
+/* One rupee formatter for the whole app (plan §6).
+   fmtINR(n)          -> full Indian grouping, for tables: ₹1,24,36,500
+   fmtINR(n, 'tile')  -> lakh / crore, for KPI tiles: ₹1.24 Cr, ₹18.6 L
+   Tiles should carry the full figure in a title attribute for hover. */
+function fmtINR(n, mode){
+  const v = Math.round(Number(n) || 0), a = Math.abs(v), s = v < 0 ? '−' : '';
+  if(mode === 'tile'){
+    if(a >= 1e7) return s + '₹' + (a / 1e7).toFixed(2).replace(/\.?0+$/, '') + ' Cr';
+    if(a >= 1e5) return s + '₹' + (a / 1e5).toFixed(1).replace(/\.0$/, '') + ' L';
+  }
+  return (v < 0 ? '-' : '') + '₹' + a.toLocaleString('en-IN');
+}
+function inr(n){ return fmtINR(n); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
 function fmtDate(iso){ 
   const d = new Date(iso);

@@ -134,14 +134,14 @@ function _rdBuildConfig(spec){
     x: {
       grid: { display: false, drawBorder: false },
       border: { display: false },
-      ticks: { font: { family: monoF, size: 9 }, color: ink3, maxRotation: 0, autoSkip: true, maxTicksLimit: 7, padding: 6 }
+      ticks: { font: { family: monoF, size: 12 }, color: ink3, maxRotation: 0, autoSkip: true, maxTicksLimit: 7, padding: 6 }
     },
     y: {
       position: 'left',
       beginAtZero: units[0] !== 'score',
       grid: { color: hair, drawTicks: false, drawBorder: false },
       border: { display: false },
-      ticks: { font: { family: monoF, size: 9 }, color: ink3, padding: 8, maxTicksLimit: 5, callback: v => _shortUnit(v, units[0]) }
+      ticks: { font: { family: monoF, size: 12 }, color: ink3, padding: 8, maxTicksLimit: 5, callback: v => _shortUnit(v, units[0]) }
     }
   };
   if(units.length > 1){
@@ -150,7 +150,7 @@ function _rdBuildConfig(spec){
       beginAtZero: units[1] !== 'score',
       grid: { display: false, drawBorder: false },
       border: { display: false },
-      ticks: { font: { family: monoF, size: 9 }, color: ink3, padding: 8, maxTicksLimit: 5, callback: v => _shortUnit(v, units[1]) }
+      ticks: { font: { family: monoF, size: 12 }, color: ink3, padding: 8, maxTicksLimit: 5, callback: v => _shortUnit(v, units[1]) }
     };
   }
   return {
@@ -167,7 +167,7 @@ function _rdBuildConfig(spec){
           display: series.length > 1,
           position: 'bottom',
           align: 'start',
-          labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 6, boxHeight: 6, padding: 14, font: { family: fontF, size: 11, weight: '600' }, color: ink2 }
+          labels: { usePointStyle: true, pointStyle: 'circle', boxWidth: 6, boxHeight: 6, padding: 14, font: { family: fontF, size: 12, weight: '600' }, color: ink2 }
         },
         tooltip: {
           backgroundColor: '#14181F',
@@ -175,8 +175,8 @@ function _rdBuildConfig(spec){
           cornerRadius: 8,
           displayColors: true,
           usePointStyle: true,
-          titleFont: { family: monoF, size: 10, weight: '600' },
-          bodyFont: { family: monoF, size: 11 },
+          titleFont: { family: monoF, size: 12, weight: '600' },
+          bodyFont: { family: monoF, size: 12 },
           bodySpacing: 5,
           callbacks: { label: ctx => '  ' + ctx.dataset.label + ':  ' + _fmtUnit(ctx.raw, ctx.dataset._unit) }
         }
@@ -403,7 +403,7 @@ function renderSummary(){
     payGross:{view:'payments'}, payNet:{view:'payments'}, mdrPct:{view:'payments'},
     failRate:{view:'payments'}, settleLag:{view:'payments'}, avgTxn:{view:'payments'}
   };
-  strip.style.gridTemplateColumns = 'repeat(' + Math.min(Math.max(chosen.length, 1), 4) + ', 1fr)';
+  strip.style.gridTemplateColumns = 'repeat(' + Math.min(Math.max(chosen.length, 1), 4) + ', minmax(0, 1fr))';
   strip.innerHTML = '';
   chosen.slice(0, 8).forEach(key => {
     const m = METRICS[key]; if(!m) return;
@@ -430,7 +430,7 @@ function renderSummary(){
     const el = document.createElement('div');
     el.className = 'rd-inst';
     el.innerHTML = '<div class="l">' + escapeHtml(m.label) + '</div>' +
-      '<div class="v">' + escapeHtml(metricFormat(v, m.unit)) + '</div>' +
+      '<div class="v" title="' + escapeHtml(metricFormat(v, m.unit)) + '">' + escapeHtml(metricFormat(v, m.unit, 'tile')) + '</div>' +
       '<div class="d ' + cls + '">' + escapeHtml(txt) + '</div>' +
       '<div class="bar"><i style="width:' + Math.max(3, Math.min(100, fill)).toFixed(0) + '%' + (cls === 'down' ? ';background:var(--rose)' : '') + '"></i></div>';
     const go = nav[key] || { view:'scores' };

@@ -114,7 +114,7 @@ function openShopifyModal(){
       '<input type="text" id="shopDomainInput" placeholder="mystore.myshopify.com" autocomplete="off" spellcheck="false" style="margin-bottom:10px;">' +
       '<div class="lf-title">Admin API access token</div>' +
       '<input type="password" id="shopTokenInput" placeholder="shpat_…" autocomplete="off" spellcheck="false">' +
-      '<div style="font-size:11px; color:var(--text-2); margin:10px 0 0; line-height:1.7;">' +
+      '<div style="font-size:12px; color:var(--text-2); margin:10px 0 0; line-height:1.7;">' +
         'In your Shopify admin:<br>' +
         '1. Settings → Apps and sales channels → Develop apps<br>' +
         '2. Create an app, name it Margyn<br>' +
@@ -170,7 +170,7 @@ async function syncShopifyNow(){
 }
 async function disconnectShopify(){
   if(!shopifyStore) return;
-  if(!confirm('Disconnect Shopify? Your historical order and margin data stays visible in Margyn, but nothing new will sync until you reconnect.')) return;
+  if(!(await mgConfirm({ title:'Disconnect Shopify?', body:'Your historical order and margin data stays visible in Margyn, but nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;
   const btn = document.getElementById('shopifyDisconnectBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
   try { await shopifyApi('/api/shopify?action=disconnect', { method:'POST', body: JSON.stringify({ storeId: shopifyStore.id }) }); }
@@ -271,7 +271,7 @@ function renderTallyStatus(){
   });
 }
 async function revokeTallyInstall(installId){
-  if(!confirm('Disconnect this Tally agent? Already-synced data stays visible; the agent stops syncing.')) return;
+  if(!(await mgConfirm({ title:'Disconnect this Tally agent?', body:'Data already synced stays visible in Margyn. The agent on that PC stops syncing.', confirmLabel:'Disconnect', danger:true }))) return;
   try {
     await tallyApi('/api/tally?action=revoke', { method:'POST', body: JSON.stringify({ installId }) });
     await loadTallyStatus();
@@ -288,20 +288,20 @@ function openTallyModal(){
     '<div class="detail-body" style="margin-bottom:16px;">Margyn reads Tally through a small agent you run on the Windows 10/11 PC where TallyPrime is installed. Works with <b>TallyPrime</b> and <b>Tally.ERP 9</b>. It only reads — it never posts vouchers or edits masters.</div>' +
     '<div class="ledger-form">' +
       '<div class="lf-title">Step 1 — download &amp; install the agent</div>' +
-      '<div style="font-size:11px; color:var(--text-2); margin:4px 0 10px; line-height:1.7;">Install it on the PC where TallyPrime runs.</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin:4px 0 10px; line-height:1.7;">Install it on the PC where TallyPrime runs.</div>' +
       '<a class="lr-btn connect" style="display:inline-block; text-decoration:none; padding:8px 14px; font-size:12px;" href="' + MARGYN_TALLY_AGENT_DOWNLOAD + '">Download for Windows</a>' +
-      '<div style="font-size:11px; color:var(--text-2); margin:8px 0 14px; line-height:1.7;">Windows may warn about an unrecognised publisher — click <span class="mono">More info</span> → <span class="mono">Run anyway</span>.</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin:8px 0 14px; line-height:1.7;">Windows may warn about an unrecognised publisher — click <span class="mono">More info</span> → <span class="mono">Run anyway</span>.</div>' +
       '<div class="lf-title">Step 2 — turn on Tally\'s connector</div>' +
-      '<div style="font-size:11px; color:var(--text-2); margin:4px 0 14px; line-height:1.7;">' +
+      '<div style="font-size:12px; color:var(--text-2); margin:4px 0 14px; line-height:1.7;">' +
         '<b>TallyPrime:</b> F1 (Help) → Settings → Advanced Configuration → set <span class="mono">TallyPrime acts as</span> to <span class="mono">Both</span>, port <span class="mono">9000</span>.<br>' +
         '<b>Tally.ERP 9:</b> F12 (Configure) → Advanced Configuration → set the same option to <span class="mono">Both</span>, port <span class="mono">9000</span>.<br>' +
         'Keep the company open.' +
       '</div>' +
       '<div class="lf-title">Step 3 — pairing code</div>' +
-      '<div style="font-size:11px; color:var(--text-2); margin:4px 0 8px; line-height:1.7;">In the agent, paste this code and your company name.</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin:4px 0 8px; line-height:1.7;">In the agent, paste this code and your company name.</div>' +
       '<div id="tallyCodeBox" style="margin:8px 0 12px;">' +
         '<div class="mono" id="tallyCode" style="font-size:26px; letter-spacing:3px; padding:10px 0;">····-····</div>' +
-        '<div style="font-size:11px; color:var(--text-2);" id="tallyCodeMeta">Generating…</div>' +
+        '<div style="font-size:12px; color:var(--text-2);" id="tallyCodeMeta">Generating…</div>' +
       '</div>' +
       '<div class="note bad" id="tallyError" style="display:none; margin:10px 0 8px;"></div>' +
       '<div class="note ok" id="tallySuccess" style="display:none; margin:10px 0 8px;"></div>' +
@@ -619,7 +619,7 @@ function openZohoModal(){
     '<div class="ledger-form">' +
       '<div class="lf-title">Your Zoho data centre</div>' +
       '<select id="zohoRegion" style="margin-bottom:8px;">' + opts + '</select>' +
-      '<div style="font-size:11px; color:var(--text-2); margin-bottom:10px;">Most Indian businesses are on zoho.in. If you sign in at a different Zoho domain, pick it here. Margyn will still auto-correct to the right one after you approve.</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin-bottom:10px;">Most Indian businesses are on zoho.in. If you sign in at a different Zoho domain, pick it here. Margyn will still auto-correct to the right one after you approve.</div>' +
       '<div class="note bad" id="zohoError" style="display:none; margin-bottom:8px;"></div>' +
       '<button id="zohoConnectBtn">Continue to Zoho</button>' +
     '</div>';
@@ -741,7 +741,7 @@ async function syncZohoNow(){
   if(btn){ btn.disabled = false; btn.textContent = 'Sync now'; }
 }
 async function disconnectZoho(){
-  if(!confirm('Disconnect Zoho Books? Your historical figures stay visible in Margyn, but nothing new will sync until you reconnect.')) return;
+  if(!(await mgConfirm({ title:'Disconnect Zoho Books?', body:'Your historical figures stay visible in Margyn, but nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;
   const btn = document.getElementById('zohoDisconnectBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
   try { await zohoApi('/api/zoho?action=disconnect', { method:'POST', body: JSON.stringify({}) }); }
@@ -817,7 +817,7 @@ function openOdooModal(){
       '<input type="text" id="odooDb" placeholder="Database name" style="margin-bottom:8px;">' +
       '<input type="text" id="odooLogin" placeholder="User login (email)" style="margin-bottom:8px;" autocomplete="off">' +
       '<input type="password" id="odooKey" placeholder="API key" autocomplete="off">' +
-      '<div style="font-size:11px; color:var(--text-2); margin:8px 0;">Generate an API key in Odoo under your user avatar → Account Security → New API Key. On Odoo below v14, paste that user\'s password instead. Multi-company Odoo syncs the API user\'s default company.</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin:8px 0;">Generate an API key in Odoo under your user avatar → Account Security → New API Key. On Odoo below v14, paste that user\'s password instead. Multi-company Odoo syncs the API user\'s default company.</div>' +
       '<div class="note bad" id="odooError" style="display:none; margin-bottom:8px;"></div>' +
       '<div class="note ok" id="odooSuccess" style="display:none; margin-bottom:8px;"></div>' +
       '<button id="odooConnectBtn">Connect</button>' +
@@ -860,7 +860,7 @@ async function syncOdooNow(){
   if(btn){ btn.disabled = false; btn.textContent = 'Sync now'; }
 }
 async function disconnectOdoo(){
-  if(!confirm('Disconnect Odoo? Your historical invoice and bill data stays visible in Margyn, but nothing new will sync until you reconnect.')) return;
+  if(!(await mgConfirm({ title:'Disconnect Odoo?', body:'Your historical invoice and bill data stays visible in Margyn, but nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;
   const btn = document.getElementById('odooDisconnectBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
   try { await zohoApi('/api/zoho?action=odoo-disconnect', { method:'POST', body: JSON.stringify({}) }); }

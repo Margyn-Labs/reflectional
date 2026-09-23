@@ -10,7 +10,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <!-- supabase-js is loaded programmatically at the bottom of this file -->
+<link rel="stylesheet" href="/app/css/tokens.css">
 <link rel="stylesheet" href="/app/css/app.css">
+<link rel="stylesheet" href="/app/css/frame.css">
 </head>
 <body>
 <!-- ============ AUTH GATE ============ -->
@@ -93,16 +95,17 @@
 </div>
 <div id="appShell" class="hidden">
 <div class="marquee-placeholder"></div>
-<nav>
+<nav class="mg-top">
   <div class="nav-inner">
+    <button class="mg-icon-btn mg-menu" id="mgMenuBtn" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebarNav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
     <a class="nav-brand" href="/">
       <img src="images/margyn-logo-mark.png" alt="Margyn" class="nav-logo-mark">
       <span class="nav-logo">margyn</span>
     </a>
-    <div style="flex:1;"></div>
-    <div class="top-tools">
-      <div class="org-switch" id="orgSwitch">
-        <button class="org-switch-btn" id="orgSwitchBtn" type="button" aria-haspopup="true" aria-expanded="false">
+    <div class="mg-scope" id="mgScope" role="group" aria-label="What you are looking at">
+      <div class="org-switch mg-sc" id="orgSwitch">
+        <button class="org-switch-btn mg-sc-btn" id="orgSwitchBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          <span class="mg-k">Organisation</span>
           <span class="org-mark" id="orgSwitchMark">M</span>
           <span class="org-name" id="orgSwitchName">Your business</span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -117,44 +120,72 @@
             </span>
             <svg class="osm-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
+          <div id="mgOrgEntities"></div>
           <div class="osm-divider"></div>
-          <div class="osm-add">+ Add another business — coming soon</div>
+          <div class="osm-add">Switching between organisations comes with multi-organisation support.</div>
         </div>
       </div>
-      <button class="top-k" id="cmdkTrigger" type="button" aria-label="Search or ask Margyn">
+      <div class="mg-sc" id="mgSrc">
+        <button class="mg-sc-btn" id="mgSrcBtn" type="button" aria-haspopup="true" aria-expanded="false"><span class="mg-dot" id="mgSrcDot"></span><span class="mg-k">Sources</span><span class="mg-v" id="mgSrcVal">Reconciled</span><svg class="mg-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="mg-pop" id="mgSrcPop" role="menu"></div>
+      </div>
+      <div class="mg-sc" id="mgPer">
+        <button class="mg-sc-btn" id="mgPerBtn" type="button" aria-haspopup="true" aria-expanded="false"><span class="mg-k">Period</span><span class="mg-v" id="mgPerVal">Latest</span><svg class="mg-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="mg-pop" id="mgPerPop" role="menu"></div>
+      </div>
+      <div class="mg-sc mg-sc-compact">
+        <button class="mg-sc-btn" id="mgScopeCompactBtn" type="button" aria-haspopup="true" aria-expanded="false"><span class="mg-dot" id="mgScopeCompactDot"></span><span class="mg-v" id="mgScopeCompactVal"></span><svg class="mg-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="mg-pop" id="mgScopeCompactPop" role="menu"></div>
+      </div>
+    </div>
+    <div class="mg-spacer"></div>
+    <button class="top-k" id="cmdkTrigger" type="button" aria-label="Search or ask Margyn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <span class="label">Jump to, or ask Margyn</span>
         <span class="kbd">&#8984;K</span>
       </button>
-      <span class="top-sync" id="topSync"><span class="pip"></span><span id="topSyncText">No sources</span></span>
-      <div class="nav-user">
-        <span class="top-avatar" id="topAvatar" title="">M</span>
-        <span id="userEmail"></span>
-        <button class="nav-logout" id="logoutBtn">Log out</button>
+    <button class="mg-tb-btn" id="mgImportBtn" type="button" data-go="calculate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Import</span></button>
+    <button class="mg-tb-btn mg-ai" id="mgAskBtn" type="button" data-go="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Ask</span></button>
+    <span class="top-sync" id="topSync"><span class="pip"></span><span id="topSyncText">No sources</span></span>
+    <div class="nav-user mg-user" id="mgUser">
+      <button class="top-avatar" id="topAvatar" type="button" title="" aria-haspopup="true" aria-expanded="false" aria-controls="mgUserPop">M</button>
+      <div class="mg-pop mg-pop-right" id="mgUserPop" role="menu">
+        <div class="mg-user-id"><div class="mg-user-name" id="mgUserName"></div><div class="mg-user-mail" id="userEmail"></div></div>
+        <div class="mg-sep"></div>
+        <button class="mg-opt" type="button" data-go="profile">Profile</button>
+        <button class="mg-opt" type="button" data-go="settings">Settings</button>
+        <div class="mg-sep"></div>
+        <button class="mg-opt" id="logoutBtn" type="button">Log out</button>
       </div>
     </div>
   </div>
 </nav>
+<div class="mg-scrim" id="mgRailScrim"></div>
 <div class="app-body">
-  <aside class="sidebar" id="sidebarNav">
+  <aside class="sidebar" id="sidebarNav" aria-label="Main">
     <div class="pagenav">
       <div class="nav-group-label">Overview</div>
-      <button data-view="summary" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Summary</span></button>
-      <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Scores</span></button>
-      <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Ask Margyn</span></button>
+      <button data-view="summary" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Home</span></button>
       <div class="nav-group-label">Money</div>
-      <button data-view="invoicing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg><span>Invoicing</span><span class="tier-chip free">FREE</span></button>
-      <button data-view="calculate"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Upload &amp; calculate</span></button>
       <button data-view="payments"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span>Payments</span><span class="nav-badge hidden" id="paymentsBadge"></span></button>
       <button data-view="books"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Books</span><span class="nav-badge hidden" id="booksBadge"></span></button>
-      <button data-view="analytics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg><span>Analytics</span></button>
+      <button data-view="invoicing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg><span>Invoicing</span><span class="tier-chip free">Free</span></button>
+      <div class="nav-group-label">Insight</div>
+      <button data-view="analytics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg><span>Reports</span></button>
+      <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Pulse Score</span></button>
+      <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Ask Margyn</span></button>
       <div class="nav-group-label">Automation</div>
       <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Agents</span><span class="nav-badge hidden" id="agentsBadge"></span></button>
-      <div class="nav-group-label">Account</div>
-      <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Connections</span><span class="tier-chip pro">PRO</span></button>
+      <div class="mg-rail-bottom">
+        <div class="nav-group-label">Admin</div>
+      <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12l-1 5a5 5 0 0 1-10 0Z"/><path d="M9 17v2a3 3 0 0 0 6 0v-2"/></svg><span>Sources</span><span class="tier-chip pro">Pro</span></button>
       <button data-view="financing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
       <button data-view="settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></button>
-      <button data-view="profile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>Profile</span></button>
+        <!-- Reached from the top bar (Import) and the user menu (Profile). Kept in
+             .pagenav, hidden, so the command palette still lists them as pages. -->
+      <button data-view="calculate" class="mg-nav-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Import a file</span></button>
+      <button data-view="profile" class="mg-nav-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg><span>Profile</span></button>
+      </div>
     </div>
   </aside>
   <div class="wrap">
@@ -256,7 +287,7 @@
       <div class="card">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
           <div class="ledger-list-title" id="ledgerListTitle" style="margin-top:0; padding-top:0; border-top:none;">Entries</div>
-          <select id="ledgerSourceFilter" style="font-size:11px; padding:5px 8px; width:auto; min-width:150px; max-width:220px; flex:0 0 auto;">
+          <select id="ledgerSourceFilter" style="font-size:12px; padding:5px 8px; width:auto; min-width:150px; max-width:220px; flex:0 0 auto;">
             <option value="all">All sources</option>
             <option value="self">Manual / CSV</option>
             <option value="zoho">Zoho Books</option>
@@ -271,7 +302,7 @@
     <div class="lsuper-panel" id="lsuper-khata">
       <div class="rd-head">
         <div>
-          <div class="rd-eyebrow">Invoicing <span class="tier-chip free" style="margin-left:6px;">FREE</span></div>
+          <div class="rd-eyebrow">Invoicing <span class="tier-chip free" style="margin-left:6px;">Free</span></div>
           <h1>Ledger &amp; invoicing</h1>
           <div class="rd-sub">Customer &amp; vendor khata, GST invoicing and ageing, free forever. AI narration on top of these numbers is a Pro feature.</div>
         </div>
@@ -437,6 +468,13 @@
   <div id="printStatement" class="hidden"></div>
   <!-- ---------- 1. PROFILE ---------- -->
   <div id="view-profile" class="hidden">
+    <div class="rd-head">
+      <div>
+        <div class="rd-eyebrow">Account</div>
+        <h1>Profile</h1>
+        <div class="rd-sub">Your business details and the people on this account.</div>
+      </div>
+    </div>
     <div class="facts">
       <div class="fact"><div class="f-label">Snapshots recorded</div><div class="f-value" id="pfCount">0</div></div>
       <div class="fact"><div class="f-label">Latest pulse</div><div class="f-value" id="pfPulse">0</div></div>
@@ -527,6 +565,13 @@
   </div>
   <!-- ---------- 2. UPLOAD & CALCULATE ---------- -->
   <div id="view-calculate" class="hidden">
+    <div class="rd-head">
+      <div>
+        <div class="rd-eyebrow">Import</div>
+        <h1>Upload a file or enter figures</h1>
+        <div class="rd-sub">An Excel or CSV workbook, or a PDF or photo of an invoice, bill or statement. Margyn shows where each figure goes before anything is saved.</div>
+      </div>
+    </div>
     <div class="tabs">
       <button class="tab active" data-tab="upload">Upload workbook</button>
       <button class="tab" data-tab="manual">Quick manual entry</button>
@@ -607,8 +652,8 @@
             <path d="M 12 88 A 76 76 0 0 1 164 88" fill="none" stroke="var(--border-1)" stroke-width="6" stroke-linecap="round"></path>
             <path id="pulseArc" d="M 12 88 A 76 76 0 0 1 164 88" fill="none" stroke="#0E8F5C" stroke-width="6"
                     stroke-linecap="round" stroke-dasharray="238.76" stroke-dashoffset="238.76"></path>
-            <text x="12" y="98" style="font-family:'IBM Plex Mono',monospace; font-size:7px; letter-spacing:.05em; fill:var(--text-3);" text-anchor="start">0</text>
-            <text x="164" y="98" style="font-family:'IBM Plex Mono',monospace; font-size:7px; letter-spacing:.05em; fill:var(--text-3);" text-anchor="end">100</text>
+            <text x="12" y="98" style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; fill:var(--text-3);" text-anchor="start">0</text>
+            <text x="164" y="98" style="font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.05em; fill:var(--text-3);" text-anchor="end">100</text>
           </svg>
           <div class="num" id="pulseNum">0</div>
         </div>
@@ -807,7 +852,7 @@
     </div>
     <div class="srcseg" id="booksSourceTabs">
       <button data-src="all" class="active">All sources</button>
-      <button data-src="manual">Manual<span class="tier-chip free" style="margin-left:6px;">FREE</span></button>
+      <button data-src="manual">Manual<span class="tier-chip free" style="margin-left:6px;">Free</span></button>
       <button data-src="zoho">Zoho Books</button>
       <button data-src="tally">Tally</button>
       <button data-src="odoo">Odoo</button>
@@ -960,10 +1005,17 @@
   </div>
   <!-- ---------- 3c. FINANCING ---------- -->
   <div id="view-financing" class="hidden">
+    <div class="rd-head">
+      <div>
+        <div class="rd-eyebrow">Financing</div>
+        <h1>Working-capital readiness</h1>
+        <div class="rd-sub">An indicative view built from your own figures. Margyn is not a lender.</div>
+      </div>
+    </div>
     <div class="card" style="border-left:3px solid var(--emerald);">
       <h2>Indicative working-capital eligibility</h2>
       <div class="app-title" id="finRange" style="font-size:31px; filter:blur(5px); user-select:none; transition:filter .25s ease;">—</div>
-      <div class="hint" style="margin-bottom:6px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-2);">Indicative only. Blurred until a lending partner verifies your data.</div>
+      <div class="hint" style="margin-bottom:6px; font-family:inherit; font-size:12px; text-transform:none; letter-spacing:normal; color:var(--text-2);">Indicative only. Blurred until a lending partner verifies your data.</div>
       <div class="hint" id="finNote">Upload or enter a snapshot to see an estimate.</div>
     </div>
     <div class="card" id="finLeadCard">
@@ -1006,12 +1058,12 @@
         <div id="reconReviewList"></div>
       </div>
       <div class="card hidden" id="agentQueueCard">
-        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Close &amp; Collections proposals <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">BETA</span></div>
+        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Close &amp; Collections proposals <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">Beta</span></div>
         <div class="hint" style="margin-bottom:10px;">The Close &amp; Collections agent worked the reconciliation exceptions overnight. Each item below is a proposal &mdash; the money figure, why, and what to book.</div>
         <div id="agentQueueList"></div>
       </div>
       <div class="card hidden" id="agentSuggestCard">
-        <div class="ledger-list-title" style="margin-top:0; padding-top:0; border-top:none;">Forwarded documents <span class="tier-chip free" style="margin-left:6px;">IMPORT</span></div>
+        <div class="ledger-list-title" style="margin-top:0; padding-top:0; border-top:none;">Forwarded documents <span class="tier-chip free" style="margin-left:6px;">Import</span></div>
         <div class="hint" style="margin-bottom:10px;">Invoices, bills and receipts you forwarded to your Margyn WhatsApp number. The Import agent read each one and proposed where it goes.</div>
         <div id="suggestionsList"></div>
       </div>
@@ -1201,5 +1253,6 @@
 <script src="/app/js/16-briefing-agents.js"></script>
 <script src="/app/js/17-people.js"></script>
 <script src="/app/js/18-chase-boot.js"></script>
+<script src="/app/js/19-frame.js"></script>
 </body>
 </html>

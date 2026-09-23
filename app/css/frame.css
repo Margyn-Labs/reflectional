@@ -1,0 +1,179 @@
+/* App frame (plan §5): top bar + Scope bar, left rail, shared page header,
+   user menu, dialogs. Loaded after app.css; overrides the old nav/sidebar.
+   Uses tokens.css. Page contents are untouched here. */
+
+/* ---------- top bar ---------- */
+nav.mg-top{ height:var(--top-h); background:var(--g0); border-bottom:1px solid var(--g200); box-shadow:none; }
+nav.mg-top .nav-inner{ height:var(--top-h); padding:0 16px 0 0; gap:10px; }
+nav.mg-top .nav-brand{ height:var(--top-h); width:var(--rail-w); padding:0 16px 0 20px; justify-content:flex-start; border-right:0; flex:none; }
+nav.mg-top .nav-logo{ font-size:var(--f16); }
+.mg-spacer{ flex:1; min-width:8px; }
+.mg-icon-btn{ width:36px; height:36px; display:grid; place-items:center; border:0; background:none; border-radius:var(--r-ctl); color:var(--g600); cursor:pointer; flex:none; }
+.mg-icon-btn:hover{ background:var(--g50); }
+.mg-icon-btn svg{ width:18px; height:18px; }
+.mg-menu{ display:none; }
+
+/* Scope bar: [Organisation][Sources][Period] as one segmented control */
+.mg-scope{ display:flex; align-items:stretch; height:36px; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0); min-width:0; }
+.mg-sc{ position:relative; display:flex; min-width:0; flex:none; }
+.org-switch.mg-sc{ flex:0 1 auto; }
+.org-switch-btn.mg-sc-btn{ max-width:340px; }
+.mg-sc + .mg-sc{ border-left:1px solid var(--g200); }
+.mg-sc-btn, .org-switch-btn.mg-sc-btn{ height:100%; display:flex; align-items:center; gap:8px; padding:0 12px; border:0; border-radius:0; background:none;
+  font:600 var(--f13)/1 var(--font-ui); color:var(--g900); cursor:pointer; white-space:nowrap; max-width:300px; min-width:0; }
+.mg-sc:first-child .mg-sc-btn{ border-radius:var(--r-ctl) 0 0 var(--r-ctl); }
+.mg-sc-btn:hover:not(:disabled){ background:var(--g50); }
+.mg-sc-btn:disabled{ cursor:default; color:var(--g600); }
+.mg-sc-btn .mg-k{ color:var(--g500); font-weight:500; }
+.mg-sc-btn .mg-v, .org-switch-btn .org-name{ overflow:hidden; text-overflow:ellipsis; }
+.mg-sc-btn .mg-chev, .org-switch-btn svg{ width:14px; height:14px; color:var(--g500); flex:none; }
+.mg-sc-btn:disabled .mg-chev{ display:none; }
+.org-switch-btn.mg-sc-btn .org-mark{ display:none; }
+.mg-dot{ width:8px; height:8px; border-radius:50%; background:var(--brand); flex:none; }
+.mg-dot.warn{ background:var(--warn); }
+.mg-dot.off{ background:var(--g300); }
+.mg-sc-compact{ display:none; }
+
+/* popovers (Scope bar menus, user menu); the org menu keeps its own markup */
+.mg-pop, .org-switch.mg-sc .org-switch-menu{ position:absolute; top:calc(100% + 6px); left:0; min-width:280px; max-width:min(360px, calc(100vw - 24px));
+  background:var(--g0); border:1px solid var(--g200); border-radius:var(--r-panel); box-shadow:var(--shadow-overlay); padding:6px; z-index:300; display:none; }
+.mg-pop.open, .org-switch.mg-sc.open .org-switch-menu{ display:block; }
+.mg-pop-right{ left:auto; right:0; min-width:240px; }
+.mg-pop h6{ font:600 var(--f12)/1.3 var(--font-ui); color:var(--g500); padding:8px 10px 4px; margin:0; }
+.mg-pop .mg-note{ font-size:var(--f12); color:var(--g500); padding:4px 10px 8px; line-height:1.45; }
+.mg-opt{ display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; border:0; background:none; border-radius:var(--r-ctl);
+  text-align:left; font:500 var(--f13)/1.35 var(--font-ui); color:var(--g900); cursor:pointer; }
+.mg-opt:hover{ background:var(--g50); }
+.mg-opt .mg-sub{ display:block; color:var(--g500); font-size:var(--f12); }
+.mg-opt .mg-meta{ margin-left:auto; font-size:var(--f12); color:var(--g500); white-space:nowrap; }
+.mg-opt .mg-tick{ margin-left:auto; color:var(--brand); visibility:hidden; flex:none; }
+.mg-opt.sel .mg-tick{ visibility:visible; }
+.mg-opt.sel{ font-weight:700; }
+.mg-sep{ height:1px; background:var(--g100); margin:6px 0; }
+.org-switch.mg-sc .org-switch-menu .osm-add{ font-size:var(--f12); line-height:1.45; }
+.mg-ent{ display:flex; align-items:center; gap:10px; padding:6px 8px; font-size:var(--f13); color:var(--g900); }
+.mg-ent .mg-sub{ display:block; color:var(--g500); font-size:var(--f12); }
+
+/* top-bar buttons */
+nav.mg-top .top-k{ height:36px; min-width:220px; }
+.mg-tb-btn{ height:36px; display:inline-flex; align-items:center; gap:6px; padding:0 10px; border:0; background:none; border-radius:var(--r-ctl);
+  font:600 var(--f13)/1 var(--font-ui); color:var(--g900); cursor:pointer; white-space:nowrap; flex:none; }
+.mg-tb-btn:hover{ background:var(--g50); }
+.mg-tb-btn svg{ width:16px; height:16px; }
+.mg-tb-btn.mg-ai{ color:var(--ai); }
+nav.mg-top .top-sync{ height:32px; white-space:nowrap; flex:none; }
+nav.mg-top .top-k{ white-space:nowrap; flex:none; }
+.mg-user{ position:relative; gap:0; }
+button.top-avatar{ font:700 var(--f12)/1 var(--font-ui); cursor:pointer; padding:0; }
+.mg-user-id{ padding:10px; }
+.mg-user-name{ font-weight:700; font-size:var(--f14); color:var(--g900); }
+.mg-user-mail{ font-size:var(--f12); color:var(--g500); overflow:hidden; text-overflow:ellipsis; }
+/* Ask moved to the top bar (plan §5): the floating bubble goes. */
+.ask-margyn-fab{ display:none !important; }
+
+/* ---------- left rail ---------- */
+@media (min-width:901px){
+  .app-body{ height:calc(100vh - var(--top-h)); }
+  .app-body .sidebar, .app-body .sidebar{ width:var(--rail-w); padding:12px 8px 12px; }
+}
+.sidebar .pagenav{ min-height:100%; }
+.sidebar .pagenav button{ font:500 var(--f14)/1.2 var(--font-ui); }
+.sidebar .pagenav button svg{ stroke-width:1.75; }
+.sidebar .pagenav button.active{ font-weight:600; }
+.sidebar .pagenav button.mg-nav-hidden{ display:none !important; }
+.sidebar .tier-chip{ font-size:var(--f12); }
+.mg-rail-bottom{ margin-top:auto; padding-top:8px; border-top:1px solid var(--g100); display:flex; flex-direction:column; gap:2px; }
+.nav-group-label{ font-size:var(--f12); font-weight:600; color:var(--g500); }
+.mg-scrim{ display:none; }
+
+/* ---------- shared page header (every view's .rd-head) ---------- */
+.rd-head{ align-items:flex-end; }
+.rd-head .rd-eyebrow{ font:500 var(--f13)/1.3 var(--font-ui); color:var(--g500); margin-bottom:4px; }
+.rd-head h1{ font-size:var(--f24); font-weight:700; letter-spacing:-.01em; }
+.rd-head .rd-sub{ font-size:var(--f14); color:var(--g600); max-width:80ch; }
+.mg-scopeline{ display:inline-flex; align-items:center; gap:6px; margin-top:8px; font:500 var(--f12)/1.4 var(--font-ui); color:var(--g600);
+  background:var(--g50); border:1px solid var(--g100); border-radius:4px; padding:2px 8px; }
+.mg-scopeline .mg-dot{ width:6px; height:6px; }
+/* The old global header only served views without their own .rd-head; every
+   view has one now. Kept in the DOM for its ids. */
+header.app-head{ display:none !important; }
+/* The scope line carries the as-of date on data pages; the old stamp stays in the DOM for its id. */
+#view-summary .rd-head .rd-asof, #view-scores .rd-head .rd-asof{ display:none; }
+/* In-page source / range switches are driven from the Scope bar now. */
+#paymentsSourceTabs, #booksSourceTabs, #analyticsRangeTabs{ display:none !important; }
+
+/* ---------- dialog (replaces window.confirm) ---------- */
+.mg-dialog-scrim{ position:fixed; inset:0; background:rgba(20,24,31,.32); display:grid; place-items:center; z-index:1000; padding:16px; }
+.mg-dialog{ width:min(460px,100%); background:var(--g0); border-radius:var(--r-panel); box-shadow:var(--shadow-overlay); padding:20px; font-family:var(--font-ui); }
+.mg-dialog h3{ font-size:var(--f16); font-weight:700; color:var(--g900); margin:0 0 8px; }
+.mg-dialog p{ font-size:var(--f14); color:var(--g600); line-height:1.5; margin:0; }
+.mg-dialog .mg-effect{ margin:14px 0 0; padding:10px 12px; background:var(--g25); border:1px solid var(--g100); border-radius:var(--r-ctl); font-size:var(--f13); }
+.mg-dialog .mg-effect div{ display:flex; justify-content:space-between; gap:12px; padding:3px 0; }
+.mg-dialog .mg-effect b{ font-family:var(--font-num); font-weight:600; text-align:right; }
+.mg-dialog label{ display:flex; gap:8px; align-items:flex-start; font-size:var(--f13); color:var(--g900); margin-top:14px; cursor:pointer; }
+.mg-dialog .mg-foot{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+.mg-btn{ height:34px; display:inline-flex; align-items:center; padding:0 14px; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0);
+  font:600 var(--f13)/1 var(--font-ui); color:var(--g900); cursor:pointer; }
+.mg-btn:hover{ background:var(--g50); }
+.mg-btn.primary{ background:var(--brand); border-color:var(--brand); color:#fff; }
+.mg-btn.primary:hover{ background:var(--brand-700); }
+.mg-btn.danger{ background:var(--neg); border-color:var(--neg); color:#fff; }
+.mg-btn:disabled{ opacity:.45; cursor:not-allowed; }
+
+/* ---------- responsive ---------- */
+/* Source health already shows as the dot in the Scope bar, so the sync chip
+   and the search label are the first things to give way. */
+@media (max-width:1600px){
+  nav.mg-top .top-k{ min-width:0; }
+  nav.mg-top .top-k .label{ display:none; }
+  nav.mg-top .top-sync{ display:none; }
+}
+@media (max-width:1280px){
+  .mg-tb-btn span{ display:none; }
+  .mg-sc-btn .mg-k{ display:none; }
+}
+@media (max-width:1100px){
+  .mg-sc#mgPer{ display:none; }
+}
+@media (max-width:900px){
+  :root{ --rail-w:272px; }
+  nav.mg-top .nav-inner{ padding:0 10px; gap:6px; }
+  .mg-menu{ display:grid; }
+  nav.mg-top .nav-brand{ width:auto; padding:0 4px; }
+  nav.mg-top .nav-logo{ display:none; }
+  .mg-scope{ flex:1 1 auto; }
+  .mg-scope > .mg-sc{ display:none; }
+  .mg-scope > .mg-sc.mg-sc-compact{ display:flex; flex:1; min-width:0; }
+  .mg-sc-compact .mg-sc-btn{ width:100%; border-radius:var(--r-ctl); }
+  .mg-sc-compact .mg-pop{ position:fixed; top:calc(var(--top-h) + 4px); left:8px; right:8px; max-width:none; max-height:calc(100vh - var(--top-h) - 16px); overflow:auto; }
+  .mg-spacer, #mgImportBtn, #cmdkTrigger{ display:none; }
+  .mg-user .mg-pop-right{ position:fixed; top:calc(var(--top-h) + 4px); right:8px; }
+  /* rail becomes a drawer */
+  .app-body .sidebar{ position:fixed; top:var(--top-h); bottom:0; left:0; width:var(--rail-w); z-index:260; background:var(--g0);
+    border-right:1px solid var(--g200); box-shadow:var(--shadow-overlay); transform:translateX(-105%); transition:transform .18s ease;
+    overflow-y:auto; padding:12px 8px; order:0; display:block; }
+  body.mg-rail-open .app-body .sidebar{ transform:none; }
+  body.mg-rail-open .mg-scrim{ display:block; position:fixed; inset:var(--top-h) 0 0 0; background:rgba(20,24,31,.28); z-index:250; }
+  .sidebar .pagenav{ flex-direction:column; align-items:stretch; gap:2px; padding:0; margin:0; border:0; background:transparent; flex-wrap:nowrap; display:flex; }
+  .sidebar .pagenav button{ flex:none; justify-content:flex-start; text-align:left; padding:10px 12px; border-radius:var(--r-ctl); min-width:0; gap:10px;
+    color:var(--g900); background:transparent; display:flex; align-items:center; position:relative; }
+  .sidebar .pagenav button.active{ background:var(--brand-50); color:var(--brand-700); }
+  .sidebar .pagenav button.active svg{ color:var(--brand); }
+  .sidebar .nav-badge{ position:static; margin-left:auto; }
+  .sidebar .tier-chip{ display:inline-block; margin-left:auto; }
+  .nav-group-label{ display:block; padding:14px 12px 6px; }
+  .pagenav .nav-group-label:first-child{ padding-top:2px; }
+  .mg-rail-bottom{ margin-top:12px; }
+}
+
+/* ---------- phone fixes that fall out of the frame work ---------- */
+@media (max-width:600px){
+  /* KPI tiles: two per row on phones (the strip sets its own column count inline) */
+  #kpiStrip{ grid-template-columns:repeat(2, minmax(0, 1fr)) !important; }
+}
+/* On phones .app-body is a column flexbox and the old .wrap{margin:0 auto}
+   turns off stretching, so .wrap sized itself to its widest child (the Sources
+   flow diagram) and pushed the page past the screen. Pin it to the width. */
+.app-body .wrap{ min-width:0; }
+@media (max-width:900px){ .app-body .wrap{ width:100%; padding-top:20px; } } /* old top padding cleared a floating header that no longer floats */
+#connFlowMap{ max-width:100%; overflow-x:auto; }

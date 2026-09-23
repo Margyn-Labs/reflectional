@@ -355,7 +355,7 @@ function renderOneSuggestionCard(s, idx){
   let h = '<div class="card" style="margin-bottom:16px;">'
     + '<div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;">'
     + '<h2 style="margin:0;">From WhatsApp · ' + impEsc(fromLabel) + '</h2>'
-    + '<span style="font-family:\'IBM Plex Mono\',monospace; font-size:10.5px; letter-spacing:.04em; color:var(--text-3);">' + impEsc(when) + '</span></div>';
+    + '<span style="font-family:\'IBM Plex Mono\',monospace; font-size:12px; letter-spacing:.04em; color:var(--text-3);">' + impEsc(when) + '</span></div>';
   if(!entries.length && !anomalies.length){
     h += '<div class="hint" style="margin-top:10px;">Nothing recognisable in this file.</div>';
   } else if(entries.length){

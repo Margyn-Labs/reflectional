@@ -46,9 +46,9 @@ const METRICS = {
   settleLag:     { label:'Settlement lag',       group:'Payments', unit:'days', better:'down', why:'Capture to bank credit.',                         calc:s => { const p = pd(s); return p ? num(p.lag) : null; } },
   avgTxn:        { label:'Average transaction',  group:'Payments', unit:'inr',  better:'up',   why:'Gross divided by transaction count.',             calc:s => { const p = pd(s); return p ? div(p.gross, p.total) : null; } }
 };
-function metricFormat(v, unit){
+function metricFormat(v, unit, mode){
   if(v === null || v === undefined || !isFinite(v)) return 'n/a';
-  if(unit === 'inr')    return inr(Math.round(v));
+  if(unit === 'inr')    return fmtINR(v, mode);
   if(unit === 'pct')    return v.toFixed(1) + '%';
   if(unit === 'days')   return Math.round(v) + 'd';
   if(unit === 'months') return v.toFixed(1) + ' mo';
@@ -100,12 +100,12 @@ function metricCardHtml(key, latest, prev){
     const col = dCls === 'down' ? 'var(--rose)' : 'var(--emerald)';
     spark = '<svg class="mx-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts + '" fill="none" stroke="' + col + '" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>';
   }
-  const vTxt = metricFormat(v, m.unit);
+  const vTxt = metricFormat(v, m.unit, 'tile');
   return '<div class="mx-card" data-margyn-topic="' + escapeHtml(m.label) + '">' +
     '<div><div class="mx-label">' + escapeHtml(m.label) + '</div>' +
     '<div class="mx-why">' + escapeHtml(m.why) + '</div></div>' +
     '<div>' + (spark || '') + '</div>' +
-    '<div class="mx-value' + (v === null ? ' na' : '') + '">' + escapeHtml(vTxt) + '</div>' +
+    '<div class="mx-value' + (v === null ? ' na' : '') + '" title="' + escapeHtml(metricFormat(v, m.unit)) + '">' + escapeHtml(vTxt) + '</div>' +
     '<div class="mx-delta ' + dCls + '">' + escapeHtml(dTxt) + '</div>' +
   '</div>';
 }

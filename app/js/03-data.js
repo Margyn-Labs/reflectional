@@ -50,7 +50,7 @@ function openRazorpayModal(){
       '<div class="lf-title">Manual API key entry</div>' +
       '<input type="password" id="rzpKeyId" placeholder="Key ID (rzp_live_xxxxxxxxxxxx)" style="margin-bottom:8px;">' +
       '<input type="password" id="rzpKeySecret" placeholder="Key Secret">' +
-      '<div style="font-size:11px; color:var(--text-2); margin:8px 0;">Get these from razorpay.com/settings/api-keys</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin:8px 0;">Get these from razorpay.com/settings/api-keys</div>' +
       '<div class="note bad" id="rzpError" style="display:none; margin-bottom:8px;"></div>' +
       '<div class="note ok" id="rzpSuccess" style="display:none; margin-bottom:8px;"></div>' +
       '<button id="rzpConnectBtn">Connect</button>' +
@@ -141,7 +141,7 @@ function openCashfreeModal(){
       '<select id="cfEnv" style="margin-bottom:8px;"><option value="production">Production</option><option value="sandbox">Sandbox (test)</option></select>' +
       '<input type="password" id="cfClientId" placeholder="App ID" style="margin-bottom:8px;">' +
       '<input type="password" id="cfClientSecret" placeholder="Secret Key">' +
-      '<div style="font-size:11px; color:var(--text-2); margin:8px 0;">Get these from the Cashfree Merchant Dashboard → Developers → API Keys</div>' +
+      '<div style="font-size:12px; color:var(--text-2); margin:8px 0;">Get these from the Cashfree Merchant Dashboard → Developers → API Keys</div>' +
       '<div class="note bad" id="cfError" style="display:none; margin-bottom:8px;"></div>' +
       '<div class="note ok" id="cfSuccess" style="display:none; margin-bottom:8px;"></div>' +
       '<button id="cfConnectBtn">Connect</button>' +

@@ -34,9 +34,9 @@ function chaseFormHtml(cfg){
     chaseSeg('Escalation speed', 'escalation_steepness', c.escalation_steepness, [['gentle','Gentle'],['standard','Standard'],['firm','Firm']]) +
     '<div class="agent-fieldset"><span class="agent-fs-label">Cadence (days)</span>' +
       '<div class="hint" style="margin-bottom:8px;">Comma-separated. Before-due sends a soft heads-up; after-due chases climb in urgency.</div>' +
-      '<label style="font-size:11px; color:var(--text-2);">Before due</label>' +
+      '<label style="font-size:12px; color:var(--text-2);">Before due</label>' +
       '<input type="text" id="chaseBefore" value="' + c.days_before_due.join(', ') + '" placeholder="3">' +
-      '<label style="font-size:11px; color:var(--text-2);">After due</label>' +
+      '<label style="font-size:12px; color:var(--text-2);">After due</label>' +
       '<input type="text" id="chaseAfter" value="' + c.days_after_due.join(', ') + '" placeholder="3, 7, 14"></div>' +
     '<div class="agent-fieldset"><span class="agent-fs-label">Max chases before it comes back to you</span>' +
       '<input type="number" id="chaseMax" value="' + c.max_chases + '" min="1" max="8"></div>' +
@@ -205,7 +205,7 @@ async function chaseRowAction(act, t){
   if(act === 'timeline') return openChaseTimeline(t);
   if(act === 'takeover') return chaseTakeOver(t);
   if(act === 'stop'){
-    if(!confirm('Stop chasing ' + (t.party_name || 'this customer') + '?')) return;
+    if(!(await mgConfirm({ title:'Stop chasing ' + (t.party_name || 'this customer') + '?', body:'Margyn stops sending reminders to this customer. You can start again later.', effect:(t.amount != null ? [['Outstanding', inr(t.amount)]] : []), confirmLabel:'Stop chasing' }))) return;
     await chaseUpdateTarget(t.id, { state: 'stopped', resolution: 'Stopped by the founder.', next_chase_at: null });
     return;
   }
@@ -237,7 +237,7 @@ async function openChaseTimeline(t){
     (t.promise_to_pay_date ? ' · promised ' + t.promise_to_pay_date : '') + '</div>';
   const body = items.length ? items.map(it =>
     '<div style="padding:8px 0; border-bottom:1px solid var(--border);">' +
-      '<div style="font-size:11px; color:var(--text-2);">' + fmtDay(it.ts) + ' · ' + (it.dir === 'out' ? 'Margyn → customer' : 'customer → Margyn') + '</div>' +
+      '<div style="font-size:12px; color:var(--text-2);">' + fmtDay(it.ts) + ' · ' + (it.dir === 'out' ? 'Margyn → customer' : 'customer → Margyn') + '</div>' +
       '<div style="font-size:12px; font-weight:600; margin:2px 0;">' + escapeHtml(it.head) + '</div>' +
       (it.body ? '<div style="font-size:12px; color:var(--text-1);">' + escapeHtml(it.body) + '</div>' : '') +
     '</div>').join('') : '<div class="hint">No messages yet.</div>';

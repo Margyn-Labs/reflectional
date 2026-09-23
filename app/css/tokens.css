@@ -1,0 +1,32 @@
+/* Margyn design tokens (APP-UI-PROFESSIONAL-PLAN.md §6).
+   New surfaces use these. The legacy variables in app.css (--emerald, --text-0,
+   --border-1 ...) already carry the same palette and stay until each page is
+   migrated in its own phase. Light theme only, no dark mode (VP decision). */
+:root{
+  /* neutrals: 10 greys */
+  --g0:#FFFFFF; --g25:#FAFAF8; --g50:#F4F3EF; --g100:#ECEAE4; --g200:#E4E1DA;
+  --g300:#D2CEC5; --g400:#A9AEB7; --g500:#8B93A0; --g600:#5B6472; --g900:#14181F;
+
+  /* colour, one job each */
+  --brand:#0E8F5C; --brand-50:#E7F4EE; --brand-700:#0A7049;   /* brand + primary actions */
+  --link:#0B4B8C;  --link-50:#E8EFF7;                          /* connect / source actions */
+  --ai:#CC5B34;    --ai-50:#FBEFEA;                            /* AI-written content only */
+  --neg:#B3432E;   --neg-50:#F8ECE9;                           /* negative / destructive */
+  --warn:#9A6A00;  --warn-50:#FBF3DF;
+  --pos:#0E8F5C;
+
+  /* type: 12/13/14/16/20/24/32, nothing below 12px */
+  --f12:12px; --f13:13px; --f14:14px; --f16:16px; --f20:20px; --f24:24px; --f32:32px;
+  --font-ui:'Manrope', system-ui, sans-serif;
+  --font-num:'IBM Plex Mono', ui-monospace, monospace;   /* figures only */
+
+  /* shape */
+  --r-ctl:6px; --r-panel:8px;
+  --shadow-overlay:0 12px 32px rgba(20,24,31,.14), 0 2px 6px rgba(20,24,31,.06);
+
+  /* frame */
+  --top-h:56px; --rail-w:232px;
+}
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
+}

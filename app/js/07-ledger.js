@@ -222,10 +222,11 @@ function renderLedgerView(){
     const r = rows[Number(btn.dataset.idx)];
     if(!r || !r.editable) return;
     const isRecv = r.kind === 'recv';
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if(btn.dataset.act === 'settle'){ isRecv ? ledgerSettleReceivable(r.raw) : ledgerSettlePayable(r.raw); }
-      else if(window.confirm('Delete this entry?')){ isRecv ? ledgerRemoveReceivable(r.raw) : ledgerRemovePayable(r.raw); }
+      else if(await mgConfirm({ title:'Delete this entry?', body:'It is removed from your ledger and your figures are recalculated. The deletion stays in the activity log.',
+        effect:[[isRecv ? 'Customer' : 'Vendor', r.raw.party_name || '—'], ['Amount', inr(r.raw.amount)]], confirmLabel:'Delete entry', danger:true })){ isRecv ? ledgerRemoveReceivable(r.raw) : ledgerRemovePayable(r.raw); }
     });
   });
   host.querySelectorAll('.lt-row[data-idx]').forEach(row => {
@@ -275,8 +276,9 @@ function openLedgerRowDetail(r){
     isRecv ? ledgerSettleReceivable(r.raw) : ledgerSettlePayable(r.raw);
   });
   const delBtn = document.getElementById('ldrDelete');
-  if(delBtn) delBtn.addEventListener('click', () => {
-    if(!window.confirm('Delete this entry?')) return;
+  if(delBtn) delBtn.addEventListener('click', async () => {
+    if(!(await mgConfirm({ title:'Delete this entry?', body:'It is removed from your ledger and your figures are recalculated. The deletion stays in the activity log.',
+        effect:[[isRecv ? 'Customer' : 'Vendor', r.raw.party_name || '—'], ['Amount', inr(r.raw.amount)]], confirmLabel:'Delete entry', danger:true }))) return;
     overlay.classList.add('hidden');
     isRecv ? ledgerRemoveReceivable(r.raw) : ledgerRemovePayable(r.raw);
   });

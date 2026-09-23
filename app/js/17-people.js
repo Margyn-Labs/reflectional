@@ -291,7 +291,7 @@ async function peopleTogglePerm(id, key){
   const def = PEOPLE_PERMS.find(x => x.key === key);
   const patch = {};
   if(def.bell && next && !cur.bell_consent_at){
-    if(!confirm('Has ' + cur.name + ' agreed to get WhatsApp briefings from Margyn on ' + waPrettyPhone(cur.phone) + '? WhatsApp requires their opt-in before we send.')) return;
+    if(!(await mgConfirm({ title:'Turn on WhatsApp briefings for ' + cur.name + '?', body:'WhatsApp requires the person’s opt-in before Margyn sends them anything.', effect:[['Number', waPrettyPhone(cur.phone)]], tick:cur.name + ' has agreed to get WhatsApp briefings from Margyn', confirmLabel:'Turn on' }))) return;
     patch.bell_consent_at = new Date().toISOString();
   }
   const perms2 = { ...perms, [key]: next };
@@ -357,7 +357,7 @@ async function peopleOnClick(e){
 
   if(act === 'remove'){
     const cur = agentStakeholders.find(p => p.id === id); if(!cur) return;
-    if(!confirm('Remove ' + cur.name + ' from this account? They will no longer be able to message Margyn, get the Bells, or receive routed messages.')) return;
+    if(!(await mgConfirm({ title:'Remove ' + cur.name + ' from this account?', body:'They will no longer be able to message Margyn, get the Bells, or receive routed messages.', effect:[['Number', waPrettyPhone(cur.phone)]], confirmLabel:'Remove', danger:true }))) return;
     const { error } = await sbClient.from('business_stakeholders').delete().eq('id', id);
     if(error){ toast('Could not remove', { kind:'bad', sub: peopleErr(error) }); return; }
     agentStakeholders = agentStakeholders.filter(p => p.id !== id);
