@@ -73,10 +73,45 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(!!dl && /receivables-.*\.csv$/.test(dl.suggestedFilename()), 'Export downloads a CSV' + (dl ? ': ' + dl.suggestedFilename() : ''));
 
   // 4c. Customers -> row opens Receivables filtered; GST; Audit; Inbox vs Agents
+  // 4d. Detail drawer: from a receivables row and from Customers
+  await p.click('.pagenav button[data-view="receivables"]'); await p.waitForTimeout(250);
+  await p.click('#view-receivables [data-money-mode="reconciled"]'); await p.waitForTimeout(150);
+  await p.click('#view-receivables tr[data-open-party="urbannestretail"] td'); await p.waitForTimeout(250);
+  ok(await p.isVisible('.mg-drawer') && /Urban Nest/.test(await p.textContent('#mgDrawerTitle')), 'row opens the detail drawer');
+  await p.click('.mg-drawer [data-dtab="sources"]'); await p.waitForTimeout(100);
+  ok((await p.$$('.mg-drawer [data-dpanel="sources"] .mg-src-block')).length >= 2 && /differ by/.test(await p.textContent('.mg-drawer [data-dpanel="sources"]')), 'Sources tab: each source separately, conflict explained');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+  ok(!(await p.isVisible('.mg-drawer')) && p.url().includes('#/receivables'), 'Escape closes the drawer, page stays put');
   await p.click('.pagenav button[data-view="customers"]'); await p.waitForTimeout(250);
-  await p.click('#view-customers tr[data-party="Kaveri Stores"]'); await p.waitForTimeout(250);
-  ok(p.url().includes('#/receivables') && (await p.inputValue('#view-receivables [data-money-q]')) === 'Kaveri Stores' && (await p.$$('#view-receivables tbody tr')).length === 1, 'customer row opens their receivables');
+  await p.click('#view-customers tr[data-open-party="kaveristores"] td'); await p.waitForTimeout(250);
+  await p.click('.mg-drawer [data-drawer-list]'); await p.waitForTimeout(250);
+  ok(p.url().includes('#/receivables') && (await p.inputValue('#view-receivables [data-money-q]')) === 'Kaveri Stores' && (await p.$$('#view-receivables tbody tr')).length === 1, 'customer drawer -> Open in Receivables, filtered');
   await p.fill('#view-receivables [data-money-q]', ''); await p.waitForTimeout(150);
+
+  // 4e. Forecast: customer adjusts it and can switch it off
+  await p.evaluate(() => { try { localStorage.removeItem('margyn_forecast_v1'); } catch(e){} });
+  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(250);
+  ok(/13-week cash forecast/.test(await p.textContent('#view-home')), 'Home shows the 13-week forecast');
+  await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
+  ok(await p.isVisible('.mg-drawer') && (await p.$$('.mg-drawer input[data-fc]')).length === 11, 'Adjust opens the assumptions (11 inputs)');
+  await p.fill('.mg-drawer input[data-fc="collectDelay"]', '60'); await p.waitForTimeout(200);
+  ok(/pay 60 days after/.test(await p.textContent('#view-home .mg-fine')), 'changing an assumption updates the forecast live');
+  await p.uncheck('.mg-drawer input[data-fc="enabled"]'); await p.waitForTimeout(200);
+  ok(!/13-week cash forecast/.test(await p.textContent('#view-home')) && /Cash position/.test(await p.textContent('#view-home')), 'switching it off shows cash history instead');
+  await p.click('.mg-drawer [data-fc-reset]'); await p.waitForTimeout(200);
+  ok(/13-week cash forecast/.test(await p.textContent('#view-home')) && /pay 15 days after/.test(await p.textContent('#view-home')), 'Reset returns to the customer\'s own figures');
+  await p.keyboard.press('Escape');
+
+  // 4f. Older tiles show lakh/crore, exact figure on hover; Financing lives under Reports
+  await p.click('.pagenav button[data-view="books"]'); await p.waitForTimeout(300);
+  await p.click('#mgSrcBtn'); await p.click('#mgSrcPop [data-mg-src="all"]'); await p.waitForTimeout(400);   // earlier steps left Ledger on Tally
+  const strip = await p.$$eval('#view-books .rd-strip .v', xs => xs.map(e => [e.textContent, e.title]));
+  const big = strip.filter(s => s[1]);
+  ok(big.length > 0 && big.every(s => /^[+-]?₹[\d.]+ (Cr|L)$/.test(s[0]) && /^[+-]?₹[\d,]+$/.test(s[1])), 'Ledger tiles in lakh/crore, full figure on hover: ' + strip.map(s => s.join(' / ')).join(' | '));
+  ok(!(await p.isVisible('.pagenav button[data-view="financing"]')), 'Financing is not in the rail');
+  await p.click('.pagenav button[data-view="analytics"]'); await p.waitForTimeout(250);
+  await p.click('#view-analytics [data-go-page="financing"]'); await p.waitForTimeout(250);
+  ok(p.url().endsWith('#/financing') && /Capital readiness/.test(await p.textContent('#view-financing h1')), 'Reports -> Capital readiness');
   await p.click('.pagenav button[data-view="gst"]'); await p.waitForTimeout(250);
   ok(/Rathi Textiles/.test(await p.textContent('#view-gst')), 'GST page lists at-risk vendors');
   await p.click('.pagenav button[data-view="audit"]'); await p.waitForTimeout(300);

@@ -12,6 +12,7 @@
 <!-- supabase-js is loaded programmatically at the bottom of this file -->
 <link rel="stylesheet" href="/app/css/tokens.css">
 <link rel="stylesheet" href="/app/css/app.css">
+<link rel="stylesheet" href="/app/css/skin.css">
 <link rel="stylesheet" href="/app/css/frame.css">
 <link rel="stylesheet" href="/app/css/pages.css">
 </head>
@@ -193,7 +194,7 @@
       <button data-view="people"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>People and roles</span></button>
       <button data-view="settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></button>
       <button data-view="audit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Audit log</span></button>
-      <button data-view="financing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
+      <button data-view="financing" class="mg-nav-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
         <!-- Reached from the top bar (Import), the user menu (Profile) and old
              links (summary -> Home). Kept in .pagenav, hidden, so the command
              palette and the data-view contract still see them. -->
@@ -887,7 +888,7 @@
       <div class="hint" style="margin-top:12px;">Margyn used the stronger source for the score and left the difference here rather than splitting it. Cash from Tally and Odoo is the books' own bank and cash-in-hand total, with overdraft and cash-credit accounts left out &mdash; an interim signal until a bank feed replaces it. If two sources disagree on cash, that gap is usually uncleared items, not an error in either.</div>
     </div>
     <div id="booksManualBlocks" class="hidden">
-      <div class="hint" style="margin-bottom:14px;">Entries you keep by hand, plus anything imported from a CSV. These carry your Pulse Score wherever no connector reports the same figure &mdash; and where one does, the connector wins and the difference is flagged above.</div>
+      <div class="hint" style="margin-bottom:14px;">Entries you keep by hand or import from a CSV. They count toward your Pulse Score where no connected source reports the same figure.</div>
       <div id="booksManualMount"></div>
     </div>
     <div id="booksZohoBlocks">
@@ -1277,6 +1278,8 @@
 <script src="/app/js/17-people.js"></script>
 <script src="/app/js/18-chase-boot.js"></script>
 <script src="/app/js/19-pages.js"></script>
+<script src="/app/js/19a-forecast.js"></script>
+<script src="/app/js/19b-drawer.js"></script>
 <script src="/app/js/20-frame.js"></script>
 </body>
 </html>

@@ -209,11 +209,13 @@ function mgRenderHome(){
   const listRows = (arr, cls) => arr.slice(0, 5).map(x => '<div class="mg-li"><div><div class="mg-li-t">' + escapeHtml(x.t) + '</div><div class="mg-li-s">' + escapeHtml(x.s) + '</div></div><div class="mg-li-a' + (cls ? ' ' + cls : '') + '">' + escapeHtml(fmtINR(x.amt)) + '</div></div>').join('');
   const hist = (snapshots || []).slice(0, 13).slice().reverse();
   const brief = s && s.briefing;
+  const fc = s && typeof mgForecastPanel === 'function' ? mgForecastPanel() : null;
   host.innerHTML = mgPageHead({ group:'Overview', title:'Home', scope:mgScopeText('Reconciled') }) +
     (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>') +
     tiles +
     '<div class="mg-row2">' +
-      '<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span></div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>' +
+      (fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
+        (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>')) +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Pulse Score</h2><span class="mg-aside">Operating health, not a credit score</span></div><div class="mg-panel-b">' + pulse + '</div></div>' +
     '</div>' +
     '<div class="mg-row3">' +
@@ -255,7 +257,7 @@ function mgRenderMoney(dir){
     count = groups.length;
     body = '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>' + who + '</th>' +
       srcs.map(s => '<th class="r">' + escapeHtml(MG_SRC_NAME[s]) + ' (₹)</th>').join('') + '<th class="r">Difference (₹)</th><th>Agreement</th></tr></thead><tbody>' +
-      groups.map(g => '<tr><td>' + escapeHtml(g.party) + '</td>' +
+      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td>' + escapeHtml(g.party) + '</td>' +
         srcs.map(s => g.by[s] ? '<td class="r">' + mgNum(g.by[s].amount) + '</td>' : '<td class="r mg-muted">not listed</td>').join('') +
         '<td class="r' + (g.status === 'conflict' ? ' mg-diff' : ' mg-muted') + '">' + (g.status === 'single' ? '—' : mgNum(g.diff)) + '</td><td>' + mgAgreeBadge(g) + '</td></tr>').join('') +
       '</tbody></table><div class="mg-foot-note">Compared per ' + who.toLowerCase() + ', because invoice numbers differ between systems. Each column is exactly what that system says; “not listed” means that source didn’t send an open item for this ' + who.toLowerCase() + '. Agreement is judged across the sources that list it. Totals are never added across sources.</div></div>';
@@ -280,7 +282,7 @@ function mgRenderMoney(dir){
       '<button type="button" data-money-age="' + k + '" class="' + (mgMoneyAge === k ? 'on' : '') + '"><div class="mg-ag-l">' + l + '</div><div class="mg-ag-v">' + escapeHtml(fmtINR(buckets[k], 'tile')) + '</div>' +
       '<div class="mg-ag-bar"><i style="width:' + (buckets[k] / btot * 100).toFixed(1) + '%;background:' + colors[k] + '"></i></div></button>').join('') + '</div>' +
       '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>' + who + '</th><th>' + (mode === 'reconciled' ? 'Invoices' : 'Reference') + '</th><th>Status</th><th class="r">Open amount (₹)</th><th>' + (mode === 'reconciled' ? 'Agreement' : 'Source') + '</th><th></th></tr></thead><tbody>' +
-      rows.map((r, i) => '<tr><td>' + escapeHtml(r.party) + '</td><td class="mg-mono">' + escapeHtml(r.ref) + '</td><td>' + mgStatusBadge(r.days, dir) + '</td><td class="r">' + mgNum(r.amount) + '</td>' +
+      rows.map((r, i) => '<tr class="mg-click" data-open-party="' + escapeHtml(r.g ? r.g.key : r.r.key) + '" data-dir="' + dir + '"><td>' + escapeHtml(r.party) + '</td><td class="mg-mono">' + escapeHtml(r.ref) + '</td><td>' + mgStatusBadge(r.days, dir) + '</td><td class="r">' + mgNum(r.amount) + '</td>' +
         '<td>' + (mode === 'reconciled' ? mgAgreeBadge(r.g) + ' <span class="mg-srcs">' + r.g.sources.map(mgLogo).join('') + '</span>' : '<span class="mg-srccell">' + mgLogo(r.src) + escapeHtml(r.src === 'manual' ? 'Entered by you' : (mgSourceHealth(r.src).text || '')) + '</span>') + '</td>' +
         '<td class="r">' + (r.r && r.r.editable && r.r.raw ? '<button class="mg-row-act" type="button" data-money-settle="' + i + '">' + (dir === 'recv' ? 'Mark received' : 'Mark paid') + '</button>' : '') + '</td></tr>').join('') +
       '</tbody><tfoot><tr><td colspan="3">Total' + (mode === 'reconciled' ? ', each ' + who.toLowerCase() + ' counted once' : ', ' + MG_SRC_NAME[mode] + ' only') + '</td><td class="r">' + mgNum(total) + '</td><td colspan="2"></td></tr></tfoot></table></div>';
@@ -308,7 +310,7 @@ function mgRenderParties(dir){
   host.innerHTML = mgPageHead({ group:'Parties', title:who + 's', scope:mgScopeText('Reconciled'), sub:'Everyone with an open ' + (dir === 'recv' ? 'invoice' : 'bill') + ', across every connected source.', actions:mgExportBtn('mgExport-' + page) }) +
     '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + '" value="' + escapeHtml(mgMoneyQ) + '" data-money-q><span class="mg-count">' + groups.length + ' ' + who.toLowerCase() + (groups.length === 1 ? '' : 's') + '</span></div>' +
     (groups.length ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>' + who + '</th><th>Sources</th><th class="r">Open</th><th class="r">Outstanding (₹)</th><th class="r">Overdue (₹)</th><th>Oldest</th><th>Agreement</th></tr></thead><tbody>' +
-      groups.map(g => '<tr class="mg-click" data-party="' + escapeHtml(g.party) + '" data-party-page="' + (dir === 'recv' ? 'receivables' : 'payables') + '"><td><b>' + escapeHtml(g.party) + '</b></td><td><span class="mg-srcs">' + g.sources.map(mgLogo).join('') + '</span></td><td class="r">' + g.invoices + '</td><td class="r">' + mgNum(g.amount) + '</td>' +
+      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td><b>' + escapeHtml(g.party) + '</b></td><td><span class="mg-srcs">' + g.sources.map(mgLogo).join('') + '</span></td><td class="r">' + g.invoices + '</td><td class="r">' + mgNum(g.amount) + '</td>' +
         '<td class="r' + (g.overdue ? ' mg-diff' : ' mg-muted') + '">' + (g.overdue ? mgNum(g.overdue) : '0') + '</td><td>' + mgStatusBadge(g.oldestDays, dir) + '</td><td>' + mgAgreeBadge(g) + '</td></tr>').join('') +
       '</tbody></table></div>' : '<div class="mg-panel mg-empty-panel"><h2>No open ' + (dir === 'recv' ? 'invoices' : 'bills') + '</h2><p>' + who + 's appear here once they owe or are owed something.</p></div>');
 }
@@ -396,8 +398,6 @@ document.addEventListener('click', async e => {
   if(src){ mgMoneySrc = src.dataset.moneySrc; mgRenderOwn(mgCurrentView); mgRefreshScope(); mgWriteHash(false); return; }
   const age = t.closest('[data-money-age]');
   if(age){ mgMoneyAge = age.dataset.moneyAge && mgMoneyAge !== age.dataset.moneyAge ? age.dataset.moneyAge : null; mgRenderOwn(mgCurrentView); return; }
-  const party = t.closest('[data-party]');
-  if(party){ mgMoneyQ = party.dataset.party; mgMoneySrc = 'reconciled'; mgGo(party.dataset.partyPage); return; }
   const exp = t.closest('[id^="mgExport-"]');
   if(exp){ const host = document.getElementById('view-' + mgCurrentView); if(host && host.__csv) mgCsv(mgCurrentView + '-' + new Date().toISOString().slice(0, 10) + '.csv', host.__csv[0], host.__csv[1]); return; }
   const settle = t.closest('[data-money-settle]');

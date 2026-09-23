@@ -247,7 +247,7 @@ document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-margyn-topic]');
   if(!el) return;
   const valueEl = el.querySelector('.pc-value, .f-value, .v-value');
-  openMargynFocused(el.dataset.margynTopic, valueEl ? valueEl.textContent : null);
+  openMargynFocused(el.dataset.margynTopic, valueEl ? (valueEl.dataset.mgFull || valueEl.textContent) : null);
 });
 
 /* Perceived streaming: the reply arrives whole (one blocking API call —

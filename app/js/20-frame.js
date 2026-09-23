@@ -14,25 +14,25 @@
    `base` = the existing view showView() already knows. */
 const MG_PAGES = {
   home:{ slug:'home', own:true, group:'Overview', label:'Home' },
-  inbox:{ slug:'inbox', base:'agents', group:'Overview', label:'Inbox' },
-  payments:{ slug:'cash', base:'payments', group:'Money', label:'Cash' },
+  inbox:{ slug:'inbox', base:'agents', group:'Overview', label:'Inbox', sub:'Everything waiting on your decision: agent proposals, payments to confirm and forwarded documents. Nothing is applied until you approve it.' },
+  payments:{ slug:'cash', base:'payments', group:'Money', label:'Cash', sub:'Settlements, fees and failed payments from your payment gateways.' },
   receivables:{ slug:'receivables', own:true, group:'Money', label:'Receivables' },
   payables:{ slug:'payables', own:true, group:'Money', label:'Payables' },
   gst:{ slug:'gst', own:true, group:'Money', label:'GST and tax' },
-  books:{ slug:'ledger', base:'books', group:'Money', label:'Ledger' },
+  books:{ slug:'ledger', base:'books', group:'Money', label:'Ledger', sub:'Every accounting source, side by side. Sources are compared, never added together.' },
   invoicing:{ slug:'invoicing', base:'invoicing', group:'Money', label:'Invoicing' },
   calculate:{ slug:'import', base:'calculate', group:'Money', label:'Import' },
   customers:{ slug:'customers', own:true, group:'Parties', label:'Customers' },
   vendors:{ slug:'vendors', own:true, group:'Parties', label:'Vendors' },
-  analytics:{ slug:'reports', base:'analytics', group:'Insight', label:'Reports' },
-  scores:{ slug:'pulse', base:'scores', group:'Insight', label:'Pulse Score' },
-  history:{ slug:'ask', base:'history', group:'Insight', label:'Ask Margyn' },
-  agents:{ slug:'agents', base:'agents', group:'Automation', label:'Agents' },
-  connectors:{ slug:'sources', base:'connectors', group:'Admin', label:'Organisations and sources' },
-  people:{ slug:'people', base:'settings', group:'Admin', label:'People and roles' },
-  settings:{ slug:'settings', base:'settings', group:'Admin', label:'Settings' },
+  analytics:{ slug:'reports', base:'analytics', group:'Insight', label:'Reports', sub:'Charts you define, computed from connected data. Nothing here moves your Pulse Score.' },
+  scores:{ slug:'pulse', base:'scores', group:'Insight', label:'Pulse Score', sub:'Every point is arithmetic on your own figures. The AI writes the briefing; it never touches the score.' },
+  history:{ slug:'ask', base:'history', group:'Insight', label:'Ask Margyn', sub:'Answers from your connected data. When Margyn doesn’t know, it says so.' },
+  agents:{ slug:'agents', base:'agents', group:'Automation', label:'Agents', sub:'Automations that work on your data. They propose; you approve.' },
+  connectors:{ slug:'sources', base:'connectors', group:'Admin', label:'Organisations and sources', sub:'The systems Margyn reads from. Connect, reconnect or disconnect each one here.' },
+  people:{ slug:'people', base:'settings', group:'Admin', label:'People and roles', sub:'Who can message Margyn on WhatsApp, get the Bells, and act on your behalf.' },
+  settings:{ slug:'settings', base:'settings', group:'Admin', label:'Settings', sub:'Notifications, scoring labels and account controls.' },
   audit:{ slug:'audit', own:true, group:'Admin', label:'Audit log' },
-  financing:{ slug:'financing', base:'financing', group:'Admin', label:'Financing' },
+  financing:{ slug:'financing', base:'financing', group:'Insight', label:'Capital readiness', sub:'An indicative working-capital view built from your own figures. Margyn is not a lender.' },
   profile:{ slug:'profile', base:'profile', group:'Account', label:'Profile' }
 };
 const MG_BY_SLUG = Object.fromEntries(Object.entries(MG_PAGES).map(([k, p]) => [p.slug, k]));
@@ -219,15 +219,17 @@ function mgRenderPageHead(page, p){
   // Inbox and Agents share the agents view: Inbox is the queue only, Agents the roster and conversations.
   if(P.base === 'agents'){
     root.classList.toggle('mg-is-inbox', page === 'inbox'); root.classList.toggle('mg-is-agents', page === 'agents');
-    const sub = head.querySelector('.rd-sub');
-    if(sub){ if(!sub.dataset.mgOrig) sub.dataset.mgOrig = sub.innerHTML;
-      if(page === 'inbox') sub.textContent = 'Everything waiting on your decision: agent proposals, payments to confirm and forwarded documents. Nothing is applied until you approve it.';
-      else sub.innerHTML = sub.dataset.mgOrig; }
   }
+  const sub = head.querySelector('.rd-sub');
+  if(sub && P.sub) sub.textContent = P.sub;
   const eb = head.querySelector('.rd-eyebrow');
   if(eb && !eb.id) eb.textContent = mgOrgShort() + ' / ' + P.group;
   const h1 = head.querySelector('h1');
   if(h1 && !h1.id){ const tn = [...h1.childNodes].find(n => n.nodeType === 3); if(tn) tn.data = P.label + ' '; }
+  if(page === 'analytics' && !head.querySelector('[data-go-page="financing"]')){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'mg-btn'; b.dataset.goPage = 'financing'; b.textContent = 'Capital readiness';
+    (head.lastElementChild !== head.firstElementChild ? head.lastElementChild : head).appendChild(b);
+  }
   let line = head.querySelector('.mg-scopeline');
   if(!MG_DATA_VIEWS.includes(P.base)){ if(line) line.remove(); return; }
   if(!line){ line = document.createElement('div'); line.className = 'mg-scopeline'; (head.firstElementChild || head).appendChild(line); }
@@ -425,6 +427,28 @@ function mgConfirm(o){
     (tick || cancel).focus();
   });
 }
+
+/* ---------- lakh/crore on older tiles ----------
+   Pages still rendered by the original code print full figures in their
+   tiles. Tiles show lakh/crore; the exact figure stays in the tooltip and in
+   data-mg-full (which "Ask Margyn about this" reads). Tables are untouched. */
+const MG_TILE_SEL = '.pay-card .pc-value, .rd-strip .v, .fact .f-value';
+function mgTileify(){
+  document.querySelectorAll(MG_TILE_SEL).forEach(el => {
+    const txt = el.textContent.trim();
+    const m = /^([+\-−]?)₹\s?([\d,]+)$/.exec(txt);
+    if(!m) return;
+    const n = Number(m[2].replace(/,/g, ''));
+    if(!(n >= 1e5)) return;
+    el.dataset.mgFull = txt; el.title = txt;
+    el.textContent = (m[1] === '+' ? '+' : '') + fmtINR((m[1] && m[1] !== '+' ? -1 : 1) * n, 'tile');
+  });
+}
+let mgTileQueued = false;
+new MutationObserver(() => {
+  if(mgTileQueued) return; mgTileQueued = true;
+  requestAnimationFrame(() => { mgTileQueued = false; mgTileify(); });
+}).observe(document.querySelector('.app-body') || document.body, { childList:true, subtree:true, characterData:true });
 
 /* ---------- boot ---------- */
 if(!mgApplyRoute()) showView('home');
