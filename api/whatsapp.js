@@ -27,6 +27,7 @@ const { track } = require('./_lib/track');
 const chase = require('./_lib/chaseEngine');
 const { runImportMapper } = require('./_lib/importMapper');
 const marginActions = require('./_lib/marginActions');
+const { memberPerms, describePerms } = require('./_lib/memberAccess');
 
 module.exports = async function handler(req, res) {
   const action = (req.query && req.query.action) || '';
@@ -115,10 +116,8 @@ async function handleWebhookEvent(req, res) {
   }
 
   try {
-    const matches = await selectRows(
-      'profiles',
-      `select=id&whatsapp_phone=eq.${encodeURIComponent(normalizePhone(event.from))}`
-    );
+    const sender = await resolveSender(event.from);
+    const matches = sender ? [{ id: sender.profileId }] : [];
 
     if (!matches.length) {
       // No Margyn user on this number — it may be a customer tapping the
@@ -146,9 +145,13 @@ async function handleWebhookEvent(req, res) {
     // reply is a Closing Bell reply" assumption below.
     const decision = actionDecision(event.buttonId + ' ' + (event.buttonText || ''));
     let pending = await marginActions.findPendingAction(matches[0].id, [event.contextMessageId, event.contextGsId]);
-    if (!pending && decision) pending = await marginActions.findLatestPendingAction(matches[0].id);
+    if (!pending && decision) pending = await marginActions.findLatestPendingAction(matches[0].id, 30, event.from);
     if (pending) {
-      await resolveActionReply(matches[0].id, event.from, pending, decision);
+      if (!sender.perms.act) {
+        await sendNotAllowed(event.from, sender, 'confirm changes');
+      } else {
+        await resolveActionReply(matches[0].id, event.from, pending, decision);
+      }
       res.status(200).json({ received: true, action: true });
       return;
     }
@@ -171,14 +174,17 @@ async function handleWebhookEvent(req, res) {
     }]);
 
     track(matches[0].id, 'whatsapp_inbound', { kind: 'button', reply_type: replyType }); // ops console
+    touchMember(sender.member);
 
     // An unrecognized button reply is treated as free text — hand it to the
     // conversational routing layer instead of just logging it.
-    if (replyType === 'unrecognized' && event.buttonText && event.buttonText.trim()) {
+    if (replyType === 'unrecognized' && event.buttonText && event.buttonText.trim() && sender.perms.ask) {
       try {
         await runConversation({
           profileId: matches[0].id,
           fromPhone: event.from,
+          sender: sender.member,
+          canAct: sender.perms.act,
           text: event.buttonText,
           wamid: event.wamid,
           contextMessageId: event.contextMessageId
@@ -249,11 +255,16 @@ async function handleMediaInbound(res, mediaEvent) {
       }
     }
 
-    const phone = normalizePhone(mediaEvent.from);
-    const matches = await selectRows(
+    const sender = await resolveSender(mediaEvent.from);
+    if (sender && !sender.perms.forward) {
+      await sendNotAllowed(mediaEvent.from, sender, 'forward documents');
+      res.status(200).json({ received: true, forbidden: true });
+      return;
+    }
+    const matches = sender ? await selectRows(
       'profiles',
-      `select=id,company_name,gst_number&whatsapp_phone=eq.${encodeURIComponent(phone)}`
-    );
+      `select=id,company_name,gst_number&id=eq.${sender.profileId}`
+    ) : [];
     if (!matches.length) {
       // Not a registered number. Say nothing back — replying would confirm
       // to a stranger which numbers ARE registered Margyn accounts.
@@ -261,6 +272,7 @@ async function handleMediaInbound(res, mediaEvent) {
       return;
     }
     const profile = matches[0];
+    touchMember(sender.member);
 
     const mime = WA_SUPPORTED_MEDIA_MIME[String(mediaEvent.contentType || '').split(';')[0].trim().toLowerCase()];
     if (!mime) {
@@ -385,12 +397,10 @@ async function handleConversationalInbound(res, textEvent) {
   // the reply. That means the response can take ~8s, and the BSP may retry
   // the delivery in the meantime. Retries are made harmless by the wamid
   // dedupe in runConversation (persistent — checks whatsapp_conversations).
-  let matches;
+  let matches, sender;
   try {
-    matches = await selectRows(
-      'profiles',
-      `select=id&whatsapp_phone=eq.${encodeURIComponent(normalizePhone(textEvent.from))}`
-    );
+    sender = await resolveSender(textEvent.from);
+    matches = sender ? [{ id: sender.profileId }] : [];
   } catch (err) {
     console.error('whatsapp webhook: profile lookup failed', err.message);
     return;
@@ -408,24 +418,35 @@ async function handleConversationalInbound(res, textEvent) {
   const decision = buttonLabelDecision(textEvent.text);
   if (decision) {
     let pending = await marginActions.findPendingAction(matches[0].id, [textEvent.contextMessageId, textEvent.contextGsId]);
-    if (!pending) pending = await marginActions.findLatestPendingAction(matches[0].id);
+    if (!pending) pending = await marginActions.findLatestPendingAction(matches[0].id, 30, textEvent.from);
     if (pending) {
-      await resolveActionReply(matches[0].id, textEvent.from, pending, decision);
+      if (!sender.perms.act) await sendNotAllowed(textEvent.from, sender, 'confirm changes');
+      else await resolveActionReply(matches[0].id, textEvent.from, pending, decision);
       if (!res.headersSent) res.status(200).json({ received: true, action: true });
       return;
     }
+  }
+
+  if (!sender.perms.ask) {
+    await sendNotAllowed(textEvent.from, sender, 'ask Margyn questions');
+    touchMember(sender.member);
+    if (!res.headersSent) res.status(200).json({ received: true, forbidden: true });
+    return;
   }
 
   try {
     await runConversation({
       profileId: matches[0].id,
       fromPhone: textEvent.from,
+      sender: sender.member,
+      canAct: sender.perms.act,
       text: textEvent.text,
       wamid: textEvent.wamid,
       contextMessageId: textEvent.contextMessageId
     });
     // ops console — inbound question + the agent's outbound reply
     track(matches[0].id, 'whatsapp_inbound', { kind: 'conversational', msg_len: String(textEvent.text || '').length });
+    touchMember(sender.member);
     track(matches[0].id, 'whatsapp_outbound', { kind: 'agent_reply' });
   } catch (err) {
     console.error('whatsapp webhook: conversational inbound failed', err.message);
@@ -471,6 +492,71 @@ async function resolveActionReply(userId, from, pending, decision) {
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/[^\d]/g, '');
+}
+
+/**
+ * Who is texting, which account they belong to, and what they may do.
+ * Added 2026-09-23 for multi-member accounts (business_stakeholders).
+ *
+ *   1. profiles.whatsapp_phone — the account's primary number: full access.
+ *   2. a business_stakeholders row with whatsapp_access=true — a person who
+ *      can send things in (ask and/or forward). A partial unique index keeps
+ *      one such number to one account.
+ *   3. otherwise, a Bells-only row (no access link). Only resolved when the
+ *      number is on exactly ONE account, so a Closing Bell button tap can be
+ *      recorded; ambiguous numbers resolve to nobody.
+ *
+ * `perms` comes from _lib/memberAccess.js. Every member query is best-effort:
+ * if the migration hasn't run, this degrades to the old profiles-only lookup.
+ * Returns { profileId, member, perms } or null for an unknown number.
+ */
+async function resolveSender(from) {
+  const phone = normalizePhone(from);
+  if (!phone) return null;
+  const enc = encodeURIComponent(phone);
+  const profiles = await selectRows('profiles', `select=id&whatsapp_phone=eq.${enc}&limit=1`);
+  const memberCols = 'select=id,business_id,name,role,is_primary,whatsapp_access,permissions,message_count';
+  if (profiles.length) {
+    const profileId = profiles[0].id;
+    const rows = await selectRows(
+      'business_stakeholders',
+      `${memberCols}&business_id=eq.${profileId}&phone=eq.${enc}&order=is_primary.desc&limit=1`
+    ).catch(() => []);
+    return { profileId, member: rows[0] || null, perms: memberPerms(rows[0] || null, true) };
+  }
+  const linked = await selectRows(
+    'business_stakeholders',
+    `${memberCols}&phone=eq.${enc}&whatsapp_access=eq.true&limit=1`
+  ).catch(() => []);
+  if (linked.length) {
+    return { profileId: linked[0].business_id, member: linked[0], perms: memberPerms(linked[0], false) };
+  }
+  const bellOnly = await selectRows(
+    'business_stakeholders',
+    `${memberCols}&phone=eq.${enc}&or=(permissions->>opening_bell.eq.true,permissions->>closing_bell.eq.true)&limit=2`
+  ).catch(() => []);
+  if (bellOnly.length !== 1) return null;
+  return { profileId: bellOnly[0].business_id, member: bellOnly[0], perms: memberPerms(bellOnly[0], false) };
+}
+
+/** Tell a linked person what their number can't do. Only ever sent to a
+ *  number already on the account, so it reveals nothing to a stranger. */
+async function sendNotAllowed(to, sender, what) {
+  const name = sender.member && sender.member.name ? sender.member.name.split(' ')[0] + ', y' : 'Y';
+  await bsp.sendText({
+    to,
+    text: `${name}our number isn't set up to ${what} on Margyn. Right now it can ${describePerms(sender.perms)}. The account owner can change this under Settings > People.`
+  }).catch((e) => console.error('whatsapp: not-allowed reply failed', e.message));
+}
+
+/** Activity tracking for Settings > People. Fire-and-forget: a failed
+ *  counter bump must never cost the sender their reply. */
+function touchMember(member) {
+  if (!member || !member.id) return;
+  updateRows('business_stakeholders', `id=eq.${member.id}`, {
+    last_message_at: new Date().toISOString(),
+    message_count: (Number(member.message_count) || 0) + 1
+  }).catch((e) => console.error('whatsapp: member activity update failed', e.message));
 }
 
 /* ------------------------------------------------------------------ */
@@ -525,20 +611,39 @@ async function handleCron(req, res, kind) {
       const f = (cfg && cfg.frequency) || 'both';
       return f === 'both' || f === kind;
     };
-    const activeById = new Map(
-      deployments.filter(d => wantsThisBell(d.config)).map(d => [d.user_id, d.config || {}])
-    );
-    if (!activeById.size) {
-      res.status(200).json({ kind, sent: 0, failed: 0, total_recipients: 0, note: `no active deployments want the ${kind} bell` });
+    // An active deployment is the account-level on switch. Who gets THIS
+    // Bell is then per number: the primary number follows config.frequency;
+    // anyone else on the account follows their own permissions (Settings >
+    // People). So a primary set to 'opening' can still have the accountant
+    // on the Closing Bell.
+    const configById = new Map(deployments.map(d => [d.user_id, d.config || {}]));
+    const ids = Array.from(configById.keys());
+    const primaryIds = ids.filter(id => wantsThisBell(configById.get(id)));
+
+    const profiles = primaryIds.length ? await selectRows(
+      'profiles',
+      `select=id,whatsapp_phone,company_name&whatsapp_opt_in=eq.true&whatsapp_phone=not.is.null&id=in.(${primaryIds.join(',')})`
+    ) : [];
+    recipients = profiles.map(p => ({ id: p.id, phone: p.whatsapp_phone, who: 'primary' }));
+
+    // Members opted into this Bell. Best-effort: before the people migration
+    // runs, this column doesn't exist and only primaries get the Bell.
+    const bellKey = kind === 'opening' ? 'opening_bell' : 'closing_bell';
+    const members = await selectRows(
+      'business_stakeholders',
+      `select=id,business_id,phone&is_primary=eq.false&permissions->>${bellKey}=eq.true&business_id=in.(${ids.join(',')})`
+    ).catch((e) => { console.error(`whatsapp ${kind}: member recipients unavailable`, e.message); return []; });
+    const seen = new Set(recipients.map(r => r.id + ':' + normalizePhone(r.phone)));
+    for (const m of members) {
+      const key = m.business_id + ':' + normalizePhone(m.phone);
+      if (!m.phone || seen.has(key)) continue;
+      seen.add(key);
+      recipients.push({ id: m.business_id, phone: m.phone, who: 'member', memberId: m.id });
+    }
+    if (!recipients.length) {
+      res.status(200).json({ kind, sent: 0, failed: 0, total_recipients: 0, note: `nobody is set to receive the ${kind} bell` });
       return;
     }
-
-    const ids = Array.from(activeById.keys());
-    const profiles = await selectRows(
-      'profiles',
-      `select=id,whatsapp_phone,company_name&whatsapp_opt_in=eq.true&whatsapp_phone=not.is.null&id=in.(${ids.join(',')})`
-    );
-    recipients = profiles.map(p => ({ ...p, config: activeById.get(p.id) || {} }));
   } catch (err) {
     res.status(500).json({ error: 'Could not list opted-in recipients' });
     return;
@@ -547,6 +652,8 @@ async function handleCron(req, res, kind) {
   let sent = 0;
   const failed = [];
 
+  // One briefing per account, however many people on it get the Bell.
+  const paramsByAccount = new Map();
   for (const profile of recipients) {
     try {
       // Content selection (what goes in the template params — Pulse Score
@@ -555,18 +662,19 @@ async function handleCron(req, res, kind) {
       // the delivery pipeline is end-to-end testable today. Swap the body
       // of getBriefingParams() for the finalized query/params without
       // touching anything above it.
-      const params = await getBriefingParams(profile.id, kind);
-      const result = await bsp.sendTemplate({ to: profile.whatsapp_phone, templateId, params });
+      if (!paramsByAccount.has(profile.id)) paramsByAccount.set(profile.id, await getBriefingParams(profile.id, kind));
+      const params = paramsByAccount.get(profile.id);
+      const result = await bsp.sendTemplate({ to: profile.phone, templateId, params });
 
       if (!result.ok) {
-        failed.push({ userId: profile.id, reason: result.error });
+        failed.push({ userId: profile.id, who: profile.who, reason: result.error });
         await logConnectorEvent({ userId: profile.id, connectorType: 'whatsapp', operation: `send_${kind}`, status: 'error', errorMessage: result.error });
         continue;
       }
 
       sent++;
       await logConnectorEvent({ userId: profile.id, connectorType: 'whatsapp', operation: `send_${kind}`, status: 'success', recordsSynced: 1 });
-      track(profile.id, 'whatsapp_outbound', { kind }); // ops console — opening/closing bell
+      track(profile.id, 'whatsapp_outbound', { kind, who: profile.who }); // ops console — opening/closing bell
     } catch (err) {
       failed.push({ userId: profile.id, reason: err.message });
     }
