@@ -11,6 +11,21 @@
  *   GET  /api/sync-razorpay?action=cron     (CRON_SECRET)   nightly sync across all connected users
  *                                                           (was GET  /api/cron-sync-razorpay)
  *
+ * It also hosts the Cashfree connector, for the same reason — Cashfree was its
+ * own function until the Hobby cap forced a choice, and it had zero connected
+ * users, so it was the cheapest thing to fold. Its handlers live in
+ * ./_lib/cashfreeRoutes.js; only dispatch lives here:
+ *
+ *   POST /api/sync-razorpay?action=cashfree-connect     (user JWT)
+ *   POST /api/sync-razorpay?action=cashfree-sync        (user JWT)
+ *   POST /api/sync-razorpay?action=cashfree-disconnect  (user JWT)
+ *   GET  /api/sync-razorpay?action=cashfree-status      (user JWT)
+ *   GET  /api/sync-razorpay?action=cashfree-cron        (CRON_SECRET)
+ *
+ * The two connectors share no code beyond this dispatcher — different auth,
+ * different pagination, different error taxonomy. Pull Cashfree back out into
+ * its own function the day the plan allows it.
+ *
  * Zero-npm: plain fetch() only, matching the rest of /api.
  */
 
@@ -25,6 +40,7 @@ const {
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
 const { computePaymentsFromRazorpay } = require('./_lib/computePaymentsFromRazorpay');
+const cashfreeRoutes = require('./_lib/cashfreeRoutes');
 
 const RAZORPAY_BASE = 'https://api.razorpay.com/v1';
 const PAGE_SIZE = 100;
@@ -599,12 +615,26 @@ async function handleCron(req, res) {
 module.exports = async (req, res) => {
   const action = (req.query && req.query.action) || '';
 
+  // Cashfree first: its actions are all prefixed, so they can never collide
+  // with a bare Razorpay action.
+  if (action.indexOf('cashfree-') === 0) {
+    if (req.method === 'GET' && action === 'cashfree-cron') return cashfreeRoutes.handleCron(req, res);
+    if (req.method === 'GET' && action === 'cashfree-status') return cashfreeRoutes.handleStatus(req, res);
+    if (req.method === 'POST' && action === 'cashfree-connect') return cashfreeRoutes.handleConnect(req, res);
+    if (req.method === 'POST' && action === 'cashfree-sync') return cashfreeRoutes.handleSync(req, res);
+    if (req.method === 'POST' && action === 'cashfree-disconnect') return cashfreeRoutes.handleDisconnect(req, res);
+    return res.status(400).json({
+      error: 'unknown_action',
+      message: 'Expected ?action= one of cashfree-connect, cashfree-sync, cashfree-disconnect, cashfree-status, cashfree-cron.'
+    });
+  }
+
   if (req.method === 'GET' && action === 'cron') return handleCron(req, res);
   if (req.method === 'POST' && action === 'connect') return handleConnect(req, res);
   if (req.method === 'POST' && (action === '' || action === 'sync')) return handleSync(req, res);
 
   res.status(400).json({
-    error: 'Expected POST (sync), POST ?action=connect, or GET ?action=cron'
+    error: 'Expected POST (sync), POST ?action=connect, GET ?action=cron, or any ?action=cashfree-*'
   });
 };
 

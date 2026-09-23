@@ -1,11 +1,14 @@
 {
+  "rewrites": [
+    { "source": "/api/waitlist", "destination": "/api/ops?action=waitlist" }
+  ],
   "crons": [
     {
       "path": "/api/sync-razorpay?action=cron",
       "schedule": "30 20 * * *"
     },
     {
-      "path": "/api/cashfree?action=cron",
+      "path": "/api/sync-razorpay?action=cashfree-cron",
       "schedule": "45 20 * * *"
     },
     {
@@ -37,6 +40,10 @@
       "schedule": "35 21 * * *"
     },
     {
+      "path": "/api/ops-metrics?action=cron",
+      "schedule": "45 22 * * *"
+    },
+    {
       "path": "/api/whatsapp?action=cron-opening",
       "schedule": "0 2 * * *"
     },
@@ -51,8 +58,8 @@
   ],
   "functions": {
     "api/zoho.js": { "maxDuration": 300 },
+    "api/sync-razorpay.js": { "maxDuration": 300 },
     "api/shopify.js": { "maxDuration": 300 },
-    "api/cashfree.js": { "maxDuration": 300 },
     "api/whatsapp.js": { "maxDuration": 300 },
     "api/reconcile.js": { "maxDuration": 300 }
   }

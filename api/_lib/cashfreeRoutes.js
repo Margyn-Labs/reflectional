@@ -1,29 +1,31 @@
 /**
- * api/cashfree.js
+ * api/_lib/cashfreeRoutes.js
  *
- * Single router for the Cashfree Payments connector, dispatched by ?action= to
- * stay under the Vercel Hobby plan's 12-function cap. api/tally.js was already
- * "12/12", so this connector could not be added as new standalone files — it
- * ships as ONE function, and the deploy notes pair it with folding the three
- * legacy Razorpay files (cron-sync-razorpay.js / store-razorpay-credentials.js
- * / sync-razorpay.js) into a matching api/razorpay.js router to stay net under
- * the cap. See CASHFREE-CONNECTOR-NOTES.md.
+ * The Cashfree Payments connector's request handlers, lifted out of the
+ * former standalone api/cashfree.js so the connector can ride the Razorpay
+ * router instead of holding a Vercel function slot of its own.
  *
- *   POST /api/cashfree?action=connect      (user JWT)  validate + store App ID / Secret Key
- *   POST /api/cashfree?action=sync         (user JWT)  "Sync now" for the calling user
- *   POST /api/cashfree?action=disconnect   (user JWT)  revoke the active connection
- *   GET  /api/cashfree?action=status       (user JWT)  connection + freshness for the UI
- *   GET  /api/cashfree?action=cron         (CRON_SECRET) nightly sync across all connected users
+ * Why here and not inline in api/sync-razorpay.js: the two connectors share a
+ * shape (connect / sync / disconnect / status / cron) but nothing else — no
+ * auth scheme, no pagination, no error taxonomy. Keeping Cashfree's handlers
+ * in their own module means the fold is a dispatch change, not a rewrite, and
+ * either connector can be pulled back out into its own function the day the
+ * Vercel plan changes.
  *
- * Zero-npm: plain fetch() only. CommonJS to match the rest of /api.
+ * Routes (served by api/sync-razorpay.js):
+ *   POST /api/sync-razorpay?action=cashfree-connect      (user JWT)
+ *   POST /api/sync-razorpay?action=cashfree-sync         (user JWT)
+ *   POST /api/sync-razorpay?action=cashfree-disconnect   (user JWT)
+ *   GET  /api/sync-razorpay?action=cashfree-status       (user JWT)
+ *   GET  /api/sync-razorpay?action=cashfree-cron         (CRON_SECRET)
  *
  * AUTH MODEL — Cashfree PG uses header API keys (x-client-id / x-client-secret
  * + a pinned x-api-version), NOT Basic Auth and NOT OAuth for a merchant's own
  * account. (Cashfree Connect partner-OAuth exists only for platforms
- * onboarding sub-merchants — out of scope.) So this is manual key entry, stored
- * exactly like Razorpay's key_id / key_secret, plus an `environment` tag
- * because the API base URL differs sandbox vs production and the App ID does
- * not encode which it is.
+ * onboarding sub-merchants — out of scope.) So this is manual key entry,
+ * stored exactly like Razorpay's key_id / key_secret, plus an `environment`
+ * tag because the API base URL differs sandbox vs production and the App ID
+ * does not encode which it is.
  *
  * SECURITY: the Secret Key is never logged, never echoed in a response, never
  * put in a connector_logs error_message.
@@ -35,14 +37,14 @@ const {
   updateRows,
   selectRows,
   logConnectorEvent
-} = require('./_lib/supabaseRest');
+} = require('./supabaseRest');
 const {
   syncCashfreeForUser,
   handleAuthFailure,
   CashfreeAuthError,
   baseUrl,
   authHeaders
-} = require('./_lib/cashfreeSync');
+} = require('./cashfreeSync');
 
 function json(res, status, body) { res.status(status).json(body); }
 
@@ -54,23 +56,8 @@ function parseBody(req) {
   return b || {};
 }
 
-module.exports = async (req, res) => {
-  const action = (req.query && req.query.action) || '';
-
-  if (req.method === 'GET' && action === 'cron') return handleCron(req, res);
-  if (req.method === 'GET' && (action === 'status' || action === '')) return handleStatus(req, res);
-  if (req.method === 'POST' && action === 'connect') return handleConnect(req, res);
-  if (req.method === 'POST' && action === 'sync') return handleSync(req, res);
-  if (req.method === 'POST' && action === 'disconnect') return handleDisconnect(req, res);
-
-  return json(res, 400, {
-    error: 'unknown_action',
-    message: 'Expected ?action= one of connect, sync, disconnect, status, cron.'
-  });
-};
-
 /* ------------------------------------------------------------------ */
-/* connect — POST ?action=connect                                     */
+/* connect — POST ?action=cashfree-connect                            */
 /* ------------------------------------------------------------------ */
 async function handleConnect(req, res) {
   let user;
@@ -162,7 +149,7 @@ async function handleConnect(req, res) {
     const proto = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers['host'];
     if (host) {
-      fetch(`${proto}://${host}/api/cashfree?action=sync`, {
+      fetch(`${proto}://${host}/api/sync-razorpay?action=cashfree-sync`, {
         method: 'POST',
         headers: {
           Authorization: req.headers['authorization'],
@@ -176,7 +163,7 @@ async function handleConnect(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/* sync — POST ?action=sync                                           */
+/* sync — POST ?action=cashfree-sync                                  */
 /* ------------------------------------------------------------------ */
 async function handleSync(req, res) {
   const user = await getUserFromRequest(req);
@@ -195,7 +182,7 @@ async function handleSync(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/* disconnect — POST ?action=disconnect                              */
+/* disconnect — POST ?action=cashfree-disconnect                      */
 /* ------------------------------------------------------------------ */
 async function handleDisconnect(req, res) {
   const user = await getUserFromRequest(req);
@@ -217,7 +204,7 @@ async function handleDisconnect(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/* status — GET ?action=status                                        */
+/* status — GET ?action=cashfree-status                               */
 /* ------------------------------------------------------------------ */
 async function handleStatus(req, res) {
   const user = await getUserFromRequest(req);
@@ -244,7 +231,7 @@ async function handleStatus(req, res) {
 }
 
 /* ------------------------------------------------------------------ */
-/* cron — GET ?action=cron (Vercel Cron target)                       */
+/* cron — GET ?action=cashfree-cron (Vercel Cron target)              */
 /* ------------------------------------------------------------------ */
 async function handleCron(req, res) {
   const authHeader = req.headers['authorization'];
@@ -296,3 +283,11 @@ async function handleCron(req, res) {
     timestamp: new Date().toISOString()
   });
 }
+
+module.exports = {
+  handleConnect,
+  handleSync,
+  handleDisconnect,
+  handleStatus,
+  handleCron
+};

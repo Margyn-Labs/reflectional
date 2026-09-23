@@ -26,6 +26,7 @@ const { runConversation } = require('./_lib/whatsappAgent');
 const { track } = require('./_lib/track');
 const chase = require('./_lib/chaseEngine');
 const { runImportMapper } = require('./_lib/importMapper');
+const marginActions = require('./_lib/marginActions');
 
 module.exports = async function handler(req, res) {
   const action = (req.query && req.query.action) || '';
@@ -135,6 +136,29 @@ async function handleWebhookEvent(req, res) {
       }
       console.error('whatsapp webhook: no profile matches phone', event.from);
       res.status(200).json({ received: true, matched: false });
+      return;
+    }
+
+    // An Ask Margyn confirm/cancel button (marginActions.js) looks exactly
+    // like a Closing Bell button reply at the BSP layer — both are
+    // button_reply events. Check for a matching pending action FIRST, by
+    // the message it's replying to, before falling into the "any button
+    // reply is a Closing Bell reply" assumption below.
+    const pending = await marginActions.findPendingAction(matches[0].id, event.contextMessageId);
+    if (pending) {
+      const confirmed = /confirm/i.test(event.buttonId) || /confirm/i.test(event.buttonText || '');
+      const cancelled = /cancel/i.test(event.buttonId) || /cancel/i.test(event.buttonText || '');
+      const result = await marginActions.resolvePendingAction(pending, confirmed && !cancelled);
+      const replyText = !confirmed && !cancelled
+        ? "Didn't recognize that reply — tap Confirm or Cancel on the message above."
+        : result.executed
+          ? 'Done.'
+          : result.ok
+            ? 'Cancelled — nothing changed.'
+            : "That didn't go through: " + (result.error || 'unknown error') + '. Try again from the app.';
+      await bsp.sendText({ to: event.from, text: replyText });
+      track(matches[0].id, 'whatsapp_action_resolved', { type: pending.action_type, confirmed: !!(confirmed && !cancelled) });
+      res.status(200).json({ received: true, action: true });
       return;
     }
 

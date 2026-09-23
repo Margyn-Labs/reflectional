@@ -2803,7 +2803,7 @@ let razorpayConnected = false; // optional connector — supplements manual uplo
 let razorpayStatus = null;    // { needs_reauth, last_success_at } from connector_credentials — durable provenance
 let lastSyncedAt = null;
 let cashfreeConnected = false; // Cashfree connector — manual App ID/Secret key entry, settled-payment feed
-let cashfreeStatus = null;    // last /api/cashfree?action=status payload
+let cashfreeStatus = null;    // last /api/sync-razorpay?action=cashfree-status payload
 let odooConnected = false;   // Odoo connector — External API / JSON-RPC, manual key entry
 let odooStatus = null;       // last /api/zoho?action=odoo-status payload (pre-aggregated, Signal-tier)
 let zohoConnected = false;   // Zoho Books connector — OAuth 2.0, org-picker gated
@@ -3276,7 +3276,7 @@ document.getElementById('razorpayOverlay').addEventListener('click', (e) => { if
 
 /* ============================================================
    CASHFREE CONNECTOR (optional, supplements manual upload)
-   Manual App ID / Secret Key entry against /api/cashfree?action=connect;
+   Manual App ID / Secret Key entry against /api/sync-razorpay?action=cashfree-connect;
    nightly cron sync server-side. Razorpay stays the primary gateway for
    the Payments tab — Cashfree adds its own tables + provenance.
    State vars (cashfreeConnected / cashfreeStatus) are declared near the
@@ -3286,7 +3286,7 @@ async function checkCashfreeConnection(){
   try {
     const { data:{ session } } = await sbClient.auth.getSession();
     const token = session?.access_token;
-    const res = await fetch('/api/cashfree?action=status', { headers: { 'Authorization': `Bearer ${token}` } });
+    const res = await fetch('/api/sync-razorpay?action=cashfree-status', { headers: { 'Authorization': `Bearer ${token}` } });
     if(!res.ok){ cashfreeConnected = false; cashfreeStatus = null; return; }
     const d = await res.json().catch(() => ({}));
     cashfreeConnected = !!d.connected;
@@ -3346,7 +3346,7 @@ function openCashfreeModal(){
     try {
       const { data:{ session } } = await sbClient.auth.getSession();
       const token = session?.access_token;
-      const res = await fetch('/api/cashfree?action=connect', {
+      const res = await fetch('/api/sync-razorpay?action=cashfree-connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ clientId, clientSecret, environment })

@@ -8,6 +8,10 @@
  *   GET  /api/ops?action=partners              (ops allowlist) design-partner list
  *   GET  /api/ops?action=partner&userId=<id>   (ops allowlist) one partner deep dive
  *   PUT  /api/ops?action=note&userId=<id>      (ops allowlist) upsert ops_partner_notes
+ *   GET  /api/ops?action=metrics               (ops allowlist) ops_metrics aggregates, read as
+ *                                                             ops_reader via OPS_METRICS_JWT
+ *   POST /api/ops?action=waitlist              (public)       marketing-site waitlist signup
+ *                                                             (served at /api/waitlist via rewrite)
  *
  * AUTH
  *   - track: the partner user's own Supabase JWT (Authorization: Bearer ...).
@@ -33,6 +37,7 @@ const {
   restRequest
 } = require('./_lib/supabaseRest');
 const { track, ALLOWED_NAMES } = require('./_lib/track');
+const waitlist = require('./_lib/waitlist');
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -462,6 +467,37 @@ async function buildPartnerDetail(userId) {
 }
 
 /* ------------------------------------------------------------------ */
+/* ops_metrics — read as the restricted ops_reader role                */
+/* ------------------------------------------------------------------ */
+
+// Deliberately NOT restRequest(): that helper authenticates as service-role.
+// This path uses the OPS_METRICS_JWT (role=ops_reader, 2026-09-21-ops-metrics.sql),
+// so Postgres itself limits it to aggregates — it cannot read any raw table
+// even if this code is wrong.
+async function loadOpsMetrics() {
+  const jwt = process.env.OPS_METRICS_JWT;
+  if (!jwt) return { configured: false, rows: [] };
+  const since = new Date(Date.now() - 14 * DAY).toISOString().slice(0, 10);
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/ops_metrics_all?select=*&metric_date=gte.${since}&order=metric_date.desc&limit=5000`,
+    { headers: { apikey: process.env.SUPABASE_ANON_KEY || jwt, Authorization: `Bearer ${jwt}` } }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`ops_metrics_all ${res.status}: ${detail.slice(0, 200)}`);
+  }
+  const all = await res.json();
+  // latest row per account + a 14-day verified-coverage trend
+  const byUser = {};
+  for (const r of all) {
+    if (!byUser[r.user_id]) byUser[r.user_id] = { latest: r, coverage_trend: [] };
+    byUser[r.user_id].coverage_trend.push({ date: r.metric_date, pct: r.verified_coverage_pct });
+  }
+  const rows = Object.values(byUser).map((u) => ({ ...u.latest, coverage_trend: u.coverage_trend.reverse() }));
+  return { configured: true, rows };
+}
+
+/* ------------------------------------------------------------------ */
 /* handler                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -484,6 +520,10 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // ---- waitlist: public marketing-site signup (reached via the
+  // /api/waitlist rewrite in vercel.json; handler in _lib/waitlist.js) ----
+  if (action === 'waitlist') return waitlist(req, res);
+
   // ---- everything else: founder allowlist, 404 if not ----
   const gate = await isOpsAdmin(req);
   if (!gate.ok) { notFound(res); return; }
@@ -493,6 +533,13 @@ module.exports = async (req, res) => {
       const rows = await buildPartners();
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json({ partners: rows, generated_at: new Date().toISOString() });
+      return;
+    }
+
+    if (action === 'metrics' && req.method === 'GET') {
+      const out = await loadOpsMetrics();
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(out);
       return;
     }
 

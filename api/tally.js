@@ -511,11 +511,59 @@ async function handleIngest(req, res) {
     return json(res, 500, { error: 'ingest_failed', message: 'Could not store the synced data. Check the SQL migration ran.' });
   }
 
+  const swept = await sweepStale(kind, inst, mapped, now, body.partial === true);
+
   await updateRows('tally_installs', `id=eq.${inst.id}`, { last_sync_at: now }).catch(() => {});
-  await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted, status: 'ok' });
+  await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted, status: 'ok',
+    error: swept.skipped ? 'stale_sweep_skipped: ' + swept.skipped : null });
   track(inst.user_id, 'tally_agent_sync', { kind, rows: upserted }); // ops console — fire-and-forget
 
-  return json(res, 200, { upserted, received: rawRows.length, skipped });
+  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed });
+}
+
+/* ------------------------------------------------------------------ */
+/* stale sweep — drop rows the latest full snapshot no longer contains */
+/* ------------------------------------------------------------------ */
+// Ledgers and bills arrive as a COMPLETE snapshot per request: the agent
+// sends every ledger in one call, and every outstanding bill for one
+// direction in one call (runFullSync in tally-agent/agent.js). So a row this
+// install sent before but not in this batch no longer exists in Tally's
+// report — for bills that almost always means it was PAID. Without this
+// sweep a settled bill kept its old balance forever and inflated aging
+// (2026-09-23 audit). These tables mirror Tally's current reports, not a
+// history — the history lives in tally_vouchers, which is never swept
+// (vouchers arrive by date window, not as a full snapshot).
+//
+// Safety valve: if a batch would remove most of what we hold, treat it as a
+// Tally-side glitch (wrong company open, report truncated) and keep the rows.
+// An agent that ever starts chunking a snapshot must send partial:true.
+async function sweepStale(kind, inst, mapped, now, partial) {
+  if (partial || (kind !== 'bills' && kind !== 'ledgers')) return { removed: 0 };
+  const table = kind === 'bills' ? 'tally_bills' : 'tally_ledgers';
+  let scope = `install_id=eq.${inst.id}`;
+  if (kind === 'bills') {
+    const dirs = [...new Set(mapped.map((r) => r.direction))];
+    if (dirs.length !== 1) return { removed: 0, skipped: 'mixed_directions' };
+    scope += `&direction=eq.${dirs[0]}`;
+  }
+  const stale = `${scope}&synced_at=lt.${encodeURIComponent(now)}`;
+  try {
+    const [total, toRemove] = await Promise.all([countRows(table, scope), countRows(table, stale)]);
+    if (!toRemove) return { removed: 0 };
+    if (total >= 20 && toRemove > total * 0.6) {
+      console.warn(`[tally] sweep skipped: ${kind} batch would remove ${toRemove}/${total} rows for install ${inst.id}`);
+      return { removed: 0, skipped: `would_remove_${toRemove}_of_${total}` };
+    }
+    const r = await restRequest(`${table}?${stale}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+    if (!r.ok) {
+      console.error(`[tally] sweep delete failed: ${r.status}`);
+      return { removed: 0, skipped: 'delete_failed' };
+    }
+    return { removed: toRemove };
+  } catch (e) {
+    console.error('[tally] sweep error:', e.message);
+    return { removed: 0, skipped: 'error' };
+  }
 }
 
 /* ------------------------------------------------------------------ */

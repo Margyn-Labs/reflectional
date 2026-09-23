@@ -65,6 +65,7 @@
   .pill{ display:inline-block; font-size:11px; background:#F4F2EE; border:1px solid var(--border); border-radius:6px; padding:1px 7px; margin:2px; }
   .suggest{ background:rgba(204,91,52,.08); border:1px solid rgba(204,91,52,.25); color:#8a3f24; border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:16px; }
   .loading{ padding:40px; color:var(--ink-2); }
+  .banner{ font-size:12.5px; color:var(--ink-1); background:var(--surf); border:1px solid var(--border); border-radius:8px; padding:8px 12px; margin-bottom:14px; }
 </style>
 </head>
 <body>
@@ -81,7 +82,7 @@
 <script>
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
-let sb = null, token = null, partners = [], sortKey = 'status', sortDir = 1;
+let sb = null, token = null, partners = [], metricsById = {}, metricsConfigured = null, sortKey = 'status', sortDir = 1;
 
 const $ = (s, r=document) => r.querySelector(s);
 const fmtDate = (t) => t ? new Date(t).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
@@ -117,9 +118,19 @@ function sortRows(){
     else if(sortKey === 'active'){ av = new Date(a.last_active_at||0); bv = new Date(b.last_active_at||0); }
     else if(sortKey === 'mismatch'){ av = a.recon_open_mismatches; bv = b.recon_open_mismatches; }
     else if(sortKey === 'wa'){ av = a.whatsapp_in_7d + a.whatsapp_out_7d; bv = b.whatsapp_in_7d + b.whatsapp_out_7d; }
+    else if(sortKey === 'verified'){ av = covOf(a.user_id); bv = covOf(b.user_id); }
     else { av = (a.label||'').toLowerCase(); bv = (b.label||'').toLowerCase(); }
     return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
   });
+}
+
+// ops_metrics (read as ops_reader) — counts/percentages only, never amounts.
+const covOf = (id) => { const m = metricsById[id]; return m && m.verified_coverage_pct != null ? Number(m.verified_coverage_pct) : -1; };
+function trustCell(id){
+  const m = metricsById[id];
+  if(!m) return '<span class="muted">—</span>';
+  const pct = m.verified_coverage_pct == null ? '—' : Math.round(Number(m.verified_coverage_pct)) + '%';
+  return pct + (m.source_conflict_count ? ' <span class="muted">· ' + m.source_conflict_count + ' conflict' + (m.source_conflict_count === 1 ? '' : 's') + '</span>' : '');
 }
 
 function renderList(){
@@ -135,17 +146,21 @@ function renderList(){
       + '<td>' + conns + '</td>'
       + '<td class="num">' + p.recon_open_mismatches + '</td>'
       + '<td class="num">' + (p.whatsapp_in_7d + p.whatsapp_out_7d) + '</td>'
+      + '<td class="num">' + trustCell(p.user_id) + '</td>'
       + '<td><span class="chip ' + p.value_pulse + '">' + p.value_pulse + '</span></td>'
       + '<td>' + escapeHtml(p.suggested_next || '') + '</td>'
       + '<td class="muted">' + escapeHtml(p.note_preview || '') + '</td>'
       + '</tr>';
   }).join('');
-  $('#main').innerHTML =
+  const banner = metricsConfigured === false
+    ? '<div class="banner">Verified coverage is off: set <span class="mono">OPS_METRICS_JWT</span> in Vercel and run the ops-metrics cron once.</div>'
+    : '';
+  $('#main').innerHTML = banner +
     '<table><thead><tr>'
     + '<th data-k="status">Status</th><th data-k="label">Partner</th><th data-k="active">Active</th>'
-    + '<th>Connectors</th><th data-k="mismatch">Mism.</th><th data-k="wa">WA 7d</th>'
+    + '<th>Connectors</th><th data-k="mismatch">Mism.</th><th data-k="wa">WA 7d</th><th data-k="verified">Verified</th>'
     + '<th data-k="value">Value</th><th>Suggested next</th><th>Note</th>'
-    + '</tr></thead><tbody>' + (rows || '<tr><td colspan="9" class="muted">No partners with activity yet.</td></tr>') + '</tbody></table>';
+    + '</tr></thead><tbody>' + (rows || '<tr><td colspan="10" class="muted">No partners with activity yet.</td></tr>') + '</tbody></table>';
   $('#main').querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
     const k = th.dataset.k;
     if(sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
@@ -187,7 +202,7 @@ async function openDetail(userId){
     + '<div class="muted mono" style="font-size:11px">' + d.user_id + '</div></div>'
     + '<div class="tabs">'
     + '<button data-t="health" class="active">Health</button><button data-t="usage">Usage</button>'
-    + '<button data-t="outcomes">Outcomes</button><button data-t="timeline">Timeline</button></div>'
+    + '<button data-t="outcomes">Outcomes</button><button data-t="trust">Trust</button><button data-t="timeline">Timeline</button></div>'
     + '<div class="tabpane" data-p="health">'
       + '<div class="suggest"><b>Suggested next:</b> ' + escapeHtml(s.suggested_next || '') + ' &nbsp; <span class="pill">status ' + (s.status||'?') + '</span><span class="pill">value ' + (s.value_pulse||'?') + '</span></div>'
       + '<h3>Connectors</h3>' + connRows
@@ -208,6 +223,7 @@ async function openDetail(userId){
       + '<div>First mismatch</div><div>' + fmtDate(d.outcomes.first_mismatch_at) + '</div>'
       + '<div>Time to first mismatch</div><div>' + (d.outcomes.time_to_first_mismatch_hours != null ? d.outcomes.time_to_first_mismatch_hours + ' h' : '—') + '</div>'
       + '</div></div>'
+    + '<div class="tabpane" data-p="trust" hidden>' + trustPane(userId) + '</div>'
     + '<div class="tabpane" data-p="timeline" hidden><h3>Last 50 events</h3>' + timeline + '</div>';
 
   $('.x', ov).onclick = () => ov.remove();
@@ -228,6 +244,27 @@ async function openDetail(userId){
   };
 }
 
+function trustPane(id){
+  const m = metricsById[id];
+  if(!m) return '<p class="muted">No ops_metrics row yet for this account' + (metricsConfigured === false ? ' (OPS_METRICS_JWT not set)' : '') + '.</p>';
+  const n = (v) => v == null ? '—' : v;
+  const trend = (m.coverage_trend || []).map(t => '<span class="pill">' + t.date.slice(5) + ' · ' + (t.pct == null ? '—' : Math.round(Number(t.pct)) + '%') + '</span>').join('');
+  return '<p class="muted" style="margin-top:0">Read as <span class="mono">ops_reader</span>: counts and percentages only. As of ' + escapeHtml(m.metric_date) + '.</p>'
+    + '<div class="kv">'
+    + '<div>Verified coverage</div><div class="num">' + (m.verified_coverage_pct == null ? '—' : Math.round(Number(m.verified_coverage_pct)) + '%') + '</div>'
+    + '<div>Fields: verified / connector / self</div><div class="num">' + m.verified_field_count + ' / ' + m.connector_field_count + ' / ' + m.self_field_count + '</div>'
+    + '<div>Snapshot confidence</div><div class="num">' + n(m.snapshot_confidence) + '</div>'
+    + '<div>Source conflicts</div><div class="num">' + m.source_conflict_count + '</div>'
+    + '<div>Connectors</div><div>' + escapeHtml((m.connectors || []).join(', ') || 'none') + ' <span class="muted">(' + m.stale_connector_count + ' stale, ' + m.needs_reauth_count + ' reauth)</span></div>'
+    + '<div>Sync failures (7d)</div><div class="num">' + m.sync_failures_7d + '</div>'
+    + '<div>Records</div><div class="mono" style="font-size:12px">' + escapeHtml(JSON.stringify(m.record_counts || {})) + '</div>'
+    + '<div>Counterparties</div><div class="num">' + m.counterparty_count + '</div>'
+    + '<div>Agent proposals / pending</div><div class="num">' + m.agent_proposals_7d + ' (7d) / ' + m.agent_pending_total + '</div>'
+    + '<div>Open recon findings</div><div class="num">' + m.recon_findings_open + '</div>'
+    + '<div>Imports pending</div><div class="num">' + m.import_pending + '</div>'
+    + '</div><h3>Verified coverage, 14 days</h3><div>' + (trend || '<span class="muted">—</span>') + '</div>';
+}
+
 function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
 async function load(){
@@ -235,8 +272,13 @@ async function load(){
     const { data:{ session } } = await sb.auth.getSession();
     if(!session){ $('#main').innerHTML = '<div class="gate">Not signed in. Open the app, sign in as the founder, then reload this page.</div>'; return; }
     token = session.access_token;
-    const res = await api('?action=partners');
+    const [res, met] = await Promise.all([
+      api('?action=partners'),
+      api('?action=metrics').catch(() => null)
+    ]);
     partners = res.partners || [];
+    metricsConfigured = met ? !!met.configured : null;
+    metricsById = Object.fromEntries(((met && met.rows) || []).map(r => [r.user_id, r]));
     $('#genAt').textContent = 'as of ' + fmtDate(res.generated_at);
     renderList();
   } catch(e){
