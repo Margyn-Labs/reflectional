@@ -1,0 +1,59 @@
+/* Skin: brings the pages that still use app.css components (Cash, Ledger,
+   Pulse Score, Reports, Inbox/Agents, Settings, Invoicing, Ask, Sources,
+   Profile, Import) in line with the new pages (pages.css). Loaded straight
+   after app.css. Visual only: no layout logic, no ids, no behaviour. */
+
+/* 1. The legacy design variables: flat panels, 8px corners, one overlay shadow */
+:root{
+  --radius-card:8px; --radius-control:6px; --radius-btn:6px; --radius-modal:8px;
+  --shadow-xs:none; --shadow-sm:none; --shadow-md:none; --shadow-emerald:none;
+  --shadow-lg:var(--shadow-overlay); --shadow-modal:var(--shadow-overlay);
+}
+
+/* 2. Panels that hard-code their corners */
+.rd-pulse, .rd-inst-row, .rd-card, .ch-tile, .rd-flowmap, .rd-ask, .mx-panel, .sc-gauge, .sc-vital,
+.sc-spark, .sv-acc-row, .sc-brief, .ask-side, .ask-main, .ap-tile, .conn-rows .ledger-row, .set-card,
+.pay-card, .rd-attn, .ppl-banner, .cust-row:hover, .auth-tab-bar, .org-switch-menu, .cmdk-box, .toast{ border-radius:var(--r-panel) !important; }
+.rd-flowmap .fm-chip, .mp-opt, .ask-threads .chat-history-row, .ask-empty .ae-grid button, .ask-composer .acw,
+.dz-icon, .cust-avatar, .rd-empty .e-ic, .ask-empty .ae-mark, .ask-stream .margyn-msg.user{ border-radius:var(--r-ctl) !important; }
+.pay-card, .pay-card:hover, .chart-card, .card, .rd-card, .rd-pulse, .rd-inst-row, .ch-tile, .rd-flowmap{ box-shadow:none !important; }
+.cmdk-box, .toast{ box-shadow:var(--shadow-overlay) !important; }
+
+/* 3. Buttons: one quiet style, no glow, no lift */
+.btn-primary, button.primary, .auth-submit, .ask-send, .ask-composer .margyn-chat-form button.ask-send{ box-shadow:none !important; transform:none !important; }
+.btn-primary:hover, button.primary:hover, .auth-submit:hover{ box-shadow:none !important; transform:none !important; }
+.lr-btn, .btn-ghost{ border-radius:var(--r-ctl); font:600 var(--f12)/1.2 var(--font-ui); border-color:var(--g200); color:var(--g900); background:var(--g0); }
+.lr-btn:hover, .btn-ghost:hover{ background:var(--g50); border-color:var(--g300); color:var(--g900); }
+.lr-btn.danger:hover{ border-color:var(--neg); color:var(--neg); }
+
+/* 4. Page headers: no rule underneath, same type as the new pages */
+.rd-head{ border-bottom:0 !important; padding-bottom:0 !important; margin-bottom:20px !important; }
+.rd-head h1{ font-size:var(--f24) !important; font-weight:700 !important; letter-spacing:-.01em !important; margin:0 !important; }
+.rd-head .rd-sub{ font-size:var(--f14) !important; color:var(--g600) !important; max-width:80ch !important; margin-top:6px; }
+
+/* 5. Tags -> the new badges */
+.lr-tag, .source-badge, .src-tag, .rd-tag, .cust-tag, .type-badge, .inv-status, .agent-badge, .pay-card .pc-flag{
+  border-radius:4px !important; font:600 var(--f12)/1.4 var(--font-ui) !important; padding:1px 6px !important; letter-spacing:normal !important; }
+
+/* 6. Tables -> the new grid look */
+table.dtable th, table.ledger-table thead th, .hub-feed th{ background:var(--g25) !important; color:var(--g600) !important; font:600 var(--f12)/1.3 var(--font-ui) !important; border-bottom:1px solid var(--g200) !important; }
+table.dtable td, table.ledger-table td, .hub-feed td{ border-bottom-color:var(--g100) !important; }
+table.dtable td.num, table.ledger-table td.num{ font-size:var(--f13) !important; }
+
+/* 7. KPI tiles: same weight as Home's tiles */
+.pay-card{ padding:14px 16px !important; border-color:var(--g200) !important; }
+.pay-card .pc-label, .rd-strip .l, .rd-inst .l, .fact .f-label{ font:600 var(--f13)/1.3 var(--font-ui) !important; color:var(--g600) !important; }
+.pay-card .pc-value, .rd-strip .v, .fact .f-value{ font-size:var(--f24) !important; letter-spacing:-.02em !important; }
+.pay-card .pc-sub{ color:var(--g500) !important; }
+
+/* 8. Sentences are not figures: mono only for numbers */
+.pulse-delta, .verdict-delta, .rd-pulse .rd-delta, .ledger-row .lr-meta, .agent-configure-link, .note, .dt-sub, .cust-meta,
+.sc-vital .sv-sub, .sc-vital .sv-foot, .ask-depth-note{ font-family:var(--font-ui) !important; }
+
+/* 9. Inputs */
+.wrap input[type="text"], .wrap input[type="search"], .wrap input[type="email"], .wrap input[type="tel"], .wrap input[type="number"], .wrap input[type="date"], .wrap select, .wrap textarea{
+  border-radius:var(--r-ctl) !important; border-color:var(--g200) !important; font-family:var(--font-ui); }
+
+/* 10. Intros that repeat the page description now in the header */
+#booksAllNote{ display:none !important; }
+#view-agents.mg-is-inbox #agentPanel-queue > .hint:first-child{ display:none; }

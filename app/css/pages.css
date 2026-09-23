@@ -131,3 +131,53 @@
 /* Inbox vs Agents (same underlying view) */
 #view-agents.mg-is-inbox #agentTabs{ display:none; }
 #view-agents.mg-is-agents #agentTabs [data-atab="queue"]{ display:none; }
+
+/* ---------- forecast ---------- */
+.mg-btn-sm{ height:28px; padding:0 10px; font-size:var(--f12); }
+.mg-panel-h .mg-btn-sm{ margin-left:8px; }
+.mg-fc-callout{ font-size:var(--f13); color:var(--brand-700); background:var(--brand-50); border-radius:var(--r-ctl); padding:8px 12px; margin-bottom:10px; }
+.mg-fc-callout.warn{ color:var(--neg); background:var(--neg-50); }
+
+/* ---------- detail drawer (plan §7.4) ---------- */
+.mg-drawer-scrim{ position:fixed; inset:0; background:rgba(20,24,31,.24); z-index:900; }
+.mg-drawer{ position:absolute; top:0; right:0; bottom:0; width:min(480px, 100%); background:var(--g0); border-left:1px solid var(--g200);
+  box-shadow:var(--shadow-overlay); display:flex; flex-direction:column; font-family:var(--font-ui); color:var(--g900); animation:mgSlide .16s ease-out; }
+@keyframes mgSlide{ from{ transform:translateX(24px); opacity:.6; } to{ transform:none; opacity:1; } }
+.mg-drawer-h{ display:flex; align-items:flex-start; gap:12px; padding:16px 16px 12px 20px; border-bottom:1px solid var(--g100); }
+.mg-drawer-h > div{ flex:1; min-width:0; }
+.mg-drawer-h h3{ margin:0; font-size:var(--f20); font-weight:700; }
+.mg-drawer-sub{ font-size:var(--f13); color:var(--g500); margin-top:4px; }
+.mg-drawer-tabs{ display:flex; gap:20px; padding:0 20px; border-bottom:1px solid var(--g100); }
+.mg-drawer-tabs button{ border:0; background:none; padding:10px 0; font:600 var(--f13) var(--font-ui); color:var(--g600); cursor:pointer; box-shadow:inset 0 -2px 0 transparent; }
+.mg-drawer-tabs button.on{ color:var(--g900); box-shadow:inset 0 -2px 0 var(--brand); }
+.mg-drawer-b{ flex:1; overflow:auto; padding:16px 20px; }
+.mg-drawer-b h4{ font-size:var(--f13); font-weight:700; margin:18px 0 8px; color:var(--g600); }
+.mg-drawer-f{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; padding:12px 20px; border-top:1px solid var(--g100); }
+.mg-dl{ display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--g100); border:1px solid var(--g100); border-radius:var(--r-panel); overflow:hidden; margin-bottom:16px; }
+.mg-dl > div{ background:var(--g0); padding:10px 12px; display:flex; flex-direction:column; gap:4px; }
+.mg-dl span{ font-size:var(--f12); color:var(--g500); }
+.mg-dl b{ font-family:var(--font-num); font-size:var(--f16); font-weight:600; }
+.mg-dl b.neg{ color:var(--neg); }
+.mg-dl b .mg-bdg{ font-size:var(--f12); }
+.mg-src-block{ border:1px solid var(--g200); border-radius:var(--r-panel); margin-bottom:10px; }
+.mg-src-block-h{ display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--g100); font-size:var(--f13); }
+.mg-src-amt{ margin-left:auto; font-family:var(--font-num); font-weight:600; }
+.mg-src-row{ display:grid; grid-template-columns:1fr auto auto; gap:12px; padding:6px 12px; font-size:var(--f12); color:var(--g600); }
+.mg-act{ padding:10px 0; border-bottom:1px solid var(--g100); }
+.mg-act-t{ font-size:var(--f13); font-weight:600; }
+.mg-act-t::first-letter{ text-transform:uppercase; }
+
+/* ---------- forms inside the drawer ---------- */
+.mg-field{ display:grid; grid-template-columns:1fr 150px; gap:4px 12px; align-items:center; padding:8px 0; border-bottom:1px solid var(--g100); }
+.mg-field-l{ font-size:var(--f13); color:var(--g900); }
+.mg-field-in{ display:flex; align-items:center; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0); height:32px; padding:0 8px; gap:4px; }
+.mg-field-in i{ font-style:normal; color:var(--g500); font-size:var(--f12); }
+.mg-field-in input{ border:0 !important; outline:0; width:100%; min-width:0; font:500 var(--f13) var(--font-num); background:transparent !important; text-align:right; padding:0 !important; margin:0 !important; height:100% !important; line-height:30px; box-shadow:none !important; }
+.mg-field-v{ font-family:var(--font-num); font-weight:600; color:var(--g600); font-size:var(--f12); margin-left:4px; }
+.mg-field-in:focus-within{ border-color:var(--link); }
+.mg-field-h{ grid-column:1 / -1; font-size:var(--f12); color:var(--g500); }
+.mg-field-h:empty{ display:none; }
+.mg-switch{ display:flex; gap:8px; align-items:center; font-size:var(--f14); font-weight:600; padding:4px 0 8px; cursor:pointer; }
+@media (max-width:600px){ .mg-field{ grid-template-columns:1fr; } }
+.mg-dl b.txt{ font-family:var(--font-ui); font-size:var(--f14); }
+.mg-dl > div:last-child:nth-child(odd){ grid-column:1 / -1; }
