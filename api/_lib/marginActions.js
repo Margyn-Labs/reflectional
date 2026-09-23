@@ -210,14 +210,43 @@ async function setPendingActionMessageId(id, waMessageId) {
   await updateRows('whatsapp_pending_actions', `id=eq.${id}`, { wa_message_id: waMessageId }).catch(() => {});
 }
 
-/** Look up a still-pending action by the outbound message it was attached to. */
-async function findPendingAction(userId, contextMessageId) {
-  if (!contextMessageId) return null;
+/**
+ * Look up a still-pending action by the outbound message it was attached to.
+ * Accepts one id or several: a reply can reference either WhatsApp's wamid or
+ * Gupshup's gsId, and we stored whichever Gupshup returned on send.
+ */
+async function findPendingAction(userId, contextIds) {
+  const ids = (Array.isArray(contextIds) ? contextIds : [contextIds]).filter(Boolean).map(String);
+  if (!ids.length) return null;
+  const list = ids.map((i) => '"' + i.replace(/"/g, '') + '"').join(',');
   const rows = await selectRows(
     'whatsapp_pending_actions',
-    `select=*&user_id=eq.${userId}&wa_message_id=eq.${encodeURIComponent(contextMessageId)}&status=eq.pending&limit=1`
+    `select=*&user_id=eq.${userId}&wa_message_id=in.(${encodeURIComponent(list)})&status=eq.pending&order=created_at.desc&limit=1`
   ).catch(() => []);
   return rows[0] || null;
+}
+
+/**
+ * Fallback when a Confirm/Cancel reply can't be tied to a message id: the
+ * user's most recent pending action, if it was proposed in the last
+ * `withinMinutes`. Only ever used when the reply itself is an unambiguous
+ * "confirm" or "cancel", so a stale proposal can't be executed by accident.
+ */
+async function findLatestPendingAction(userId, withinMinutes = 30) {
+  const since = new Date(Date.now() - withinMinutes * 60000).toISOString();
+  const rows = await selectRows(
+    'whatsapp_pending_actions',
+    `select=*&user_id=eq.${userId}&status=eq.pending&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=1`
+  ).catch(() => []);
+  return rows[0] || null;
+}
+
+/** After one pending action resolves, retire any duplicates of it (same type
+ *  + target) so a later tap on an older copy can't run it a second time. */
+async function expireDuplicatePending(pending) {
+  let filter = `user_id=eq.${pending.user_id}&status=eq.pending&action_type=eq.${encodeURIComponent(pending.action_type)}&id=neq.${pending.id}`;
+  filter += pending.target_id ? `&target_id=eq.${encodeURIComponent(pending.target_id)}` : '&target_id=is.null';
+  await updateRows('whatsapp_pending_actions', filter, { status: 'expired', resolved_at: new Date().toISOString() }).catch(() => {});
 }
 
 /**
@@ -231,6 +260,7 @@ async function findPendingAction(userId, contextMessageId) {
 async function resolvePendingAction(pending, confirmed) {
   if (!confirmed) {
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'cancelled', resolved_at: new Date().toISOString() });
+    await expireDuplicatePending(pending);
     return { ok: true, executed: false };
   }
   try {
@@ -241,6 +271,7 @@ async function resolvePendingAction(pending, confirmed) {
       payload: pending.payload
     }, pending.user_id);
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'confirmed', resolved_at: new Date().toISOString() });
+    await expireDuplicatePending(pending);
     return { ok: true, executed: true };
   } catch (e) {
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'failed', error: e.message, resolved_at: new Date().toISOString() }).catch(() => {});
@@ -356,5 +387,5 @@ async function executeAction(action, userId) {
 
 module.exports = {
   TOOLS, isProposeAction, execReadTool,
-  createPendingAction, setPendingActionMessageId, findPendingAction, resolvePendingAction, executeAction
+  createPendingAction, setPendingActionMessageId, findPendingAction, findLatestPendingAction, resolvePendingAction, executeAction
 };
