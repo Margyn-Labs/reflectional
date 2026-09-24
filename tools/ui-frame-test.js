@@ -11,7 +11,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const b = await chromium.launch();
   const p = await b.newPage({ viewport:{ width:1440, height:900 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  const boot = async (hash) => { await p.goto('about:blank'); await p.goto(B + (hash || '')); await p.waitForFunction(() => sbClient && document.getElementById('authGate') && !document.getElementById('authGate').classList.contains('hidden'), null, { timeout:10000 }); await p.waitForTimeout(500); await p.evaluate(seedApp); await p.waitForTimeout(700); };
+  const boot = async (hash, pre, preArg) => { await p.goto('about:blank'); await p.goto(B + (hash || '')); await p.waitForFunction(() => sbClient && document.getElementById('authGate') && !document.getElementById('authGate').classList.contains('hidden'), null, { timeout:10000 }); await p.waitForTimeout(500); await p.evaluate(pre || (() => { window.__seedPrefs = null; window.__seedNoPrefsColumn = false; }), preArg); await p.evaluate(seedApp); await p.waitForTimeout(700); };
   const vis = () => p.evaluate(() => [...document.querySelectorAll('[id^="view-"]')].filter(v => !v.classList.contains('hidden') && v.parentElement.classList.contains('wrap')).map(v => v.id));
 
   // 1. deep link: URL opens that page with that source, after login data load
@@ -168,6 +168,49 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const hasTick = await p.isVisible('.mg-dlg-tick');
   ok(hasTick && await p.isDisabled('.mg-dlg-ok'), 'Bell consent dialog: button disabled until ticked');
   if(hasTick){ await p.check('.mg-dlg-tick'); ok(!(await p.isDisabled('.mg-dlg-ok')), 'ticking enables the button'); await p.click('.mg-dlg-cancel'); }
+
+  // 9b. Preferences are saved to the account (profiles.preferences), not the browser
+  await p.evaluate(() => { window.__profileUpdates = []; try { localStorage.removeItem('margyn_forecast_v1'); } catch(e){} });
+  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(250);
+  await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
+  ok(/Saved to your account/.test(await p.textContent('.mg-drawer')), 'forecast drawer says Saved to your account');
+  await p.fill('.mg-drawer input[data-fc="collectDelay"]', ''); await p.type('.mg-drawer input[data-fc="collectDelay"]', '45', { delay:40 });
+  await p.waitForTimeout(1000);
+  const ups = await p.evaluate(() => window.__profileUpdates);
+  ok(ups.length === 1 && ups[0].preferences && ups[0].preferences.forecast && Number(ups[0].preferences.forecast.collectDelay) === 45, 'forecast change -> exactly one debounced profiles update with preferences.forecast: ' + JSON.stringify(ups));
+  ok(await p.evaluate(() => localStorage.getItem('margyn_forecast_v1')) === null, 'nothing written to localStorage when the column exists');
+  await p.keyboard.press('Escape');
+  await p.evaluate(() => { window.__profileUpdates = []; setMetricSelection('summary', ['cash', 'netMargin']); saveAnalyticsCharts([{ id:'x1', name:'Only cash', type:'area', metrics:['cash'], group:'Week' }]); });
+  await p.evaluate(() => { document.getElementById('setBandHealthy') || showView('settings'); }); await p.waitForTimeout(250);
+  await p.fill('#setBandHealthy', '75'); await p.fill('#setBandCaution', '45'); await p.click('#setBandSave'); await p.waitForTimeout(1000);
+  const ups2 = await p.evaluate(() => window.__profileUpdates);
+  const last = ups2.length ? ups2[ups2.length - 1].preferences : {};
+  ok(ups2.length === 1 && last.metrics.summary.join() === 'cash,netMargin' && last.analytics_charts.length === 1 && last.score_bands.healthy === 75 && Number(last.forecast.collectDelay) === 45,
+    'metrics, charts and score bands batch into one save, forecast kept: ' + JSON.stringify(last));
+
+  // reload on "another device": the account's preferences apply
+  const prefsNow = await p.evaluate(() => JSON.parse(JSON.stringify(currentProfile.preferences)));
+  await boot('#/home', seed => { localStorage.clear(); window.__seedPrefs = seed; window.__seedNoPrefsColumn = false; }, prefsNow);
+  ok(/pay 45 days after/.test(await p.textContent('#view-home')), 'reload with saved preferences.forecast shows that setting');
+  ok(await p.evaluate(() => metricSelection('summary').join() === 'cash,netMargin' && loadAnalyticsCharts().length === 1 && scoreBandCutoffs().healthy === 75), 'metrics, charts and score bands come back from the account');
+
+  // first use migrates this browser's old values into the account, once
+  await boot('#/home', () => { localStorage.clear(); localStorage.setItem('margyn_score_bands', JSON.stringify({ healthy:80, caution:50 })); localStorage.setItem('margyn_metrics_scores', JSON.stringify(['cash'])); window.__seedPrefs = { forecast:{ collectDelay:30 } }; window.__seedNoPrefsColumn = false; });
+  await p.evaluate(() => scoreBandCutoffs()); await p.waitForTimeout(1000);
+  const mig = await p.evaluate(() => window.__profileUpdates);
+  ok(mig.length === 1 && mig[0].preferences.score_bands.healthy === 80 && mig[0].preferences.metrics.scores.join() === 'cash' && mig[0].preferences.forecast.collectDelay === 30, 'old browser values migrate into the account once, account values kept: ' + JSON.stringify(mig));
+  await p.evaluate(() => { mgPrefSet('score_bands', null); }); await p.waitForTimeout(900);
+  ok(await p.evaluate(() => scoreBandCutoffs().healthy === 70 && window.__profileUpdates.slice(-1)[0].preferences.score_bands === null), 'reset stores null, the old browser value does not come back');
+
+  // code deployed before the SQL: no column -> localStorage, no errors
+  await boot('#/home', () => { localStorage.clear(); window.__seedPrefs = null; window.__seedNoPrefsColumn = true; });
+  await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
+  ok(/Saved in this browser/.test(await p.textContent('.mg-drawer')), 'missing column: drawer says Saved in this browser');
+  await p.fill('.mg-drawer input[data-fc="collectDelay"]', '21'); await p.waitForTimeout(900);
+  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('margyn_forecast_v1') || '{}').collectDelay) === '21' && (await p.evaluate(() => window.__profileUpdates.length)) === 0, 'missing column: saved to localStorage, no profile update sent');
+  ok(/pay 21 days after/.test(await p.textContent('#view-home')), 'missing column: forecast still follows the setting');
+  await p.keyboard.press('Escape');
+  await p.evaluate(() => { localStorage.clear(); window.__seedNoPrefsColumn = false; });
 
   // 10. Zoho callback hash is left alone
   await boot('#zoho=select-org&org_ref=abc');

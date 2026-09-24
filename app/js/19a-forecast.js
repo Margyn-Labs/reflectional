@@ -22,9 +22,8 @@
    open invoices are used up (receivables / weekly sales), spend not in bills = monthly spend minus bills due in
    30 days, new bills = the rest from week 5, GST = latest GST payable,
    floor = two weeks of spend. Week 1 is this week.
-   Settings are saved in this browser (same place as other preferences).
+   Settings are saved to the account (profiles.preferences.forecast, see 19c-prefs.js).
    ============================================================ */
-const MG_FC_KEY = 'margyn_forecast_v1';
 const MG_FC_WEEKS = 13;
 const MG_WEEKLY = 12 / 52;   // monthly amount -> per week
 
@@ -57,17 +56,15 @@ function mgFcData(){
 }
 function mgFcSettings(){
   const d = mgFcData(); if(!d) return null;
-  let saved = {};
-  try { saved = JSON.parse(lsGet(MG_FC_KEY, '{}')) || {}; } catch(e){ saved = {}; }
+  const saved = mgPrefGet('forecast', {}) || {};
   const out = Object.assign({}, d.defaults);
   Object.keys(out).forEach(k => { if(saved[k] !== undefined && saved[k] !== null && saved[k] !== '') out[k] = typeof out[k] === 'boolean' ? !!saved[k] : Number(saved[k]); });
   return out;
 }
 function mgFcSave(patch){
-  let saved = {}; try { saved = JSON.parse(lsGet(MG_FC_KEY, '{}')) || {}; } catch(e){}
-  lsSet(MG_FC_KEY, JSON.stringify(Object.assign(saved, patch)));
+  mgPrefSet('forecast', Object.assign({}, mgPrefGet('forecast', {}), patch));
 }
-function mgFcReset(){ try { localStorage.removeItem(MG_FC_KEY); } catch(e){} }
+function mgFcReset(){ mgPrefSet('forecast', null); }
 
 function mgForecast(){
   const d = mgFcData(); if(!d) return null;
@@ -157,7 +154,7 @@ function mgForecastEditor(){
     '<span class="mg-field-h">' + escapeHtml(help + (d.origin[k] ? ' Default: ' + (unit === '₹' ? fmtINR(def[k]) : def[k]) + ', ' + d.origin[k] + '.' : ' Default: ' + def[k] + '.')) + '</span></label>';
   mgDrawer({
     title:'Forecast assumptions',
-    sub:'Change any of these and the forecast updates. Saved in this browser.',
+    sub:'Change any of these and the forecast updates. ' + mgPrefWhere(),
     body:
       '<label class="mg-switch"><input type="checkbox" data-fc="enabled"' + (st.enabled ? ' checked' : '') + '> <span>Show the forecast on Home</span></label>' +
       '<h4>Money coming in</h4>' +

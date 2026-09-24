@@ -369,7 +369,7 @@ document.getElementById('profileForm').addEventListener('submit', async (e) => {
       city: document.getElementById('pfCity').value.trim() || null };
     const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
     if(error) throw error;
-    currentProfile = row; renderHeader();
+    currentProfile = Object.assign({}, currentProfile, row); renderHeader();   // keep columns the form doesn't edit (preferences, whatsapp_phone)
     note.className = 'note ok'; note.textContent = 'Saved.';
     setTimeout(() => { note.textContent = ''; note.className = 'note'; }, 2500);
   } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }

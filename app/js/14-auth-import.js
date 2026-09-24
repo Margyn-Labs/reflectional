@@ -32,7 +32,7 @@ document.getElementById('googleAuthBtn').addEventListener('click', async () => {
     if(error) throw error;
   } catch(err){ showAuthError(err.message || 'Could not sign in with Google.'); btn.disabled = false; }
 });
-document.getElementById('logoutBtn').addEventListener('click', async () => { await sbClient.auth.signOut(); });
+document.getElementById('logoutBtn').addEventListener('click', async () => { try { await mgPrefFlush(); } catch(e){} await sbClient.auth.signOut(); });
 /* ============================================================
    ENTRY TABS — Upload vs Manual
    ============================================================ */
