@@ -130,7 +130,9 @@ async function seedApp() {
   // ---------- Razorpay raw feed (for razorpayLiveSummary) ----------
   const methods = ['upi', 'upi', 'upi', 'card', 'netbanking', 'upi', 'wallet', 'upi', 'card', 'upi'];
   const txns = Array.from({ length: 60 }, (_, i) => ({ id: 'pay_' + i, user_id: UID, status: i % 29 === 7 ? 'failed' : 'captured', amount: (1800 + (i * 373) % 4200) * 100, method: methods[i % methods.length], created_at: minsAgo(i * 95) }));
-  const settles = Array.from({ length: 12 }, (_, i) => ({ id: 'setl_' + i, user_id: UID, amount: 110000000, created_at: iso((i + 2) * DAY), processed_at: iso((i + 0.4) * DAY) }));
+  // Newest settlement is still on its way to the bank (status 'created'); the rest have reached it.
+  const settles = Array.from({ length: 12 }, (_, i) => ({ id: 'setl_' + i, settlement_id: 'setl_' + i, user_id: UID, amount: 110000000, fee_deducted: 2090000, utr: i ? 'HDFCN2026' + (4410 + i) : null,
+    status: i ? 'processed' : 'created', created_at: iso((i + 1) * DAY), processed_at: i ? iso((i - 0.4) * DAY) : null }));
   const refunds = [{ id: 'rfnd_1', user_id: UID, amount: 249900, created_at: minsAgo(400) }];
 
   // ---------- People / agents ----------
@@ -266,6 +268,7 @@ async function seedApp() {
         { name: 'HDFC Bank CA 0021', parent: 'Bank Accounts', closing_balance: 15230000 },
         { name: 'ICICI Bank CA 7780', parent: 'Bank Accounts', closing_balance: 3190000 },
         { name: 'Cash', parent: 'Cash-in-Hand', closing_balance: 84000 },
+        { name: 'HDFC OD A/c 5512', parent: 'Bank OD A/c', closing_balance: -2500000 },
         { name: 'Sundry Debtors', parent: 'Current Assets', closing_balance: 30480000 },
         { name: 'Sundry Creditors', parent: 'Current Liabilities', closing_balance: -9120000 }
       ] },

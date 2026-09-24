@@ -8,7 +8,7 @@
 const { chromium } = require('playwright');
 const OUT = process.argv[2] || 'ui-shots';
 const BASE = process.argv[3] || 'http://localhost:5188/app.html';
-const VIEWS = ['home','inbox','payments','receivables','payables','gst','books','invoicing','customers','vendors','analytics','scores','history','agents','connectors','people','settings','audit','financing','profile','calculate','ledger'];
+const VIEWS = ['home','inbox','cash','payments','receivables','payables','gst','books','invoicing','customers','vendors','analytics','scores','history','agents','connectors','people','settings','audit','financing','profile','calculate','ledger'];
 
 const { seedApp } = require('./ui-seed');
 

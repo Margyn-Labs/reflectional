@@ -102,8 +102,8 @@ function mgForecast(){
 }
 
 /* ---------- Home panel ---------- */
-function mgForecastChart(f){
-  const W = 640, H = 210, padL = 56, padR = 16, padB = 24, padT = 12;
+function mgForecastChart(f, wide){
+  const W = wide ? 1100 : 640, H = wide ? 230 : 210, padL = 56, padR = 16, padB = 24, padT = 12;
   const vals = [f.opening, ...f.close, f.floor];
   const lo = Math.min(0, ...vals), hi = Math.max(...vals) * 1.08 || 1;
   const x = i => padL + i * (W - padL - padR) / MG_FC_WEEKS;
@@ -130,7 +130,7 @@ function mgForecastSentence(f){
   if(st.gstMonthly) bits.push('GST of ' + fmtINR(st.gstMonthly, 'tile') + ' on the 20th');
   return 'Assumes ' + bits.join(', ') + '.';
 }
-function mgForecastPanel(){
+function mgForecastPanel(wide){
   const f = mgForecast(); if(!f) return '';
   if(!f.st.enabled) return null;   // customer switched it off: Home shows cash history instead
   const warn = f.firstBelow >= 0;
@@ -140,9 +140,22 @@ function mgForecastPanel(){
     '<div class="mg-fc-callout' + (warn ? ' warn' : '') + '">' + (warn
       ? 'Cash falls below your floor in week ' + (f.firstBelow + 1) + '. Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.'
       : 'Stays above your floor for 13 weeks. Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.') + '</div>' +
-    mgForecastChart(f) +
+    mgForecastChart(f, wide) +
     '<div class="mg-fine">' + escapeHtml(mgForecastSentence(f)) + ' <button class="mg-link" type="button" data-fc-adjust>Change the assumptions</button></div></div></div>';
 }
+/* Week-by-week table (Cash page, CFO pack). Week 1 starts today. */
+function mgForecastWeeks(f){
+  const today = new Date(new Date().toDateString());
+  const d = n => new Date(today.getTime() + n * 86400000).toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+  return f.close.map((c, w) => ({ n:w + 1, from:d(w * 7), to:d(w * 7 + 6), inflow:f.inflow[w], outflow:f.outflow[w], close:c, below:c < f.floor }));
+}
+function mgForecastTable(f){
+  return '<div class="mg-gridwrap"><table class="mg-grid" id="mgFcTable"><thead><tr><th>Week</th><th>Dates</th><th class="r">Coming in (₹)</th><th class="r">Going out (₹)</th><th class="r">Closing cash (₹)</th><th></th></tr></thead><tbody>' +
+    mgForecastWeeks(f).map(r => '<tr><td>W' + r.n + '</td><td class="mg-muted">' + escapeHtml(r.from + ' – ' + r.to) + '</td><td class="r">' + mgNum(r.inflow) + '</td><td class="r">' + mgNum(r.outflow) + '</td>' +
+      '<td class="r' + (r.below ? ' mg-diff' : '') + '">' + mgNum(r.close) + '</td><td>' + (r.below ? '<span class="mg-bdg neg">Below floor</span>' : '') + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+function mgFcRerender(){ if(mgCurrentView === 'home' || mgCurrentView === 'cash') mgRenderOwn(mgCurrentView); }
 
 /* ---------- Adjust panel (side drawer) ---------- */
 function mgForecastEditor(){
@@ -156,7 +169,7 @@ function mgForecastEditor(){
     title:'Forecast assumptions',
     sub:'Change any of these and the forecast updates. ' + mgPrefWhere(),
     body:
-      '<label class="mg-switch"><input type="checkbox" data-fc="enabled"' + (st.enabled ? ' checked' : '') + '> <span>Show the forecast on Home</span></label>' +
+      '<label class="mg-switch"><input type="checkbox" data-fc="enabled"' + (st.enabled ? ' checked' : '') + '> <span>Show the forecast</span></label>' +
       '<h4>Money coming in</h4>' +
       num('collectDelay', 'Customers pay this many days after the due date', 'days', '') +
       num('doubtfulAfter', 'Leave out invoices overdue by more than', 'days', 'Treated as doubtful and not counted.') +
@@ -175,11 +188,11 @@ function mgForecastEditor(){
       const k = el.dataset.fc; if(!k) return;
       mgFcSave({ [k]:el.type === 'checkbox' ? el.checked : el.value });
       const v = document.querySelector('[data-fcv="' + k + '"]'); if(v) v.textContent = fmtINR(Number(el.value) || 0, 'tile');
-      if(mgCurrentView === 'home') mgRenderHome();
+      mgFcRerender();
     }
   });
 }
 document.addEventListener('click', e => {
   if(e.target.closest('[data-fc-adjust]')){ mgForecastEditor(); return; }
-  if(e.target.closest('[data-fc-reset]')){ mgFcReset(); mgCloseDrawer(); if(mgCurrentView === 'home') mgRenderHome(); mgForecastEditor(); }
+  if(e.target.closest('[data-fc-reset]')){ mgFcReset(); mgCloseDrawer(); mgFcRerender(); mgForecastEditor(); }
 });
