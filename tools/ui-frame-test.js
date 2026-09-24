@@ -70,6 +70,45 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.click('#mgSrcBtn'); await p.click('#mgSrcPop [data-mg-src="reconciled"]'); await p.waitForTimeout(200);
   ok(await p.evaluate(() => cmdkBuild('payment gateways').some(i => i.label === 'Payment gateways')), '⌘K still finds Payment gateways');
 
+  // 3c. CFO pack: month, sections with scope lines, PDF window, delivery settings
+  await p.click('.pagenav button[data-view="cfopack"]'); await p.waitForTimeout(500);
+  ok(p.url().endsWith('#/cfo-pack') && JSON.stringify(await vis()) === '["view-cfopack"]', 'rail CFO pack -> #/cfo-pack');
+  ok((await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-08' && (await p.textContent('#mgPerVal')) === 'August 2026', 'defaults to the last full month (August 2026)');
+  ok((await p.$$('#view-cfopack .pk-sec')).length === 10, 'cover + 9 sections');
+  const scopes = await p.$$eval('#view-cfopack .pk-scope', x => x.map(e => e.textContent));
+  ok(scopes.length === 9 && scopes.every(t => /Anvaya Home Goods · Reconciled/.test(t)) && scopes.slice(0, 8).every(t => /August 2026 · closing reading/.test(t)), 'every section carries its scope line and reading date');
+  ok(/2,41,00,000/.test(await p.textContent('#pkPl')) && (await p.$$('#pkPl tbody tr')).length === 4, 'P&L: August revenue, 4 rows vs July');
+  ok(/Written by Margyn/.test(await p.textContent('#view-cfopack [data-pk-sec="commentary"]')) && /steadier month/.test(await p.textContent('#view-cfopack [data-pk-sec="commentary"]')), 'commentary is August’s briefing, labelled Written by Margyn');
+  ok((await p.$$('#pkFc tbody tr')).length === 13 && !/Total/i.test(await p.textContent('#pkCash')), 'cash: sources not summed, 13-week table');
+  ok(/HDFC Bank CA 0021/.test(await p.textContent('#pkCash')) && (await p.$$('#pkOverdue tbody tr')).length >= 3, 'cash by account and top overdue customers listed');
+  await p.click('#mgPerBtn'); await p.waitForTimeout(150);
+  await p.click('#mgPerPop [data-mg-range="2026-09"]'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/cfo-pack?period=2026-09') && (await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-09', 'Scope bar Period picks September, URL carries period');
+  await p.evaluate(() => { location.hash = '#/cfo-pack?period=2026-07'; }); await p.waitForTimeout(400);
+  ok((await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-07' && /July 2026 CFO pack/.test(await p.textContent('#view-cfopack .pk-doc h1')), 'deep link period=2026-07 opens July: ' + await p.inputValue('#view-cfopack [data-pk-month]') + ' / ' + await p.textContent('#view-cfopack .pk-doc h1'));
+  const [pop] = await Promise.all([p.waitForEvent('popup', { timeout:4000 }).catch(() => null), p.click('#view-cfopack [data-pk-print]')]);
+  if(pop){ await pop.waitForLoadState('domcontentloaded');
+    ok((await pop.title()) === 'Anvaya Home Goods CFO pack July 2026' && (await pop.$$('.pk-sec.pk-break')).length === 4 && /closing reading/.test(await pop.textContent('.pk-run')), 'Save as PDF opens the A4 print window: title, page breaks, running header');
+    await pop.close(); } else ok(false, 'Save as PDF opens a print window');
+  await p.evaluate(() => { window.__profileUpdates = []; });
+  await p.click('#view-cfopack .mg-ph-actions [data-pk-customise]'); await p.waitForTimeout(200);
+  await p.uncheck('.mg-drawer [data-pk-secopt="gst"]'); await p.waitForTimeout(150);
+  ok((await p.$$('#view-cfopack .pk-sec')).length === 9, 'turning off GST removes the section');
+  await p.check('.mg-drawer [data-pk-enabled]'); await p.waitForTimeout(150);
+  await p.fill('.mg-drawer [data-pk-newemail]', 'not an email'); await p.click('.mg-drawer [data-pk-add]'); await p.waitForTimeout(100);
+  ok(/valid email/.test(await p.textContent('#mgPackAddNote')), 'invalid email refused');
+  await p.fill('.mg-drawer [data-pk-newname]', 'Ravi Menon'); await p.fill('.mg-drawer [data-pk-newemail]', 'Ravi@CA-firm.in'); await p.click('.mg-drawer [data-pk-add]'); await p.waitForTimeout(200);
+  await p.selectOption('.mg-drawer [data-pk-day]', '3'); await p.waitForTimeout(900);
+  const pk = await p.evaluate(() => mgPrefGet('cfo_pack', {}));
+  ok(pk.enabled === true && pk.day_of_month === 3 && pk.recipients.map(r => r.email).join() === 'finance@anvaya.test,ravi@ca-firm.in' && !pk.sections.includes('gst'), 'delivery saved to preferences: ' + JSON.stringify(pk));
+  const upsPk = await p.evaluate(() => window.__profileUpdates);
+  ok(upsPk.length >= 1 && upsPk[upsPk.length - 1].preferences.cfo_pack.recipients.length === 2, 'saved to the account (profiles.preferences.cfo_pack)');
+  ok(/3rd of each month to 2 people/.test(await p.textContent('#mgPackDelivery')), 'page states the schedule: ' + await p.textContent('#mgPackDelivery'));
+  await p.keyboard.press('Escape');
+  await p.evaluate(() => { mgPrefSet('cfo_pack', null); });
+  await p.click('.pagenav button[data-view="analytics"]'); await p.waitForTimeout(250);
+  ok(!!(await p.$('#view-analytics [data-go-page="cfopack"]')), 'Reports header links to the CFO pack');
+
   // 4. Home: reconciled only, Sources menu explains and lists source health
   await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(300);
   ok((await p.textContent('#mgSrcVal')) === 'Reconciled' && p.url().endsWith('#/home'), 'Home: Reconciled, URL #/home');

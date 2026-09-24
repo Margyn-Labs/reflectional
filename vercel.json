@@ -54,6 +54,10 @@
     {
       "path": "/api/whatsapp?action=cron-chase",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/ops?action=cron-cfo-pack",
+      "schedule": "30 2 * * *"
     }
   ],
   "functions": {

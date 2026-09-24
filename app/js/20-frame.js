@@ -25,6 +25,7 @@ const MG_PAGES = {
   calculate:{ slug:'import', base:'calculate', group:'Money', label:'Import' },
   customers:{ slug:'customers', own:true, group:'Parties', label:'Customers' },
   vendors:{ slug:'vendors', own:true, group:'Parties', label:'Vendors' },
+  cfopack:{ slug:'cfo-pack', own:true, group:'Insight', label:'CFO pack' },
   analytics:{ slug:'reports', base:'analytics', group:'Insight', label:'Reports', sub:'Charts you define, computed from connected data. Nothing here moves your Pulse Score.' },
   scores:{ slug:'pulse', base:'scores', group:'Insight', label:'Pulse Score', sub:'Every point is arithmetic on your own figures. The AI writes the briefing; it never touches the score.' },
   history:{ slug:'ask', base:'history', group:'Insight', label:'Ask Margyn', sub:'Answers from your connected data. When Margyn doesn’t know, it says so.' },
@@ -103,7 +104,9 @@ function mgSetSource(page, key){
 /* ---------- period: only Reports has a range today ---------- */
 const MG_RANGE_LABEL = { '1m':'Last month', '1q':'Last quarter', '1y':'Last year', 'max':'All time' };
 function mgRangeOptions(){ return [...document.querySelectorAll('#analyticsRangeTabs button[data-range]')].map(b => ({ key:b.dataset.range, label:MG_RANGE_LABEL[b.dataset.range] || b.textContent.trim() })); }
-function mgSetRange(key){ const b = document.querySelector('#analyticsRangeTabs button[data-range="' + key + '"]'); if(b) b.click(); }
+function mgSetRange(key){
+  if(mgCurrentView === 'cfopack'){ mgPackMonth = key; mgRenderOwn('cfopack'); mgRefreshScope(); mgWriteHash(false); return; }
+  const b = document.querySelector('#analyticsRangeTabs button[data-range="' + key + '"]'); if(b) b.click(); }
 function mgAsOf(){
   try {
     const s = snapshots && snapshots[0];
@@ -137,7 +140,7 @@ let mgFirstLoadDone = false;  // set once the first refreshAll() after login has
 /* ---------- Scope bar + page header ---------- */
 function mgScopeParts(page){
   let srcLabel = 'Reconciled', enabled = false, warn = false;
-  const perLabel = page === 'analytics' ? (MG_RANGE_LABEL[analyticsRange] || analyticsRange) : mgAsOf();
+  const perLabel = page === 'analytics' ? (MG_RANGE_LABEL[analyticsRange] || analyticsRange) : page === 'cfopack' && mgPackMonths().length ? mgMonthLabel(mgPackCurrent()) : mgAsOf();
   if(MG_MONEY[page]){
     enabled = true;
     const m = mgMoneySrc;
@@ -188,6 +191,7 @@ function mgSourcesMenu(page){
     (live.length ? '<div class="mg-sep"></div><h6>Your sources</h6>' + live.map(mgHealthRow).join('') : '');
 }
 function mgPeriodMenu(page, p){
+  if(page === 'cfopack') return '<h6>Month</h6>' + (mgPackMonths().map(m => mgOptHtml('data-mg-range', m, mgMonthLabel(m), '', m === mgPackDefaultMonth() ? 'Last full month' : '', m === mgPackCurrent())).join('') || '<div class="mg-note">No months yet.</div>');
   if(page !== 'analytics') return '<h6>Period</h6><div class="mg-note">' + escapeHtml(p.perLabel) + '. This page shows your latest figures. Reports lets you pick a range.</div>';
   return '<h6>Period</h6>' + mgRangeOptions().map(o => mgOptHtml('data-mg-range', o.key, o.label, '', '', o.key === analyticsRange)).join('');
 }
@@ -206,7 +210,7 @@ function mgRefreshScope(){
   set('mgSrcDot', el => el.classList.toggle('warn', p.warn));
   set('mgSrcPop', el => el.innerHTML = mgSourcesMenu(page));
   set('mgPerVal', el => el.textContent = p.perLabel);
-  set('mgPerBtn', el => { el.disabled = page !== 'analytics'; el.title = page === 'analytics' ? '' : 'This page shows your latest figures'; });
+  set('mgPerBtn', el => { const on = page === 'analytics' || page === 'cfopack'; el.disabled = !on; el.title = on ? '' : 'This page shows your latest figures'; });
   set('mgPerPop', el => el.innerHTML = mgPeriodMenu(page, p));
   set('mgOrgEntities', el => el.innerHTML = mgEntitiesHtml());
   set('orgSwitchName', el => el.textContent = mgOrgShort());
@@ -240,6 +244,10 @@ function mgRenderPageHead(page, p){
   if(h1 && !h1.id){ const tn = [...h1.childNodes].find(n => n.nodeType === 3); if(tn) tn.data = P.label + ' '; }
   if(page === 'analytics' && !head.querySelector('[data-go-page="financing"]')){
     const b = document.createElement('button'); b.type = 'button'; b.className = 'mg-btn'; b.dataset.goPage = 'financing'; b.textContent = 'Capital readiness';
+    (head.lastElementChild !== head.firstElementChild ? head.lastElementChild : head).appendChild(b);
+  }
+  if(page === 'analytics' && !head.querySelector('[data-go-page="cfopack"]')){
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'mg-btn'; b.dataset.goPage = 'cfopack'; b.textContent = 'CFO pack';
     (head.lastElementChild !== head.firstElementChild ? head.lastElementChild : head).appendChild(b);
   }
   let line = head.querySelector('.mg-scopeline');
@@ -309,6 +317,7 @@ function mgHashFor(page){
   const src = mgCurrentSource(page);
   if(src && src !== 'all' && src !== 'reconciled') q.set('src', src);
   if(page === 'analytics' && typeof analyticsRange !== 'undefined' && analyticsRange !== '1q') q.set('period', analyticsRange);
+  if(page === 'cfopack' && mgPackMonth) q.set('period', mgPackMonth);
   const qs = q.toString();
   return '#/' + P.slug + (qs ? '?' + qs : '');
 }
@@ -329,6 +338,7 @@ function mgApplyRoute(){
   try {
     if(MG_MONEY[page]) mgMoneySrc = r.src || 'reconciled';
     if(page === 'cash') mgCashSrc = r.src || 'reconciled';
+    if(page === 'cfopack') mgPackMonth = /^\d{4}-\d{2}$/.test(r.period || '') ? r.period : null;
     if(page === 'agents') agentsActiveTab = 'roster';
     showView(page);
     if(MG_SRC[page]){

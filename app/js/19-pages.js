@@ -380,7 +380,7 @@ function mgRenderNotifications(){
 const MG_OWN_RENDER = {
   home:mgRenderHome, receivables:() => mgRenderMoney('recv'), payables:() => mgRenderMoney('pay'),
   customers:() => mgRenderParties('recv'), vendors:() => mgRenderParties('pay'), gst:mgRenderGst, audit:mgRenderAudit,
-  cash:() => mgRenderCash()
+  cash:() => mgRenderCash(), cfopack:() => mgRenderPack()
 };
 function mgRenderOwn(page){ const f = MG_OWN_RENDER[page]; if(f){ try { f(); } catch(e){ console.error('[margyn] render ' + page, e); } } }
 document.addEventListener('click', async e => {
