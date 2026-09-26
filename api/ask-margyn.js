@@ -65,6 +65,16 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Talk to Margyn (voice mode): speech-to-text and text-to-speech both proxy
+  // through OpenAI, folded into this route (still 12/12 Vercel functions on
+  // Hobby) rather than a new one. Deliberately NOT OpenAI's Realtime speech-
+  // to-speech API — the transcript still goes back through the normal chat
+  // call below, so it hits the exact same propose_action confirm/cancel gate
+  // as typed chat. These two actions never touch a figure or a write.
+  const voiceAction = req.query && req.query.action;
+  if (voiceAction === 'transcribe') return handleTranscribe(req, res);
+  if (voiceAction === 'speak') return handleSpeak(req, res);
+
   const { message, history, context, depth, agentId } = req.body || {};
   const agent = getAgent(agentId);
 
@@ -215,6 +225,130 @@ export default async function handler(req, res) {
     console.error('ask-margyn error:', err);
     res.status(500).json({ error: 'Something went wrong' });
   }
+}
+
+// Speech-to-text. Client sends a short recorded clip as base64 (matches the
+// existing base64-image/PDF convention in api/_lib/importMapper.js) rather
+// than raw multipart, since that's what the browser MediaRecorder blob
+// converts to most simply. 4MB base64 (~3MB audio) comfortably covers a
+// spoken question and stays under Vercel's request body limit.
+const MAX_AUDIO_BASE64_CHARS = 4_000_000;
+async function handleTranscribe(req, res) {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    console.error('OPENAI_API_KEY not set');
+    res.status(500).json({ error: 'Voice is not configured yet' });
+    return;
+  }
+  const { audioBase64, mimeType } = req.body || {};
+  if (!audioBase64 || typeof audioBase64 !== 'string') {
+    res.status(400).json({ error: 'audioBase64 is required' });
+    return;
+  }
+  if (audioBase64.length > MAX_AUDIO_BASE64_CHARS) {
+    res.status(400).json({ error: 'Recording too long' });
+    return;
+  }
+
+  try {
+    const audioBuffer = Buffer.from(audioBase64, 'base64');
+    const ext = /ogg/.test(mimeType || '') ? 'ogg' : /wav/.test(mimeType || '') ? 'wav' : 'webm';
+    const boundary = '----margynVoice' + Date.now().toString(16);
+    const body = buildMultipartBody(boundary, [
+      { name: 'model', value: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe' },
+      { name: 'response_format', value: 'json' },
+      { name: 'file', filename: `clip.${ext}`, contentType: mimeType || 'audio/webm', data: audioBuffer }
+    ]);
+
+    const openaiRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`
+      },
+      body
+    });
+    if (!openaiRes.ok) {
+      const errText = await openaiRes.text();
+      console.error('OpenAI transcription error:', openaiRes.status, errText);
+      res.status(502).json({ error: 'Could not hear that, try again' });
+      return;
+    }
+    const data = await openaiRes.json();
+    res.status(200).json({ text: (data && data.text) || '' });
+  } catch (err) {
+    console.error('handleTranscribe error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+}
+
+// Text-to-speech, for reading Margyn's reply back out loud. Same length cap
+// as a chat message (see the `message.length > 2000` check above) since this
+// only ever narrates a reply this route itself just generated.
+async function handleSpeak(req, res) {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    console.error('OPENAI_API_KEY not set');
+    res.status(500).json({ error: 'Voice is not configured yet' });
+    return;
+  }
+  const { text } = req.body || {};
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    res.status(400).json({ error: 'text is required' });
+    return;
+  }
+
+  try {
+    const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
+        voice: process.env.OPENAI_TTS_VOICE || 'alloy',
+        input: text.trim().slice(0, 2000),
+        response_format: 'mp3'
+      })
+    });
+    if (!openaiRes.ok) {
+      const errText = await openaiRes.text();
+      console.error('OpenAI TTS error:', openaiRes.status, errText);
+      res.status(502).json({ error: 'Could not speak that just now' });
+      return;
+    }
+    const arrayBuffer = await openaiRes.arrayBuffer();
+    res.status(200);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error('handleSpeak error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+}
+
+// Zero-npm multipart/form-data builder (Node's fetch has no FormData-from-
+// Buffer helper without pulling in a dependency). `parts` is an ordered list
+// of either { name, value } (plain field) or { name, filename, contentType,
+// data: Buffer } (file field).
+function buildMultipartBody(boundary, parts) {
+  const chunks = [];
+  for (const part of parts) {
+    chunks.push(Buffer.from(`--${boundary}\r\n`));
+    if (part.data) {
+      chunks.push(Buffer.from(
+        `Content-Disposition: form-data; name="${part.name}"; filename="${part.filename}"\r\n` +
+        `Content-Type: ${part.contentType}\r\n\r\n`
+      ));
+      chunks.push(part.data);
+    } else {
+      chunks.push(Buffer.from(`Content-Disposition: form-data; name="${part.name}"\r\n\r\n${part.value}`));
+    }
+    chunks.push(Buffer.from('\r\n'));
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
+  return Buffer.concat(chunks);
 }
 
 function buildSystemPrompt(context, agent) {
