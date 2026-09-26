@@ -380,22 +380,34 @@ async function handleRealtimeSession(req, res, user) {
     return;
   }
   const { context } = req.body || {};
+  const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime';
   try {
     const instructions = buildRealtimeInstructions(context);
-    const openaiRes = await fetch('https://api.openai.com/v1/realtime/sessions', {
+    // GA shape (confirmed against OpenAI's current API reference, 2026-09):
+    // POST /v1/realtime/client_secrets, config nested under `session`,
+    // `output_modalities` (not `modalities`), voice/transcription nested
+    // under `session.audio.output`/`session.audio.input`. The old
+    // /v1/realtime/sessions endpoint from the 2024/2025 preview 404s now.
+    const openaiRes = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime',
-        voice: process.env.OPENAI_TTS_VOICE || 'alloy',
-        modalities: ['audio', 'text'],
-        instructions,
-        tools: REALTIME_TOOLS,
-        tool_choice: 'auto',
-        input_audio_transcription: { model: 'whisper-1' }
+        expires_after: { anchor: 'created_at', seconds: 600 },
+        session: {
+          type: 'realtime',
+          model,
+          instructions,
+          output_modalities: ['audio'],
+          tools: REALTIME_TOOLS,
+          tool_choice: 'auto',
+          audio: {
+            input: { transcription: { model: 'whisper-1' } },
+            output: { voice: process.env.OPENAI_TTS_VOICE || 'alloy' }
+          }
+        }
       })
     });
     if (!openaiRes.ok) {
@@ -405,9 +417,12 @@ async function handleRealtimeSession(req, res, user) {
       return;
     }
     const data = await openaiRes.json();
+    // GA response is flat: { value, expires_at, session }. `value` is the
+    // ephemeral token (ek_...) the browser uses as its own Bearer token for
+    // the WebRTC SDP exchange — the real OPENAI_API_KEY never leaves here.
     res.status(200).json({
-      client_secret: data.client_secret,
-      model: data.model || process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime'
+      client_secret: data.value,
+      model: (data.session && data.session.model) || model
     });
   } catch (err) {
     console.error('handleRealtimeSession error:', err);

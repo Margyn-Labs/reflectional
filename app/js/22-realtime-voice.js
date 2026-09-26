@@ -77,10 +77,10 @@ async function openRealtimeOverlay(){
       body: JSON.stringify({ context })
     });
     const sessData = await sessRes.json().catch(() => ({}));
-    if(!sessRes.ok || !sessData.client_secret || !sessData.client_secret.value){
+    if(!sessRes.ok || !sessData.client_secret){
       throw new Error((sessData && sessData.error) || 'Could not start a live conversation');
     }
-    const ephemeralKey = sessData.client_secret.value;
+    const ephemeralKey = sessData.client_secret;
     const model = sessData.model || 'gpt-realtime';
 
     rtStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -107,13 +107,18 @@ async function openRealtimeOverlay(){
 
     const offer = await rtPc.createOffer();
     await rtPc.setLocalDescription(offer);
-    const sdpRes = await fetch('https://api.openai.com/v1/realtime?model=' + encodeURIComponent(model), {
+    // GA SDP exchange (confirmed against OpenAI's current API reference,
+    // 2026-09): POST /v1/realtime/calls as multipart/form-data with `sdp`
+    // and a `session` field, not the old raw application/sdp body to
+    // /v1/realtime?model=... from the 2024/2025 preview. Let the browser set
+    // its own multipart boundary — no explicit Content-Type header.
+    const fd = new FormData();
+    fd.set('sdp', offer.sdp);
+    fd.set('session', JSON.stringify({ type: 'realtime', model }));
+    const sdpRes = await fetch('https://api.openai.com/v1/realtime/calls', {
       method: 'POST',
-      body: offer.sdp,
-      headers: {
-        'Authorization': 'Bearer ' + ephemeralKey,
-        'Content-Type': 'application/sdp'
-      }
+      headers: { 'Authorization': 'Bearer ' + ephemeralKey },
+      body: fd
     });
     if(!sdpRes.ok) throw new Error('Could not connect the live audio session');
     const answerSdp = await sdpRes.text();
