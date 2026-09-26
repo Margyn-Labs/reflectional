@@ -1609,6 +1609,17 @@
   .ask-send:disabled{ opacity:.45; cursor:default; transform:none; box-shadow:none; }
   .ask-guard{ font-size:12px; color:var(--text-3); margin-top:9px; line-height:1.5; }
 
+  /* ---------- Talk to Margyn (voice mode) ---------- */
+  .ask-voice-toggle{ display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--border-2); border-radius:999px; background:var(--surf-1); color:var(--text-2); font-family:'Manrope',sans-serif; font-size:12px; font-weight:700; cursor:pointer; transition:background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
+  .ask-voice-toggle:hover{ color:var(--text-0); border-color:var(--text-3); }
+  .ask-voice-toggle.on{ background:var(--emerald-wash); border-color:var(--emerald-deep); color:var(--emerald-deep); }
+  .ask-mic{ flex-shrink:0; width:38px; height:38px; border-radius:50%; border:1px solid var(--border-2); background:var(--surf-1); color:var(--text-2); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
+  .ask-mic:hover{ color:var(--text-0); border-color:var(--text-3); }
+  .ask-mic.listening{ background:var(--orange); border-color:var(--orange); color:#fff; animation:askMicPulse 1.2s ease-in-out infinite; }
+  .ask-mic.transcribing{ background:var(--surf-2); border-color:var(--border-1); color:var(--text-3); animation:askMicSpin 1s linear infinite; }
+  @keyframes askMicPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(204,91,52,.35); } 50%{ box-shadow:0 0 0 8px rgba(204,91,52,0); } }
+  @keyframes askMicSpin{ 0%{ opacity:.5; } 50%{ opacity:1; } 100%{ opacity:.5; } }
+
   /* ---------- ledger entries toolbar ---------- */
   #view-ledger #ledgerSourceFilter{ width:auto; min-width:150px; flex:0 0 auto; font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600;
     padding:8px 12px; border:1px solid var(--border-2); border-radius:8px; background:var(--surf-1); color:var(--text-1); cursor:pointer; }

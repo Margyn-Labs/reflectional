@@ -103,6 +103,7 @@ function askRewireComposer(){
   const stream = document.getElementById('historyThreadMessages');
   wireChatForm(newForm, input, stream, askPageHistory, () => askPageFocus, () => askPageThreadKey, false);
   askWireComposerInput(input, newForm);
+  if(typeof wireVoiceComposer === 'function') wireVoiceComposer();
 }
 function askWireComposerInput(input, form){
   if(!input) return;
