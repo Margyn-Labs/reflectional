@@ -65,15 +65,22 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Talk to Margyn (voice mode): speech-to-text and text-to-speech both proxy
-  // through OpenAI, folded into this route (still 12/12 Vercel functions on
-  // Hobby) rather than a new one. Deliberately NOT OpenAI's Realtime speech-
-  // to-speech API — the transcript still goes back through the normal chat
-  // call below, so it hits the exact same propose_action confirm/cancel gate
-  // as typed chat. These two actions never touch a figure or a write.
+  // Talk to Margyn (voice mode). `transcribe`/`speak` are the tap-to-talk v1:
+  // clip-based STT/TTS proxied through OpenAI, the transcript still goes back
+  // through the normal chat call below so it hits the exact same
+  // propose_action confirm/cancel gate as typed chat.
+  // `realtime-session` is v2 — a live, continuous OpenAI Realtime (speech-to-
+  // speech) conversation. That model CAN decide things on its own mid-call,
+  // which is exactly what must never touch a real write: it is handed only
+  // two tools (show_data, request_confirmation — see REALTIME_TOOLS below),
+  // neither of which writes anything. A "log this payment" spoken mid-call
+  // triggers request_confirmation, which the client pipes through this same
+  // Claude-based propose_action pipeline to build a real confirm/cancel card
+  // — the write still only happens if the human clicks Confirm there.
   const voiceAction = req.query && req.query.action;
   if (voiceAction === 'transcribe') return handleTranscribe(req, res);
   if (voiceAction === 'speak') return handleSpeak(req, res);
+  if (voiceAction === 'realtime-session') return handleRealtimeSession(req, res, user);
 
   const { message, history, context, depth, agentId } = req.body || {};
   const agent = getAgent(agentId);
@@ -326,6 +333,144 @@ async function handleSpeak(req, res) {
     console.error('handleSpeak error:', err);
     res.status(500).json({ error: 'Something went wrong' });
   }
+}
+
+// Live conversation mode. Mints a short-lived OpenAI Realtime session and
+// hands the client only the ephemeral client_secret — the real
+// OPENAI_API_KEY never reaches the browser. The client uses that secret to
+// open its own WebRTC connection straight to OpenAI (see app/js/22-realtime-
+// voice.js); this route's only job is grounding the session (the same
+// financial context text chat gets, formatted for a spoken system prompt)
+// and restricting it to the two safe tools below.
+const REALTIME_TOOLS = [
+  {
+    type: 'function',
+    name: 'show_data',
+    description: 'Render a short table on screen next to this conversation, using ONLY numbers already given to you in your instructions — never invent, estimate, or recompute a figure. Call this whenever the user asks to "show", "see", or "pull up" something (a customer list, a receivables breakdown, a comparison) rather than just hear the answer. You can still say a short sentence about it out loud at the same time.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short panel title, e.g. "Top overdue customers"' },
+        columns: { type: 'array', items: { type: 'string' }, description: 'Column headers, in display order' },
+        rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'Row values as strings, one array per row, same order as columns' },
+        note: { type: 'string', description: 'Optional one-line caveat under the table, e.g. which source this came from or its confidence tier' }
+      },
+      required: ['title', 'columns', 'rows']
+    }
+  },
+  {
+    type: 'function',
+    name: 'request_confirmation',
+    description: 'Call this the instant the user asks you to change something — log a payment, mark an invoice paid, chase someone, pause an agent, approve an import. You never write anything yourself, ever, in this conversation. This hands the request to the app, which runs it through the same safety check as typed chat and shows the user a real confirm/cancel card on screen; the write only happens if they click Confirm there. Say one short sentence telling them you have put it up for review (e.g. "Done — take a look and confirm"), and call this tool in the same turn, never after just talking about it with no follow-through.',
+    parameters: {
+      type: 'object',
+      properties: {
+        request: { type: 'string', description: "What the user asked for, captured as precisely as you can in their own words — e.g. \"mark Acme's invoice as paid\" or \"log a payment of 50000 from Ramesh today\"" }
+      },
+      required: ['request']
+    }
+  }
+];
+
+async function handleRealtimeSession(req, res, user) {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    console.error('OPENAI_API_KEY not set');
+    res.status(500).json({ error: 'Voice is not configured yet' });
+    return;
+  }
+  const { context } = req.body || {};
+  try {
+    const instructions = buildRealtimeInstructions(context);
+    const openaiRes = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime',
+        voice: process.env.OPENAI_TTS_VOICE || 'alloy',
+        modalities: ['audio', 'text'],
+        instructions,
+        tools: REALTIME_TOOLS,
+        tool_choice: 'auto',
+        input_audio_transcription: { model: 'whisper-1' }
+      })
+    });
+    if (!openaiRes.ok) {
+      const errText = await openaiRes.text();
+      console.error('OpenAI realtime session error:', openaiRes.status, errText);
+      res.status(502).json({ error: 'Could not start a live conversation just now' });
+      return;
+    }
+    const data = await openaiRes.json();
+    res.status(200).json({
+      client_secret: data.client_secret,
+      model: data.model || process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime'
+    });
+  } catch (err) {
+    console.error('handleRealtimeSession error:', err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+}
+
+// Condensed, spoken-friendly version of buildSystemPrompt's grounding +
+// voice rules below. Deliberately drops the whole "TAKING ACTION" tool menu
+// from the text prompt (list_pending_*, propose_action with its six action
+// types) — this session only ever has the two REALTIME_TOOLS above, so
+// describing Claude's richer tool set here would just invite it to try
+// calling something that doesn't exist in this session.
+function buildRealtimeInstructions(context) {
+  const ctx = context || {};
+  const {
+    companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock,
+    paymentsHeader, paymentsBlock, booksBlock, tallyBlock, ledgerBlock,
+    crossLedgerBlock, connectorFreshnessBlock, provenanceLine, sourceDivergenceLine
+  } = formatMargynContext(ctx);
+
+  return `You are Margyn, talking live by voice with the founder of ${companyName || 'their business'}, a digital-native Indian business. This is a real-time spoken conversation, not a text chat — talk like a sharp, friendly finance-savvy colleague on a call, not a report generator.
+
+VOICE RULES:
+- Short sentences. This is speech, not a document — no headers, no bullet lists, no markdown, nothing that only makes sense written down.
+- Address them as "you." Lead with the answer, one line of why after.
+- Use ₹ figures the way an Indian founder would say them out loud (e.g. "twelve lakh," "1.2 crore") rather than reading out long digit strings.
+- Contractions, natural pauses in phrasing. Never "Certainly," "I'd be happy to," or any assistant-speak.
+- Only reason about the numbers given below. Never invent, estimate, or recompute a figure or trend that isn't provided here.
+- Respect Verified vs Signal: only call a figure "verified" when two independent sources agree (see the data below); a single-source figure is a signal, say so plainly and don't oversell it.
+- Never call the Pulse Score a "credit score."
+- If asked something the data below can't answer, say plainly you don't have that yet rather than guessing.
+
+TOOLS — you have exactly two, and no ability to write or change anything directly:
+1. show_data — call this whenever the user asks to see/show/pull up something, to put a table on their screen. Only use numbers already given to you below.
+2. request_confirmation — call this the instant the user asks you to change something (log a payment, mark something paid, chase someone, approve an import). Say one short sentence that you've put it up for review, then call the tool in the same turn. Never claim to have done the thing itself — you physically cannot write anything in this conversation, only surface a card for them to confirm.
+
+Current Pulse Score: ${pulseScore}${pulseTrend || ''}
+
+Financial vitals:
+${vitalsLines}
+${provenanceLine || ''}${sourceDivergenceLine || ''}
+
+Top-line P&L:
+${pnlBlock}
+
+${paymentsHeader}:
+${paymentsBlock}
+
+Zoho Books:
+${booksBlock}
+
+Tally (signal-tier, one source, never merge with Zoho or the ledger):
+${tallyBlock}
+
+Quick Ledger (self-entered):
+${ledgerBlock}
+
+Cross-source ledger comparison:
+${crossLedgerBlock}
+
+Connector freshness:
+${connectorFreshnessBlock}`;
 }
 
 // Zero-npm multipart/form-data builder (Node's fetch has no FormData-from-

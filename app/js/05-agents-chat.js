@@ -321,7 +321,7 @@ function wireChatForm(formEl, inputEl, threadEl, historyRef, focusLabel, threadK
       const reply = data.reply;
       loadingBubble.classList.remove('loading');
       await revealText(loadingBubble, reply, threadEl);
-      if(typeof voiceSpeak === 'function') voiceSpeak(reply);
+      if(typeof voiceMaybeSpeak === 'function') voiceMaybeSpeak(reply);
       historyRef.push({ role:'assistant', content: reply });
       if(tk) saveChatMessage(tk, fl, 'assistant', reply, agentId);
       if(data.handoff && data.handoff.agentId){
