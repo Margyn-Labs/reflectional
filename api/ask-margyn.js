@@ -389,7 +389,11 @@ async function handleRealtimeSession(req, res, user) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime',
+        // 'gpt-realtime' 404s on session creation (not a resolvable model id
+        // on this account) — gpt-4o-realtime-preview is the documented,
+        // stable Realtime model id. Override via OPENAI_REALTIME_MODEL if a
+        // newer GA name becomes available later.
+        model: process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview',
         voice: process.env.OPENAI_TTS_VOICE || 'alloy',
         modalities: ['audio', 'text'],
         instructions,
@@ -407,7 +411,7 @@ async function handleRealtimeSession(req, res, user) {
     const data = await openaiRes.json();
     res.status(200).json({
       client_secret: data.client_secret,
-      model: data.model || process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime'
+      model: data.model || process.env.OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview'
     });
   } catch (err) {
     console.error('handleRealtimeSession error:', err);
