@@ -1,27 +1,20 @@
 /* ============================================================
-   TALK TO MARGYN — voice mode for the Ask Margyn workspace.
-   Speech-to-text and text-to-speech both go through OpenAI (proxied by
-   api/ask-margyn.js?action=transcribe|speak — VP decision, see
-   HANDOFF notes: OpenAI voice quality over the free browser APIs).
-   Deliberately NOT OpenAI's Realtime speech-to-speech API: the transcript
-   still lands in the same composer and goes through the same callAskMargyn
-   -> propose_action confirm/cancel gate as typed chat (05-agents-chat.js /
-   06-ask.js). Voice only ever changes how a message goes in and how the
-   reply comes back — never a new way to write data.
+   TALK TO MARGYN — two separate voice surfaces on the Ask Margyn workspace.
+
+   1. The composer mic (#askMicBtn, always visible): tap-to-talk for a single
+      question. Records a clip, transcribes + speaks the reply via OpenAI
+      (api/ask-margyn.js?action=transcribe|speak). The transcript still goes
+      through the normal composer submit -> callAskMargyn -> the same
+      propose_action confirm/cancel gate as typed chat (05-agents-chat.js).
+      If you asked out loud, the reply is read back out loud — no separate
+      mode toggle needed.
+
+   2. The "Talk to Margyn" pill (#askVoiceToggle): opens the full live,
+      continuous conversation overlay — see 22-realtime-voice.js for that
+      (OpenAI Realtime API / WebRTC). This file only owns the pill's click
+      wiring; the overlay's own logic lives in that file so a missing/failed
+      Realtime session never breaks the simpler tap-to-talk path above.
    ============================================================ */
-function voiceModeOn(){ return lsGet('margyn_voice_mode', '0') === '1'; }
-function setVoiceMode(on){
-  lsSet('margyn_voice_mode', on ? '1' : '0');
-  reflectVoiceToggle();
-  if(!on){ voiceStopSpeaking(); voiceStopListening(); }
-}
-function reflectVoiceToggle(){
-  const on = voiceModeOn();
-  const btn = document.getElementById('askVoiceToggle');
-  if(btn){ btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
-  const mic = document.getElementById('askMicBtn');
-  if(mic) mic.classList.toggle('hidden', !on);
-}
 async function voiceAuthHeaders(){
   try {
     const { data: { session } } = await sbClient.auth.getSession();
@@ -29,6 +22,16 @@ async function voiceAuthHeaders(){
   } catch(e){ return {}; }
 }
 function voiceMicSupported(){ return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
+
+// Set right before a mic-triggered submit, read once by voiceMaybeSpeak when
+// that turn's reply comes back, then cleared — so only answers to spoken
+// questions get read aloud, typed ones stay silent.
+let _voiceLastAskWasSpoken = false;
+function voiceMaybeSpeak(reply){
+  if(!_voiceLastAskWasSpoken) return;
+  _voiceLastAskWasSpoken = false;
+  voiceSpeak(reply);
+}
 
 let _voiceStream = null, _voiceRecorder = null, _voiceChunks = [], _voiceListening = false;
 async function voiceStartListening(){
@@ -98,6 +101,7 @@ async function voiceTranscribeAndSubmit(blob){
     const input = document.getElementById('historyThreadInput');
     const form = document.getElementById('historyThreadForm');
     if(input) input.value = data.text.trim();
+    _voiceLastAskWasSpoken = true;
     if(form) form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event('submit', { cancelable:true, bubbles:true }));
   } catch(e){
     toast('Could not hear that', { sub:'Try again' });
@@ -108,7 +112,7 @@ async function voiceTranscribeAndSubmit(blob){
 
 let _voiceAudioEl = null;
 async function voiceSpeak(text){
-  if(!voiceModeOn() || !text) return;
+  if(!text) return;
   voiceStopSpeaking();
   const clean = String(text).replace(/[*_`#]/g, '').replace(/\s+/g, ' ').trim();
   if(!clean) return;
@@ -145,7 +149,9 @@ function wireVoiceComposer(){
 }
 (function wireVoiceToggle(){
   const btn = document.getElementById('askVoiceToggle');
-  if(btn) btn.addEventListener('click', () => setVoiceMode(!voiceModeOn()));
-  reflectVoiceToggle();
+  if(btn) btn.addEventListener('click', () => {
+    if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay();
+    else toast('Live conversation is loading, try again in a moment');
+  });
   wireVoiceComposer();
 })();

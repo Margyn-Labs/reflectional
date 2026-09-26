@@ -775,7 +775,7 @@
               </div>
               <span class="ask-depth-note" id="askDepthNote"></span>
             </div>
-            <button type="button" class="ask-voice-toggle" id="askVoiceToggle" title="Speak your questions, hear Margyn's answers" aria-pressed="false">
+            <button type="button" class="ask-voice-toggle" id="askVoiceToggle" title="Open a live spoken conversation with Margyn">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
               <span>Talk to Margyn</span>
             </button>
@@ -784,7 +784,7 @@
             <div class="acw" style="flex:1;">
               <textarea id="historyThreadInput" rows="1" placeholder="Ask about your numbers..."></textarea>
             </div>
-            <button type="button" class="ask-mic hidden" id="askMicBtn" title="Speak your question" aria-label="Speak your question">
+            <button type="button" class="ask-mic" id="askMicBtn" title="Speak your question" aria-label="Speak your question">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             </button>
             <button type="submit" class="ask-send">Ask</button>
@@ -1194,6 +1194,28 @@
   </div>
 </div>
 </div>
+<!-- ---------- Live conversation (OpenAI Realtime), see app/js/22-realtime-voice.js ---------- -->
+<div class="rt-overlay hidden" id="rtOverlay" role="dialog" aria-modal="true" aria-label="Live conversation with Margyn">
+  <div class="rt-shell">
+    <div class="rt-head">
+      <div class="rt-head-l">
+        <span class="rt-orb" id="rtOrb"></span>
+        <div>
+          <div class="rt-title">Talking with Margyn</div>
+          <div class="rt-status" id="rtStatus">Connecting…</div>
+        </div>
+      </div>
+      <button type="button" class="rt-end" id="rtEndBtn">End conversation</button>
+    </div>
+    <div class="rt-body">
+      <div class="rt-transcript" id="rtTranscript"></div>
+      <div class="rt-canvas" id="rtCanvas">
+        <div class="rt-canvas-empty" id="rtCanvasEmpty">Ask Margyn to show you something — a table or breakdown will land here.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<audio id="rtRemoteAudio" autoplay hidden></audio>
 <div class="detail-overlay hidden" id="detailOverlay">
   <div class="detail-modal">
     <button class="detail-close" id="detailClose" aria-label="Close"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1296,5 +1318,6 @@
 <script src="/app/js/19e-cfopack.js"></script>
 <script src="/app/js/20-frame.js"></script>
 <script src="/app/js/21-voice.js"></script>
+<script src="/app/js/22-realtime-voice.js"></script>
 </body>
 </html>

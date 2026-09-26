@@ -1620,6 +1620,36 @@
   @keyframes askMicPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(204,91,52,.35); } 50%{ box-shadow:0 0 0 8px rgba(204,91,52,0); } }
   @keyframes askMicSpin{ 0%{ opacity:.5; } 50%{ opacity:1; } 100%{ opacity:.5; } }
 
+  /* ---------- Live conversation overlay (OpenAI Realtime) ---------- */
+  .rt-overlay{ position:fixed; inset:0; z-index:400; background:rgba(10,14,18,.5); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; padding:24px; }
+  .rt-shell{ width:min(980px, 100%); height:min(680px, 90vh); background:var(--surf-1); border:1px solid var(--border-1); border-radius:16px; box-shadow:var(--shadow-modal); display:flex; flex-direction:column; overflow:hidden; animation:detailIn .22s cubic-bezier(.16,1,.3,1); }
+  .rt-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border-1); flex-shrink:0; }
+  .rt-head-l{ display:flex; align-items:center; gap:12px; }
+  .rt-orb{ width:14px; height:14px; border-radius:50%; background:var(--text-3); flex-shrink:0; transition:background var(--dur-1) var(--ease-out); }
+  .rt-orb.listening{ background:var(--orange); animation:askMicPulse 1.2s ease-in-out infinite; }
+  .rt-orb.speaking{ background:var(--emerald-deep); animation:rtSpeak 1s ease-in-out infinite; }
+  .rt-orb.connecting{ background:var(--text-3); animation:askMicSpin 1s linear infinite; }
+  @keyframes rtSpeak{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.25); } }
+  .rt-title{ font-family:'Manrope',sans-serif; font-weight:700; font-size:15px; color:var(--text-0); }
+  .rt-status{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-3); margin-top:1px; }
+  .rt-end{ background:var(--surf-2); border:1px solid var(--border-2); color:var(--text-1); font-family:'Manrope',sans-serif; font-weight:700; font-size:13px; padding:8px 16px; border-radius:8px; cursor:pointer; }
+  .rt-end:hover{ background:var(--border-1); }
+  .rt-body{ flex:1; display:flex; min-height:0; }
+  .rt-transcript{ width:320px; flex-shrink:0; border-right:1px solid var(--border-1); padding:16px; overflow-y:auto; font-size:13px; line-height:1.55; }
+  .rt-transcript .rt-line{ margin-bottom:12px; }
+  .rt-transcript .rt-line .who{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3); margin-bottom:2px; }
+  .rt-transcript .rt-line.user .who{ color:var(--text-2); }
+  .rt-transcript .rt-line.margyn .who{ color:var(--orange); }
+  .rt-canvas{ flex:1; padding:20px; overflow-y:auto; }
+  .rt-canvas-empty{ color:var(--text-3); font-size:13px; text-align:center; margin-top:60px; }
+  .rt-card{ background:var(--surf-1); border:1px solid var(--border-1); border-radius:10px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow-xs); }
+  .rt-card h4{ font-family:'Manrope',sans-serif; font-size:14px; font-weight:700; color:var(--text-0); margin:0 0 4px; }
+  .rt-card .rt-note{ font-size:12px; color:var(--text-3); margin-top:8px; }
+  .rt-card table{ width:100%; border-collapse:collapse; margin-top:8px; }
+  .rt-card th{ text-align:left; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--text-3); border-bottom:1px solid var(--border-1); padding:6px 8px; }
+  .rt-card td{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--text-1); border-bottom:1px solid var(--surf-2); padding:7px 8px; }
+  @media (max-width:720px){ .rt-body{ flex-direction:column; } .rt-transcript{ width:100%; max-height:180px; border-right:none; border-bottom:1px solid var(--border-1); } }
+
   /* ---------- ledger entries toolbar ---------- */
   #view-ledger #ledgerSourceFilter{ width:auto; min-width:150px; flex:0 0 auto; font-family:'Manrope',sans-serif; font-size:12.5px; font-weight:600;
     padding:8px 12px; border:1px solid var(--border-2); border-radius:8px; background:var(--surf-1); color:var(--text-1); cursor:pointer; }
