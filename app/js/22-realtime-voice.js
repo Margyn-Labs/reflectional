@@ -18,6 +18,7 @@ let rtPc = null, rtDc = null, rtStream = null;
 let vxActive = false, vxMuted = false, vxDriving = false;
 let vxState = 'idle', vxCaption = '', vxThreadKey = null;
 let vxCallsThisResponse = [], vxResponseActive = false, vxEnding = false, vxQueuedCreate = false;
+let vxLastSaid = '', vxNudges = 0;   // follow-through check, see vxBrokenPromise
 let vxUtterances = [];         // { at, text } — the user's own words (spoken or typed), for the confirm gate
 let vxThinkHistory = [];       // think() thread so follow-up "why"s keep context
 let vxLastActivity = 0, vxIdleTimer = null, vxAudioCtx = null, vxMicAn = null, vxOutAn = null, vxRaf = null;
@@ -389,6 +390,7 @@ function vxToggleMute(force){
 function vxSendText(text){
   text = String(text || '').trim(); if(!text || !vxActive) return;
   vxUtterances.push({ at:Date.now(), text });
+  vxNudges = 0;
   vxAddLine('user', text);
   vxPersist('user', text);
   vxTouch();
@@ -408,12 +410,19 @@ async function vxAwaitUtteranceAfter(t, maxMs){
   return null;
 }
 
+/* "One sec, let me pull that up" with no tool call behind it. Asking
+   permission ("Shall I open it?") is fine and doesn't count. */
+const VX_PROMISE = /\b(one (sec|second|moment)|just a (sec|second|moment)|give me a (sec|second|moment)|let me|i'?ll (now )?(pull|open|get|show|put|draw|create|make|set|check|sync|run|bring|summari[sz]e|write|go|add|log|draft)|i am (pulling|opening|setting|creating)|pulling (that |it |this )?up|opening (that|it|the)|setting (that |it )?up|ek (second|minute|pal)|abhi (dikhata|dikhati|kholta|kholti|karta|karti|laata|lati))/i;
+const VX_ASKS = /\b(shall i|should i|would you like|do you want|want me to|kya main|karoon|karun)\b[^.!]*\?\s*$/i;
+function vxBrokenPromise(said){ said = String(said || '').trim(); return !!said && VX_PROMISE.test(said) && !VX_ASKS.test(said); }
+
 /* ---------- realtime events ---------- */
 function vxOnEvent(m){
   switch(m.type){
     case 'input_audio_buffer.speech_started':
       vxTouch(); vxSetState('hearing', ''); break;
     case 'input_audio_buffer.committed':
+      vxNudges = 0;
       if(m.item_id) vxAddLine('user', '', m.item_id);   // placeholder keeps transcript order right
       vxSetState('thinking', ''); break;
     case 'conversation.item.input_audio_transcription.completed': {
@@ -433,7 +442,7 @@ function vxOnEvent(m){
       break;
     case 'response.output_audio_transcript.done':
     case 'response.audio_transcript.done':
-      if(m.transcript){ vxAddLine('margyn', m.transcript, 'r' + m.response_id); vxPersist('assistant', m.transcript); }
+      if(m.transcript){ vxLastSaid = m.transcript; vxAddLine('margyn', m.transcript, 'r' + m.response_id); vxPersist('assistant', m.transcript); }
       break;
     case 'output_audio_buffer.started':
       vxSetState('speaking'); break;
@@ -448,7 +457,16 @@ function vxOnEvent(m){
     case 'response.done': {
       vxResponseActive = false;
       const calls = vxCallsThisResponse; vxCallsThisResponse = [];
+      const said = vxLastSaid || vxCaption; vxLastSaid = '';
       vxSetCaption('');
+      if(calls.length) vxNudges = 0;
+      else if(vxActive && !vxEnding && vxNudges < 1 && vxBrokenPromise(said)){
+        // It said "one sec, let me pull that up" and stopped. Make it act now,
+        // instead of the user having to ask "why haven't you done it?".
+        vxNudges++;
+        vxTellModel('You just told the user you would do something ("' + said.slice(0, 160) + '") but ended your turn without calling any tool. Do it now: call the right tool immediately, without repeating the filler. If no tool can do it, say so in one short sentence.', true);
+        break;
+      }
       if(calls.length){
         vxSetState('thinking');
         // Every tool output must be in before the next response starts.

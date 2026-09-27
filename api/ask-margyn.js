@@ -462,15 +462,35 @@ const REALTIME_TOOLS = [
   {
     type: 'function',
     name: 'show_view',
-    description: 'THE DEFAULT WAY TO SHOW THINGS. Draws a ready-made live view in the floating workspace next to the conversation, without leaving the page the user is on: pnl (profit and loss with a monthly chart), receivables or payables (ageing chart and biggest parties), cash (balances by source and the 13-week forecast), gst, inbox (what needs their OK), overview (Pulse Score and vitals), or party (one customer or vendor; pass direction and name). The app draws every figure itself, so you never read numbers into it. Returns a short summary for you to speak from.',
+    description: 'THE DEFAULT WAY TO SHOW THINGS. Draws a ready-made live view in the floating workspace next to the conversation, without leaving the page the user is on: pnl (profit and loss with a monthly chart), receivables or payables (ageing chart and biggest parties), cash (balances by source and the 13-week forecast), gst, inbox (what needs their OK), overview (Pulse Score and vitals), party (one customer or vendor; pass direction and name), or mismatches (only the customers, vendors and figures where connected sources disagree, with each source amount and the gap). The app draws every figure itself, so you never read numbers into it. Returns a short summary for you to speak from.',
     parameters: {
       type: 'object',
       properties: {
-        view: { type: 'string', enum: ['pnl', 'receivables', 'payables', 'cash', 'gst', 'inbox', 'overview', 'party'] },
+        view: { type: 'string', enum: ['pnl', 'receivables', 'payables', 'cash', 'gst', 'inbox', 'overview', 'party', 'mismatches'] },
         direction: DIRECTION,
         name: { type: 'string', description: 'For view "party": the customer or vendor name as said.' }
       },
       required: ['view']
+    }
+  },
+  {
+    type: 'function',
+    name: 'show_note',
+    description: 'Write text into the workspace: a summary, a paragraph, a short list of next steps. Use whenever they ask for a summary or notes "in the workspace" or "written down". Only figures you got from tools. Start lines with "- " for bullets.',
+    parameters: {
+      type: 'object',
+      properties: { title: { type: 'string' }, text: { type: 'string', description: 'Plain text, 1-8 short paragraphs or bullets.' } },
+      required: ['title', 'text']
+    }
+  },
+  {
+    type: 'function',
+    name: 'sync_source',
+    description: 'Pull fresh data from a connected source right now (Zoho Books, Odoo or Shopify). Reads only; changes nothing in their books. Tally syncs from its desktop agent and Razorpay/Cashfree sync nightly, so those cannot be triggered from here: say so. Reconnecting a source (signing in again) is something only the user can do on the Organisations and sources page.',
+    parameters: {
+      type: 'object',
+      properties: { source: { type: 'string', enum: ['zoho', 'odoo', 'shopify'] } },
+      required: ['source']
     }
   },
   {
@@ -531,7 +551,7 @@ const REALTIME_TOOLS = [
         command: {
           type: 'string',
           enum: ['export_current_view', 'new_invoice', 'add_receivable', 'add_payable', 'upload_file', 'build_chart', 'print_cfo_pack', 'refresh_data', 'close_side_panel', 'open_command_palette'],
-          description: 'export_current_view downloads the list on screen as CSV. print_cfo_pack opens the print dialog for the CFO pack PDF. close_side_panel closes the customer/vendor panel.'
+          description: 'export_current_view downloads the list on screen as CSV. print_cfo_pack opens the print/save-as-PDF dialog: ONLY when they ask to print, download or save the PDF (to just open the CFO pack, navigate to cfopack). close_side_panel closes the customer/vendor panel.'
         }
       },
       required: ['command']
@@ -572,19 +592,17 @@ async function handleRealtimeSession(req, res, user) {
     res.status(500).json({ error: 'Voice is not configured yet' });
     return;
   }
-  const { context, screen, parties, recent } = req.body || {};
+  const { context, screen, recent } = req.body || {};
   // Cost: the mini realtime model is roughly a third of gpt-realtime per audio
   // token and handles this tool set fine. OPENAI_REALTIME_MODEL=gpt-realtime
   // switches back if quality ever needs it.
   const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-mini';
   try {
     const instructions = buildRealtimeInstructions(context, screen, cleanRecent(recent));
-    // Names the transcriber should expect: Indian finance vocabulary plus the
-    // user's own customers and vendors, so "Sharma Traders" isn't transcribed
-    // as "shaman traders" (the transcript is what the voice-confirm gate reads).
-    const partyNames = Array.isArray(parties) ? parties.filter(p => typeof p === 'string').slice(0, 40).map(p => p.slice(0, 60)) : [];
-    const transcriptionPrompt = ('Indian business finance conversation, English, Hindi or Hinglish. Terms: lakh, crore, GST, ITC, GSTR-2B, TDS, receivables, payables, Razorpay, Cashfree, Zoho Books, Tally, Odoo, Pulse Score, Margyn. '
-      + (partyNames.length ? 'Names: ' + partyNames.join(', ') + '.' : '')).slice(0, 1000);
+    // No transcription prompt: on background noise the transcriber was
+    // repeating the prompt's vocabulary back as if the user had said it
+    // (invented customer names, "Indian business finance conversation...").
+    // Those fake lines reached the model and the saved thread.
     const turnDetection = process.env.OPENAI_TURN_DETECTION === 'server_vad'
       ? { type: 'server_vad', silence_duration_ms: 600 }
       : { type: 'semantic_vad', eagerness: 'auto' };
@@ -620,8 +638,9 @@ async function handleRealtimeSession(req, res, user) {
       truncation: { type: 'retention_ratio', retention_ratio: 0.8, token_limits: { post_instructions: Number(process.env.OPENAI_REALTIME_CONTEXT) || 8000 } }
     };
     let openaiRes = await mint(model, {
-      transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe', prompt: transcriptionPrompt },
-      noise_reduction: { type: 'near_field' },
+      transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe' },
+      // Laptop and desk mics, not headsets, are the common case.
+      noise_reduction: { type: process.env.OPENAI_NOISE_REDUCTION || 'far_field' },
       turn_detection: turnDetection
     }, process.env.OPENAI_TTS_VOICE || 'marin', LIMITS);
     if (openaiRes.status === 400) {
@@ -695,13 +714,15 @@ SHOW, DON'T GO
 - There is a floating workspace next to the conversation. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.
 - Change page with navigate ONLY when they say "go to" / "open the ... page", or need to do something on that page itself. Never navigate just to answer a question.
 - When the topic moves on and the workspace no longer helps, call clear_workspace.
-- Before anything that takes a moment (think, propose_change), say a short filler ("One sec"), then call the tool in the same turn.
+- NEVER say you are doing something ("one sec", "let me pull that up", "I'll set that up") without calling the tool in that same response. If there's no tool for it, say plainly that you can't do that from here and what they can do instead. Never say something is on screen or done unless a tool just returned it.
+- A filler line is only for think and propose_change, which take a few seconds; everything else is instant, so just call it.
 - When they say "this", "here" or "that one", call get_screen first.
-- If you didn't catch something (a stray word or a name you don't recognise), ask once, briefly. Don't guess an action from it.
+- If you didn't catch something (a stray word, background noise, a name you don't recognise, or something unrelated to what you were discussing), ask once, briefly. Never act on it.
 
 NUMBERS
 - Figures come from your tools, which read exactly what the app has loaded. The snapshot below is for your first sentence only; once you've called a tool, trust the tool.
 - Never invent, estimate or recompute a figure you weren't given. If you don't have something, say so plainly and say which connector would give it.
+- If a figure looks implausible (negative cash, a gap bigger than the balance), say it looks off and is probably a data or sync issue, rather than presenting it as fact.
 - Verified vs signal: a figure is "verified" only when two independent sources agree. A single-source figure is a signal. When sources disagree, say which one Margyn used and that it never averages them.
 - Never call the Pulse Score a credit score. Never give investment advice.
 
