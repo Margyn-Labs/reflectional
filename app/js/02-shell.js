@@ -25,29 +25,97 @@ const CMDK_ICON = {
   ask:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>'
 };
 let cmdkIndex = 0, cmdkCurrent = [];
-function cmdkBuild(q){
-  const norm = (q || '').trim().toLowerCase();
-  const out = [];
-  document.querySelectorAll('.pagenav button').forEach(b => {
-    const span = b.querySelector('span');
-    const label = span ? span.textContent.trim() : b.textContent.trim();
-    out.push({ sec:'Pages', label, icon:(b.querySelector('svg') || {}).outerHTML || '', hint:'Go', run:() => showView(b.dataset.view) });
-  });
-  [
-    { label:'Create a new invoice', icon:CMDK_ICON.invoice, run:() => { showView('invoicing'); if(typeof showKhataTab === 'function') showKhataTab('invoice-new'); } },
-    { label:'Add a receivable', icon:CMDK_ICON.plus, run:() => { ledgerActiveTab = 'receivables'; showView('ledger'); } },
-    { label:'Add a payable', icon:CMDK_ICON.plus, run:() => { ledgerActiveTab = 'payables'; showView('ledger'); } },
-    { label:'Talk to Margyn (Alt+M)', icon:CMDK_ICON.ask, run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
-    { label:'Review the agent queue', icon:CMDK_ICON.plus, run:() => { agentsActiveTab = 'queue'; showView('agents'); } },
-    { label:'Build a new chart', icon:CMDK_ICON.chart, run:() => { showView('analytics'); const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); } },
-    { label:'Connect a data source', icon:CMDK_ICON.plug, run:() => showView('connectors') },
-    { label:'Upload a workbook', icon:CMDK_ICON.upload, run:() => showView('calculate') }
-  ].forEach(a => out.push({ sec:'Actions', label:a.label, icon:a.icon, hint:'Run', run:a.run }));
-  const filtered = norm ? out.filter(i => i.label.toLowerCase().includes(norm)) : out;
-  if(norm && norm.length > 2){
-    filtered.unshift({ sec:'Ask Margyn', label:'Ask: ' + q.trim(), icon:CMDK_ICON.ask, hint:'Ask', run:() => askFromPage(q.trim()) });
+/* ---------- search: one index for the command palette and the voice agent ----------
+   Pages (by name and by what they're for), connected sources, customers and
+   vendors with open items, and actions. "zoho" finds the Zoho connection and
+   its figures; "upload" finds Import; a customer's name opens them. */
+const MG_SEARCH_WORDS = {
+  home:'dashboard overview summary today pulse briefing', inbox:'approvals approve decisions pending queue review proposals waiting',
+  cash:'bank balance cash position forecast runway liquidity 13 week transit', payments:'razorpay cashfree gateway settlements fees failed payments upi refunds',
+  receivables:'debtors owed owe us collections overdue invoices ar ageing aging dues', payables:'creditors bills vendors due ap owe we pay',
+  gst:'tax itc gstr gstr-2b 2b tds input credit gstin filing returns', books:'ledger books zoho tally odoo manual entries journal accounting sources compare',
+  invoicing:'invoice create bill khata quote estimate', calculate:'import upload excel xlsx csv pdf file spreadsheet workbook photo scan',
+  customers:'clients buyers debtors parties', vendors:'suppliers creditors parties', cfopack:'report monthly pdf board investor pack mis email',
+  analytics:'reports charts graphs analytics trends build chart', scores:'pulse score health vitals scoring',
+  history:'ask chat questions ai conversation history threads', agents:'agents automation chase collections close bell whatsapp reminders',
+  connectors:'sources connectors integrations connect zoho tally odoo razorpay cashfree shopify sync disconnect reconnect api keys organisations',
+  people:'people team members roles whatsapp numbers access users permissions', settings:'settings notifications preferences account delete',
+  audit:'audit log history changes activity trail who changed', financing:'capital loan credit financing working capital lender readiness',
+  profile:'profile company gst number details name city'
+};
+const MG_SEARCH_SOURCES = ['zoho', 'tally', 'odoo', 'razorpay', 'cashfree', 'shopify'];
+function mgSearchNorm(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9\u0900-\u097f ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function mgSearchScore(q, label, words){
+  const L = mgSearchNorm(label), W = mgSearchNorm(words || '');
+  if(!q) return 0;
+  if(L === q) return 100;
+  if(L.startsWith(q)) return 90;
+  if(L.includes(q)) return 78;
+  const qt = q.split(' '), lt = L.split(' '), wt = W.split(' ');
+  const pref = (t, arr) => arr.some(x => x.startsWith(t) || (t.length >= 4 && x.length >= 4 && typeof vxEdit1 === 'function' && vxEdit1(t, x)));
+  if(qt.every(t => pref(t, lt))) return 72;
+  if(qt.every(t => pref(t, lt) || pref(t, wt))) return 58;
+  const hit = qt.filter(t => pref(t, lt) || pref(t, wt)).length;
+  return hit ? 30 * hit / qt.length : 0;
+}
+/* [{ sec, label, hint, icon, score, kind, run }] best first. */
+function mgSearch(q){
+  // Filler words ("show me", "kitna", "the") shouldn't dilute the match.
+  const STOP = /^(a|an|the|me|my|our|us|we|i|is|are|to|of|for|in|on|and|show|open|go|take|find|see|what|who|how|much|many|most|please|kya|kitna|kitni|kaun|hai|ka|ki|ke|mera|mujhe|dikhao|kholo|batao)$/;
+  const raw = mgSearchNorm(q), kept = raw.split(' ').filter(t => t && !STOP.test(t)).join(' ');
+  const nq = kept || raw, out = [];
+  const push = (it, words) => { const sc = nq ? mgSearchScore(nq, it.label, words) : 1; if(sc > 0) out.push(Object.assign(it, { score:sc })); };
+  const railIcon = {};
+  document.querySelectorAll('.pagenav button').forEach(b => { const s = b.querySelector('svg'); if(s) railIcon[b.dataset.view] = s.outerHTML; });
+  try {
+    Object.keys(MG_PAGES).forEach(k => push({ sec:'Pages', kind:'page', label:MG_PAGES[k].label, hint:'Go', icon:railIcon[k] || railIcon[MG_PAGES[k].parent] || '', run:() => mgGo(k) }, MG_SEARCH_WORDS[k]));
+  } catch(e){ /* frame not loaded */ }
+  if(nq){
+    try {
+      MG_SEARCH_SOURCES.forEach(k => {
+        const h = mgSourceHealth(k), name = MG_SRC_LABEL[k];
+        push({ sec:'Sources', kind:'source', label:name + (h.on ? '' : ' (connect)'), hint:h.on ? (h.text || 'Connected') : 'Not connected', icon:CMDK_ICON.plug, run:() => mgGo('connectors') }, 'connection connector source sync ' + k);
+        if(h.on && ['zoho', 'tally', 'odoo'].includes(k)) push({ sec:'Sources', kind:'source', label:name + ' figures in the Ledger', hint:'View', icon:CMDK_ICON.chart, run:() => { mgGo('books'); mgSetSource('books', k); } }, k + ' ledger books figures entries');
+      });
+    } catch(e){}
+    try {
+      [['recv', 'Customer', 'owes you'], ['pay', 'Vendor', 'you owe']].forEach(([dir, who, verb]) => mgMoneyGroups(dir).forEach(g => push({
+        sec:who + 's', kind:'party', dir, key:g.key, label:g.party, hint:verb + ' ' + fmtINR(g.amount, 'tile'), icon:CMDK_ICON.invoice,
+        run:() => { mgGo(dir === 'recv' ? 'receivables' : 'payables'); setTimeout(() => mgOpenParty(dir, g.key), 60); }
+      }, who.toLowerCase())));
+    } catch(e){}
   }
-  return filtered;
+  [
+    { label:'Create a new invoice', icon:CMDK_ICON.invoice, words:'invoice bill new make raise', run:() => { showView('invoicing'); if(typeof showKhataTab === 'function') showKhataTab('invoice-new'); } },
+    { label:'Add a receivable', icon:CMDK_ICON.plus, words:'log payment money owed customer entry', run:() => { ledgerActiveTab = 'receivables'; showView('ledger'); } },
+    { label:'Add a payable', icon:CMDK_ICON.plus, words:'log bill vendor owe entry', run:() => { ledgerActiveTab = 'payables'; showView('ledger'); } },
+    { label:'Talk to Margyn (Alt+M)', icon:CMDK_ICON.ask, words:'voice call speak mic', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
+    { label:'Review the agent queue', icon:CMDK_ICON.plus, words:'approve proposals inbox decisions', run:() => { agentsActiveTab = 'queue'; showView('agents'); } },
+    { label:'Build a new chart', icon:CMDK_ICON.chart, words:'report graph analytics', run:() => { showView('analytics'); const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); } },
+    { label:'Connect a data source', icon:CMDK_ICON.plug, words:'zoho tally odoo razorpay cashfree shopify integration', run:() => showView('connectors') },
+    { label:'Upload a workbook', icon:CMDK_ICON.upload, words:'import excel csv pdf file', run:() => showView('calculate') }
+  ].forEach(a => push({ sec:'Actions', kind:'action', label:a.label, hint:'Run', icon:a.icon, run:a.run }, a.words));
+  const SEC = { Pages:0, Sources:1, Customers:2, Vendors:3, Actions:4 };
+  return nq ? out.sort((a, b) => b.score - a.score || SEC[a.sec] - SEC[b.sec]) : out;
+}
+function cmdkBuild(q){
+  const text = (q || '').trim();
+  let items = mgSearch(text);
+  if(!text) return items;
+  // Drop stragglers that only share one loose word with a long query.
+  const top = items.length ? items[0].score : 0;
+  items = items.filter(i => i.score >= Math.max(30, top * 0.6)).slice(0, 9);
+  // Group by section, sections ordered by their best hit, so Enter opens the best match.
+  const order = [];
+  items.forEach(i => { if(!order.includes(i.sec)) order.push(i.sec); });
+  items = order.flatMap(s => items.filter(i => i.sec === s));
+  if(text.length > 2){
+    const ask = { sec:'Ask Margyn', label:'Ask: ' + text, icon:CMDK_ICON.ask, hint:'Ask', run:() => askFromPage(text) };
+    // A question goes to Margyn first; a name or a word goes to the best match first.
+    const question = /\?$|^(who|what|why|how|when|which|where|should|can|is|are|do|does|kya|kitna|kitni|kaun|kab|kyun|kaise)\b/i.test(text);
+    if(question || !items.length || items[0].score < 50) items.unshift(ask); else items.push(ask);
+  }
+  return items;
 }
 function cmdkRender(){
   const list = document.getElementById('cmdkList'); if(!list) return;

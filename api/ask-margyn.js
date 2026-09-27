@@ -376,6 +376,19 @@ const REALTIME_TOOLS = [
   },
   {
     type: 'function',
+    name: 'search_app',
+    description: 'Search the whole app the way the search bar does: pages (by name or by what they are for), connected sources (Zoho, Tally, Razorpay...), customers and vendors by name, and actions. Use when you are not sure where something lives, or to jump straight to it with open_top.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'A word or name, e.g. "zoho", "upload", "Sharma", "itc".' },
+        open_top: { type: 'boolean', description: 'Open the best match on screen as well.' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    type: 'function',
     name: 'get_screen',
     description: 'What the user is looking at right now: the page, its scope (source, period), any filter, the open side panel, and the figures visible on it. Call this when they say "this", "here", "that one", "what am I looking at", or before you refer to something on screen.',
     parameters: NO_ARGS
@@ -540,7 +553,10 @@ async function handleRealtimeSession(req, res, user) {
     return;
   }
   const { context, screen, parties, recent } = req.body || {};
-  const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime';
+  // Cost: the mini realtime model is roughly a third of gpt-realtime per audio
+  // token and handles this tool set fine. OPENAI_REALTIME_MODEL=gpt-realtime
+  // switches back if quality ever needs it.
+  const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime-mini';
   try {
     const instructions = buildRealtimeInstructions(context, screen, cleanRecent(recent));
     // Names the transcriber should expect: Indian finance vocabulary plus the
@@ -556,7 +572,7 @@ async function handleRealtimeSession(req, res, user) {
     // POST /v1/realtime/client_secrets, config nested under `session`,
     // `output_modalities`, voice/transcription/turn detection/noise reduction
     // nested under `session.audio.output` / `session.audio.input`.
-    const mint = (audio, voice) => fetch('https://api.openai.com/v1/realtime/client_secrets', {
+    const mint = (sessionModel, audio, voice, limits) => fetch('https://api.openai.com/v1/realtime/client_secrets', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiKey}`,
@@ -564,27 +580,36 @@ async function handleRealtimeSession(req, res, user) {
       },
       body: JSON.stringify({
         expires_after: { anchor: 'created_at', seconds: 600 },
-        session: {
+        session: Object.assign({
           type: 'realtime',
-          model,
+          model: sessionModel,
           instructions,
           output_modalities: ['audio'],
           tools: REALTIME_TOOLS,
           tool_choice: 'auto',
           audio: { input: audio, output: { voice } }
-        }
+        }, limits || {})
       })
     });
-    let openaiRes = await mint({
-      transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1', prompt: transcriptionPrompt },
+    // Cost controls. Every response re-reads the whole conversation, and past
+    // audio is the expensive part, so cap what's kept: once the conversation
+    // after the instructions passes ~8k tokens, drop the oldest 20% in one go
+    // (one cache miss instead of one per turn). Replies are capped too.
+    const LIMITS = {
+      max_output_tokens: Number(process.env.OPENAI_REALTIME_MAX_OUTPUT) || 700,
+      truncation: { type: 'retention_ratio', retention_ratio: 0.8, token_limits: { post_instructions: Number(process.env.OPENAI_REALTIME_CONTEXT) || 8000 } }
+    };
+    let openaiRes = await mint(model, {
+      transcription: { model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe', prompt: transcriptionPrompt },
       noise_reduction: { type: 'near_field' },
       turn_detection: turnDetection
-    }, process.env.OPENAI_TTS_VOICE || 'marin');
+    }, process.env.OPENAI_TTS_VOICE || 'marin', LIMITS);
     if (openaiRes.status === 400) {
-      // A rejected audio option (model/voice/VAD setting) shouldn't take voice
-      // down: retry once with the minimal shape that shipped in PR #14.
+      // A rejected option (model, voice, VAD or limit setting) shouldn't take
+      // voice down: retry once with the minimal shape that shipped in PR #14,
+      // keeping only the output cap.
       console.error('OpenAI realtime session rejected, retrying minimal config:', await openaiRes.text());
-      openaiRes = await mint({ transcription: { model: 'whisper-1' } }, 'alloy');
+      openaiRes = await mint('gpt-realtime', { transcription: { model: 'whisper-1' } }, 'alloy', { max_output_tokens: LIMITS.max_output_tokens });
     }
     if (!openaiRes.ok) {
       const errText = await openaiRes.text();
@@ -629,11 +654,7 @@ function cleanRecent(r) {
 
 function buildRealtimeInstructions(context, screen, recent) {
   const ctx = context || {};
-  const {
-    companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock,
-    paymentsHeader, paymentsBlock, booksBlock, tallyBlock, ledgerBlock,
-    crossLedgerBlock, connectorFreshnessBlock, provenanceLine, sourceDivergenceLine
-  } = formatMargynContext(ctx);
+  const { companyName, pulseScore, pulseTrend, vitalsLines, provenanceLine, sourceDivergenceLine } = formatMargynContext(ctx);
   const now = new Date(Date.now() + 5.5 * 3600000);   // IST
   const today = now.toISOString().slice(0, 10);
   const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getUTCDay()];
@@ -644,7 +665,7 @@ function buildRealtimeInstructions(context, screen, recent) {
 
 HOW YOU TALK
 - This is speech. Short sentences, no lists, no markdown, nothing that only works written down. One idea at a time.
-- Lead with the answer. One line of why. Then stop and let them talk; offer the next step as a question only when there's an obvious one.
+- Lead with the answer in one or two short sentences, then stop and let them talk. Go longer only when they ask for detail. Offer a next step only when there's an obvious one.
 - Say money the Indian way, rounded: "twelve lakh", "about 1.2 crore", "eighty-five thousand". Never read out long digit strings, invoice numbers or GSTINs unless asked.
 - Reply in the language they use. If they speak Hindi or Hinglish, answer in natural Hinglish; if English, English.
 - Contractions, warm and direct. Never "Certainly", "I'd be happy to", "As an AI", or any assistant-speak.
@@ -681,18 +702,11 @@ ${recent.transcript}
 --- transcript end ---
 ` : ''}
 
-STARTING SNAPSHOT (may be minutes old; prefer tools)
+STARTING SNAPSHOT (for your first sentence only; tools have the live figures)
 Pulse Score: ${pulseScore}${pulseTrend || ''}
 Vitals:
 ${vitalsLines}
-${provenanceLine || ''}${sourceDivergenceLine || ''}
-P&L: ${pnlBlock}
-${paymentsHeader}: ${paymentsBlock}
-Zoho Books: ${booksBlock}
-Tally (signal-tier, one source): ${tallyBlock}
-Quick Ledger (self-entered): ${ledgerBlock}
-Cross-source ledger: ${crossLedgerBlock}
-Connector freshness: ${connectorFreshnessBlock}`;
+${provenanceLine || ''}${sourceDivergenceLine || ''}`;
 }
 
 // Zero-npm multipart/form-data builder (Node's fetch has no FormData-from-
