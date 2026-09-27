@@ -63,7 +63,7 @@ function vxDeskOpen(open){
   let on = open === undefined ? desk.classList.contains('hidden') : open;
   if(on && !(vxFeed() && vxFeed().children.length)) on = false;   // nothing to show
   desk.classList.toggle('hidden', !on);
-  if(on) vxPlaceEl(desk, vxSavedPos(VX_DESK_KEY));
+  if(on) vxPlaceDesk(desk);
   if(btn){ btn.setAttribute('aria-expanded', on ? 'true' : 'false'); btn.classList.toggle('on', on); }
 }
 function vxClearWorkspace(){
@@ -109,6 +109,21 @@ function vxPlaceEl(el, pos){
   el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.right = 'auto';
 }
 function vxPlace(pos){ vxPlaceEl(vxEl('vxDock'), pos); }
+/* The workspace sits where the user left it, but never on top of the talk
+   panel: once the talk panel has been dragged, the workspace's default corner
+   can land right under it. Then it goes beside the panel instead. */
+function vxOverlap(a, b){ return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top); }
+function vxPlaceDesk(desk){
+  vxPlaceEl(desk, vxSavedPos(VX_DESK_KEY));
+  const dock = vxEl('vxDock');
+  if(!dock || dock.classList.contains('hidden') || window.innerWidth <= 900) return;
+  const d = dock.getBoundingClientRect();
+  if(!vxOverlap(desk.getBoundingClientRect(), d)) return;
+  const w = desk.offsetWidth || 460, gap = 12;
+  const x = d.left - w - gap >= 8 ? d.left - w - gap : d.right + gap + w <= window.innerWidth - 8 ? d.right + gap : null;
+  if(x == null) return;
+  vxPlaceEl(desk, { x, y:d.top });
+}
 function vxSavedPos(key){ try { return JSON.parse(localStorage.getItem(key || VX_POS_KEY) || 'null'); } catch(e){ return null; } }
 function vxDraggable(el, handle, key){
   if(!el || !handle) return;
@@ -124,6 +139,7 @@ function vxDraggable(el, handle, key){
     if(!start) return; start = null; el.classList.remove('dragging');
     const r = el.getBoundingClientRect();
     try { localStorage.setItem(key, JSON.stringify({ x:Math.round(r.left), y:Math.round(r.top) })); } catch(e){}
+    if(key === VX_POS_KEY){ const dk = vxEl('vxDesk'); if(dk && !dk.classList.contains('hidden')) vxPlaceDesk(dk); }   // dropped the talk panel on the workspace
   };
   handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
   handle.addEventListener('dblclick', e => { if(e.target.closest('button')) return; try { localStorage.removeItem(key); } catch(err){} vxPlaceEl(el, null); });   // double-click: back to its corner
@@ -133,7 +149,7 @@ vxDraggable(vxEl('vxDesk'), vxEl('vxDeskHandle'), VX_DESK_KEY);
 window.addEventListener('resize', () => {
   if(!vxActive) return;
   const p = vxSavedPos(VX_POS_KEY); if(p) vxPlace(p);
-  const q = vxSavedPos(VX_DESK_KEY); if(q) vxPlaceEl(vxEl('vxDesk'), q);
+  const desk = vxEl('vxDesk'); if(desk && !desk.classList.contains('hidden')) vxPlaceDesk(desk);
 });
 const VX_MAX_CARDS = 3;
 /* Newest on top. `key` makes a view replace its older copy ("show P&L" twice
@@ -254,14 +270,32 @@ async function vxRecentConversation(){
   best.ago = vxAgo(best.last_at);
   return best;
 }
+/* The recap shows what the last conversation was about: Margyn's last real
+   answer and the question before it. The last two raw lines were often
+   commands or mis-heard noise ("Close the workspace.", "An end of conversation."). */
+function vxRecap(turns){
+  const words = t => String(t.text || '').split(/\s+/).filter(Boolean).length;
+  const i = turns.map((t, k) => (t.role === 'assistant' && words(t) >= 6) ? k : -1).filter(k => k >= 0).pop();
+  if(i == null) return turns.filter(t => words(t) >= 5).slice(-2);
+  const q = turns.slice(0, i).reverse().find(t => t.role === 'user' && words(t) >= 3);
+  return q ? [q, turns[i]] : [turns[i]];
+}
+let vxResumeCard = null;
+function vxDropResume(){
+  const c = vxResumeCard; vxResumeCard = null;
+  if(!c || !c.parentNode) return;
+  c.remove();
+  const f = vxFeed(); if(f && !f.children.length) vxDeskOpen(false);
+}
 function vxResumeChoice(r){
   const where = r.channel === 'whatsapp' ? 'WhatsApp' : r.channel === 'voice' ? 'our last call' : 'Ask Margyn';
+  const recap = vxRecap(r.turns);
   const card = vxAddCard('<h4>Pick up where you left off?</h4><div class="vx-note">You were last talking to Margyn on ' + escapeHtml(where) + ', ' + escapeHtml(r.ago) + '.</div>' +
-    '<div class="vx-recap">' + r.turns.slice(-2).map(t => '<div><b>' + (t.role === 'user' ? 'You' : 'Margyn') + ':</b> ' + escapeHtml(t.text.slice(0, 140)) + (t.text.length > 140 ? '…' : '') + '</div>').join('') + '</div>' +
+    (recap.length ? '<div class="vx-recap">' + recap.map(t => '<div><b>' + (t.role === 'user' ? 'You' : 'Margyn') + ':</b> ' + escapeHtml(t.text.slice(0, 140)) + (t.text.length > 140 ? '…' : '') + '</div>').join('') + '</div>' : '') +
     '<div class="vx-choice"><button type="button" class="vx-idea on" data-resume="yes">Continue from ' + escapeHtml(r.channel === 'whatsapp' ? 'WhatsApp' : r.channel === 'voice' ? 'last call' : 'chat') + '</button><button type="button" class="vx-idea" data-resume="no">Start fresh</button></div>', 'vx-resume');
+  vxResumeCard = card;
   card.addEventListener('click', e => {
     const b = e.target.closest('[data-resume]'); if(!b) return;
-    card.querySelectorAll('[data-resume]').forEach(x => { x.disabled = true; x.classList.toggle('on', x === b); });
     vxSendText(b.dataset.resume === 'yes' ? "Let's pick up where we left off." : "Let's start fresh.");
   });
 }
@@ -282,7 +316,7 @@ async function openRealtimeOverlay(){
     return;
   }
   const dock = vxEl('vxDock'); if(!dock) return;
-  vxActive = true; vxEnding = false; vxMuted = false; vxRecent = null; vxUtterances = []; vxThinkHistory = []; vxCallsThisResponse = []; vxResponseActive = false;
+  vxActive = true; vxEnding = false; vxMuted = false; vxRecent = null; vxResumeCard = null; vxUtterances = []; vxThinkHistory = []; vxCallsThisResponse = []; vxResponseActive = false;
   vxThreadKey = 'voice:' + new Date().toISOString();
   document.body.classList.add('vx-on');
   dock.classList.remove('hidden');
@@ -390,7 +424,7 @@ function vxToggleMute(force){
 function vxSendText(text){
   text = String(text || '').trim(); if(!text || !vxActive) return;
   vxUtterances.push({ at:Date.now(), text });
-  vxNudges = 0;
+  vxNudges = 0; vxDropResume(); vxLastUserText = text; vxCallsSinceCommit = 0;
   vxAddLine('user', text);
   vxPersist('user', text);
   vxTouch();
@@ -416,18 +450,34 @@ const VX_PROMISE = /\b(one (sec|second|moment)|just a (sec|second|moment)|give m
 const VX_ASKS = /\b(shall i|should i|would you like|do you want|want me to|kya main|karoon|karun)\b[^.!]*\?\s*$/i;
 function vxBrokenPromise(said){ said = String(said || '').trim(); return !!said && VX_PROMISE.test(said) && !VX_ASKS.test(said); }
 
+/* Every turn gets an answer. In the recording, "Open it." and "Open that up,
+   please." got silence: either no response started, or one finished with no
+   words and no tool. Both are caught here and the model is asked again, once. */
+let vxLastUserText = '', vxCallsSinceCommit = 0, vxLastCommitAt = 0, vxLastResponseAt = 0, vxReplyTimer = null;
+function vxWatchReply(text){
+  vxLastUserText = text;
+  clearTimeout(vxReplyTimer);
+  vxReplyTimer = setTimeout(() => {
+    if(vxActive && !vxEnding && !vxResponseActive && vxLastResponseAt < vxLastCommitAt) rtSend({ type:'response.create' });
+  }, 3500);
+}
+/* Tools that only draw or move the screen. When Margyn already answered in
+   full while calling them, a second reply is just "it's in the workspace now". */
+const VX_DISPLAY_TOOLS = ['show_view', 'show_note', 'show_table', 'show_chart', 'clear_workspace', 'navigate', 'open_party', 'filter_list', 'run_command'];
+let vxToolFailed = false;
+
 /* ---------- realtime events ---------- */
 function vxOnEvent(m){
   switch(m.type){
     case 'input_audio_buffer.speech_started':
       vxTouch(); vxSetState('hearing', ''); break;
     case 'input_audio_buffer.committed':
-      vxNudges = 0;
+      vxNudges = 0; vxLastCommitAt = Date.now(); vxCallsSinceCommit = 0;
       if(m.item_id) vxAddLine('user', '', m.item_id);   // placeholder keeps transcript order right
       vxSetState('thinking', ''); break;
     case 'conversation.item.input_audio_transcription.completed': {
       const text = (m.transcript || '').trim();
-      if(text){ vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); }
+      if(text){ vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); vxDropResume(); vxWatchReply(text); }
       else document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove());
       break;
     }
@@ -435,7 +485,7 @@ function vxOnEvent(m){
       document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove()); break;
     }
     case 'response.created':
-      vxResponseActive = true; vxCallsThisResponse = []; vxCaption = ''; break;
+      vxResponseActive = true; vxCallsThisResponse = []; vxCaption = ''; vxToolFailed = false; vxLastResponseAt = Date.now(); break;
     case 'response.output_audio_transcript.delta':
     case 'response.audio_transcript.delta':
       if(m.delta){ vxSetState('speaking'); vxSetCaption(vxCaption + m.delta); vxAddLine('margyn', vxCaption, 'r' + m.response_id); }
@@ -453,13 +503,20 @@ function vxOnEvent(m){
       if(!vxResponseActive) vxSetState('listening');
       break;
     case 'response.function_call_arguments.done':
-      vxCallsThisResponse.push(vxRunTool(m)); break;
+      vxCallsSinceCommit++; vxCallsThisResponse.push(vxRunTool(m)); break;
     case 'response.done': {
       vxResponseActive = false;
       const calls = vxCallsThisResponse; vxCallsThisResponse = [];
       const said = vxLastSaid || vxCaption; vxLastSaid = '';
       vxSetCaption('');
+      const status = m.response && m.response.status;
       if(calls.length) vxNudges = 0;
+      else if(vxActive && !vxEnding && vxNudges < 1 && status === 'completed' && !String(said).trim() && vxLastUserText && !vxCallsSinceCommit){
+        // Finished with nothing said and nothing done.
+        vxNudges++;
+        vxTellModel('The user said "' + vxLastUserText.slice(0, 160) + '" and you did not answer. Answer now: if it asks you to open, show or do something, call the right tool; if it is unclear, ask one short question.', true);
+        break;
+      }
       else if(vxActive && !vxEnding && vxNudges < 1 && vxBrokenPromise(said)){
         // It said "one sec, let me pull that up" and stopped. Make it act now,
         // instead of the user having to ask "why haven't you done it?".
@@ -469,9 +526,12 @@ function vxOnEvent(m){
       }
       if(calls.length){
         vxSetState('thinking');
+        const spokeInFull = String(said).trim().split(/\s+/).length >= 12 && !vxBrokenPromise(said);
         // Every tool output must be in before the next response starts.
         Promise.all(calls).then(names => {
           if(!vxActive || names.includes('end_conversation')) return;
+          // Already answered and only drew something: don't talk again.
+          if(spokeInFull && !vxToolFailed && names.every(n => VX_DISPLAY_TOOLS.includes(n))){ if(vxState !== 'speaking') vxSetState('listening'); return; }
           rtSend({ type:'response.create' });
         });
       } else if(vxQueuedCreate) rtSend({ type:'response.create' });
@@ -496,6 +556,7 @@ async function vxRunTool(m){
   vxTouch();
   try { out = fn ? await fn(args) : { error:'Unknown tool ' + m.name }; }
   catch(e){ console.error('[voice] tool ' + m.name, e); out = { error:(e && e.message) || 'That failed.' }; }
+  if(out && (out.error || out.ok === false || out.shown === false || out.found === false)) vxToolFailed = true;
   let s = JSON.stringify(out === undefined ? { ok:true } : out);
   // Every tool result stays in the conversation and is re-read on every later
   // turn, so keep them small. The tools return compact summaries by design.

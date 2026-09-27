@@ -28,6 +28,8 @@ const VX_AGE_BACK = { b0:'0-30', b1:'31-60', b2:'61-90', b3:'90+' };
 const VX_TAP_ONLY = ['send_one_off_chase', 'list_for_review'];
 
 function vxInr(n){ return fmtINR(n, 'tile'); }
+/* Negative cash stores a runway like "-0.0 months"; spoken, that's "minus zero months". */
+function vxVitalValue(val){ return /^-\s*\d+(\.\d+)?\s*months?$/i.test(String(val == null ? '' : val).trim()) ? 'below zero (negative balance, no runway)' : val; }
 function vxLabel(page){ return (MG_PAGES[page] && MG_PAGES[page].label) || page; }
 function vxNorm(s){
   return String(s || '').toLowerCase()
@@ -158,7 +160,7 @@ const VX_TOOLS = {
     if(s){
       out.pulse_score = s.pulse_score != null ? s.pulse_score : null;
       if(p && p.pulse_score != null && s.pulse_score != null) out.pulse_change_since_last = s.pulse_score - p.pulse_score;
-      out.vitals = (s.vitals || []).map(v => ({ vital:mgVitalName(v.label), value:v.value, score_out_of_100:v.score != null ? Math.round(v.score) : null }));
+      out.vitals = (s.vitals || []).map(v => ({ vital:mgVitalName(v.label), value:vxVitalValue(v.value), score_out_of_100:v.score != null ? Math.round(v.score) : null }));
       out.pnl = { cash:vxInr(s.cash), revenue:vxInr(s.revenue), net_profit:vxInr(s.net_profit), monthly_spend:vxInr(s.burn), gst_payable:vxInr(s.gst_payable) };
       if(s.confidence != null) out.data_confidence_pct = Math.round(Number(s.confidence) * (Number(s.confidence) <= 1 ? 100 : 1));
     } else out.note = 'No snapshot yet. The user needs to connect a source or enter figures.';
@@ -361,8 +363,9 @@ const VX_TOOLS = {
     }
   },
 
-  run_command({ command }){
+  run_command({ command, name }){
     const go = p => vxDrive(() => showView(p));
+    const fill = (id, v) => { const el = document.getElementById(id); if(el && v) el.value = String(v).slice(0, 120); return el; };
     switch(command){
       case 'export_current_view': {
         const b = document.getElementById('mgExport-' + mgCurrentView) || document.querySelector('#view-' + mgCurrentView + ' [id^="mgExport"]');
@@ -370,8 +373,29 @@ const VX_TOOLS = {
         b.click(); vxActivity('Exported ' + vxLabel(mgCurrentView)); return { ok:true, note:'CSV download started.' };
       }
       case 'new_invoice': go('invoicing'); if(typeof showKhataTab === 'function') showKhataTab('invoice-new'); vxActivity('New invoice'); return { ok:true, note:'The new invoice form is open for them to fill in.' };
-      case 'add_receivable': ledgerActiveTab = 'receivables'; go('ledger'); return { ok:true, note:'Ledger open on receivables. You can also create it for them with propose_change.' };
-      case 'add_payable': ledgerActiveTab = 'payables'; go('ledger'); return { ok:true, note:'Ledger open on payables. You can also create it for them with propose_change.' };
+      case 'add_receivable':
+      case 'add_payable': {
+        // Opens the Ledger's own add form (not just the page), name filled in if said.
+        ledgerActiveTab = command === 'add_payable' ? 'payables' : 'receivables';
+        ledgerAddOpen = true;
+        go('ledger');
+        const f = fill('ledgerParty', name);
+        if(f) setTimeout(() => { vxSpot(document.getElementById('ledgerAddForm')); (name ? document.getElementById('ledgerAmt') || f : f).focus(); }, 80);
+        vxActivity(command === 'add_payable' ? 'Add payable' : 'Add receivable');
+        return { ok:true, form_open:!!f, note:'The Ledger add form is open' + (name ? ' with "' + name + '" filled in' : '') + '. They type the amount and due date and press Add, or you can prepare it for them with propose_change.' };
+      }
+      case 'add_party': {
+        // A new customer or vendor record, before any invoice: Invoicing › Parties › New party.
+        go('invoicing');
+        if(typeof showKhataTab === 'function') showKhataTab('parties');
+        const form = document.getElementById('khataPartyForm');
+        if(!form) return { ok:false, error:'The party form is not available.' };
+        form.classList.remove('hidden');
+        const f = fill('kpName', name);
+        setTimeout(() => { vxSpot(form); if(f) f.focus(); }, 80);
+        vxActivity('New party');
+        return { ok:true, form_open:true, note:'The New party form is open on Invoicing › Parties' + (name ? ' with "' + name + '" filled in' : '') + '. They add phone, GSTIN or email if they want and press Save. Do not say it is saved.' };
+      }
       case 'upload_file': go('calculate'); return { ok:true, note:'Import page open. They can drop any Excel, CSV, PDF or photo and Margyn will map it.' };
       case 'build_chart': go('analytics'); setTimeout(() => { const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); }, 80); return { ok:true };
       case 'print_cfo_pack': {
@@ -597,7 +621,7 @@ const VX_VIEWS = {
     const g = f.best, row = vxPartyRow(g), items = g.by[g.primary].rows.slice().sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
     vxViewCard('party:' + g.key, g.party, (dir === 'recv' ? 'Customer' : 'Vendor') + ' · ' + row.agreement,
       '<div class="vx-kpis">' + vxKpi(dir === 'recv' ? 'Owes you' : 'You owe', row.outstanding) + vxKpi('Overdue', vxInr(g.overdue || 0)) + vxKpi('Open items', String(g.invoices)) + '</div>' +
-      vxTableHtml([{ t:'Reference' }, { t:'Status' }, { t:'Amount', r:1 }], items.slice(0, 8).map(r => ({ cells:[r.ref || '—', { t:vxDue(r.days), cls:r.days != null && r.days < 0 ? 'neg' : '' }, vxInr(r.amount)] }))) +
+      vxTableHtml([{ t:'Reference' }, { t:'Status' }, { t:'Amount', r:1 }], items.slice(0, 8).map(r => ({ cells:[r.ref || (r.due ? 'Due ' + fmtDay(r.due) : (MG_SRC_NAME[r.src] || 'Entry')), { t:vxDue(r.days), cls:r.days != null && r.days < 0 ? 'neg' : '' }, vxInr(r.amount)] }))) +
       (g.sources.length > 1 ? '<div class="vx-note">' + escapeHtml(g.sources.map(x => MG_SRC_NAME[x] + ' ' + vxInr(g.by[x].amount)).join(' · ')) + '</div>' : ''));
     return Object.assign(row, { items:items.slice(0, 5).map(r => ({ ref:r.ref, amount:vxInr(r.amount), status:vxDue(r.days) })) });
   }
