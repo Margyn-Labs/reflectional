@@ -363,7 +363,7 @@ const REALTIME_TOOLS = [
   {
     type: 'function',
     name: 'navigate',
-    description: 'Move the app to a page, optionally with a data view. Use whenever the user asks to go to, open or see a page, and whenever showing them the page would make your answer clearer. The user watches the app change behind you.',
+    description: 'Change the page the app is on. Only when the user asks to go to or open a page, or needs to work on that page itself (edit entries, export, connect a source). To SHOW information, use show_view instead: it appears in the workspace without leaving their page.',
     parameters: {
       type: 'object',
       properties: {
@@ -419,7 +419,7 @@ const REALTIME_TOOLS = [
   {
     type: 'function',
     name: 'open_party',
-    description: 'Open one customer or vendor in the side panel on screen (their invoices or bills, what each source says, activity) and return those details. Use when the user asks about one party in depth, or says "open", "pull up" or "show me" a party.',
+    description: 'Open one customer or vendor in the app\'s full detail drawer (sources, activity log). Only when they ask to open their record. To just show a party, use show_view with view "party".',
     parameters: {
       type: 'object',
       properties: { direction: DIRECTION, name: { type: 'string', description: 'The party name as the user said it.' } },
@@ -461,8 +461,28 @@ const REALTIME_TOOLS = [
   },
   {
     type: 'function',
+    name: 'show_view',
+    description: 'THE DEFAULT WAY TO SHOW THINGS. Draws a ready-made live view in the floating workspace next to the conversation, without leaving the page the user is on: pnl (profit and loss with a monthly chart), receivables or payables (ageing chart and biggest parties), cash (balances by source and the 13-week forecast), gst, inbox (what needs their OK), overview (Pulse Score and vitals), or party (one customer or vendor; pass direction and name). The app draws every figure itself, so you never read numbers into it. Returns a short summary for you to speak from.',
+    parameters: {
+      type: 'object',
+      properties: {
+        view: { type: 'string', enum: ['pnl', 'receivables', 'payables', 'cash', 'gst', 'inbox', 'overview', 'party'] },
+        direction: DIRECTION,
+        name: { type: 'string', description: 'For view "party": the customer or vendor name as said.' }
+      },
+      required: ['view']
+    }
+  },
+  {
+    type: 'function',
+    name: 'clear_workspace',
+    description: 'Clear and hide the workspace when the conversation moves on and what is in it no longer helps. A change card still waiting for an OK stays.',
+    parameters: NO_ARGS
+  },
+  {
+    type: 'function',
     name: 'show_table',
-    description: 'Put a table on screen in the conversation panel. Use ONLY figures returned by your other tools in this conversation, never estimates. Use when a list is easier to see than hear.',
+    description: 'Put a custom table in the workspace, for anything show_view does not cover. Use ONLY figures returned by your other tools, never estimates.',
     parameters: {
       type: 'object',
       properties: {
@@ -477,7 +497,7 @@ const REALTIME_TOOLS = [
   {
     type: 'function',
     name: 'show_chart',
-    description: 'Draw a bar or line chart in the conversation panel. Use ONLY figures returned by your other tools. Good for comparisons ("top five debtors"), ageing, or the cash forecast.',
+    description: 'Draw a custom bar or line chart in the workspace, for anything show_view does not cover. Use ONLY figures returned by your other tools.',
     parameters: {
       type: 'object',
       properties: {
@@ -671,12 +691,13 @@ HOW YOU TALK
 - Contractions, warm and direct. Never "Certainly", "I'd be happy to", "As an AI", or any assistant-speak.
 - If they interrupt, stop and follow them. Don't restart what you were saying.
 
-DRIVE THE SCREEN
-- When a page would help, go there with navigate while you speak, and mention it in a few words ("pulling up payables"). Don't narrate every click.
-- Before anything that takes a moment (think, propose_change), say a short natural filler first ("One sec", "Let me check that properly"), then call the tool in the same turn.
-- Tables and charts go in the conversation panel with show_table / show_chart, only for lists of three or more, or when they ask to see something.
+SHOW, DON'T GO
+- There is a floating workspace next to the conversation. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.
+- Change page with navigate ONLY when they say "go to" / "open the ... page", or need to do something on that page itself. Never navigate just to answer a question.
+- When the topic moves on and the workspace no longer helps, call clear_workspace.
+- Before anything that takes a moment (think, propose_change), say a short filler ("One sec"), then call the tool in the same turn.
 - When they say "this", "here" or "that one", call get_screen first.
-- Chain tools freely: find the party, open them, then answer.
+- If you didn't catch something (a stray word or a name you don't recognise), ask once, briefly. Don't guess an action from it.
 
 NUMBERS
 - Figures come from your tools, which read exactly what the app has loaded. The snapshot below is for your first sentence only; once you've called a tool, trust the tool.
