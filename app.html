@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="/app/css/skin.css">
 <link rel="stylesheet" href="/app/css/frame.css">
 <link rel="stylesheet" href="/app/css/pages.css">
+<link rel="stylesheet" href="/app/css/voice.css">
 </head>
 <body>
 <!-- ============ AUTH GATE ============ -->
@@ -148,6 +149,7 @@
       </button>
     <button class="mg-tb-btn" id="mgImportBtn" type="button" data-go="calculate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Import</span></button>
     <button class="mg-tb-btn mg-ai" id="mgAskBtn" type="button" data-go="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Ask</span></button>
+    <button class="mg-tb-btn mg-voice" id="vxTopBtn" type="button" title="Talk to Margyn (Alt+M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg><span>Talk</span></button>
     <div class="mg-bell">
       <button class="mg-icon-btn" id="mgBellBtn" type="button" aria-label="Notifications" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="mg-bell-dot hidden" id="mgBellDot"></span></button>
       <div class="mg-pop mg-pop-right" id="mgBellPop" role="menu"></div>
@@ -1194,27 +1196,23 @@
   </div>
 </div>
 </div>
-<!-- ---------- Live conversation (OpenAI Realtime), see app/js/22-realtime-voice.js ---------- -->
-<div class="rt-overlay hidden" id="rtOverlay" role="dialog" aria-modal="true" aria-label="Live conversation with Margyn">
-  <div class="rt-shell">
-    <div class="rt-head">
-      <div class="rt-head-l">
-        <span class="rt-orb" id="rtOrb"></span>
-        <div>
-          <div class="rt-title">Talking with Margyn</div>
-          <div class="rt-status" id="rtStatus">Connecting…</div>
-        </div>
-      </div>
-      <button type="button" class="rt-end" id="rtEndBtn">End conversation</button>
-    </div>
-    <div class="rt-body">
-      <div class="rt-transcript" id="rtTranscript"></div>
-      <div class="rt-canvas" id="rtCanvas">
-        <div class="rt-canvas-empty" id="rtCanvasEmpty">Ask Margyn to show you something — a table or breakdown will land here.</div>
-      </div>
-    </div>
+<!-- ---------- Live voice: dock + conversation panel, see app/js/22-realtime-voice.js ---------- -->
+<div class="vx-dock hidden" id="vxDock" data-state="connecting" role="region" aria-label="Live call with Margyn">
+  <canvas class="vx-orb" id="vxOrb" width="44" height="44" aria-hidden="true"></canvas>
+  <div class="vx-mid">
+    <div class="vx-state"><span id="vxState">Connecting</span><span class="vx-act" id="vxAct"></span></div>
+    <div class="vx-caption" id="vxCaption" aria-live="polite"></div>
   </div>
+  <button type="button" class="vx-btn" id="vxMuteBtn" title="Mute (Alt+M)" aria-label="Mute microphone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 13.2A7 7 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+  <button type="button" class="vx-btn" id="vxDeskBtn" title="Conversation" aria-label="Show conversation" aria-expanded="false" aria-controls="vxDesk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="vx-badge hidden" id="vxDeskBadge"></span></button>
+  <button type="button" class="vx-end" id="vxEndBtn">End</button>
 </div>
+<section class="vx-desk hidden" id="vxDesk" aria-label="Conversation with Margyn">
+  <div class="vx-desk-h"><div><b>Conversation</b><span>Saved to Ask Margyn</span></div>
+    <button type="button" class="mg-icon-btn" id="vxDeskClose" aria-label="Hide conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+  <div class="vx-feed" id="vxFeed"></div>
+  <form class="vx-type" id="vxType" autocomplete="off"><input id="vxTypeInput" type="text" placeholder="Or type to Margyn…" aria-label="Type to Margyn"><button type="submit">Send</button></form>
+</section>
 <audio id="rtRemoteAudio" autoplay hidden></audio>
 <div class="detail-overlay hidden" id="detailOverlay">
   <div class="detail-modal">
@@ -1319,5 +1317,6 @@
 <script src="/app/js/20-frame.js"></script>
 <script src="/app/js/21-voice.js"></script>
 <script src="/app/js/22-realtime-voice.js"></script>
+<script src="/app/js/23-voice-tools.js"></script>
 </body>
 </html>
