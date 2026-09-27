@@ -43,8 +43,12 @@ export function formatMargynContext(context) {
 
   const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
 
+  // Negative cash gives a negative runway, stored as e.g. "-0.0 months",
+  // which a voice reads out as "minus zero months". Say what it means.
+  const vitalValue = (val) => /^-\s*\d+(\.\d+)?\s*months?$/i.test(String(val || '').trim())
+    ? 'below zero (the balance behind it is negative, so there is no runway)' : val;
   const vitalsLines = vitals.length
-    ? vitals.map((v) => `- ${v.label}: ${v.value} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
+    ? vitals.map((v) => `- ${v.label}: ${vitalValue(v.value)} (score ${v.score}/100)${v.trend ? ' — trend: ' + v.trend : ' — no prior snapshot to compare yet'}`).join('\n')
     : 'No vitals calculated yet for this business — no data has been synced or uploaded.';
 
   let pnlBlock = 'No P&L figures recorded yet.';
