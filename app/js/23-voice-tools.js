@@ -5,8 +5,11 @@
    signed-in user. So every figure Margyn says is the figure on screen, and
    a voice session can reach nothing the user's own session can't.
 
-   Three kinds of tool:
-     - screen: navigate, filter_list, open_party, run_command, show_* —
+   Four kinds of tool:
+     - workspace: show_view draws a live view (P&L, receivables, cash, GST,
+       inbox, a customer...) in the floating workspace without leaving the
+       page; show_table / show_chart for anything custom; clear_workspace.
+     - screen: navigate, filter_list, open_party, search_app, run_command —
        move the UI the same way the rail, Scope bar and buttons do.
      - read:   get_screen, get_overview, query_parties, get_cash, get_gst,
        get_inbox, think — return live figures (think asks Claude).
@@ -289,22 +292,23 @@ const VX_TOOLS = {
 
   show_chart({ title, kind, labels, series, unit, note }){
     const ls = (Array.isArray(labels) ? labels : []).slice(0, 26).map(String);
-    const ss = (Array.isArray(series) ? series : []).slice(0, 3).filter(s => s && Array.isArray(s.values));
+    const ss = (Array.isArray(series) ? series : []).slice(0, 3).filter(x => x && Array.isArray(x.values));
     if(!ls.length || !ss.length) return { shown:false, error:'labels and series are required' };
     const card = vxAddCard('<h4>' + escapeHtml(title || 'Chart') + '</h4><div class="vx-chart"><canvas></canvas></div>' + (note ? '<div class="vx-note">' + escapeHtml(note) + '</div>' : ''));
-    if(!window.Chart) return { shown:false, error:'Charts unavailable' };
-    const css = getComputedStyle(document.documentElement);
-    const col = [css.getPropertyValue('--emerald').trim() || '#0E8F5C', '#0B4B8C', css.getPropertyValue('--orange').trim() || '#CC5B34'];
-    const fmt = v => unit === 'percent' ? v + '%' : unit === 'number' ? Number(v).toLocaleString('en-IN') : fmtINR(v, 'tile');
-    new Chart(card.querySelector('canvas'), {
-      type:kind === 'line' ? 'line' : 'bar',
-      data:{ labels:ls, datasets:ss.map((s, i) => ({ label:s.name, data:s.values.slice(0, ls.length).map(Number), backgroundColor:col[i], borderColor:col[i], borderWidth:kind === 'line' ? 2 : 0, borderRadius:4, pointRadius:kind === 'line' ? 2 : 0, tension:0.25, maxBarThickness:28 })) },
-      options:{ responsive:true, maintainAspectRatio:false, animation:{ duration:500 },
-        plugins:{ legend:{ display:ss.length > 1, labels:{ boxWidth:10, font:{ size:11 } } }, tooltip:{ callbacks:{ label:c => c.dataset.label + ': ' + fmt(c.parsed.y) } } },
-        scales:{ x:{ grid:{ display:false }, ticks:{ font:{ size:10.5 }, maxRotation:0, autoSkip:true } }, y:{ grid:{ color:'rgba(20,24,31,.06)' }, ticks:{ font:{ size:10.5 }, callback:fmt }, border:{ display:false } } } }
-    });
-    return { shown:true };
+    return { shown:vxDrawChart(card.querySelector('canvas'), { kind, labels:ls, series:ss, unit }) };
   },
+
+  /* The rich path: name a view and the app draws it from live data. Cheaper
+     than show_table/show_chart (the model doesn't read every figure out) and
+     can't misquote a number. Returns a short spoken-ready summary. */
+  show_view({ view, direction, name }){
+    const f = VX_VIEWS[view];
+    if(!f) return { shown:false, error:'Unknown view ' + view };
+    try { return Object.assign({ shown:true, where:'workspace' }, f({ direction, name })); }
+    catch(e){ console.error('[voice] view ' + view, e); return { shown:false, error:'Could not draw that view.' }; }
+  },
+
+  clear_workspace(){ vxClearWorkspace(); return { cleared:true }; },
 
   async think({ question }){
     vxSetState('thinking', 'Thinking it through');
@@ -436,3 +440,127 @@ function vxResolveCard(p, text, ok){
   const how = p.card.querySelector('.vx-how'); if(how) how.remove();
   p.card.classList.add(ok ? 'vx-done' : 'vx-void');
 }
+
+/* ---------- workspace views (show_view) ---------- */
+function vxDrawChart(canvas, { kind, labels, series, unit, floor, colors }){
+  if(!window.Chart || !canvas) return false;
+  const css = getComputedStyle(document.documentElement);
+  const col = [css.getPropertyValue('--emerald').trim() || '#0E8F5C', '#0B4B8C', css.getPropertyValue('--orange').trim() || '#CC5B34'];
+  const fmt = v => unit === 'percent' ? v + '%' : unit === 'number' ? Number(v).toLocaleString('en-IN') : fmtINR(v, 'tile');
+  const line = kind === 'line';
+  const sets = series.map((x, i) => ({ label:x.name, data:x.values.slice(0, labels.length).map(Number),
+    backgroundColor:colors && !line ? colors : (line && i === 0 ? 'rgba(14,143,92,.10)' : col[i]), borderColor:col[i], fill:line && i === 0 && series.length === 1,
+    borderWidth:line ? 2 : 0, borderRadius:4, pointRadius:line ? 0 : 0, tension:0.3, maxBarThickness:30 }));
+  if(floor != null) sets.push({ label:'Floor', data:labels.map(() => floor), borderColor:'#B3432E', borderDash:[4, 4], borderWidth:1.5, pointRadius:0, fill:false, type:'line' });
+  new Chart(canvas, {
+    type:line ? 'line' : 'bar',
+    data:{ labels, datasets:sets },
+    options:{ responsive:true, maintainAspectRatio:false, animation:{ duration:450 }, interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ display:sets.length > 1, labels:{ boxWidth:10, font:{ size:11 } } }, tooltip:{ callbacks:{ label:c => c.dataset.label + ': ' + fmt(c.parsed.y) } } },
+      scales:{ x:{ grid:{ display:false }, ticks:{ font:{ size:10.5 }, maxRotation:0, autoSkip:true } }, y:{ grid:{ color:'rgba(20,24,31,.06)' }, ticks:{ font:{ size:10.5 }, callback:fmt, maxTicksLimit:5 }, border:{ display:false } } } }
+  });
+  return true;
+}
+function vxR1(v){ return v == null ? null : +v.toFixed(1); }
+function vxPct(now, prev){ now = Number(now); prev = Number(prev); return (!isFinite(now) || !isFinite(prev) || !prev) ? null : (now - prev) / Math.abs(prev) * 100; }
+function vxKpi(label, value, delta, goodUp){
+  const d = delta == null ? '' : '<i class="' + ((delta >= 0) === (goodUp !== false) ? 'up' : 'down') + '">' + (delta >= 0 ? '▲ ' : '▼ ') + Math.abs(delta).toFixed(1) + '% vs last</i>';
+  return '<div class="vx-kpi"><span>' + escapeHtml(label) + '</span><b>' + escapeHtml(value) + '</b>' + d + '</div>';
+}
+function vxTableHtml(cols, rows){
+  return '<div class="vx-tablewrap"><table><thead><tr>' + cols.map(c => '<th' + (c.r ? ' class="r"' : '') + '>' + escapeHtml(typeof c === 'object' ? (c.t || '') : c) + '</th>').join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr' + (r.cls ? ' class="' + r.cls + '"' : '') + '>' + r.cells.map((v, i) => '<td' + ((cols[i] && cols[i].r) || v && v.cls ? ' class="' + [(cols[i] && cols[i].r) ? 'r' : '', v && v.cls || ''].join(' ').trim() + '"' : '') + '>' + escapeHtml(v && v.t !== undefined ? v.t : String(v)) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+}
+function vxMore(page, label){ return '<div class="vx-more"><button type="button" data-vx-go="' + page + '">' + escapeHtml(label) + ' →</button></div>'; }
+function vxViewCard(key, title, sub, body){ return vxAddCard('<h4>' + escapeHtml(title) + '</h4>' + (sub ? '<div class="vx-sub">' + escapeHtml(sub) + '</div>' : '') + body, 'vx-view', key); }
+function vxMonth(iso){ try { return new Date(iso).toLocaleDateString('en-IN', { month:'short' }); } catch(e){ return ''; } }
+function vxDue(days){ return days == null ? 'no due date' : days < 0 ? (-days) + 'd overdue' : days === 0 ? 'due today' : 'due in ' + days + 'd'; }
+
+const VX_VIEWS = {
+  pnl(){
+    const snaps = (snapshots || []).slice(0, 6), s = snaps[0], p = snaps[1];
+    if(!s) return { shown:false, note:'No P&L yet: connect Zoho Books or Tally, or enter figures.' };
+    const margin = x => Number(x.revenue) ? Number(x.net_profit) / Number(x.revenue) * 100 : null;
+    let z = null; try { z = zohoConnected && zohoVitals && zohoVitals.net_margin ? zohoVitals.net_margin : null; } catch(e){}
+    const rows = [
+      { cells:['Revenue', vxInr(s.revenue), p ? vxInr(p.revenue) : '—'] },
+      ...(z ? [{ cells:['Cost of goods (' + (z.period || 'Zoho') + ')', vxInr(z.cogs), '—'] }, { cells:['Operating expenses (' + (z.period || 'Zoho') + ')', vxInr(z.opex), '—'] }] : [{ cells:['Total spend', vxInr(s.burn), p ? vxInr(p.burn) : '—'] }]),
+      { cls:'tot', cells:['Net profit', { t:vxInr(s.net_profit), cls:Number(s.net_profit) < 0 ? 'neg' : '' }, p ? vxInr(p.net_profit) : '—'] },
+      { cells:['GST payable', vxInr(s.gst_payable), p ? vxInr(p.gst_payable) : '—'] }
+    ];
+    const hist = snaps.slice().reverse();
+    const card = vxViewCard('pnl', 'Profit and loss', mgAsOf() + (z ? ' · COGS and opex from Zoho Books' : ''),
+      '<div class="vx-kpis">' + vxKpi('Revenue', vxInr(s.revenue), p ? vxPct(s.revenue, p.revenue) : null) + vxKpi('Net profit', vxInr(s.net_profit), p ? vxPct(s.net_profit, p.net_profit) : null) +
+        vxKpi('Net margin', margin(s) == null ? '—' : margin(s).toFixed(1) + '%', null) + '</div>' +
+      (hist.length > 1 ? '<div class="vx-chart"><canvas></canvas></div>' : '') +
+      vxTableHtml([{ t:'' }, { t:'This month', r:1 }, { t:'Last month', r:1 }], rows) + vxMore('analytics', 'Open Reports'));
+    if(hist.length > 1) vxDrawChart(card.querySelector('canvas'), { kind:'bar', labels:hist.map(x => vxMonth(x.created_at)), series:[{ name:'Revenue', values:hist.map(x => Number(x.revenue) || 0) }, { name:'Net profit', values:hist.map(x => Number(x.net_profit) || 0) }] });
+    return { revenue:vxInr(s.revenue), net_profit:vxInr(s.net_profit), net_margin_pct:margin(s) == null ? null : +margin(s).toFixed(1),
+      revenue_change_pct:p ? vxR1(vxPct(s.revenue, p.revenue)) : null, profit_change_pct:p ? vxR1(vxPct(s.net_profit, p.net_profit)) : null,
+      cogs:z ? vxInr(z.cogs) : null, opex:z ? vxInr(z.opex) : null, months_charted:hist.length, as_of:mgAsOf() };
+  },
+  receivables(){ return vxMoneyView('recv'); },
+  payables(){ return vxMoneyView('pay'); },
+  cash(){
+    const c = VX_TOOLS.get_cash(), srcs = (function(){ try { return mgCashSources(); } catch(e){ return []; } })();
+    let f = null; try { f = mgForecast(); } catch(e){}
+    const card = vxViewCard('cash', 'Cash', (c.agreement || '') + (c.agreement ? ' · ' : '') + mgAsOf(),
+      '<div class="vx-kpis">' + vxKpi('Cash now', srcs[0] ? vxInr(srcs[0].total) : '—') + vxKpi('Lowest, next 13 wks', f ? vxInr(f.min) : '—') +
+        vxKpi(f && f.firstBelow >= 0 ? 'Below floor from' : 'Floor', f ? (f.firstBelow >= 0 ? 'week ' + (f.firstBelow + 1) : vxInr(f.floor)) : '—') + '</div>' +
+      (f ? '<div class="vx-chart"><canvas></canvas></div>' : '') +
+      (srcs.length ? vxTableHtml([{ t:'Source' }, { t:'Balance', r:1 }, { t:'As of' }], srcs.map(x => ({ cells:[MG_SRC_NAME[x.src] || x.src, vxInr(x.total), x.asOf ? fmtDay(x.asOf) : '—'] }))) : '') +
+      (c.in_transit_from_gateways ? '<div class="vx-note">Plus ' + escapeHtml(c.in_transit_from_gateways.total) + ' in transit from payment gateways.</div>' : '') + vxMore('cash', 'Open Cash'));
+    if(f) vxDrawChart(card.querySelector('canvas'), { kind:'line', labels:f.close.map((_, i) => 'W' + (i + 1)), series:[{ name:'Closing cash', values:f.close }], floor:f.floor });
+    const out = Object.assign({}, c); if(out.forecast_13_weeks) delete out.forecast_13_weeks.week_by_week_close_inr;
+    return out;
+  },
+  forecast(){ return VX_VIEWS.cash(); },
+  gst(){
+    const g = VX_TOOLS.get_gst();
+    vxViewCard('gst', 'GST and input credit', g.source || 'Self-reported', '<div class="vx-kpis">' + vxKpi('GST payable', g.gst_payable_this_month || '—') + vxKpi('Credit at risk', g.itc_at_risk || '—') +
+      vxKpi('Vendors not filed', g.vendors_not_filed != null ? String(g.vendors_not_filed) : '—') + '</div>' +
+      ((g.vendors_behind_it || []).length ? vxTableHtml([{ t:'Vendor' }, { t:'At risk', r:1 }], g.vendors_behind_it.map(v => ({ cells:[v.vendor, v.at_risk] }))) : '<div class="vx-note">' + escapeHtml(g.note || 'No vendor has credit at risk.') + '</div>') + vxMore('gst', 'Open GST'));
+    return g;
+  },
+  inbox(){
+    const b = VX_TOOLS.get_inbox();
+    const rows = [...(b.agent_proposals || []).map(a => ({ cells:[a.what, a.amount] })), ...(b.payments_to_review || []).map(q => ({ cells:[(q.customer || 'Payment') + ': ' + (q.reason || 'review'), q.amount] })),
+      ...(b.forwarded_documents || []).map(d => ({ cells:['Forwarded' + (d.party ? ': ' + d.party : ''), d.total] }))].slice(0, 8);
+    vxViewCard('inbox', 'Waiting on you', b.total_waiting + ' item' + (b.total_waiting === 1 ? '' : 's'), rows.length ? vxTableHtml([{ t:'What' }, { t:'Amount', r:1 }], rows) + vxMore('inbox', 'Open Inbox') : '<div class="vx-note">Nothing is waiting on you.</div>');
+    return { total_waiting:b.total_waiting, top:rows.slice(0, 3).map(r => r.cells[0]), being_chased:(b.being_chased || []).length };
+  },
+  overview(){
+    const o = VX_TOOLS.get_overview();
+    vxViewCard('overview', 'How the business is doing', o.as_of, '<div class="vx-kpis">' + vxKpi('Pulse Score', o.pulse_score != null ? String(o.pulse_score) : '—') +
+      vxKpi('Owed to you', o.receivables.total) + vxKpi('You owe', o.payables.total) + '</div>' +
+      vxTableHtml([{ t:'Vital' }, { t:'Now', r:1 }, { t:'Score', r:1 }], (o.vitals || []).map(v => ({ cells:[v.vital, String(v.value), v.score_out_of_100 == null ? '—' : String(v.score_out_of_100)] }))) + vxMore('home', 'Open Home'));
+    delete o.connected_sources; return o;
+  },
+  party({ direction, name }){
+    const dir = VX_DIR[direction] || 'recv';
+    const f = vxFindParty(dir, name || '');
+    if(!f.best) return { shown:false, note:'No ' + (dir === 'recv' ? 'customer' : 'vendor') + ' matches "' + name + '". Try the other direction.' };
+    if(!f.confident) return { shown:false, did_you_mean:[f.best.party, ...f.others] };
+    const g = f.best, row = vxPartyRow(g), items = g.by[g.primary].rows.slice().sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
+    vxViewCard('party:' + g.key, g.party, (dir === 'recv' ? 'Customer' : 'Vendor') + ' · ' + row.agreement,
+      '<div class="vx-kpis">' + vxKpi(dir === 'recv' ? 'Owes you' : 'You owe', row.outstanding) + vxKpi('Overdue', vxInr(g.overdue || 0)) + vxKpi('Open items', String(g.invoices)) + '</div>' +
+      vxTableHtml([{ t:'Reference' }, { t:'Status' }, { t:'Amount', r:1 }], items.slice(0, 8).map(r => ({ cells:[r.ref || '—', { t:vxDue(r.days), cls:r.days != null && r.days < 0 ? 'neg' : '' }, vxInr(r.amount)] }))) +
+      (g.sources.length > 1 ? '<div class="vx-note">' + escapeHtml(g.sources.map(x => MG_SRC_NAME[x] + ' ' + vxInr(g.by[x].amount)).join(' · ')) + '</div>' : ''));
+    return Object.assign(row, { items:items.slice(0, 5).map(r => ({ ref:r.ref, amount:vxInr(r.amount), status:vxDue(r.days) })) });
+  }
+};
+function vxMoneyView(dir){
+  const groups = vxGroups(dir), t = vxTotals(groups), recv = dir === 'recv';
+  const b = { b0:0, b1:0, b2:0, b3:0 };
+  groups.forEach(g => g.by[g.primary].rows.forEach(r => { b[mgBucketOf(r.days)] += r.amount; }));
+  const top = groups.slice().sort((x, y) => y.amount - x.amount).slice(0, 6);
+  const card = vxViewCard(recv ? 'receivables' : 'payables', recv ? 'Receivables' : 'Payables', t.parties + (recv ? ' customers' : ' vendors') + ' · reconciled across sources',
+    '<div class="vx-kpis">' + vxKpi(recv ? 'Owed to you' : 'You owe', t.total) + vxKpi('Overdue', t.overdue) + vxKpi('Over 90 days', vxInr(b.b3)) + '</div>' +
+    '<div class="vx-chart" style="height:150px"><canvas></canvas></div>' +
+    vxTableHtml([{ t:recv ? 'Customer' : 'Vendor' }, { t:'Oldest' }, { t:'Amount', r:1 }], top.map(g => ({ cells:[g.party, { t:vxDue(g.oldestDays), cls:g.oldestDays != null && g.oldestDays < 0 ? 'neg' : '' }, vxInr(g.amount)] }))) +
+    vxMore(recv ? 'receivables' : 'payables', 'Open the full list'));
+  vxDrawChart(card.querySelector('canvas'), { kind:'bar', labels:['0–30', '31–60', '61–90', '90+'], series:[{ name:'Amount', values:[b.b0, b.b1, b.b2, b.b3] }], colors:['#0E8F5C', '#9A6A00', '#C77A2E', '#B3432E'] });
+  return Object.assign(t, { ageing:{ '0-30':vxInr(b.b0), '31-60':vxInr(b.b1), '61-90':vxInr(b.b2), '90+':vxInr(b.b3) }, top:top.slice(0, 3).map(g => ({ name:g.party, amount:vxInr(g.amount), oldest:vxDue(g.oldestDays) })) });
+}
+/* "Open the full list →" in a workspace card is the user's own click. */
+document.addEventListener('click', e => { const b = e.target.closest('[data-vx-go]'); if(b) mgGo(b.dataset.vxGo); });

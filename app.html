@@ -1210,13 +1210,14 @@
   <form class="vx-type" id="vxType" autocomplete="off"><input id="vxTypeInput" type="text" placeholder="Or type to Margyn…" aria-label="Type to Margyn"><button type="submit" aria-label="Send">↵</button></form>
   <div class="vx-ctrls">
     <button type="button" class="vx-btn" id="vxMuteBtn" title="Mute (Alt+M)" aria-label="Mute microphone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 13.2A7 7 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
-    <button type="button" class="vx-btn" id="vxDeskBtn" title="Workspace: tables, charts, changes and the full transcript" aria-label="Show workspace" aria-expanded="false" aria-controls="vxDesk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="vx-badge hidden" id="vxDeskBadge"></span></button>
+    <button type="button" class="vx-btn" id="vxDeskBtn" title="Workspace: what Margyn is showing you" aria-label="Show workspace" aria-expanded="false" aria-controls="vxDesk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="vx-badge hidden" id="vxDeskBadge"></span></button>
     <button type="button" class="vx-end" id="vxEndBtn">End</button>
   </div>
 </div>
 <section class="vx-desk hidden" id="vxDesk" aria-label="Margyn workspace">
-  <div class="vx-desk-h"><div><b>Workspace</b><span>Saved to Ask Margyn</span></div>
-    <button type="button" class="mg-icon-btn" id="vxDeskClose" aria-label="Hide workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+  <div class="vx-desk-h" id="vxDeskHandle" title="Drag to move"><div><b>Workspace</b><span>Live from your data</span></div>
+    <div class="vx-desk-acts"><button type="button" class="vx-link" id="vxDeskClear">Clear</button>
+    <button type="button" class="mg-icon-btn" id="vxDeskClose" aria-label="Hide workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div></div>
   <div class="vx-feed" id="vxFeed"></div>
 </section>
 <audio id="rtRemoteAudio" autoplay hidden></audio>
