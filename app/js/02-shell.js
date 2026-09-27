@@ -37,6 +37,7 @@ function cmdkBuild(q){
     { label:'Create a new invoice', icon:CMDK_ICON.invoice, run:() => { showView('invoicing'); if(typeof showKhataTab === 'function') showKhataTab('invoice-new'); } },
     { label:'Add a receivable', icon:CMDK_ICON.plus, run:() => { ledgerActiveTab = 'receivables'; showView('ledger'); } },
     { label:'Add a payable', icon:CMDK_ICON.plus, run:() => { ledgerActiveTab = 'payables'; showView('ledger'); } },
+    { label:'Talk to Margyn (Alt+M)', icon:CMDK_ICON.ask, run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
     { label:'Review the agent queue', icon:CMDK_ICON.plus, run:() => { agentsActiveTab = 'queue'; showView('agents'); } },
     { label:'Build a new chart', icon:CMDK_ICON.chart, run:() => { showView('analytics'); const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); } },
     { label:'Connect a data source', icon:CMDK_ICON.plug, run:() => showView('connectors') },
