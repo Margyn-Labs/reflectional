@@ -121,7 +121,10 @@ const VX_TOOLS = {
       if(period && page === 'analytics' && mgRangeOptions().some(o => o.key === period)) mgSetRange(period);
     });
     vxActivity('Opened ' + vxLabel(page) + (view && view !== 'reconciled' ? ' · ' + (MG_SRC_LABEL[view] || view) : ''));
-    return { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null, on_this_page:vxPageSummary(page) };
+    // Only money pages return figures here; anything else, the model asks for with a read tool if it needs it.
+    const onPage = MG_MONEY[page] ? vxPageSummary(page) : null;
+    if(onPage && onPage.largest) onPage.largest = onPage.largest.slice(0, 3).map(r => ({ name:r.name, outstanding:r.outstanding, oldest_days_overdue:r.oldest_days_overdue }));
+    return { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null, on_this_page:onPage };
   },
 
   search_app({ query, open_top }){
@@ -138,11 +141,11 @@ const VX_TOOLS = {
       out.filter = { search:mgMoneyQ || null, age:mgMoneyAge ? VX_AGE_BACK[mgMoneyAge] : null };
       const host = document.getElementById('view-' + page);
       const rows = (host && host.__rows) || null;
-      if(rows) out.rows_on_screen = rows.slice(0, 12).map(r => ({ name:r.party, amount:vxInr(r.amount), amount_inr:Math.round(r.amount), days_to_due:r.days, ref:r.ref }));
+      if(rows) out.rows_on_screen = rows.slice(0, 8).map(r => ({ name:r.party, amount:vxInr(r.amount), days_to_due:r.days }));
     }
     const d = document.querySelector('.mg-drawer h3');
     if(d) out.side_panel_open_for = d.textContent;
-    out.summary = vxPageSummary(page);
+    if(!MG_MONEY[page]) out.summary = vxPageSummary(page);
     return out;
   },
 
@@ -307,16 +310,16 @@ const VX_TOOLS = {
     vxSetState('thinking', 'Thinking it through');
     try {
       const data = await Promise.race([
-        callAskMargyn(String(question || '').slice(0, 1800), vxThinkHistory.slice(-6), null, null, 'margyn'),
+        callAskMargyn(String(question || '').slice(0, 1800), vxThinkHistory.slice(-4), null, null, 'margyn', 'balanced'),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000))
       ]);
       const reply = (data && data.reply) || '';
       vxThinkHistory.push({ role:'user', content:question }, { role:'assistant', content:reply });
       if(data && data.actionCard && data.actionCard.type){
         const r = vxShowActionCard(data.actionCard, question);
-        return { answer:reply.slice(0, 2400), change_card_shown:true, card:r };
+        return { answer:reply.slice(0, 1500), change_card_shown:true, card:r };
       }
-      return { answer:reply.slice(0, 2400) || 'No answer came back.', note:'Speak this in your own words, briefly. Keep every figure exactly as given.' };
+      return { answer:reply.slice(0, 1500) || 'No answer came back.', note:'Speak this in your own words, briefly. Keep every figure exactly as given.' };
     } catch(e){
       return { error:e.message === 'timeout' ? 'The deeper analysis took too long.' : (e.message || 'Could not reach the analyst.') };
     }
@@ -351,10 +354,10 @@ const VX_TOOLS = {
   async propose_change({ request }){
     vxSetState('thinking', 'Preparing the change');
     try {
-      let data = await callAskMargyn(String(request || '').slice(0, 1800), [], null, null, 'margyn');
+      let data = await callAskMargyn(String(request || '').slice(0, 1800), [], null, null, 'margyn', 'quick');
       // The orchestrator may hand a collections/reconciliation request to a
       // specialist; follow it once, silently (one voice: Margyn).
-      if(data && !data.actionCard && data.handoff && data.handoff.agentId) data = await callAskMargyn(String(request).slice(0, 1800), [], null, null, data.handoff.agentId);
+      if(data && !data.actionCard && data.handoff && data.handoff.agentId) data = await callAskMargyn(String(request).slice(0, 1800), [], null, null, data.handoff.agentId, 'quick');
       if(data && data.actionCard && data.actionCard.type) return vxShowActionCard(data.actionCard, request);
       return { status:'not_proposed', reason:(data && data.reply) || 'Could not work out a specific change from that.' };
     } catch(e){

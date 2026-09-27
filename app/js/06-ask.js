@@ -511,11 +511,13 @@ function buildMargynContext(focusLabel){
   };
 }
 
-async function callAskMargyn(message, history, focusLabel, findingTier, agentId){
+async function callAskMargyn(message, history, focusLabel, findingTier, agentId, depthOverride){
   const context = buildMargynContext(focusLabel);
   if(findingTier) context.focusFindingTier = findingTier;
-  let depth = (typeof askDepth === 'function' ? askDepth() : 'balanced');
-  if(depth === 'deep'){
+  // Voice passes its own depth (quick to validate a change, balanced to
+  // reason) so a call never spends the user's Deep allowance on Opus.
+  let depth = depthOverride || (typeof askDepth === 'function' ? askDepth() : 'balanced');
+  if(depth === 'deep' && !depthOverride){
     if(askDeepRemaining() <= 0){
       depth = 'balanced';
       toast('Deep limit reached for today', { sub: 'Answering at Balanced depth. Resets tomorrow.' });

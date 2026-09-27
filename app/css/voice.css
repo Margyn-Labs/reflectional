@@ -1,36 +1,52 @@
-/* Live voice: dock + conversation panel (app/js/22-realtime-voice.js).
-   Floats over the app instead of covering it, so the user watches Margyn
-   drive the screen. Sits above the detail drawer (900), below dialogs (1000). */
-.vx-dock{ position:fixed; z-index:950; bottom:20px; left:calc(50% + var(--rail-w) / 2); transform:translateX(-50%);
-  width:min(620px, calc(100vw - var(--rail-w) - 48px)); display:flex; align-items:center; gap:10px; padding:8px 8px 8px 10px;
-  background:var(--g0); border:1px solid var(--g200); border-radius:999px; box-shadow:var(--shadow-overlay); font-family:var(--font-ui);
-  animation:vxIn .28s cubic-bezier(.16,1,.3,1); }
+/* Live voice (app/js/22-realtime-voice.js).
+   Talk panel: floating, see-through, draggable; shows only the last few lines.
+   Workspace (.vx-desk): tables, charts, change cards and the full transcript.
+   Both sit above the detail drawer (900), below dialogs (1000). */
+.vx-dock{ position:fixed; z-index:950; top:calc(var(--top-h) + 20px); right:20px; width:320px; display:flex; flex-direction:column; gap:10px; padding:12px;
+  background:rgba(255,255,255,.62); -webkit-backdrop-filter:blur(16px) saturate(1.4); backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid rgba(20,24,31,.10); border-radius:16px; box-shadow:0 12px 32px rgba(20,24,31,.12), 0 1px 2px rgba(20,24,31,.06);
+  font-family:var(--font-ui); animation:vxIn .28s cubic-bezier(.16,1,.3,1); transition:background .2s ease; touch-action:none; }
+.vx-dock:hover, .vx-dock:focus-within, .vx-dock.dragging{ background:rgba(255,255,255,.84); }
+.vx-dock.dragging{ transition:none; user-select:none; box-shadow:0 18px 44px rgba(20,24,31,.18); }
 .vx-dock.hidden, .vx-desk.hidden{ display:none; }
-@keyframes vxIn{ from{ opacity:0; transform:translate(-50%, 12px); } to{ opacity:1; transform:translate(-50%, 0); } }
+@keyframes vxIn{ from{ opacity:0; transform:translateY(-8px); } to{ opacity:1; transform:none; } }
+.vx-head{ display:flex; align-items:center; gap:10px; cursor:grab; }
+.vx-dock.dragging .vx-head{ cursor:grabbing; }
 .vx-orb{ width:44px; height:44px; flex:none; }
-.vx-mid{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
-.vx-state{ font-family:var(--font-num); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand-700); display:flex; align-items:center; gap:8px; }
+.vx-mid{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.vx-state{ font-family:var(--font-num); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand-700); }
 .vx-dock[data-state="speaking"] .vx-state{ color:var(--ai); }
 .vx-dock[data-state="muted"] .vx-state, .vx-dock[data-state="connecting"] .vx-state{ color:var(--g500); }
-.vx-act{ font-family:var(--font-ui); letter-spacing:0; text-transform:none; font-size:12px; color:var(--g600); background:var(--g50); border-radius:999px; padding:1px 8px;
-  max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; opacity:0; transition:opacity .2s ease; }
+.vx-act{ font-size:12px; color:var(--g600); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-height:16px; opacity:0; transition:opacity .2s ease; }
 .vx-act.on{ opacity:1; }
-.vx-caption{ font-size:var(--f14); color:var(--g900); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; direction:ltr; min-height:20px; line-height:20px; }
-.vx-caption:empty::before{ content:'Say anything — “who owes us the most?”'; color:var(--g500); }
-.vx-dock[data-state="connecting"] .vx-caption:empty::before{ content:'Getting Margyn on the line…'; }
-.vx-dock[data-state="muted"] .vx-caption:empty::before{ content:'Muted. Margyn can’t hear you.'; }
-.vx-btn{ position:relative; width:40px; height:40px; flex:none; display:grid; place-items:center; border:1px solid var(--g200); background:var(--g0); color:var(--g600);
+.vx-grip{ display:grid; grid-template-columns:repeat(2, 3px); gap:3px; padding:4px; opacity:.45; }
+.vx-grip i{ width:3px; height:3px; border-radius:50%; background:var(--g600); }
+/* Last few lines only, fading out at the top as the conversation moves. */
+.vx-mini{ max-height:132px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; gap:6px;
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 36px); mask-image:linear-gradient(to bottom, transparent 0, #000 36px); }
+.vx-mini-empty{ font-size:var(--f13); color:var(--g500); line-height:1.5; }
+.vx-mini .vx-line{ font-size:var(--f13); line-height:1.45; color:var(--g900); animation:vxLineIn .25s ease; }
+.vx-mini .vx-line b{ font-family:var(--font-num); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; font-weight:500; color:var(--g500); margin-right:6px; }
+.vx-mini .vx-line.margyn b{ color:var(--ai); }
+.vx-mini .vx-line.user{ color:var(--g600); }
+@keyframes vxLineIn{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:none; } }
+.vx-type{ display:flex; gap:6px; }
+.vx-type input{ flex:1; min-width:0; height:34px; border:1px solid rgba(20,24,31,.12); border-radius:var(--r-ctl); padding:0 10px; font-family:var(--font-ui); font-size:var(--f13); color:var(--g900); background:rgba(255,255,255,.7); }
+.vx-type input:focus{ outline:none; border-color:var(--brand); background:#fff; }
+.vx-type button{ width:34px; height:34px; border:0; border-radius:var(--r-ctl); background:var(--g900); color:var(--g0); font-size:15px; cursor:pointer; }
+.vx-ctrls{ display:flex; align-items:center; gap:8px; }
+.vx-btn{ position:relative; width:38px; height:38px; flex:none; display:grid; place-items:center; border:1px solid rgba(20,24,31,.12); background:rgba(255,255,255,.7); color:var(--g600);
   border-radius:50%; cursor:pointer; transition:background .15s ease, color .15s ease, border-color .15s ease; }
-.vx-btn:hover{ background:var(--g50); color:var(--g900); }
+.vx-btn:hover{ background:#fff; color:var(--g900); }
 .vx-btn svg{ width:18px; height:18px; }
 .vx-btn.on{ background:var(--g900); border-color:var(--g900); color:var(--g0); }
 .vx-btn:focus-visible, .vx-end:focus-visible, .vx-idea:focus-visible{ outline:2px solid var(--brand); outline-offset:2px; }
-.vx-badge{ position:absolute; top:6px; right:6px; width:8px; height:8px; border-radius:50%; background:var(--ai); border:2px solid var(--g0); }
+.vx-badge{ position:absolute; top:5px; right:5px; width:8px; height:8px; border-radius:50%; background:var(--ai); border:2px solid var(--g0); }
 .vx-badge.hidden{ display:none; }
-.vx-end{ height:40px; flex:none; padding:0 16px; border:0; border-radius:999px; background:var(--neg); color:#fff; font-family:var(--font-ui); font-weight:700; font-size:var(--f13); cursor:pointer; }
+.vx-end{ margin-left:auto; height:38px; flex:none; padding:0 18px; border:0; border-radius:999px; background:var(--neg); color:#fff; font-family:var(--font-ui); font-weight:700; font-size:var(--f13); cursor:pointer; }
 .vx-end:hover{ background:#9A3825; }
 
-.vx-desk{ position:fixed; z-index:949; left:calc(var(--rail-w) + 20px); bottom:92px; width:400px; max-height:calc(100vh - var(--top-h) - 120px);
+.vx-desk{ position:fixed; z-index:949; left:calc(var(--rail-w) + 20px); top:calc(var(--top-h) + 20px); width:400px; max-height:calc(100vh - var(--top-h) - 40px);
   display:flex; flex-direction:column; background:var(--g0); border:1px solid var(--g200); border-radius:12px; box-shadow:var(--shadow-overlay);
   font-family:var(--font-ui); animation:vxDeskIn .22s cubic-bezier(.16,1,.3,1); }
 @keyframes vxDeskIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
@@ -62,28 +78,22 @@
 .vx-idea{ border:1px solid var(--g200); background:var(--g25); color:var(--g900); border-radius:999px; padding:6px 11px; font-family:var(--font-ui); font-size:var(--f12); cursor:pointer; text-align:left; }
 .vx-idea:hover{ border-color:var(--brand); background:var(--brand-50); }
 .vx-fine{ font-size:var(--f12); color:var(--g500); }
-.vx-type{ display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--g100); flex:none; }
-.vx-type input{ flex:1; min-width:0; height:36px; border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 10px; font-family:var(--font-ui); font-size:var(--f13); color:var(--g900); background:var(--g0); }
-.vx-type input:focus{ outline:none; border-color:var(--brand); }
-.vx-type button{ height:36px; padding:0 12px; border:0; border-radius:var(--r-ctl); background:var(--g900); color:var(--g0); font-family:var(--font-ui); font-weight:700; font-size:var(--f13); cursor:pointer; }
 
 /* Margyn pointing at something it just did on screen. */
 .vx-spot{ animation:vxSpot 2.4s ease-out; }
 @keyframes vxSpot{ 0%,30%{ box-shadow:inset 0 0 0 2px var(--ai); background-color:var(--ai-50); } 100%{ box-shadow:inset 0 0 0 2px transparent; } }
 
-/* Keep toasts clear of the dock while a call is on. */
-body.vx-on .toast-host{ bottom:92px; }
 /* Top-bar entry point. */
 .mg-tb-btn.mg-voice{ color:var(--brand-700); }
 body.vx-on .mg-tb-btn.mg-voice{ background:var(--brand-50); }
 
 @media (max-width:900px){
-  .vx-dock{ left:12px; right:12px; bottom:12px; transform:none; width:auto; animation:none; }
-  .vx-desk{ left:12px; right:12px; width:auto; bottom:80px; max-height:55vh; }
-  .vx-act{ display:none; }
-  body.vx-on .toast-host{ bottom:84px; }
+  .vx-dock{ top:auto !important; left:12px !important; right:12px !important; bottom:12px; width:auto; }
+  .vx-head{ cursor:default; } .vx-grip{ display:none; }
+  .vx-mini{ max-height:84px; }
+  body.vx-on .toast-host{ bottom:250px; }
+  .vx-desk{ left:12px; right:12px; width:auto; top:calc(var(--top-h) + 12px); bottom:auto; max-height:45vh; }
 }
-@media (max-width:480px){ .vx-end{ padding:0 12px; } .vx-btn{ width:36px; height:36px; } }
 .vx-summary{ font-size:var(--f13); color:var(--g900); line-height:1.5; margin-top:6px; }
 .vx-card .action-card-done{ font-size:var(--f12); color:var(--g500); margin-top:4px; }
 .vx-card.vx-done h4{ color:var(--brand-700); }
@@ -93,3 +103,4 @@ body.vx-on .mg-tb-btn.mg-voice{ background:var(--brand-50); }
 .vx-idea.on{ border-color:var(--brand); background:var(--brand-50); color:var(--brand-700); font-weight:600; }
 .vx-idea:disabled{ cursor:default; opacity:.6; }
 .vx-idea.on:disabled{ opacity:1; }
+.vx-mini .vx-line.pending{ display:none; }

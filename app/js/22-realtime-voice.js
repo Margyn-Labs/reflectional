@@ -21,7 +21,8 @@ let vxCallsThisResponse = [], vxResponseActive = false, vxEnding = false, vxQueu
 let vxUtterances = [];         // { at, text } — the user's own words (spoken or typed), for the confirm gate
 let vxThinkHistory = [];       // think() thread so follow-up "why"s keep context
 let vxLastActivity = 0, vxIdleTimer = null, vxAudioCtx = null, vxMicAn = null, vxOutAn = null, vxRaf = null;
-const VX_IDLE_MS = 4 * 60 * 1000;   // hang up after 4 quiet minutes; a live session bills while open
+const VX_IDLE_MS = 2 * 60 * 1000;   // hang up after 2 quiet minutes; a live session bills while open
+const VX_HIDDEN_MS = 60 * 1000;     // ...or after a minute in a background tab
 
 function vxEl(id){ return document.getElementById(id); }
 function rtSend(obj){ if(rtDc && rtDc.readyState === 'open') rtDc.send(JSON.stringify(obj)); }
@@ -36,7 +37,7 @@ function vxSetState(state, caption){
   if(caption !== undefined) vxSetCaption(caption);
 }
 function vxSetCaption(text){
-  vxCaption = text || '';
+  vxCaption = text || '';   // the live line is drawn in the panel's mini transcript (vxMiniLine)
   const c = vxEl('vxCaption'); if(!c) return;
   // One line, newest words visible: trim from the front like live captions.
   const max = Math.max(24, Math.floor((c.clientWidth || 400) / 7.4));
@@ -59,10 +60,6 @@ function vxDeskOpen(open){
   if(btn){ btn.setAttribute('aria-expanded', on ? 'true' : 'false'); btn.classList.toggle('on', on); }
   if(on){ const n = vxEl('vxDeskBadge'); if(n) n.classList.add('hidden'); }
 }
-function vxBadge(){
-  const desk = vxEl('vxDesk'), n = vxEl('vxDeskBadge');
-  if(desk && n && desk.classList.contains('hidden')) n.classList.remove('hidden');
-}
 function vxScrollFeed(){ const f = vxFeed(); if(f) f.scrollTop = f.scrollHeight; }
 function vxAddLine(who, text, id){
   const f = vxFeed(); if(!f) return null;
@@ -77,10 +74,60 @@ function vxAddLine(who, text, id){
   }
   row.querySelector('.txt').textContent = text;
   row.classList.toggle('pending', !text);
-  vxBadge();
+  vxMiniLine(who, text, id);
   vxScrollFeed();
   return row;
 }
+/* The floating panel shows only the last few lines, newest at the bottom. */
+const VX_MINI_LINES = 4;
+function vxMiniLine(who, text, id){
+  const m = vxEl('vxMini'); if(!m) return;
+  const empty = m.querySelector('.vx-mini-empty'); if(empty && text) empty.remove();
+  let row = id ? m.querySelector('[data-item="' + id + '"]') : null;
+  if(!row){
+    // An empty row is a placeholder for speech still being transcribed:
+    // hidden, but it holds its place above Margyn's reply.
+    row = document.createElement('div');
+    row.className = 'vx-line ' + who;
+    if(id) row.dataset.item = id;
+    m.appendChild(row);
+  }
+  row.innerHTML = '<b>' + (who === 'user' ? 'You' : 'Margyn') + '</b>' + escapeHtml(text);
+  row.classList.toggle('pending', !text);
+  const shown = m.querySelectorAll('.vx-line:not(.pending)');
+  for(let i = 0; i < shown.length - VX_MINI_LINES; i++) shown[i].remove();
+}
+function vxMiniReset(){ const m = vxEl('vxMini'); if(m) m.innerHTML = '<div class="vx-mini-empty">Say anything, like “who owes us the most?”</div>'; }
+
+/* ---------- drag the floating panel; remembered per browser ---------- */
+const VX_POS_KEY = 'mg.voice.pos';
+function vxPlace(pos){
+  const d = vxEl('vxDock'); if(!d || window.innerWidth <= 900) return;
+  if(!pos){ d.style.left = d.style.top = ''; d.style.right = ''; return; }
+  const w = d.offsetWidth || 320, h = d.offsetHeight || 260;
+  const x = Math.min(Math.max(8, pos.x), window.innerWidth - w - 8), y = Math.min(Math.max(8, pos.y), window.innerHeight - h - 8);
+  d.style.left = x + 'px'; d.style.top = y + 'px'; d.style.right = 'auto';
+}
+function vxSavedPos(){ try { return JSON.parse(localStorage.getItem(VX_POS_KEY) || 'null'); } catch(e){ return null; } }
+(function wireVoiceDrag(){
+  const d = vxEl('vxDock'), h = vxEl('vxHandle'); if(!d || !h) return;
+  let start = null;
+  h.addEventListener('pointerdown', e => {
+    if(window.innerWidth <= 900 || e.button !== 0) return;
+    const r = d.getBoundingClientRect();
+    start = { dx:e.clientX - r.left, dy:e.clientY - r.top };
+    d.classList.add('dragging'); h.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  h.addEventListener('pointermove', e => { if(start) vxPlace({ x:e.clientX - start.dx, y:e.clientY - start.dy }); });
+  const end = () => {
+    if(!start) return; start = null; d.classList.remove('dragging');
+    const r = d.getBoundingClientRect();
+    try { localStorage.setItem(VX_POS_KEY, JSON.stringify({ x:Math.round(r.left), y:Math.round(r.top) })); } catch(e){}
+  };
+  h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+  h.addEventListener('dblclick', () => { try { localStorage.removeItem(VX_POS_KEY); } catch(e){} vxPlace(null); });   // double-click: back to the corner
+  window.addEventListener('resize', () => { if(vxActive){ const p = vxSavedPos(); if(p) vxPlace(p); } });
+})();
 function vxAddCard(html, cls){
   const f = vxFeed(); if(!f) return null;
   const empty = vxEl('vxEmpty'); if(empty) empty.remove();
@@ -218,6 +265,8 @@ async function openRealtimeOverlay(){
   vxThreadKey = 'voice:' + new Date().toISOString();
   document.body.classList.add('vx-on');
   dock.classList.remove('hidden');
+  vxMiniReset();
+  vxPlace(vxSavedPos());
   const f = vxFeed(); if(f) f.innerHTML = vxEmptyHtml();
   vxSetState('connecting', 'Getting Margyn on the line…');
   vxTouch();
@@ -349,14 +398,14 @@ function vxOnEvent(m){
     case 'conversation.item.input_audio_transcription.completed': {
       const text = (m.transcript || '').trim();
       if(text){ vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); }
-      else { const row = vxFeed() && vxFeed().querySelector('[data-item="' + m.item_id + '"]'); if(row) row.remove(); }
+      else document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove());
       break;
     }
     case 'conversation.item.input_audio_transcription.failed': {
-      const row = vxFeed() && vxFeed().querySelector('[data-item="' + m.item_id + '"]'); if(row) row.remove(); break;
+      document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove()); break;
     }
     case 'response.created':
-      vxResponseActive = true; vxCallsThisResponse = []; break;
+      vxResponseActive = true; vxCallsThisResponse = []; vxCaption = ''; break;
     case 'response.output_audio_transcript.delta':
     case 'response.audio_transcript.delta':
       if(m.delta){ vxSetState('speaking'); vxSetCaption(vxCaption + m.delta); vxAddLine('margyn', vxCaption, 'r' + m.response_id); }
@@ -409,7 +458,9 @@ async function vxRunTool(m){
   try { out = fn ? await fn(args) : { error:'Unknown tool ' + m.name }; }
   catch(e){ console.error('[voice] tool ' + m.name, e); out = { error:(e && e.message) || 'That failed.' }; }
   let s = JSON.stringify(out === undefined ? { ok:true } : out);
-  if(s.length > 12000) s = s.slice(0, 12000) + '…';   // keep the model's context lean
+  // Every tool result stays in the conversation and is re-read on every later
+  // turn, so keep them small. The tools return compact summaries by design.
+  if(s.length > 3500) s = s.slice(0, 3500) + '…(trimmed)';
   rtSend({ type:'conversation.item.create', item:{ type:'function_call_output', call_id:m.call_id, output:s } });
   return m.name;
 }
@@ -433,6 +484,12 @@ function vxEmptyHtml(){
     '<div class="vx-ideas">' + ideas.map(i => '<button type="button" class="vx-idea">' + escapeHtml(i) + '</button>').join('') + '</div>' +
     '<div class="vx-fine">Changes always show a card first. Nothing is saved until you say yes or tap Confirm.</div></div>';
 }
+/* A call left running in a background tab bills for nothing. */
+let vxHiddenTimer = null;
+document.addEventListener('visibilitychange', () => {
+  clearTimeout(vxHiddenTimer);
+  if(document.hidden && vxActive) vxHiddenTimer = setTimeout(() => { if(vxActive && document.hidden){ closeRealtimeOverlay(); toast('Ended the call while the tab was in the background'); } }, VX_HIDDEN_MS);
+});
 (function wireVoiceDock(){
   const on = (id, ev, fn) => { const el = vxEl(id); if(el) el.addEventListener(ev, fn); };
   on('vxEndBtn', 'click', closeRealtimeOverlay);
