@@ -9,7 +9,10 @@
        so answering "show me X" never needs a page change.
 
    Entry points: the top-bar mic, the "Talk to Margyn" pill on Ask Margyn,
-   the command palette, and Alt+M anywhere (Alt+M again mutes).
+   the command palette, and Option+M / Ctrl+M anywhere. The same keys again,
+   or Esc, end the call. (Cmd+M can't be used: macOS and every Mac browser
+   take it to minimise the window before the page ever sees it.) Saying
+   "thank you, that's all" / "okay that was it" / "end the call" ends it too.
 
    Tools run in 23-voice-tools.js. The safety line is unchanged: nothing the
    voice model does writes on its own; see that file's header for the gate.
@@ -70,6 +73,16 @@ function vxClearWorkspace(){
   const f = vxFeed(); if(!f) return;
   // A change still waiting for an OK stays: clearing must never hide it.
   [...f.children].forEach(c => { if(!(vxPending && vxPending.card === c)) c.remove(); });
+  if(!f.children.length) vxDeskOpen(false);
+}
+/* On a page change, what was in the workspace was about the old page (the
+   Northwind note sat over the Vendors form, the cash chart over Sources).
+   Cards drawn in the last few seconds stay: that's Margyn showing something
+   for the page it just opened. A change waiting for an OK always stays. */
+function vxTidyWorkspace(){
+  const f = vxFeed(); if(!f) return;
+  const now = Date.now();
+  [...f.children].forEach(c => { if(!(vxPending && vxPending.card === c) && now - Number(c.dataset.at || 0) > 4000) c.remove(); });
   if(!f.children.length) vxDeskOpen(false);
 }
 /* Transcript lines live in the talk panel only; the full thread is saved to Ask Margyn. */
@@ -159,6 +172,7 @@ function vxAddCard(html, cls, key){
   if(key){ const old = f.querySelector('[data-key="' + key + '"]'); if(old && !(vxPending && vxPending.card === old)) old.remove(); }
   const card = document.createElement('div');
   card.className = 'vx-card' + (cls ? ' ' + cls : '');
+  card.dataset.at = Date.now();
   if(key) card.dataset.key = key;
   card.innerHTML = html;
   f.insertBefore(card, f.firstChild);
@@ -409,14 +423,34 @@ function closeRealtimeOverlay(){
 /* end_conversation: let the sign-off finish playing first. */
 function vxEndAfterSpeech(){
   vxEnding = true;
-  setTimeout(() => { if(vxActive && vxEnding) closeRealtimeOverlay(); }, 6000);
+  setTimeout(() => { if(vxActive && vxEnding) closeRealtimeOverlay(); }, 8000);
+}
+/* "Thank you, that's all", "okay that was it", "end the conversation", "bye":
+   the call ends by itself after a short goodbye, whether or not the model
+   remembers end_conversation. Only short sign-offs count: "Thank you. Can you
+   close the workspace?" is a request, not a goodbye. */
+const VX_BYE = /(\bthank(s| you| u)\b|shukriya|dhanyavaad|dhanyavad|that'?s (all|it|everything)|that (is|was) (all|it|everything)|(we'?re|i'?m|we are|i am) (done|good)|(end|close|stop|finish) (the |this |our )?(call|conversation|chat|session)|\bbye\b|good ?bye|talk (to you )?later|see you|bas itna|ho gaya)/i;
+const VX_NOT_BYE = /\?|\b(can|could|would|will) you\b|\b(show|open|close the workspace|clear|what|how|why|when|where|which|who|tell me|also|and then|but|next|another|one more)\b/i;
+function vxIsGoodbye(text){
+  const t = String(text || '').trim();
+  return !!t && t.split(/\s+/).length <= 10 && VX_BYE.test(t) && !VX_NOT_BYE.test(t);
+}
+function vxGoodbye(){
+  if(vxEnding) return;
+  vxEnding = true;
+  vxActivity('Ending the call');
+  // A reply may already be on its way (the model heard it before the words
+  // were transcribed); it ends the call when it finishes playing. If not,
+  // ask for a two-second goodbye.
+  if(!vxResponseActive) vxTellModel('The user is ending the call. Say a warm goodbye in under eight words, in their language. Do not call any tool.', true);
+  setTimeout(() => { if(vxActive && vxEnding) closeRealtimeOverlay(); }, 8000);
 }
 
 function vxToggleMute(force){
   vxMuted = force === undefined ? !vxMuted : force;
   if(rtStream) rtStream.getAudioTracks().forEach(t => { t.enabled = !vxMuted; });
   const b = vxEl('vxMuteBtn');
-  if(b){ b.classList.toggle('on', vxMuted); b.setAttribute('aria-pressed', vxMuted ? 'true' : 'false'); b.title = vxMuted ? 'Unmute (Alt+M)' : 'Mute (Alt+M)'; }
+  if(b){ b.classList.toggle('on', vxMuted); b.setAttribute('aria-pressed', vxMuted ? 'true' : 'false'); b.title = vxMuted ? 'Unmute' : 'Mute'; }
   vxSetState(vxState);
 }
 
@@ -428,6 +462,7 @@ function vxSendText(text){
   vxAddLine('user', text);
   vxPersist('user', text);
   vxTouch();
+  if(vxIsGoodbye(text)){ rtSend({ type:'conversation.item.create', item:{ type:'message', role:'user', content:[{ type:'input_text', text }] } }); vxGoodbye(); return; }
   rtSend({ type:'conversation.item.create', item:{ type:'message', role:'user', content:[{ type:'input_text', text }] } });
   if(vxResponseActive){ rtSend({ type:'response.cancel' }); vxQueuedCreate = true; }   // answer the typed message once the cancel lands
   else rtSend({ type:'response.create' });
@@ -463,7 +498,9 @@ function vxWatchReply(text){
 }
 /* Tools that only draw or move the screen. When Margyn already answered in
    full while calling them, a second reply is just "it's in the workspace now". */
-const VX_DISPLAY_TOOLS = ['show_view', 'show_note', 'show_table', 'show_chart', 'clear_workspace', 'navigate', 'open_party', 'filter_list', 'run_command'];
+const VX_DISPLAY_TOOLS = ['show_view', 'show_note', 'show_table', 'show_chart', 'clear_workspace', 'navigate', 'open_party', 'filter_list', 'run_command', 'fill_form'];
+/* Tools that take seconds: say so on the panel, so a quiet moment reads as work, not a hang. */
+const VX_SLOW_TOOLS = { think:'Thinking it through…', propose_change:'Preparing the change…', save_form:'Saving…', confirm_pending_change:'Applying…' };
 let vxToolFailed = false;
 
 /* ---------- realtime events ---------- */
@@ -477,7 +514,10 @@ function vxOnEvent(m){
       vxSetState('thinking', ''); break;
     case 'conversation.item.input_audio_transcription.completed': {
       const text = (m.transcript || '').trim();
-      if(text){ vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); vxDropResume(); vxWatchReply(text); }
+      if(text){
+        vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); vxDropResume();
+        if(vxIsGoodbye(text)) vxGoodbye(); else vxWatchReply(text);
+      }
       else document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove());
       break;
     }
@@ -554,6 +594,7 @@ async function vxRunTool(m){
   const fn = VX_TOOLS[m.name];
   let out;
   vxTouch();
+  if(VX_SLOW_TOOLS[m.name]) vxActivity(VX_SLOW_TOOLS[m.name]);
   try { out = fn ? await fn(args) : { error:'Unknown tool ' + m.name }; }
   catch(e){ console.error('[voice] tool ' + m.name, e); out = { error:(e && e.message) || 'That failed.' }; }
   if(out && (out.error || out.ok === false || out.shown === false || out.found === false)) vxToolFailed = true;
@@ -570,6 +611,7 @@ async function vxRunTool(m){
   const base = showView;
   showView = function(name){
     const out = base.apply(this, arguments);
+    if(vxActive) vxTidyWorkspace();
     if(vxActive && !vxDriving){
       try { vxTellModel('The user opened the ' + vxLabel(mgCurrentView) + ' page themselves. "This page" now means that page.', false); } catch(e){}
     }
@@ -595,9 +637,19 @@ document.addEventListener('visibilitychange', () => {
   on('vxDeskClear', 'click', vxClearWorkspace);
   on('vxFeed', 'click', e => { const c = e.target.closest('.vx-card.vx-old'); if(c){ e.preventDefault(); vxFocusCard(c); } });
   on('vxMini', 'click', e => { const b = e.target.closest('.vx-idea'); if(b) vxSendText(b.textContent); });
+  // Option+M or Ctrl+M: start the call; the same again ends it.
   document.addEventListener('keydown', e => {
-    if(!e.altKey || e.metaKey || e.ctrlKey || e.code !== 'KeyM') return;
+    if(e.code !== 'KeyM' || e.metaKey || e.shiftKey || !(e.altKey || e.ctrlKey) || (e.altKey && e.ctrlKey)) return;
     e.preventDefault();
-    if(vxActive) vxToggleMute(); else openRealtimeOverlay();
+    if(vxActive) closeRealtimeOverlay(); else openRealtimeOverlay();
+  });
+  // Esc ends the call, unless something on top should close first (a dialog,
+  // the side panel, the search palette): those take Esc as before.
+  document.addEventListener('keydown', e => {
+    if(e.key !== 'Escape' || !vxActive || e.defaultPrevented) return;
+    if(document.querySelector('.mg-dialog-scrim') || (typeof mgDrawerEl !== 'undefined' && mgDrawerEl) || document.querySelector('.cmdk:not(.hidden)')) return;
+    const t = e.target;
+    if(t && t.closest && t.closest('input, textarea, select') && !t.closest('#vxType')) return;
+    closeRealtimeOverlay();
   });
 })();
