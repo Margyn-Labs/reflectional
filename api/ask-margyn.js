@@ -376,6 +376,19 @@ const REALTIME_TOOLS = [
   },
   {
     type: 'function',
+    name: 'search_app',
+    description: 'Search the whole app the way the search bar does: pages (by name or by what they are for), connected sources (Zoho, Tally, Razorpay...), customers and vendors by name, and actions. Use when you are not sure where something lives, or to jump straight to it with open_top.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'A word or name, e.g. "zoho", "upload", "Sharma", "itc".' },
+        open_top: { type: 'boolean', description: 'Open the best match on screen as well.' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    type: 'function',
     name: 'get_screen',
     description: 'What the user is looking at right now: the page, its scope (source, period), any filter, the open side panel, and the figures visible on it. Call this when they say "this", "here", "that one", "what am I looking at", or before you refer to something on screen.',
     parameters: NO_ARGS

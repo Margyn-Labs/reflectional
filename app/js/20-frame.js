@@ -289,6 +289,8 @@ showView = function(name){
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === railKey));
   const changed = page !== mgCurrentView;
   mgCurrentView = page;
+  // A customer/vendor panel belongs to the page it was opened on: leaving the page closes it.
+  if(changed && typeof mgCloseDrawer === 'function') mgCloseDrawer();
   mgCloseRail(); mgCloseAllPops(); mgRefreshScope();
   if(!mgApplying) mgWriteHash(changed);
 };

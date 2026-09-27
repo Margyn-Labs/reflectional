@@ -124,6 +124,13 @@ const VX_TOOLS = {
     return { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null, on_this_page:vxPageSummary(page) };
   },
 
+  search_app({ query, open_top }){
+    const hits = mgSearch(String(query || '')).slice(0, 6);
+    if(!hits.length) return { results:[], note:'Nothing in the app matches "' + query + '".' };
+    if(open_top){ vxDrive(() => hits[0].run()); vxActivity('Opened ' + hits[0].label); }
+    return { results:hits.map(h => ({ type:h.kind, name:h.label, detail:h.hint })), opened:open_top ? hits[0].label : null };
+  },
+
   get_screen(){
     const page = mgCurrentView;
     const out = { page:vxLabel(page), about:(MG_PAGES[page] && MG_PAGES[page].sub) || null, view:mgCurrentSource(page) || null, as_of:mgAsOf() };
