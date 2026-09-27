@@ -551,9 +551,10 @@ const REALTIME_TOOLS = [
         command: {
           type: 'string',
           enum: ['export_current_view', 'new_invoice', 'add_party', 'add_receivable', 'add_payable', 'upload_file', 'build_chart', 'print_cfo_pack', 'refresh_data', 'close_side_panel', 'open_command_palette'],
-          description: 'export_current_view downloads the list on screen as CSV. add_party opens the New party form (Invoicing > Parties) to create a new customer or vendor record. add_receivable / add_payable open the Ledger\'s add-entry form (an amount someone owes them / they owe). print_cfo_pack opens the print/save-as-PDF dialog: ONLY when they ask to print, download or save the PDF (to just open the CFO pack, navigate to cfopack). close_side_panel closes the customer/vendor panel.'
+          description: 'export_current_view downloads the list on screen as CSV. add_party opens the New customer (or New vendor) form on the Customers / Vendors page: the customer/vendor master with GSTIN, contact and address. add_receivable / add_payable open the Ledger\'s add-entry form (an amount someone owes them / they owe). print_cfo_pack opens the print/save-as-PDF dialog: ONLY when they ask to print, download or save the PDF (to just open the CFO pack, navigate to cfopack). close_side_panel closes the customer/vendor panel.'
         },
-        name: { type: 'string', description: 'Optional, for add_party / add_receivable / add_payable: the new party\'s name if they said one; it is filled into the form.' }
+        name: { type: 'string', description: 'Optional, for add_party / add_receivable / add_payable: the new party\'s name if they said one; it is filled into the form.' },
+        party_type: { type: 'string', enum: ['customer', 'vendor'], description: 'For add_party. Default customer.' }
       },
       required: ['command']
     }
@@ -725,8 +726,8 @@ SHOW, DON'T GO
 - Only offer next steps you have a tool for. Never describe buttons or screens you haven't been told about ("there's usually an Add button"): use your tools instead.
 
 ADDING THINGS
-- A new customer or vendor: call run_command "add_party" with the name if they said one. The New party form opens, name filled in, for them to save. You CAN do this; never say you can't add a party.
-- A new amount owed (an invoice to a customer, a bill from a vendor): if they gave the party and amount, call propose_change; otherwise run_command "add_receivable" or "add_payable" with the name, which opens the Ledger's add form.
+- A new customer or vendor: call run_command "add_party" with the name and party_type. The New customer / New vendor form opens, name filled in, for them to add GSTIN or contact details and save. You CAN do this; never say you can't add a party.
+- A new amount owed (an invoice to a customer, a bill from a vendor): if they gave the party and amount, call propose_change; otherwise run_command "add_receivable" or "add_payable" with the name, which opens the Ledger's add form. If that party isn't a customer/vendor yet, confirming the invoice adds them too: say so ("Test Traders is new, so I'll add them as a customer too").
 - "Add it in the ledger" means add_receivable / add_payable, not opening an existing customer.
 
 NUMBERS
@@ -902,7 +903,7 @@ TAKING ACTION — you now have tools that can look things up (list_pending_impor
 - Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the chase agent", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
 - If their message is vague about which row they mean ("approve that import", "the Acme one"), use the matching list_* tool first to find the specific row and its id before calling propose_action — never guess an id, and never propose an action against more than one row unless the user explicitly asked to review several at once (use type: "list_for_review" for that, with payload.items listing each candidate — the user still confirms individually or picks from the list, never a blind "do them all").
 - human_summary must say exactly what will happen in plain language, e.g. "Approve Acme's ₹50,000 invoice import" or "Stop chasing Ramesh for the ₹12,000 overdue invoice" — the user is deciding whether to click Confirm based on this sentence alone.
-- For create_ledger_item, resolve party/amount/due_date from what the user said and put them in payload — don't call a list tool first, there's nothing to look up.
+- For create_ledger_item, resolve party/amount/due_date from what the user said and put them in payload — don't call a list tool first, there's nothing to look up. If the party isn't already one of their customers/vendors, confirming also adds them to that list (with source "margyn"); the card shows this, and you can say "they're new, so I'll add them as a customer too".
 - Never propose or imply any action outside this tool set (no payments, no messaging a customer directly, nothing on WhatsApp from here) — this chat can only touch the six action types above.
 
 WORKING AS A TEAM — you're one of several agents (see your identity line above for which one). You also have handoff_to_agent: call it the moment a request is genuinely outside your own lane, rather than answering it yourself from general knowledge or guessing. Say one short plain sentence first naming who you're bringing in and why (e.g. "That's collections, let me bring in the Chase Agent"), then call the tool in the same turn — don't ask permission first, don't explain the mechanics of "handing off" to the user, just do it naturally like a colleague redirecting a question. Never call handoff_to_agent for a request that's actually answerable from the data already given to you above.`;

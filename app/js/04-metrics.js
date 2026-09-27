@@ -391,8 +391,7 @@ function renderReceivablesDetail(accent){
     const due = document.getElementById('recvDue').value || null;
     if(!party || !amt) return;
     try {
-      const { error } = await sbClient.from('receivables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' });
-      if(error) throw error;
+      await mgAddOpenItem('receivables', { user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' }, 'manual');
       await logLedgerEvent({ entityType:'receivable', event:'created', partyName:party, amount:amt, source:'manual' });
       receivables = await loadReceivables();
       await saveLedgerSnapshot();
@@ -458,8 +457,7 @@ function renderPayablesDetail(accent){
     const due = document.getElementById('payDue').value || null;
     if(!party || !amt) return;
     try {
-      const { error } = await sbClient.from('payables').insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' });
-      if(error) throw error;
+      await mgAddOpenItem('payables', { user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' }, 'manual');
       await logLedgerEvent({ entityType:'payable', event:'created', partyName:party, amount:amt, source:'manual' });
       payables = await loadPayables();
       await saveLedgerSnapshot();

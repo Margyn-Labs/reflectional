@@ -44,6 +44,7 @@ Direction test for a single invoice/bill — decide FIRST who owes whom:
 Rules:
 - One entry per figure. "amount" is a positive number of rupees, digits only (no symbols, no commas).
 - "due_date" only if the document states one, formatted YYYY-MM-DD, else null.
+- For "receivable" / "payable" entries, "party" is the other side's name exactly as printed (legal name, not an abbreviation). Also fill "party_details" with that party's GSTIN, phone, email, billing address and state ONLY where the document prints them for that party (never the user's own business details, never guessed); use null for anything not printed. For every other target, "party_details" is null.
 - The GST/CGST/SGST/IGST on a SINGLE sales or purchase invoice is NOT gst_payable and NOT gst_leak — it is one line of a period total that Margyn computes elsewhere. Put it in "anomalies" (severity "low"), never in "entries".
 - Put anything ambiguous, contradictory, negative, a projection/forecast rather than actuals, a fully-settled item (net zero), or clearly not the user's own finance figure into "anomalies" with a one-line reason — do NOT force it into an entry.
 - List sheet columns / document sections you saw but did not map in "unmapped".
@@ -51,7 +52,7 @@ Rules:
 - Keep every "reasoning" and "issue" string under 15 words.
 
 Output ONLY valid JSON, no prose before or after:
-{"entries":[{"target":"","label":"","amount":0,"party":null,"due_date":null,"confidence":0.0,"reasoning":""}],"anomalies":[{"issue":"","severity":"low"}],"unmapped":[""]}`;
+{"entries":[{"target":"","label":"","amount":0,"party":null,"party_details":null,"due_date":null,"confidence":0.0,"reasoning":""}],"anomalies":[{"issue":"","severity":"low"}],"unmapped":[""]}`;
 
 class ImportMapperError extends Error {
   constructor(status, message) {
@@ -161,6 +162,7 @@ function sanitizeProposal(text) {
       label: String(e.label || target).slice(0, 120),
       amount: Math.round(amount * 100) / 100,
       party: e.party ? String(e.party).slice(0, 120) : null,
+      party_details: (target === 'receivable' || target === 'payable') ? cleanPartyDetails(e.party_details) : null,
       due_date: normImportDate(e.due_date),
       confidence: Math.max(0, Math.min(1, conf)),
       reasoning: e.reasoning ? String(e.reasoning).slice(0, 300) : ''
@@ -181,6 +183,25 @@ function sanitizeProposal(text) {
   return { entries, anomalies: anomalies.slice(0, 20), unmapped };
 }
 
+// What a document prints about the other party, for the customer/vendor
+// master (app/js/19f-parties.js). Only well-formed values survive: a GSTIN
+// that fails the pattern is dropped rather than stored wrong.
+function cleanPartyDetails(d) {
+  if (!d || typeof d !== 'object') return null;
+  const str = (v, n) => (v == null ? '' : String(v)).replace(/\s+/g, ' ').trim().slice(0, n) || null;
+  const gstin = (str(d.gstin, 20) || '').toUpperCase().replace(/\s/g, '');
+  const email = str(d.email, 120);
+  const phone = (str(d.phone, 24) || '').replace(/[^\d+ -]/g, '').trim();
+  const out = {
+    gstin: /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin) ? gstin : null,
+    phone: phone.replace(/\D/g, '').length >= 8 ? phone : null,
+    email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null,
+    address: str(d.address, 300),
+    state: str(d.state, 60)
+  };
+  return Object.values(out).some(Boolean) ? out : null;
+}
+
 function normImportDate(v) {
   if (!v) return null;
   const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -191,6 +212,7 @@ module.exports = {
   runImportMapper,
   sanitizeProposal,
   normImportDate,
+  cleanPartyDetails,
   ImportMapperError,
   IMPORT_TARGETS,
   IMPORT_MODEL

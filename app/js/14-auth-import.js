@@ -215,6 +215,7 @@ function renderImportReview(proposal){
       + (e.due_date ? ' · due ' + impEsc(e.due_date) : '')
       + (low ? ' <span style="color:var(--orange); font-weight:600;">· low confidence, check this</span>' : '')
       + (e.reasoning ? '<br><span style="color:var(--text-3);">' + impEsc(e.reasoning) + '</span>' : '')
+      + (typeof mgImportPartyHtml === 'function' ? mgImportPartyHtml(e, 'u' + i) : '')
       + '</span></label>';
   });
   h += '</div>';
@@ -238,12 +239,14 @@ async function applyImportProposal(){
   const btn = document.getElementById('confirmImportBtn'); const note = document.getElementById('noteConfirmImport');
   btn.disabled = true; note.className = 'note'; note.textContent = 'Saving…';
   try {
-    const chosen = [];
+    const chosen = [], keys = [];
     document.querySelectorAll('#aiReview input[data-imp]').forEach(cb => {
-      if(cb.checked) chosen.push(_importProposal.entries[Number(cb.dataset.imp)]);
+      if(cb.checked){ chosen.push(Object.assign({}, _importProposal.entries[Number(cb.dataset.imp)])); keys.push('u' + cb.dataset.imp); }
     });
     if(!chosen.length){ note.className = 'note bad'; note.textContent = 'Nothing ticked.'; btn.disabled = false; return; }
+    const made = typeof mgResolveImportParties === 'function' ? await mgResolveImportParties(chosen, keys, 'import') : [];
     await applyChosenImportEntries(chosen);
+    if(made.length) toast('Added ' + made.length + ' new ' + (made.length === 1 ? 'party' : 'parties'), { sub:made.map(p => p.name).slice(0, 3).join(', ') + (made.length > 3 ? '…' : '') });
     note.className = 'note ok'; note.textContent = 'Saved.';
     triggerFindingsGeneration();
     showView('summary');
@@ -268,20 +271,20 @@ async function applyChosenImportEntries(chosen){
     chosen.forEach(e => {
       if(e.target === 'cash'){ cashSeen = true; cashSum += e.amount; }   // multiple bank accounts → sum, don't overwrite
       else if(scalarKey[e.target]){ scalars[scalarKey[e.target]] = e.amount; }
-      else if(e.target === 'receivable'){ recvRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload' }); }
-      else if(e.target === 'payable'){ payRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload' }); }
+      else if(e.target === 'receivable'){ recvRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload', party_id: e.party_id || null }); }
+      else if(e.target === 'payable'){ payRows.push({ user_id: currentUser.id, party_name: e.party || e.label || 'Unknown', amount: e.amount, due_date: e.due_date || null, status:'open', source:'upload', party_id: e.party_id || null }); }
       else if(e.target === 'payments'){ payGross += e.amount; }
     });
     if(cashSeen) scalars.cash = cashSum;
 
     if(recvRows.length){
       await sbClient.from('receivables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
-      await sbClient.from('receivables').insert(recvRows);
+      await mgInsertOpenItems('receivables', recvRows);
       await logLedgerEvent({ entityType:'receivable', event:'imported', source:'upload', note: recvRows.length + ' receivable(s) from AI file import' });
     }
     if(payRows.length){
       await sbClient.from('payables').delete().eq('user_id', currentUser.id).eq('status','open').eq('source','upload');
-      await sbClient.from('payables').insert(payRows);
+      await mgInsertOpenItems('payables', payRows);
       await logLedgerEvent({ entityType:'payable', event:'imported', source:'upload', note: payRows.length + ' payable(s) from AI file import' });
     }
     receivables = await loadReceivables(); payables = await loadPayables();
@@ -369,6 +372,7 @@ function renderOneSuggestionCard(s, idx){
         + (e.party ? ' · ' + impEsc(e.party) : '') + ' · <span class="mono">' + inr(e.amount) + '</span>'
         + (e.due_date ? ' · due ' + impEsc(e.due_date) : '')
         + (low ? ' <span style="color:var(--orange); font-weight:600;">· low confidence, check this</span>' : '')
+        + (typeof mgImportPartyHtml === 'function' ? mgImportPartyHtml(e, idx + ':' + i) : '')
         + '</span></label>';
     });
     h += '</div>';
@@ -391,15 +395,19 @@ async function decideSuggestion(sug, idx, decision){
   if(note){ note.className = 'note'; note.textContent = decision === 'approved' ? 'Importing…' : 'Dismissing…'; }
   try {
     if(decision === 'approved'){
-      const chosen = [];
+      const chosen = [], keys = [];
       document.querySelectorAll('input[data-sug-entry^="' + idx + ':"]').forEach(cb => {
         if(cb.checked){
           const i = Number(cb.dataset.sugEntry.split(':')[1]);
           const entry = ((sug.proposal && sug.proposal.entries) || [])[i];
-          if(entry) chosen.push(entry);
+          if(entry){ chosen.push(Object.assign({}, entry)); keys.push(idx + ':' + i); }
         }
       });
-      if(chosen.length) await applyChosenImportEntries(chosen);
+      if(chosen.length){
+        const made = typeof mgResolveImportParties === 'function' ? await mgResolveImportParties(chosen, keys, 'whatsapp') : [];
+        await applyChosenImportEntries(chosen);
+        if(made.length) toast('Added ' + made.length + ' new ' + (made.length === 1 ? 'party' : 'parties'), { sub:made.map(p => p.name).slice(0, 3).join(', ') });
+      }
       triggerFindingsGeneration();
     }
     const { error } = await sbClient.from('import_suggestions')
