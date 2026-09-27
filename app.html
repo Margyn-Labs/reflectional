@@ -149,7 +149,7 @@
       </button>
     <button class="mg-tb-btn" id="mgImportBtn" type="button" data-go="calculate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Import</span></button>
     <button class="mg-tb-btn mg-ai" id="mgAskBtn" type="button" data-go="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Ask</span></button>
-    <button class="mg-tb-btn mg-voice" id="vxTopBtn" type="button" title="Talk to Margyn (Alt+M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg><span>Talk</span></button>
+    <button class="mg-tb-btn mg-voice" id="vxTopBtn" type="button" title="Talk to Margyn (⌥M or ⌃M · Esc to end)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg><span>Talk</span></button>
     <div class="mg-bell">
       <button class="mg-icon-btn" id="mgBellBtn" type="button" aria-label="Notifications" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="mg-bell-dot hidden" id="mgBellDot"></span></button>
       <div class="mg-pop mg-pop-right" id="mgBellPop" role="menu"></div>
@@ -1209,9 +1209,9 @@
   <div class="vx-mini" id="vxMini" aria-live="polite"><div class="vx-mini-empty">Say anything, like “who owes us the most?”</div></div>
   <form class="vx-type" id="vxType" autocomplete="off"><input id="vxTypeInput" type="text" placeholder="Or type to Margyn…" aria-label="Type to Margyn"><button type="submit" aria-label="Send">↵</button></form>
   <div class="vx-ctrls">
-    <button type="button" class="vx-btn" id="vxMuteBtn" title="Mute (Alt+M)" aria-label="Mute microphone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 13.2A7 7 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+    <button type="button" class="vx-btn" id="vxMuteBtn" title="Mute" aria-label="Mute microphone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 13.2A7 7 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
     <button type="button" class="vx-btn" id="vxDeskBtn" title="Workspace: what Margyn is showing you" aria-label="Show workspace" aria-expanded="false" aria-controls="vxDesk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="vx-badge hidden" id="vxDeskBadge"></span></button>
-    <button type="button" class="vx-end" id="vxEndBtn">End</button>
+    <button type="button" class="vx-end" id="vxEndBtn" title="End the call (Esc)">End</button>
   </div>
 </div>
 <section class="vx-desk hidden" id="vxDesk" aria-label="Margyn workspace">
@@ -1326,5 +1326,6 @@
 <script src="/app/js/21-voice.js"></script>
 <script src="/app/js/22-realtime-voice.js"></script>
 <script src="/app/js/23-voice-tools.js"></script>
+<script src="/app/js/24-whats-new.js"></script>
 </body>
 </html>

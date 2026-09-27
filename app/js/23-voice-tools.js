@@ -107,10 +107,48 @@ function vxPageSummary(page){
     if(page === 'cash') return VX_TOOLS.get_cash();
     if(page === 'gst') return VX_TOOLS.get_gst();
     if(page === 'inbox' || page === 'agents') return VX_TOOLS.get_inbox();
-    if(page === 'home' || page === 'cfopack') return VX_TOOLS.get_overview();
+    if(page === 'cfopack') return vxPackSummary();
+    if(page === 'home') return VX_TOOLS.get_overview();
   } catch(e){ console.error('[voice] summary', page, e); }
   return { about:(MG_PAGES[page] && MG_PAGES[page].sub) || null };
 }
+/* The CFO pack is one month's figures (the month picked on the page), not
+   today's. Summarising it from the live overview gave a different Pulse
+   Score, cash and margin from the pack on screen. This reads the same
+   snapshot the pack draws from. */
+function vxPackSummary(){
+  if(typeof mgPackCurrent !== 'function') return VX_TOOLS.get_overview();
+  const k = mgPackCurrent(); if(!k) return { note:'No month has figures yet, so there is no CFO pack.' };
+  const s = mgPackSnap(k), p = mgPackSnap(mgMonthShift(k, -1));
+  if(!s) return { month:mgMonthLabel(k), note:'No figures for that month.' };
+  const margin = Number(s.revenue) ? Number(s.net_profit) / Number(s.revenue) * 100 : null;
+  const band = s.pulse_score != null && typeof scoreBand === 'function' ? scoreBand(s.pulse_score) : null;
+  return {
+    cfo_pack_for_month:mgMonthLabel(k), note:'These are the figures in the CFO pack on screen, for that month. Quote these, not today\'s live figures.',
+    cash_at_month_end:vxInr(s.cash), revenue:vxInr(s.revenue), net_profit:vxInr(s.net_profit), net_margin_pct:margin == null ? null : +margin.toFixed(1),
+    monthly_spend:vxInr(s.burn), gst_payable:vxInr(s.gst_payable),
+    pulse_score:s.pulse_score != null ? s.pulse_score : null, pulse_band:band ? band.label : null,
+    pulse_change_on_prior_month:p && p.pulse_score != null && s.pulse_score != null ? s.pulse_score - p.pulse_score : null,
+    revenue_change_pct:p ? vxR1(vxPct(s.revenue, p.revenue)) : null, cash_change_pct:p ? vxR1(vxPct(s.cash, p.cash)) : null
+  };
+}
+/* The form open in the side panel right now: the New/Edit customer or vendor
+   form, or the Ledger's add-entry form. */
+const VX_FORM_KEYS = { name:'name', type:'type', gstin:'gstin', phone:'phone', email:'email', address:'address', state:'state', pincode:'pincode', pan:'pan', credit_days:'credit_days', opening_balance:'opening_balance' };
+function vxOpenForm(){
+  const pf = mgDrawerEl && mgDrawerEl.querySelector('form.mg-pf');
+  if(pf) return { kind:'party', form:pf, save:mgDrawerEl.querySelector('[data-pf-save]'), title:(mgDrawerEl.querySelector('h3') || {}).textContent || 'Form' };
+  const lf = document.getElementById('ledgerAddForm');
+  if(lf && !lf.classList.contains('hidden') && lf.offsetParent !== null) return { kind:'ledger', form:lf, save:document.getElementById('ledgerAddBtn'), title:(document.getElementById('ledgerAddTitle') || {}).textContent || 'Add entry' };
+  return null;
+}
+function vxFormValues(f){
+  if(f.kind === 'party') return Object.fromEntries([...f.form.elements].filter(x => x.name).map(x => [x.name, x.value]));
+  const v = id => (document.getElementById(id) || {}).value || '';
+  return { party:v('ledgerParty'), amount:v('ledgerAmt'), due_date:v('ledgerDue') };
+}
+/* A save by voice needs the user's own words asking for it, like a change card. */
+const VX_SAVE_WORDS = /\b(save|saved|submit|add (it|him|her|them|this)|go ahead|do it|yes|yeah|yep|haan|kar do|kardo|theek hai|thik hai|please do|confirm|done)\b/i;
 
 /* ---------- the tools ---------- */
 const VX_TOOLS = {
@@ -333,15 +371,86 @@ const VX_TOOLS = {
     let p; try { p = run(); } catch(e){ p = Promise.reject(e); }
     if(!p) return { synced:false, reason:(MG_SRC_LABEL[source] || source) + ' is not connected. They can connect it on the Organisations and sources page.' };
     vxActivity('Syncing ' + (MG_SRC_LABEL[source] || source) + '…');
+    const label = MG_SRC_LABEL[source] || source;
     try {
       await Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('still running')), 25000))]);
       await refreshAll();
-      vxActivity((MG_SRC_LABEL[source] || source) + ' synced');
-      return { synced:true, status:mgSourceHealth(source).text || 'synced just now', note:'Figures are refreshed. Re-check anything you quoted before.' };
+      vxActivity(label + ' synced');
+      return { synced:true, finished:true, status:mgSourceHealth(source).text || 'synced just now', note:'The sync has FINISHED and figures are refreshed. Say it is done. Re-check anything you quoted before.' };
     } catch(e){
       const still = e && e.message === 'still running';
-      return { synced:false, reason:still ? 'The sync is still running in the background; figures will update when it finishes.' : 'The sync failed' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. If it keeps failing, they may need to reconnect on the Organisations and sources page.' };
+      if(still){
+        // Say so the moment it lands, instead of the user having to ask
+        // "did the sync complete?" three times.
+        p.then(() => refreshAll()).then(() => {
+          vxActivity(label + ' synced');
+          vxTellModel('The ' + label + ' sync you started has now finished and the figures are refreshed. Tell the user in one short sentence.', true);
+        }).catch(err => vxTellModel('The ' + label + ' sync you started failed' + (err && err.message ? ' (' + String(err.message).slice(0, 80) + ')' : '') + '. Tell the user in one short sentence.', true));
+      }
+      return { synced:false, still_running:still, reason:still ? 'Still running in the background. The app will tell you the moment it finishes; say that you will let them know, and do not claim it is done.' : 'The sync failed' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. If it keeps failing, they may need to reconnect on the Organisations and sources page.' };
     }
+  },
+
+  /* "Is my Zoho connector working?" — instant, from what the app already has. */
+  get_sources(){
+    const keys = ['razorpay', 'cashfree', 'zoho', 'tally', 'odoo', 'shopify'];
+    const rows = keys.map(k => { const h = mgSourceHealth(k); return { source:MG_SRC_LABEL[k], connected:!!h.on, status:h.text || null, needs_attention:!!h.warn }; });
+    return { sources:rows, can_sync_from_here:['Zoho Books', 'Odoo', 'Shopify'],
+      note:'Working = connected and synced within the last two days. "Reconnect needed" or an old sync means it needs attention.' };
+  },
+
+  /* Fill the form that is open (New customer/vendor, or the Ledger add form). */
+  fill_form({ fields }){
+    const f = vxOpenForm();
+    if(!f) return { ok:false, error:'No form is open. Open one first: run_command add_party (customer/vendor) or add_receivable / add_payable (ledger entry).' };
+    const src = fields && typeof fields === 'object' ? fields : {};
+    const filled = [], skipped = [];
+    const put = (el, val) => {
+      if(!el) return false;
+      if(el.tagName === 'SELECT'){
+        const want = String(val).toLowerCase();
+        const o = [...el.options].find(x => x.value.toLowerCase() === want || x.textContent.toLowerCase() === want) || [...el.options].find(x => x.value && x.textContent.toLowerCase().startsWith(want));
+        if(!o) return false;
+        el.value = o.value;
+      } else el.value = String(val).slice(0, 400);
+      el.dispatchEvent(new Event('input', { bubbles:true }));   // GSTIN fills state and PAN itself
+      el.dispatchEvent(new Event('change', { bubbles:true }));
+      return true;
+    };
+    Object.keys(src).forEach(k => {
+      let v = src[k]; if(v == null || v === '') return;
+      if(k === 'phone') v = String(v).replace(/[^\d+]/g, '');
+      if(k === 'gstin' || k === 'pan') v = String(v).replace(/\s+/g, '').toUpperCase();
+      let el = null;
+      if(f.kind === 'party') el = VX_FORM_KEYS[k] ? f.form.elements[VX_FORM_KEYS[k]] : null;
+      else el = document.getElementById({ party:'ledgerParty', name:'ledgerParty', amount:'ledgerAmt', due_date:'ledgerDue' }[k] || '_');
+      if(put(el, v)) filled.push(k); else skipped.push(k);
+    });
+    const firstEl = filled.length && (f.kind === 'party' ? f.form.elements[filled[0]] : null);
+    if(firstEl) vxSpot(firstEl);
+    vxActivity('Filled ' + filled.join(', '));
+    return { ok:filled.length > 0, form:f.title, filled, skipped, now:vxFormValues(f),
+      note:'Read back anything that matters (a phone number digit by digit if they want) and ask if you should save. Nothing is saved until save_form.' };
+  },
+
+  /* Press Save on the open form, when the user asked for it. */
+  async save_form(){
+    const f = vxOpenForm();
+    if(!f || !f.save) return { ok:false, error:'No form is open to save.' };
+    const said = (vxUtterances[vxUtterances.length - 1] || {}).text || '';
+    const recent = vxUtterances.filter(u => Date.now() - u.at < 20000).map(u => u.text).join(' ');
+    if(!VX_SAVE_WORDS.test(recent) || VX_NO.test(said)) return { ok:false, needs_ok:true, reason:'Ask them "Shall I save it?" and wait for a yes.' };
+    const before = vxFormValues(f);
+    f.save.click();
+    await new Promise(r => setTimeout(r, 1400));
+    const still = vxOpenForm();
+    if(f.kind === 'party' && still && still.kind === 'party'){
+      const msg = (mgDrawerEl.querySelector('.mg-pf-msg') || {}).textContent || '';
+      return { ok:false, saved:false, message:msg || 'The form is still open.', note:'Tell them what the form says. If it offers "Save anyway" for a similar name, ask before saving again.' };
+    }
+    if(f.kind === 'ledger' && (document.getElementById('ledgerAmt') || {}).value) return { ok:false, saved:false, note:'The entry was not added; the form still has its values. Check the amount and party.' };
+    vxActivity('Saved');
+    return { ok:true, saved:true, what:before };
   },
 
   async think({ question }){
@@ -382,7 +491,7 @@ const VX_TOOLS = {
         const f = fill('ledgerParty', name);
         if(f) setTimeout(() => { vxSpot(document.getElementById('ledgerAddForm')); (name ? document.getElementById('ledgerAmt') || f : f).focus(); }, 80);
         vxActivity(command === 'add_payable' ? 'Add payable' : 'Add receivable');
-        return { ok:true, form_open:!!f, note:'The Ledger add form is open' + (name ? ' with "' + name + '" filled in' : '') + '. They type the amount and due date and press Add, or you can prepare it for them with propose_change.' };
+        return { ok:true, form_open:!!f, note:'The Ledger add form is open' + (name ? ' with "' + name + '" filled in' : '') + '. Fill the amount and due date they say with fill_form and add it with save_form when they ask, or prepare it with propose_change.' };
       }
       case 'add_party': {
         // A new customer or vendor record: the Customers / Vendors page's own form.
@@ -391,7 +500,7 @@ const VX_TOOLS = {
         if(typeof mgPartyForm !== 'function') return { ok:false, error:'The party form is not available.' };
         mgPartyForm({ dir:vendor ? 'pay' : 'recv', name:name || '', source:'margyn' });
         vxActivity(vendor ? 'New vendor' : 'New customer');
-        return { ok:true, form_open:true, note:'The New ' + (vendor ? 'vendor' : 'customer') + ' form is open' + (name ? ' with "' + name + '" filled in' : '') + '. They can add GSTIN (state and PAN fill themselves), phone, email and address, then press Save. Do not say it is saved.' };
+        return { ok:true, form_open:true, note:'The New ' + (vendor ? 'vendor' : 'customer') + ' form is open' + (name ? ' with "' + name + '" filled in' : '') + '. They can add GSTIN (state and PAN fill themselves), phone, email and address, then press Save. Fill anything they tell you (phone, GSTIN, email, address) with fill_form, and when they ask you to save, call save_form. Do not say it is saved before save_form says so.' };
       }
       case 'upload_file': go('calculate'); return { ok:true, note:'Import page open. They can drop any Excel, CSV, PDF or photo and Margyn will map it.' };
       case 'build_chart': go('analytics'); setTimeout(() => { const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); }, 80); return { ok:true };
@@ -432,6 +541,8 @@ const VX_TOOLS = {
     if(!said) return { applied:false, needs_tap:true, reason:'I did not catch a clear yes. Ask them to say yes again, or tap Confirm.' };
     if(VX_NO.test(said) || !VX_YES.test(said)) return { applied:false, reason:'What they said ("' + said.slice(0, 80) + '") was not a clear yes. Ask again.' };
     if(p.card.dataset.vxBusy) return { applied:false, error:'Already applying.' };
+    // Tapped Confirm while we waited for their words: it's already done, don't apply twice.
+    if(vxPending !== p || p.card.querySelector('.action-card-done')) return { applied:true, summary:p.action.humanSummary || null, note:'They tapped Confirm; it is already done.' };
     p.card.dataset.vxBusy = '1';
     p.card.querySelectorAll('button').forEach(b => { b.disabled = true; });
     const btn = p.card.querySelector('.action-confirm'); if(btn) btn.textContent = 'Applying…';
@@ -439,7 +550,9 @@ const VX_TOOLS = {
       await runProposedAction(p.action);
       vxResolveCard(p, 'Done, confirmed by voice ("' + said.slice(0, 60) + '").', true);
       vxPersist('assistant', '[Applied] ' + (p.action.humanSummary || p.action.type));
-      return { applied:true, summary:p.action.humanSummary || null };
+      const who = p.action.payload && (p.action.payload.party_name || p.action.payload.party || p.action.payload.name);
+      return { applied:true, summary:p.action.humanSummary || null, party:who || null,
+        next:'To show what was created, call show_view with view "party" (or open_party) for ' + (who ? '"' + who + '"' : 'that party') + '.' };
     } catch(e){
       delete p.card.dataset.vxBusy;
       p.card.querySelectorAll('button').forEach(b => { b.disabled = false; });
@@ -475,6 +588,9 @@ function vxShowActionCard(action, request){
         mo.disconnect();
         if(vxPending === p) vxPending = null;
         card.classList.add('vx-done');
+        const h = card.querySelector('h4'); if(h) h.textContent = 'Done';
+        const how = card.querySelector('.vx-how'); if(how) how.remove();
+        vxRetireCard(card);
         vxPersist('assistant', '[Applied by tap] ' + (action.humanSummary || action.type));
         vxTellModel('The user tapped Confirm and the change was applied: ' + (action.humanSummary || action.type) + '. Acknowledge in a few words.', true);
       }
@@ -492,6 +608,16 @@ function vxResolveCard(p, text, ok){
   if(a) a.innerHTML = '<div class="vx-summary">' + escapeHtml(p.action.humanSummary || '') + '</div><div class="action-card-done">' + escapeHtml(text) + '</div>';
   const how = p.card.querySelector('.vx-how'); if(how) how.remove();
   p.card.classList.add(ok ? 'vx-done' : 'vx-void');
+  vxRetireCard(p.card);
+}
+/* A settled change card has nothing left to do: let it go after a few seconds
+   so "Needs your OK" never lingers in the workspace. */
+function vxRetireCard(card){
+  setTimeout(() => {
+    if(!card.parentNode || (vxPending && vxPending.card === card)) return;
+    card.remove();
+    const f = vxFeed(); if(f && !f.children.length) vxDeskOpen(false);
+  }, 6000);
 }
 
 /* ---------- workspace views (show_view) ---------- */
@@ -609,6 +735,17 @@ const VX_VIEWS = {
       vxKpi('Owed to you', o.receivables.total) + vxKpi('You owe', o.payables.total) + '</div>' +
       vxTableHtml([{ t:'Vital' }, { t:'Now', r:1 }, { t:'Score', r:1 }], (o.vitals || []).map(v => ({ cells:[v.vital, String(v.value), v.score_out_of_100 == null ? '—' : String(v.score_out_of_100)] }))) + vxMore('home', 'Open Home'));
     delete o.connected_sources; return o;
+  },
+  cfopack(){
+    const s = vxPackSummary();
+    if(!s.cfo_pack_for_month || s.revenue === undefined) return Object.assign({ shown:false }, s);
+    const rows = [['Cash at month end', s.cash_at_month_end, s.cash_change_pct == null ? '—' : (s.cash_change_pct >= 0 ? '+' : '') + s.cash_change_pct + '%'],
+      ['Revenue', s.revenue, s.revenue_change_pct == null ? '—' : (s.revenue_change_pct >= 0 ? '+' : '') + s.revenue_change_pct + '%'],
+      ['Net profit', s.net_profit, s.net_margin_pct == null ? '—' : s.net_margin_pct + '% margin'],
+      ['Monthly spend', s.monthly_spend, '—'], ['GST payable', s.gst_payable, '—'],
+      ['Pulse Score', s.pulse_score == null ? 'n/a' : String(s.pulse_score), s.pulse_change_on_prior_month == null ? (s.pulse_band || '—') : (s.pulse_change_on_prior_month > 0 ? '+' : '') + s.pulse_change_on_prior_month + ' pts']];
+    vxViewCard('cfopack', 'CFO pack · ' + s.cfo_pack_for_month, 'The same figures as the pack', vxTableHtml([{ t:'' }, { t:'Value', r:1 }, { t:'vs prior month', r:1 }], rows.map(r => ({ cells:r }))) + vxMore('cfopack', 'Open the CFO pack'));
+    return s;
   },
   party({ direction, name }){
     const dir = VX_DIR[direction] || 'recv';

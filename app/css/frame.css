@@ -183,3 +183,32 @@ header.app-head{ display:none !important; }
 .app-body .wrap{ min-width:0; }
 @media (max-width:900px){ .app-body .wrap{ width:100%; padding-top:20px; } } /* old top padding cleared a floating header that no longer floats */
 #connFlowMap{ max-width:100%; overflow-x:auto; }
+
+/* ---------- What's new (24-whats-new.js) ----------
+   A card that floats over a softly blurred app after each release. */
+.mg-wn-scrim{ position:fixed; inset:0; z-index:1100; display:grid; place-items:center; padding:16px;
+  background:rgba(250,250,248,.55); backdrop-filter:blur(8px) saturate(1.05); -webkit-backdrop-filter:blur(8px) saturate(1.05);
+  animation:mgWnFade .22s ease-out; }
+.mg-wn{ width:min(560px,100%); max-height:calc(100vh - 32px); display:flex; flex-direction:column; background:var(--g0); border:1px solid var(--g100);
+  border-radius:var(--r-panel); box-shadow:0 24px 60px -18px rgba(20,24,31,.28), 0 2px 6px rgba(20,24,31,.06); font-family:var(--font-ui);
+  animation:mgWnRise .32s cubic-bezier(.22,1,.36,1); }
+.mg-wn-h{ padding:20px 22px 12px; border-bottom:1px solid var(--g100); }
+.mg-wn-kicker{ font:600 11px/1 var(--font-num); letter-spacing:.08em; text-transform:uppercase; color:var(--brand); }
+.mg-wn-h h3{ margin:8px 0 4px; font-size:var(--f20, 20px); font-weight:800; color:var(--g900); letter-spacing:-.01em; }
+.mg-wn-h p{ margin:0; font-size:var(--f13); color:var(--g600); line-height:1.5; }
+.mg-wn-list{ overflow:auto; padding:6px 22px; }
+.mg-wn-item{ display:grid; grid-template-columns:28px 1fr; gap:12px; padding:14px 0; border-bottom:1px solid var(--g100); }
+.mg-wn-item:last-child{ border-bottom:0; }
+.mg-wn-n{ width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:rgba(14,143,92,.09); color:var(--brand); font:700 12px/1 var(--font-num); }
+.mg-wn-item b{ display:block; font-size:var(--f14); font-weight:700; color:var(--g900); margin:4px 0 3px; }
+.mg-wn-item .what{ font-size:var(--f13); color:var(--g600); line-height:1.5; }
+.mg-wn-item .how{ margin-top:7px; font-size:var(--f13); color:var(--g900); line-height:1.5; padding:8px 10px; background:var(--g25); border:1px solid var(--g100); border-radius:var(--r-ctl); }
+.mg-wn-item .how span{ font:600 10.5px/1 var(--font-num); letter-spacing:.06em; text-transform:uppercase; color:var(--g500, #8B93A0); margin-right:6px; }
+.mg-wn-item kbd{ font:600 11.5px/1 var(--font-num); padding:2px 6px; border:1px solid var(--g200); border-bottom-width:2px; border-radius:5px; background:var(--g0); color:var(--g900); }
+.mg-wn-item .mg-btn{ height:28px; margin-top:8px; font-size:12px; }
+.mg-wn-f{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 22px; border-top:1px solid var(--g100); }
+.mg-wn-f small{ font-size:12px; color:var(--g500, #8B93A0); }
+@keyframes mgWnFade{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes mgWnRise{ from{ opacity:0; transform:translateY(12px) scale(.985); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ .mg-wn-scrim, .mg-wn{ animation:none; } }
+@media (max-width:600px){ .mg-wn-h, .mg-wn-list, .mg-wn-f{ padding-left:16px; padding-right:16px; } }
