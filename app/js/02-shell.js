@@ -87,6 +87,8 @@ function mgSearch(q){
   }
   [
     { label:'Create a new invoice', icon:CMDK_ICON.invoice, words:'invoice bill new make raise', run:() => { showView('invoicing'); if(typeof showKhataTab === 'function') showKhataTab('invoice-new'); } },
+    { label:'New customer', icon:CMDK_ICON.plus, words:'add customer party client buyer create master gstin', run:() => { showView('customers'); if(typeof mgPartyForm === 'function') mgPartyForm({ dir:'recv' }); } },
+    { label:'New vendor', icon:CMDK_ICON.plus, words:'add vendor supplier party create master gstin', run:() => { showView('vendors'); if(typeof mgPartyForm === 'function') mgPartyForm({ dir:'pay' }); } },
     { label:'Add a receivable', icon:CMDK_ICON.plus, words:'log payment money owed customer entry', run:() => { ledgerActiveTab = 'receivables'; showView('ledger'); } },
     { label:'Add a payable', icon:CMDK_ICON.plus, words:'log bill vendor owe entry', run:() => { ledgerActiveTab = 'payables'; showView('ledger'); } },
     { label:'Talk to Margyn (Alt+M)', icon:CMDK_ICON.ask, words:'voice call speak mic', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },

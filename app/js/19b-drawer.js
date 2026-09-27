@@ -48,7 +48,7 @@ function mgOpenParty(dir, key){
   const who = dir === 'recv' ? 'Customer' : 'Vendor';
   const prim = g.by[g.primary];
   const rows = prim.rows.slice().sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
-  const details =
+  const details = (typeof mgPartyProfileHtml === 'function' ? mgPartyProfileHtml(mgMasterFor(g.party, dir), dir) : '') +
     '<div class="mg-dl">' +
       '<div><span>' + (dir === 'recv' ? 'Owes you' : 'You owe') + '</span><b>' + escapeHtml(fmtINR(g.amount)) + '</b></div>' +
       '<div><span>Overdue</span><b class="' + (g.overdue ? 'neg' : '') + '">' + escapeHtml(fmtINR(g.overdue)) + '</b></div>' +

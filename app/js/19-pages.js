@@ -298,21 +298,37 @@ function mgRenderMoney(dir){
     '<span class="mg-count">' + count + (mode === 'reconciled' || mode === 'compare' ? ' ' + who.toLowerCase() + (count === 1 ? '' : 's') : ' open') + '</span></div>' + body;
 }
 
-/* ---------- Customers / Vendors ---------- */
+/* ---------- Customers / Vendors ----------
+   Everyone with an open item in any source, plus everyone in the party
+   master (ledger_parties) who has none right now. New customers and
+   vendors are created here; see 19f-parties.js. */
 function mgRenderParties(dir){
   const page = dir === 'recv' ? 'customers' : 'vendors';
   const host = document.getElementById('view-' + page); if(!host) return;
   const who = dir === 'recv' ? 'Customer' : 'Vendor';
   const q = mgMoneyQ.trim().toLowerCase();
-  const groups = mgMoneyGroups(dir).filter(g => !q || g.party.toLowerCase().includes(q));
-  host.__csv = [[who, 'Sources', 'Open invoices', 'Outstanding (INR)', 'Overdue (INR)', 'Agreement'],
-    groups.map(g => [g.party, g.sources.map(s => MG_SRC_NAME[s]).join(' + '), g.invoices, Math.round(g.amount), Math.round(g.overdue), g.status])];
-  host.innerHTML = mgPageHead({ group:'Parties', title:who + 's', scope:mgScopeText('Reconciled'), sub:'Everyone with an open ' + (dir === 'recv' ? 'invoice' : 'bill') + ', across every connected source.', actions:mgExportBtn('mgExport-' + page) }) +
-    '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + '" value="' + escapeHtml(mgMoneyQ) + '" data-money-q><span class="mg-count">' + groups.length + ' ' + who.toLowerCase() + (groups.length === 1 ? '' : 's') + '</span></div>' +
-    (groups.length ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>' + who + '</th><th>Sources</th><th class="r">Open</th><th class="r">Outstanding (₹)</th><th class="r">Overdue (₹)</th><th>Oldest</th><th>Agreement</th></tr></thead><tbody>' +
-      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td><b>' + escapeHtml(g.party) + '</b></td><td><span class="mg-srcs">' + g.sources.map(mgLogo).join('') + '</span></td><td class="r">' + g.invoices + '</td><td class="r">' + mgNum(g.amount) + '</td>' +
+  const all = mgMoneyGroups(dir);
+  const groups = all.filter(g => !q || g.party.toLowerCase().includes(q));
+  const master = ((typeof khataParties !== 'undefined' && khataParties) || []).filter(p => mgPartyFits(p, dir));
+  const masterOf = g => master.find(p => normPartyName(p.name) === g.key) || null;
+  const listed = new Set(all.map(g => g.key));
+  const idle = master.filter(p => !listed.has(normPartyName(p.name)) && (!q || (p.name || '').toLowerCase().includes(q) || (p.gstin || '').toLowerCase().includes(q)));
+  const count = groups.length + idle.length;
+  host.__csv = [[who, 'GSTIN', 'Sources', 'Open invoices', 'Outstanding (INR)', 'Overdue (INR)', 'Agreement'],
+    groups.map(g => { const m = masterOf(g); return [g.party, (m && m.gstin) || '', g.sources.map(s => MG_SRC_NAME[s]).join(' + '), g.invoices, Math.round(g.amount), Math.round(g.overdue), g.status]; })
+      .concat(idle.map(p => [p.name, p.gstin || '', 'Your list', 0, 0, 0, '']))];
+  const gst = m => m ? (m.gstin ? '<span class="mg-mono">' + escapeHtml(m.gstin) + '</span>' : '<span class="mg-muted">—</span>') : '<span class="mg-muted" title="Not in your ' + who.toLowerCase() + ' list yet">Not saved</span>';
+  host.innerHTML = mgPageHead({ group:'Parties', title:who + 's', scope:mgScopeText('Reconciled'),
+      sub:'Everyone you ' + (dir === 'recv' ? 'invoice' : 'buy from') + ': your saved ' + who.toLowerCase() + 's, and anyone with an open ' + (dir === 'recv' ? 'invoice' : 'bill') + ' in a connected source.',
+      actions:mgExportBtn('mgExport-' + page) + mgBtn('New ' + who.toLowerCase(), 'data-party-new="' + dir + '"', true) }) +
+    '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + ' or GSTIN" value="' + escapeHtml(mgMoneyQ) + '" data-money-q><span class="mg-count">' + count + ' ' + who.toLowerCase() + (count === 1 ? '' : 's') + '</span></div>' +
+    (count ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>' + who + '</th><th>GSTIN</th><th>Sources</th><th class="r">Open</th><th class="r">Outstanding (₹)</th><th class="r">Overdue (₹)</th><th>Oldest</th><th>Agreement</th></tr></thead><tbody>' +
+      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td><b>' + escapeHtml(g.party) + '</b></td><td>' + gst(masterOf(g)) + '</td><td><span class="mg-srcs">' + g.sources.map(mgLogo).join('') + '</span></td><td class="r">' + g.invoices + '</td><td class="r">' + mgNum(g.amount) + '</td>' +
         '<td class="r' + (g.overdue ? ' mg-diff' : ' mg-muted') + '">' + (g.overdue ? mgNum(g.overdue) : '0') + '</td><td>' + mgStatusBadge(g.oldestDays, dir) + '</td><td>' + mgAgreeBadge(g) + '</td></tr>').join('') +
-      '</tbody></table></div>' : '<div class="mg-panel mg-empty-panel"><h2>No open ' + (dir === 'recv' ? 'invoices' : 'bills') + '</h2><p>' + who + 's appear here once they owe or are owed something.</p></div>');
+      idle.map(p => '<tr class="mg-click" data-open-master="' + escapeHtml(p.id) + '"><td><b>' + escapeHtml(p.name) + '</b></td><td>' + gst(p) + '</td><td><span class="mg-master-tag">Your list</span></td><td class="r mg-muted">0</td><td class="r mg-muted">—</td><td class="r mg-muted">—</td><td><span class="mg-bdg">No open ' + (dir === 'recv' ? 'invoices' : 'bills') + '</span></td><td></td></tr>').join('') +
+      '</tbody></table></div>'
+    : '<div class="mg-panel mg-empty-panel"><h2>' + (q ? 'No ' + who.toLowerCase() + ' matches “' + escapeHtml(mgMoneyQ) + '”' : 'No ' + who.toLowerCase() + 's yet') + '</h2><p>Add one here, or they appear on their own once a connected source or an import has an open ' + (dir === 'recv' ? 'invoice' : 'bill') + ' for them.</p>' +
+      mgBtn('New ' + who.toLowerCase(), 'data-party-new="' + dir + '"' + (q ? ' data-party-name="' + escapeHtml(mgMoneyQ.trim()) + '"' : ''), true) + '</div>');
 }
 
 /* ---------- GST and tax ---------- */

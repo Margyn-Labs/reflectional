@@ -363,7 +363,7 @@ const VX_TOOLS = {
     }
   },
 
-  run_command({ command, name }){
+  run_command({ command, name, party_type }){
     const go = p => vxDrive(() => showView(p));
     const fill = (id, v) => { const el = document.getElementById(id); if(el && v) el.value = String(v).slice(0, 120); return el; };
     switch(command){
@@ -385,16 +385,13 @@ const VX_TOOLS = {
         return { ok:true, form_open:!!f, note:'The Ledger add form is open' + (name ? ' with "' + name + '" filled in' : '') + '. They type the amount and due date and press Add, or you can prepare it for them with propose_change.' };
       }
       case 'add_party': {
-        // A new customer or vendor record, before any invoice: Invoicing › Parties › New party.
-        go('invoicing');
-        if(typeof showKhataTab === 'function') showKhataTab('parties');
-        const form = document.getElementById('khataPartyForm');
-        if(!form) return { ok:false, error:'The party form is not available.' };
-        form.classList.remove('hidden');
-        const f = fill('kpName', name);
-        setTimeout(() => { vxSpot(form); if(f) f.focus(); }, 80);
-        vxActivity('New party');
-        return { ok:true, form_open:true, note:'The New party form is open on Invoicing › Parties' + (name ? ' with "' + name + '" filled in' : '') + '. They add phone, GSTIN or email if they want and press Save. Do not say it is saved.' };
+        // A new customer or vendor record: the Customers / Vendors page's own form.
+        const vendor = party_type === 'vendor';
+        go(vendor ? 'vendors' : 'customers');
+        if(typeof mgPartyForm !== 'function') return { ok:false, error:'The party form is not available.' };
+        mgPartyForm({ dir:vendor ? 'pay' : 'recv', name:name || '', source:'margyn' });
+        vxActivity(vendor ? 'New vendor' : 'New customer');
+        return { ok:true, form_open:true, note:'The New ' + (vendor ? 'vendor' : 'customer') + ' form is open' + (name ? ' with "' + name + '" filled in' : '') + '. They can add GSTIN (state and PAN fill themselves), phone, email and address, then press Save. Do not say it is saved.' };
       }
       case 'upload_file': go('calculate'); return { ok:true, note:'Import page open. They can drop any Excel, CSV, PDF or photo and Margyn will map it.' };
       case 'build_chart': go('analytics'); setTimeout(() => { const b = document.getElementById('analyticsNewBtn'); if(b) b.click(); }, 80); return { ok:true };

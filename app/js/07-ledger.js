@@ -323,8 +323,7 @@ document.getElementById('ledgerAddBtn').addEventListener('click', async () => {
   if(!party || !amt) return;
   try {
     const table = ledgerActiveTab === 'payables' ? 'payables' : 'receivables';
-    const { error } = await sbClient.from(table).insert({ user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' });
-    if(error) throw error;
+    await mgAddOpenItem(table, { user_id:currentUser.id, party_name:party, amount:amt, due_date:due, status:'open', source:'manual' }, 'manual');
     await logLedgerEvent({ entityType: table === 'payables' ? 'payable' : 'receivable', event:'created', partyName:party, amount:amt, source:'manual' });
     receivables = await loadReceivables(); payables = await loadPayables();
     await saveLedgerSnapshot();

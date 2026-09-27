@@ -427,8 +427,13 @@ function actionCardHtml(actionCard){
       '<button class="btn-ghost action-cancel">Cancel</button>' +
     '</div>';
   }
+  let partyNote = '';
+  if(actionCard.type === 'create_ledger_item' && actionCard.payload && actionCard.payload.party && typeof mgMasterFor === 'function'){
+    const dir = actionCard.targetKind === 'payable' ? 'pay' : 'recv';
+    if(!mgMasterFor(actionCard.payload.party, dir)) partyNote = '<div class="action-card-note">' + escapeHtml(actionCard.payload.party) + ' isn’t in your ' + (dir === 'pay' ? 'vendors' : 'customers') + ' yet. Confirming adds them.</div>';
+  }
   return '<div class="action-card" data-action-type="' + escapeHtml(actionCard.type) + '">' +
-    '<div class="action-card-summary">' + escapeHtml(actionCard.humanSummary || 'Confirm this action?') + '</div>' +
+    '<div class="action-card-summary">' + escapeHtml(actionCard.humanSummary || 'Confirm this action?') + '</div>' + partyNote +
     '<button class="primary action-confirm">Confirm</button>' +
     '<button class="btn-ghost action-cancel">Cancel</button>' +
   '</div>';
@@ -470,8 +475,13 @@ async function runProposedAction(action){
     const { data: sug, error } = await sbClient.from('import_suggestions').select('*').eq('id', action.targetId).single();
     if(error || !sug) throw new Error('Could not find that import suggestion.');
     if(type === 'approve_suggestion'){
-      const entries = (sug.proposal && sug.proposal.entries) || [];
-      if(entries.length) await applyChosenImportEntries(entries);
+      // Approved from chat or voice: no picker on screen, so each party
+      // resolves to the existing record, or is added as new.
+      const entries = ((sug.proposal && sug.proposal.entries) || []).map(e => Object.assign({}, e));
+      if(entries.length){
+        if(typeof mgResolveImportParties === 'function') await mgResolveImportParties(entries, entries.map(() => '-'), 'whatsapp');
+        await applyChosenImportEntries(entries);
+      }
       triggerFindingsGeneration();
     }
     const { error: uErr } = await sbClient.from('import_suggestions')
@@ -510,11 +520,12 @@ async function runProposedAction(action){
   if(type === 'create_ledger_item'){
     const p = action.payload || {};
     const table = action.targetKind === 'payable' ? 'payables' : 'receivables';
-    const { error } = await sbClient.from(table).insert({
+    // A party Margyn hasn't seen before is added to the customer/vendor list
+    // too; the confirm card said so (actionCardHtml).
+    await mgAddOpenItem(table, {
       user_id: currentUser.id, party_name: p.party || 'Unknown', amount: Number(p.amount) || 0,
       due_date: p.due_date || null, status: 'open', source: 'manual'
-    });
-    if(error) throw error;
+    }, 'margyn');
     await logLedgerEvent({ entityType: table === 'payables' ? 'payable' : 'receivable', event:'created', partyName: p.party, amount: p.amount, source:'manual' });
     receivables = await loadReceivables(); payables = await loadPayables();
     if(typeof saveLedgerSnapshot === 'function') await saveLedgerSnapshot();
