@@ -134,3 +134,5 @@ body.vx-on .mg-tb-btn.mg-voice{ background:var(--brand-50); }
 .vx-card.vx-old > :not(h4){ display:none; }
 .vx-card.vx-old h4{ margin:0; font-weight:600; color:var(--g600); }
 .vx-card.vx-old h4::after{ content:'Show'; float:right; font-size:var(--f12); font-weight:600; color:var(--link); }
+.vx-card .vx-p{ font-size:var(--f13); line-height:1.6; color:var(--g900); margin:0 0 8px; }
+.vx-card .vx-ul{ margin:0 0 8px; padding-left:18px; font-size:var(--f13); line-height:1.6; color:var(--g900); }

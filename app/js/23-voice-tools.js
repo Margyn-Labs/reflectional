@@ -105,7 +105,7 @@ function vxPageSummary(page){
     if(page === 'cash') return VX_TOOLS.get_cash();
     if(page === 'gst') return VX_TOOLS.get_gst();
     if(page === 'inbox' || page === 'agents') return VX_TOOLS.get_inbox();
-    if(page === 'home') return VX_TOOLS.get_overview();
+    if(page === 'home' || page === 'cfopack') return VX_TOOLS.get_overview();
   } catch(e){ console.error('[voice] summary', page, e); }
   return { about:(MG_PAGES[page] && MG_PAGES[page].sub) || null };
 }
@@ -125,7 +125,7 @@ const VX_TOOLS = {
     });
     vxActivity('Opened ' + vxLabel(page) + (view && view !== 'reconciled' ? ' · ' + (MG_SRC_LABEL[view] || view) : ''));
     // Only money pages return figures here; anything else, the model asks for with a read tool if it needs it.
-    const onPage = MG_MONEY[page] ? vxPageSummary(page) : null;
+    const onPage = (MG_MONEY[page] || page === 'cfopack') ? vxPageSummary(page) : null;   // CFO pack: so "summarise what you see" works
     if(onPage && onPage.largest) onPage.largest = onPage.largest.slice(0, 3).map(r => ({ name:r.name, outstanding:r.outstanding, oldest_days_overdue:r.oldest_days_overdue }));
     return { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null, on_this_page:onPage };
   },
@@ -310,6 +310,38 @@ const VX_TOOLS = {
 
   clear_workspace(){ vxClearWorkspace(); return { cleared:true }; },
 
+  show_note({ title, text }){
+    const lines = String(text || '').split(/\n+/).map(l => l.trim()).filter(Boolean).slice(0, 14);
+    if(!lines.length) return { shown:false, error:'text is empty' };
+    let html = '', list = [];
+    const flush = () => { if(list.length){ html += '<ul class="vx-ul">' + list.map(l => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul>'; list = []; } };
+    lines.forEach(l => { if(/^[-•*]\s+/.test(l)) list.push(l.replace(/^[-•*]\s+/, '')); else { flush(); html += '<p class="vx-p">' + escapeHtml(l) + '</p>'; } });
+    flush();
+    vxAddCard('<h4>' + escapeHtml(title || 'Note') + '</h4>' + html, 'vx-view', 'note:' + String(title || '').toLowerCase().slice(0, 40));
+    return { shown:true, where:'workspace' };
+  },
+
+  async sync_source({ source }){
+    const run = {
+      zoho:    () => zohoConnected ? zohoApi('/api/zoho?action=sync', { method:'POST', body:JSON.stringify({ mode:'delta' }) }).then(() => loadZohoVitals()) : null,
+      odoo:    () => odooConnected ? zohoApi('/api/zoho?action=odoo-sync', { method:'POST', body:JSON.stringify({}) }).then(() => loadOdooStatus()) : null,
+      shopify: () => shopifyConnected ? shopifyApi('/api/shopify?action=sync', { method:'POST', body:JSON.stringify({}) }).then(() => loadShopifyStatus()) : null
+    }[source];
+    if(!run) return { synced:false, reason:'Only Zoho Books, Odoo and Shopify can be synced from here. Tally syncs from its desktop agent; Razorpay and Cashfree sync every night.' };
+    let p; try { p = run(); } catch(e){ p = Promise.reject(e); }
+    if(!p) return { synced:false, reason:(MG_SRC_LABEL[source] || source) + ' is not connected. They can connect it on the Organisations and sources page.' };
+    vxActivity('Syncing ' + (MG_SRC_LABEL[source] || source) + '…');
+    try {
+      await Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('still running')), 25000))]);
+      await refreshAll();
+      vxActivity((MG_SRC_LABEL[source] || source) + ' synced');
+      return { synced:true, status:mgSourceHealth(source).text || 'synced just now', note:'Figures are refreshed. Re-check anything you quoted before.' };
+    } catch(e){
+      const still = e && e.message === 'still running';
+      return { synced:false, reason:still ? 'The sync is still running in the background; figures will update when it finishes.' : 'The sync failed' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. If it keeps failing, they may need to reconnect on the Organisations and sources page.' };
+    }
+  },
+
   async think({ question }){
     vxSetState('thinking', 'Thinking it through');
     try {
@@ -477,6 +509,27 @@ function vxMonth(iso){ try { return new Date(iso).toLocaleDateString('en-IN', { 
 function vxDue(days){ return days == null ? 'no due date' : days < 0 ? (-days) + 'd overdue' : days === 0 ? 'due today' : 'due in ' + days + 'd'; }
 
 const VX_VIEWS = {
+  mismatches(){
+    const rows = [], out = [];
+    [['recv', 'Customer'], ['pay', 'Vendor']].forEach(([dir, who]) => vxGroups(dir).filter(g => g.status === 'conflict').forEach(g => {
+      rows.push({ cells:[g.party, who, g.sources.map(x => (MG_SRC_NAME[x] || x) + ' ' + vxInr(g.by[x].amount)).join(' · '), { t:vxInr(g.diff), cls:'neg' }] });
+      out.push({ name:g.party, kind:who.toLowerCase(), by_source:g.sources.map(x => (MG_SRC_NAME[x] || x) + ' ' + vxInr(g.by[x].amount)).join(', '), gap:vxInr(g.diff), margyn_uses:MG_SRC_NAME[g.primary] || g.primary });
+    }));
+    try {
+      const c = snapshots[0] && snapshots[0].source_conflicts;
+      (Array.isArray(c) ? c : []).forEach(x => {
+        const vals = x.values || {}, nums = Object.values(vals).map(Number).filter(isFinite);
+        const label = (typeof CONFLICT_FIELD_LABEL !== 'undefined' && CONFLICT_FIELD_LABEL[x.field]) || x.field || 'Figure';
+        const by = Object.keys(vals).map(k => ((typeof SOURCE_DISPLAY !== 'undefined' && SOURCE_DISPLAY[k]) || k) + ' ' + vxInr(vals[k])).join(' · ');
+        const gap = nums.length > 1 ? Math.max(...nums) - Math.min(...nums) : 0;
+        rows.push({ cells:[label, 'Figure', by, { t:vxInr(gap), cls:'neg' }] });
+        out.push({ name:label, kind:'figure', by_source:by, gap:vxInr(gap) });
+      });
+    } catch(e){}
+    vxViewCard('mismatches', 'Where your sources disagree', rows.length ? rows.length + ' item' + (rows.length === 1 ? '' : 's') + ' · Margyn uses the stronger source and never averages' : 'Everything that appears in two sources agrees within 2%',
+      rows.length ? vxTableHtml([{ t:'Who / what' }, { t:'Type' }, { t:'Each source says' }, { t:'Gap', r:1 }], rows.slice(0, 12)) + vxMore('books', 'Compare in the Ledger') : '<div class="vx-note">No disagreements right now.</div>');
+    return { count:out.length, items:out.slice(0, 8), tolerance:'2% or ₹1' };
+  },
   pnl(){
     const snaps = (snapshots || []).slice(0, 6), s = snaps[0], p = snaps[1];
     if(!s) return { shown:false, note:'No P&L yet: connect Zoho Books or Tally, or enter figures.' };
