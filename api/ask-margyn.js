@@ -17,8 +17,12 @@ import { formatMargynContext } from './_lib/formatMargynContext.js';
 import { getUserFromRequest, selectRows } from './_lib/supabaseRest.js';
 import { isProposeAction, execReadTool, validateProposal } from './_lib/marginActions.js';
 import { getAgent, isHandoff } from './_lib/agentRegistry.js';
+import { callClaude, systemBlocks, effortFor, escalate, supportsEffort } from './_lib/claude.js';
 
 const MAX_TOOL_ITERATIONS = 5;
+// A tool result is re-sent on every later loop iteration; past this it's
+// rows the reply won't use anyway.
+const MAX_TOOL_RESULT_CHARS = 12000;
 
 // Cost governance: token cost per turn is small (grounded context, capped
 // history), but uncapped chat is still a way to bleed money quietly at
@@ -109,10 +113,16 @@ export default async function handler(req, res) {
   // how much the model writes and how much thread it carries, never how any
   // figure is computed (the numbers are always deterministic, server-side).
   // Each tier's model can still be pinned per-environment without a code change.
+  //
+  // Reasoning (see _lib/claude.js): Balanced narrates numbers JS already
+  // computed, so it runs at the "narrate" level (low). Deep is the tier the
+  // user explicitly asked to think harder, and it's capped per day client-
+  // side, so it gets "judge" (medium). Quick is Haiku, which doesn't think.
+  // Deep's max_tokens leaves room for that reasoning — only used tokens bill.
   const DEPTH_PRESETS = {
-    quick:    { model: process.env.ASK_MARGYN_MODEL_QUICK || 'claude-haiku-4-5-20251001', max_tokens: 350, history: 4 },
-    balanced: { model: process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5',                 max_tokens: 500, history: 8 },
-    deep:     { model: process.env.ASK_MARGYN_MODEL_DEEP || 'claude-opus-5',              max_tokens: 900, history: 12 }
+    quick:    { model: process.env.ASK_MARGYN_MODEL_QUICK || 'claude-haiku-4-5-20251001', max_tokens: 350,  history: 4,  job: 'narrate' },
+    balanced: { model: process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5',                 max_tokens: 600,  history: 8,  job: 'narrate' },
+    deep:     { model: process.env.ASK_MARGYN_MODEL_DEEP || 'claude-opus-5',              max_tokens: 1400, history: 12, job: 'judge' }
   };
   const depthKey = (typeof depth === 'string' && DEPTH_PRESETS[depth]) ? depth : 'balanced';
   const preset = DEPTH_PRESETS[depthKey];
@@ -122,115 +132,140 @@ export default async function handler(req, res) {
   // Keep the thread bounded so cost and latency stay predictable. Deep carries
   // more turns because follow-up questions are the point of that tier.
   const trimmedHistory = Array.isArray(history) ? history.slice(-preset.history) : [];
-  const messages = [
+  const baseMessages = [
     ...trimmedHistory
       .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
       .map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
     { role: 'user', content: message.trim().slice(0, 2000) }
   ];
 
-  const systemPrompt = buildSystemPrompt(context, agent);
+  // Instructions first (identical for every business on this agent, so they
+  // cache), this business's data second.
+  const { staticPrompt, dataPrompt } = buildSystemPrompt(context, agent);
+  const system = systemBlocks(staticPrompt, dataPrompt);
 
   try {
-    let actionCard = null;
-    let handoff = null;
-    let finalText = '';
-
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: preset.max_tokens,
-          system: systemPrompt,
-          tools: agent.tools,
-          messages
-        })
-      });
-
-      if (!anthropicRes.ok) {
-        const errText = await anthropicRes.text();
-        console.error('Anthropic API error:', anthropicRes.status, errText);
-        res.status(502).json({ error: 'AI service error' });
-        return;
+    let turn = await runTurn({ model, preset, system, agent, messages: baseMessages.slice(), userId: user.id });
+    // Escalate once, one reasoning level up, only when the cheap attempt
+    // provably failed: no reply at all, cut off mid-thought, or the tool loop
+    // ran out. Read tools are the only thing re-run; nothing writes here.
+    if (turn.failed && supportsEffort(model)) {
+      const up = escalate(turn.effort);
+      if (up && up !== turn.effort) {
+        console.log('[ask-margyn] escalating reasoning', turn.effort, '->', up, 'reason:', turn.failed);
+        turn = await runTurn({ model, preset, system, agent, messages: baseMessages.slice(), userId: user.id, effort: up, maxTokens: Math.round(preset.max_tokens * 1.5) });
       }
-
-      const data = await anthropicRes.json();
-      const blocks = Array.isArray(data.content) ? data.content : [];
-      const toolUses = blocks.filter(b => b.type === 'tool_use');
-      const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-
-      const handoffCall = toolUses.find(t => isHandoff(t.name));
-      if (handoffCall) {
-        // Terminal, same shape as the propose_action break below: the agent
-        // decided this isn't its lane. Never looped back to Claude under the
-        // old agent — the frontend switches active agent and the user's next
-        // message carries the new agentId.
-        const h = handoffCall.input || {};
-        const target = getAgent(h.agent_id);
-        handoff = { agentId: target.id, agentName: target.name, reason: h.reason || '' };
-        finalText = textOut || h.reason || `Bringing in ${target.name}.`;
-        break;
-      }
-
-      const proposal = toolUses.find(t => isProposeAction(t.name));
-      if (proposal) {
-        // Terminal: never executed here, never looped back to Claude. The
-        // frontend renders a confirm/cancel card from this and only writes
-        // anything once the human clicks Confirm.
-        let p = proposal.input || {};
-        // Same guard as WhatsApp: no card unless the target is one real row
-        // this user owns (a name is resolved to its id).
-        const checked = await validateProposal(p, user.id);
-        if (!checked.ok) {
-          finalText = checked.message;
-          break;
-        }
-        p = checked.proposal;
-        actionCard = {
-          type: p.type,
-          targetId: p.target_id || null,
-          targetKind: p.target_kind || null,
-          payload: p.payload || null,
-          humanSummary: p.human_summary || ''
-        };
-        finalText = textOut || p.human_summary || '';
-        break;
-      }
-
-      if (data.stop_reason === 'tool_use' && toolUses.length) {
-        messages.push({ role: 'assistant', content: blocks });
-        const results = [];
-        for (const tu of toolUses) {
-          const out = await execReadTool(tu.name, tu.input, user.id);
-          results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
-        }
-        messages.push({ role: 'user', content: results });
-        continue;
-      }
-
-      finalText = textOut;
-      break;
     }
 
     res.status(200).json({
-      reply: finalText || "I couldn't generate a response there, try rephrasing that.",
-      actionCard,
-      handoff,
+      reply: turn.finalText || "I couldn't generate a response there, try rephrasing that.",
+      actionCard: turn.actionCard,
+      handoff: turn.handoff,
       agentId: agent.id,
       agentName: agent.name,
       depth: depthKey,
       model
     });
   } catch (err) {
+    if (err && err.status) {
+      console.error('Anthropic API error:', err.status, err.body);
+      res.status(502).json({ error: 'AI service error' });
+      return;
+    }
     console.error('ask-margyn error:', err);
     res.status(500).json({ error: 'Something went wrong' });
   }
+}
+
+// One chat turn: the tool loop until Claude answers, proposes an action, or
+// hands off. Returns { failed } set when there's no usable answer, so the
+// caller can decide whether a retry at more reasoning is worth it.
+async function runTurn({ model, preset, system, agent, messages, userId, effort, maxTokens }) {
+  let actionCard = null;
+  let handoff = null;
+  let finalText = '';
+  let lastStop = null;
+
+  for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    const data = await callClaude({
+      label: 'ask-margyn',
+      job: preset.job,
+      effort,
+      cacheTail: true,
+      model,
+      max_tokens: maxTokens || preset.max_tokens,
+      system,
+      tools: agent.tools,
+      messages
+    });
+    lastStop = data.stop_reason;
+    const blocks = Array.isArray(data.content) ? data.content : [];
+    const toolUses = blocks.filter(b => b.type === 'tool_use');
+    const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+
+    const handoffCall = toolUses.find(t => isHandoff(t.name));
+    if (handoffCall) {
+      // Terminal, same shape as the propose_action break below: the agent
+      // decided this isn't its lane. Never looped back to Claude under the
+      // old agent — the frontend switches active agent and the user's next
+      // message carries the new agentId.
+      const h = handoffCall.input || {};
+      const target = getAgent(h.agent_id);
+      handoff = { agentId: target.id, agentName: target.name, reason: h.reason || '' };
+      finalText = textOut || h.reason || `Bringing in ${target.name}.`;
+      break;
+    }
+
+    const proposal = toolUses.find(t => isProposeAction(t.name));
+    if (proposal) {
+      // Terminal: never executed here, never looped back to Claude. The
+      // frontend renders a confirm/cancel card from this and only writes
+      // anything once the human clicks Confirm.
+      let p = proposal.input || {};
+      // Same guard as WhatsApp: no card unless the target is one real row
+      // this user owns (a name is resolved to its id).
+      const checked = await validateProposal(p, userId);
+      if (!checked.ok) {
+        finalText = checked.message;
+        break;
+      }
+      p = checked.proposal;
+      actionCard = {
+        type: p.type,
+        targetId: p.target_id || null,
+        targetKind: p.target_kind || null,
+        payload: p.payload || null,
+        humanSummary: p.human_summary || ''
+      };
+      finalText = textOut || p.human_summary || '';
+      break;
+    }
+
+    if (data.stop_reason === 'tool_use' && toolUses.length) {
+      messages.push({ role: 'assistant', content: blocks });
+      const results = [];
+      for (const tu of toolUses) {
+        const out = await execReadTool(tu.name, tu.input, userId);
+        results.push({ type: 'tool_result', tool_use_id: tu.id, content: capToolResult(out) });
+      }
+      messages.push({ role: 'user', content: results });
+      continue;
+    }
+
+    finalText = textOut;
+    break;
+  }
+
+  let failed = null;
+  if (!finalText) failed = lastStop === 'tool_use' ? 'tool loop ran out' : 'empty reply';
+  else if (lastStop === 'max_tokens' && !actionCard && !handoff) failed = 'cut off';
+  return { finalText, actionCard, handoff, failed, effort: effort || effortFor(preset.job) };
+}
+
+function capToolResult(out) {
+  const s = JSON.stringify(out);
+  if (s.length <= MAX_TOOL_RESULT_CHARS) return s;
+  return s.slice(0, MAX_TOOL_RESULT_CHARS) + ' …[truncated: more rows exist than shown; say the list is partial if it matters]';
 }
 
 // Speech-to-text. Client sends a short recorded clip as base64 (matches the
@@ -718,6 +753,13 @@ function buildMultipartBody(boundary, parts) {
   return Buffer.concat(chunks);
 }
 
+// Returns the prompt in two halves so the first can be cached:
+//   staticPrompt — who Margyn is, voice, rules, tools. Identical for every
+//                  business on the same agent, so it's written to the cache
+//                  once and read back at a tenth of the price after that.
+//   dataPrompt   — this business's name and figures, and what the user tapped.
+// Anything that varies per business or per request must stay out of
+// staticPrompt, or the cache never hits.
 function buildSystemPrompt(context, agent) {
   const ctx = context || {};
   const focusVital = ctx.focusVital || null;
@@ -731,7 +773,7 @@ function buildSystemPrompt(context, agent) {
   } = formatMargynContext(ctx);
 
   const focusLine = focusVital
-    ? `\nThe user just tapped on "${focusVital}" on their dashboard and this chat opened focused on it — that tap is why this conversation started. Any vague or deictic phrase in their message ("what does this say", "what does this mean", "explain this", "why", "is that good") refers to "${focusVital}" and the numbers already given to you above. Answer directly from that data.`
+    ? `\nThe user just tapped on "${focusVital}" on their dashboard and this chat opened focused on it — that tap is why this conversation started. Any vague or deictic phrase in their message ("what does this say", "what does this mean", "explain this", "why", "is that good") refers to "${focusVital}" and the numbers already given to you in this section. Answer directly from that data.`
     : '';
 
   const tierLine = focusFindingTier
@@ -740,9 +782,9 @@ function buildSystemPrompt(context, agent) {
         : `\nThis message is the user asking you to explain a SIGNAL finding — only one connected source supports this read, nothing else confirms it. Say plainly this is a single-source signal that could be noise, not a confirmed driver, and suggest what a second source would need to show to confirm it.`)
     : '';
 
-  return `${agent.identity} You're built into the Margyn app for ${companyName}, a digital-native Indian business.
+  const staticPrompt = `${agent.identity} You're built into the Margyn app for a digital-native Indian business — the one named in the BUSINESS DATA section at the end of these instructions.
 
-This chat has no file, image, or document upload capability of any kind — the user can only type text. If a message reads like it could be asking you to read or describe an attachment ("what does this say", "read this", "what is this"), that is never actually what's happening here: it always means the dashboard number or finding described below. Never respond by asking for an image, screenshot, or document, and never say you don't see an attachment — there is never one to see. Answer from the data below instead.
+This chat has no file, image, or document upload capability of any kind — the user can only type text. If a message reads like it could be asking you to read or describe an attachment ("what does this say", "read this", "what is this"), that is never actually what's happening here: it always means the dashboard number or finding described in the BUSINESS DATA section. Never respond by asking for an image, screenshot, or document, and never say you don't see an attachment — there is never one to see. Answer from that data instead.
 
 You are not a general-purpose chatbot bolted onto a dashboard. Margyn's whole product is that a claim only counts as verified when two independently operated data sources agree — that discipline applies to what you say too. You mostly get called to explain a specific pre-identified finding (a real move the app already detected and tiered as Verified or Signal, deterministically, before you were ever invoked), or to answer a short follow-up about one. Talk like a sharp, friendly finance-savvy colleague leaning over their shoulder — not a report generator. Short, direct, plain language. No headers, no markdown, no bullet walls unless they specifically ask you to break several things down.
 
@@ -776,48 +818,20 @@ Good: "Mismatch. Zoho 1042 is ₹50,000; Razorpay payment pay_abc is ₹49,100 o
 User: is my GST leakage number real
 Good: "That one's Signal, not Verified — it's from your typed P&L, nothing else confirms it yet. Connect Books and I can cross-check it."
 
-Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pulseTrend}
-
-Current financial vitals (each with trend vs the prior snapshot where available):
-${vitalsLines}
-${focusLine}${tierLine}${provenanceLine}${sourceDivergenceLine}
-
-Top-line P&L figures (the actual rupee numbers behind the vitals above — e.g. Net Margin is netProfit ÷ revenue from these):
-${pnlBlock}
-Note: this is top-line only — no cost-of-goods-sold vs operating-expense split, no per-line-item or per-category breakdown. If asked for a category-level P&L (COGS, opex by type, gross margin specifically), say plainly you have the top-line numbers but not that breakdown yet, rather than implying you have no P&L data at all.
-
-${paymentsHeader}:
-${paymentsBlock}
-
-Real per-transaction Razorpay data (independent of the summary above — this comes directly from individual synced transactions, never typed by hand, so it's a genuine second source even when the summary above is self-reported):
-${razorpayLiveBlock}
-
-Shopify data (connected: ${!!connectors.shopify}):
-${shopifyBlock}
-
-Zoho Books — CONNECTOR-SYNCED, from the live books (invoice/bill level):
-${booksBlock}
-
-Tally — CONNECTOR-SYNCED via the desktop agent, but SIGNAL-tier (one independently-operated source, never Verified on its own). This is "Books" the same way Zoho is — never merge Tally and Zoho figures into one "books" number, and never merge Tally with the Quick Ledger below:
-${tallyBlock}
-
-Quick Ledger — SELF-ENTERED (typed in the app or uploaded via the CSV template; NOT from any connector):
-${ledgerBlock}
-
-CROSS-SOURCE LEDGER — all three receivables/payables origins compared counterparty-by-counterparty. This is where you reason about "which number is right":
-${crossLedgerBlock}${reconLine}
-
-Connector sync status (data freshness / re-auth state — this is provenance, not a number to report unless asked):
-${connectorFreshnessBlock}
-If a connector shows NEEDS RE-AUTH, and the user asks about a figure that depends on it, say plainly the connector needs reconnecting and the number may be stale.
-
-Past findings, most recent first (up to the last 10, across all snapshots — use this if the user references "before," "last time," or asks to compare to an earlier period; cite the date; if nothing here is relevant to what they're asking, say plainly you don't have that in view rather than guessing):
-${historyBlock}
+HOW TO READ THE BUSINESS DATA SECTION:
+- The P&L figures there are top-line only — no cost-of-goods-sold vs operating-expense split, no per-line-item or per-category breakdown. If asked for a category-level P&L (COGS, opex by type, gross margin specifically), say plainly you have the top-line numbers but not that breakdown yet, rather than implying you have no P&L data at all.
+- "Real per-transaction Razorpay data" comes directly from individual synced transactions, never typed by hand, so it's a genuine second source even when the payments summary is self-reported.
+- Zoho Books is CONNECTOR-SYNCED, from the live books (invoice/bill level).
+- Tally is CONNECTOR-SYNCED via the desktop agent, but SIGNAL-tier (one independently-operated source, never Verified on its own). This is "Books" the same way Zoho is — never merge Tally and Zoho figures into one "books" number, and never merge Tally with the Quick Ledger.
+- The Quick Ledger is SELF-ENTERED (typed in the app or uploaded via the CSV template; NOT from any connector).
+- The CROSS-SOURCE LEDGER compares all three receivables/payables origins counterparty-by-counterparty. This is where you reason about "which number is right".
+- Connector sync status is data freshness / re-auth state — provenance, not a number to report unless asked. If a connector shows NEEDS RE-AUTH, and the user asks about a figure that depends on it, say plainly the connector needs reconnecting and the number may be stale.
+- Past findings are most recent first (up to the last 10, across all snapshots) — use them if the user references "before," "last time," or asks to compare to an earlier period; cite the date; if nothing there is relevant to what they're asking, say plainly you don't have that in view rather than guessing.
 
 Rules you must always follow:
 0. Follow the VOICE section above on every reply — lead with the answer, address them as "you," sound like a person, name sources in plain English, no lecture endings.
-1. Only reason about the numbers given above. Never invent a figure, percentage, or trend that wasn't provided to you.
-2. Every trend and delta figure above is pre-computed in plain JS before it reaches you — never recompute or contradict them, and never do your own arithmetic to produce a different percentage.
+1. Only reason about the numbers given in the BUSINESS DATA section (and what your tools return). Never invent a figure, percentage, or trend that wasn't provided to you.
+2. Every trend and delta figure there is pre-computed in plain JS before it reaches you — never recompute or contradict them, and never do your own arithmetic to produce a different percentage.
 2b. There are up to THREE separate sources of receivables/payables: the self-entered Quick Ledger, Zoho Books, and Tally. Never add or blend any of them into one number. Reason across them using the CROSS-SOURCE LEDGER block:
    - If the user asks a general "what are my receivables / who owes me" question, lead with the source they'd expect (their own ledger, or their books if connected), then note whether the other sources agree or differ.
    - Where 2+ sources AGREE on a counterparty's figure, say so — that's the strongest read you can give short of a payments match ("Your ledger and Zoho both show Acme at ₹50k").
@@ -825,12 +839,12 @@ Rules you must always follow:
    - A counterparty only one source knows about is Signal — flag it as unconfirmed. Tally is always Signal on its own.
    - Only the self-entered ledger feeds the Pulse Score; connector figures are shown for comparison and do not move the score.
    Self-entered data never corroborates a connector or another self-entered figure.
-3. Respect the Verified vs Signal distinction above (see the tier note if present). Never state a Signal-tier read with the same confidence as a Verified one — that distinction is the whole point of the product.
+3. Respect the Verified vs Signal distinction (see the tier note in the BUSINESS DATA section if present). Never state a Signal-tier read with the same confidence as a Verified one — that distinction is the whole point of the product.
 4. If the user asks something none of this data can answer (a number not shown, a prediction, something outside their connected sources), say plainly you don't have that yet, and mention what connecting or logging would surface it.
 5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
 6. Keep replies under ~120 words unless the user explicitly asks for more detail.
 7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
-8. The "Past findings" list above is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back than what's listed, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.
+8. The "Past findings" list is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back than what's listed, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.
 
 TAKING ACTION — you now have tools that can look things up (list_pending_import_suggestions, list_pending_agent_actions, list_open_ledger_items, list_chase_targets, get_chase_agent_config) and one tool, propose_action, that hands the user a confirm/cancel card. You never write anything yourself — propose_action only shows a card; the write happens only if the user clicks Confirm in the app.
 - Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the chase agent", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
@@ -839,5 +853,45 @@ TAKING ACTION — you now have tools that can look things up (list_pending_impor
 - For create_ledger_item, resolve party/amount/due_date from what the user said and put them in payload — don't call a list tool first, there's nothing to look up.
 - Never propose or imply any action outside this tool set (no payments, no messaging a customer directly, nothing on WhatsApp from here) — this chat can only touch the six action types above.
 
-WORKING AS A TEAM — you're one of several agents (see your identity line above for which one). You also have handoff_to_agent: call it the moment a request is genuinely outside your own lane, rather than answering it yourself from general knowledge or guessing. Say one short plain sentence first naming who you're bringing in and why (e.g. "That's collections, let me bring in the Chase Agent"), then call the tool in the same turn — don't ask permission first, don't explain the mechanics of "handing off" to the user, just do it naturally like a colleague redirecting a question. Never call handoff_to_agent for a request that's actually answerable from the data already given to you above.`;
+WORKING AS A TEAM — you're one of several agents (see your identity line above for which one). You also have handoff_to_agent: call it the moment a request is genuinely outside your own lane, rather than answering it yourself from general knowledge or guessing. Say one short plain sentence first naming who you're bringing in and why (e.g. "That's collections, let me bring in the Chase Agent"), then call the tool in the same turn — don't ask permission first, don't explain the mechanics of "handing off" to the user, just do it naturally like a colleague redirecting a question. Never call handoff_to_agent for a request that's actually answerable from the data in the BUSINESS DATA section.`;
+
+  const dataPrompt = `BUSINESS DATA — ${companyName}
+
+Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pulseTrend}
+
+Current financial vitals (each with trend vs the prior snapshot where available):
+${vitalsLines}
+${focusLine}${tierLine}${provenanceLine}${sourceDivergenceLine}
+
+Top-line P&L figures (the actual rupee numbers behind the vitals above — e.g. Net Margin is netProfit ÷ revenue from these):
+${pnlBlock}
+
+${paymentsHeader}:
+${paymentsBlock}
+
+Real per-transaction Razorpay data:
+${razorpayLiveBlock}
+
+Shopify data (connected: ${!!connectors.shopify}):
+${shopifyBlock}
+
+Zoho Books (connector-synced):
+${booksBlock}
+
+Tally (connector-synced, Signal-tier):
+${tallyBlock}
+
+Quick Ledger (self-entered):
+${ledgerBlock}
+
+CROSS-SOURCE LEDGER:
+${crossLedgerBlock}${reconLine}
+
+Connector sync status:
+${connectorFreshnessBlock}
+
+Past findings, most recent first:
+${historyBlock}`;
+
+  return { staticPrompt, dataPrompt };
 }
