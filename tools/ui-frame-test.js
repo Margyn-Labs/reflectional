@@ -186,7 +186,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.click('.pagenav button[data-view="gst"]'); await p.waitForTimeout(250);
   ok(/Rathi Textiles/.test(await p.textContent('#view-gst')), 'GST page lists at-risk vendors');
   await p.click('.pagenav button[data-view="audit"]'); await p.waitForTimeout(300);
-  ok((await p.$$('#view-audit tbody tr')).length === 3, 'Audit log shows ledger events');
+  ok((await p.$$('#view-audit tbody tr')).length === 5, 'Audit log shows ledger and team events');
   await p.click('.pagenav button[data-view="inbox"]'); await p.waitForTimeout(300);
   ok(p.url().endsWith('#/inbox') && !(await p.isVisible('#agentTabs')) && await p.evaluate(() => agentsActiveTab) === 'queue', 'Inbox = the queue, no tab bar');
   await p.click('.pagenav button[data-view="agents"]'); await p.waitForTimeout(300);
@@ -311,11 +311,24 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(!(await p.$('#setTeamMount .mg-team-code')), 'Done hides the code');
   await p.click('[data-team-access="tm1"]'); await p.waitForTimeout(250);
   ok(await p.evaluate(() => document.querySelectorAll('.mg-team-perms [data-perm]').length === 8 && !document.querySelector('.mg-team-perms [data-perm="manage_people"]').checked), 'Access drawer: 8 switches, Finance defaults shown');
+  ok(await p.isVisible('#mgTeamPhone') && (await p.inputValue('#mgTeamPhone')) === '+91 98765 43210', 'Access drawer: her linked WhatsApp number');
+  await p.evaluate(() => { window.__teamBodies = []; const f = window.fetch; window.fetch = (u, o) => { if(String(u).includes('team-update')) window.__teamBodies.push(JSON.parse(o.body)); return f(u, o); }; });
+  await p.click('#mgTeamPermSave'); await p.waitForTimeout(300);
+  ok(await p.evaluate(() => window.__teamBodies.length === 0), 'Access drawer: saving with no change sends nothing');
+  await p.click('[data-team-access="tm1"]'); await p.waitForTimeout(250);
+  await p.fill('#mgTeamPhone', '98111 22233'); await p.click('#mgTeamPermSave'); await p.waitForTimeout(400);
+  ok(await p.evaluate(() => window.__teamBodies.length === 1 && window.__teamBodies[0].phone === '98111 22233' && !('permissions' in window.__teamBodies[0])), 'Access drawer: a new number is sent on its own');
+  ok(/WhatsApp \+91 98765 43210/.test(await p.textContent('#setTeamMount')) && /No WhatsApp number linked/.test(await p.textContent('#setTeamMount')), 'App logins shows each person\'s WhatsApp link');
   await p.keyboard.press('Escape');
+
+  // 10b-2. The Audit log says who
+  await p.evaluate(() => showView('audit')); await p.waitForTimeout(300);
+  const auditTxt = await p.textContent('#view-audit');
+  ok(/Who/.test(auditTxt) && /Arjun Kapoor · in the app/.test(auditTxt) && /Changed the role of/.test(auditTxt) && /Priya Mehta · on WhatsApp/.test(auditTxt), 'Audit log: who, how, and team changes');
 
   // 10c. A member is recognised and the app is tailored to them
   const asMember = (role, label, perms) => p.evaluate(([role, label, perms]) => {
-    mgMe = { ready: true, me: { id: 'u-ca' }, own_account: null, memberships: [{ account_id: 'demo', company_name: 'Anvaya Home Goods Pvt Ltd', role, role_label: label, name: 'S. Rao', permissions: perms }] };
+    mgMe = { ready: true, features: { audit_actor: true, member_prefs: true, phone_link: true }, me: { id: 'u-ca' }, own_account: null, memberships: [{ account_id: 'demo', company_name: 'Anvaya Home Goods Pvt Ltd', role, role_label: label, name: 'S. Rao', permissions: perms }] };
     mgActor = { authId: 'u-ca', email: 'rao@raoandco.in', accountId: 'demo', isOwner: false, role, roleLabel: label, name: 'S. Rao', company: 'Anvaya Home Goods Pvt Ltd', permissions: perms };
     mgApplyActor(); showView('home');
   }, [role, label, perms]);
@@ -331,6 +344,16 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.evaluate(() => { location.hash = '#/settings'; }); await p.waitForTimeout(400);
   ok(JSON.stringify(await vis()) === '["view-home"]', 'Advisor: a Settings link opens Home instead');
   ok(await p.evaluate(() => mgAccountHeaderFor('/api/reconcile?action=position') === 'demo' && mgAccountHeaderFor('/api/ops?action=team-whoami') === null && mgAccountHeaderFor('https://cdn.example.com/x.js') === null), 'API calls carry the account; whoami and other hosts do not');
+  // a member's settings are their own: they read the business's, and write their own
+  ok(await p.evaluate(async () => {
+    currentProfile.preferences = Object.assign({}, currentProfile.preferences, { forecast: { collectDelay: 15 } });
+    mgActor.prefs = {}; window.__teamCalls.length = 0; window.__profileUpdates = [];
+    const before = mgPrefGet('forecast', {}).collectDelay;
+    mgPrefSet('forecast', { collectDelay: 30 });
+    await new Promise(r => setTimeout(r, 800));
+    return before === 15 && mgPrefGet('forecast', {}).collectDelay === 30 && currentProfile.preferences.forecast.collectDelay === 15
+      && window.__teamCalls.includes('prefs') && window.__profileUpdates.length === 0 && /Saved for you/.test(mgPrefWhere());
+  }), 'member settings: their own copy, the business setting untouched');
   await asMember('approver', 'Approver', ['view_receivables', 'view_payables', 'approve']);
   await p.waitForTimeout(300);
   const tiles = await p.$$eval('#view-home .mg-tile .mg-tile-l, #view-home .mg-tile-label, #view-home .mg-tile', x => x.map(e => e.textContent).join('|'));

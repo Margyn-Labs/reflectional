@@ -258,7 +258,7 @@ async function loadLedgerEvents(){
 }
 async function logLedgerEvent(evt){
   try {
-    await sbClient.from('ledger_events').insert({
+    const row = {
       user_id: currentUser.id,
       entity_type: evt.entityType || null,
       entity_id: evt.entityId || null,
@@ -267,7 +267,13 @@ async function logLedgerEvent(evt){
       amount: (evt.amount != null) ? Number(evt.amount) : null,
       source: evt.source || null,
       note: evt.note || null
-    });
+    };
+    // Who did it is stamped by the database (the signed-in person); the app
+    // says only which channel. Sent once the server reports the column exists.
+    if(typeof mgMe !== 'undefined' && mgMe && mgMe.features && mgMe.features.audit_actor){
+      row.channel = evt.channel || ((typeof vxActive !== 'undefined' && vxActive) ? 'voice' : 'app');
+    }
+    await sbClient.from('ledger_events').insert(row);
   } catch(e){ console.error('[margyn] logLedgerEvent:', e); }
 }
 /* Fire-and-forget trigger for the server-side Findings pipeline

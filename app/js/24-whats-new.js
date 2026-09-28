@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-team-who', date:'30 Sept 2026', title:'See who did what, on every channel',
+    items:[
+      { t:'The Audit log names the person', what:'Every entry that’s added, settled or imported, and every change to your team, now shows who did it and whether it was in the app, by voice or on WhatsApp.',
+        how:'Open <b>Audit log</b> under Admin. Search a name to see everything that person changed.' },
+      { t:'One person, app and WhatsApp', what:'Link someone’s WhatsApp number to their login and Margyn treats them the same on both: a Viewer can ask on WhatsApp but not change anything, an Approver can approve.',
+        how:'<b>Settings</b>, then <b>App logins</b>. Choose <b>Access</b> next to the person and enter their WhatsApp number.', act:'team' },
+      { t:'Your own view', what:'People on your team can adjust their own forecast and metric choices without changing yours.',
+        how:'Nothing to do. Your settings stay the business’s defaults.' }
+    ]
+  },
+  {
     id:'2026-09-29-team-logins', date:'29 Sept 2026', title:'Your team can now sign in as themselves',
     items:[
       { t:'Invite your team', what:'Your finance lead, an approver or your CA can each have their own login. Margyn knows who is signed in and shows each person only what their role allows.',

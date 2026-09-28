@@ -26,15 +26,22 @@ const MAX_TOOL_ITERATIONS = 5;
 // turn — see saveChatMessage in app.html) rather than a new table. A
 // business genuinely needing more than this in a day is the exception to
 // go raise, not the default to design for.
+// With team logins (2026-09-30) the cap is per person, with a ceiling for
+// the whole account so a large team can't multiply the bill unnoticed.
 const DAILY_MESSAGE_CAP = Number(process.env.ASK_MARGYN_DAILY_CAP) || 200;
-async function overDailyCap(userId) {
+const ACCOUNT_DAILY_CAP = Number(process.env.ASK_MARGYN_ACCOUNT_DAILY_CAP) || DAILY_MESSAGE_CAP * 3;
+async function overDailyCap(userId, authId) {
   const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
+  const base = `select=id&user_id=eq.${userId}&role=eq.user&created_at=gte.${startOfDay.toISOString()}`;
   try {
-    const rows = await selectRows(
-      'chat_messages',
-      `select=id&user_id=eq.${userId}&role=eq.user&created_at=gte.${startOfDay.toISOString()}&limit=${DAILY_MESSAGE_CAP + 1}`
-    );
-    return rows.length > DAILY_MESSAGE_CAP;
+    const all = await selectRows('chat_messages', `${base}&limit=${ACCOUNT_DAILY_CAP + 1}`);
+    if (all.length > ACCOUNT_DAILY_CAP) return true;
+    // This person's own messages: the owner's have no author (or their own id).
+    const me = authId || userId;
+    const mine = await selectRows('chat_messages',
+      `${base}&${me === userId ? `or=(author_id.is.null,author_id.eq.${me})` : `author_id=eq.${me}`}&limit=${DAILY_MESSAGE_CAP + 1}`)
+      .catch(() => all);   // before the author column: the account's count, as before
+    return mine.length > DAILY_MESSAGE_CAP;
   } catch (e) {
     console.error('[ask-margyn] rate-limit check failed, allowing through:', e.message);
     return false;
@@ -84,7 +91,7 @@ export default async function handler(req, res) {
   const { message, history, context, depth, agentId } = req.body || {};
   const agent = getAgent(agentId);
 
-  if (await overDailyCap(user.id)) {
+  if (await overDailyCap(user.id, user.auth_id)) {
     res.status(429).json({ error: `You've hit today's chat limit (${DAILY_MESSAGE_CAP} messages). Resets tomorrow.` });
     return;
   }

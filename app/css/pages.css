@@ -281,6 +281,8 @@
    database refuse these anyway; this keeps the screen honest). */
 body.mg-ro .mg-ph-actions .mg-btn.primary, body.mg-ro [data-money-settle], body.mg-ro .mg-row-act,
 body.mg-ro [data-party-new], body.mg-ro [data-party-edit], body.mg-ro [data-party-add-dir],
-body.mg-ro #ledgerAddBtn, body.mg-ro #mgImportBtn, body.mg-ro .ledger-form, body.mg-ro [data-fc-adjust]{ display:none !important; }
+body.mg-ro #ledgerAddBtn, body.mg-ro #mgImportBtn, body.mg-ro .ledger-form{ display:none !important; }
 body.mg-member #setDeleteAccount, body.mg-member #deleteAccountBtn{ display:none !important; }
 .mg-row2 > .mg-panel:only-child{ grid-column:1 / -1; }   /* Home without the cash panel (a role without cash) */
+.mg-team-wa{ margin-bottom:16px; }
+.mg-team-wa small{ display:block; margin-top:4px; }

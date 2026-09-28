@@ -228,7 +228,9 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   // "like I said on the call" works here too. Owner's number only (member
   // null or the primary row): other people on the account have their own
   // threads and shouldn't see the owner's.
-  const memory = (!sender || sender.is_primary) ? await appMemoryBlock(profileId) : '';
+  // A number linked to an app login gets that person's own app threads.
+  const memory = (!sender || sender.is_primary) ? await appMemoryBlock(profileId)
+    : sender.login ? await appMemoryBlock(profileId, sender.login.user_id) : '';
   const systemWithMemory = system + memory;
   const phoneLabel = fromPhone ? '+' + String(fromPhone).replace(/[^\d]/g, '') : 'a WhatsApp contact';
   const ctx = {
@@ -387,6 +389,7 @@ async function callClaude(apiKey, system, messages, tools = ALL_TOOLS) {
   return res.json();
 }
 
+const LOGIN_ROLE_LABEL = { admin: 'an Admin', finance: 'Finance', approver: 'an Approver', viewer: 'a Viewer (read-only)', advisor: 'an outside Advisor (read-only)' };
 const MEMBER_ROLE_LABEL = { owner: 'an owner', AR: 'the receivables (AR) person', AP: 'the payables (AP) person', finance: 'on the finance team', other: 'a team member' };
 
 /** The identity line for the prompt. `sender` is the business_stakeholders
@@ -395,7 +398,8 @@ const MEMBER_ROLE_LABEL = { owner: 'an owner', AR: 'the receivables (AR) person'
 function senderLine(companyName, sender) {
   if (sender && sender.name) {
     const role = MEMBER_ROLE_LABEL[sender.role] || 'a team member';
-    return `- The person texting is ${sender.name}, ${role} at ${companyName}${sender.is_primary ? " (this is the account's primary WhatsApp number)" : ''}. You recognise them by the number they're texting from, which is saved on the account. Address them by first name when it's natural — don't open every reply with it. If asked "do you know who I am", say yes: ${sender.name}, ${role} at ${companyName}.`;
+    const login = sender.login ? ` They also sign in to the Margyn app, as ${LOGIN_ROLE_LABEL[sender.login.role] || 'a team member'}; the same permissions apply here.${sender.login.permissions.includes('edit') ? '' : ' They cannot change entries.'}` : '';
+    return `- The person texting is ${sender.name}, ${role} at ${companyName}${sender.is_primary ? " (this is the account's primary WhatsApp number)" : ''}. You recognise them by the number they're texting from, which is saved on the account.${login} Address them by first name when it's natural — don't open every reply with it. If asked "do you know who I am", say yes: ${sender.name}, ${role} at ${companyName}.`;
   }
   return `- You know which business this is (${companyName}) but not which individual is texting — no name is saved for this number yet. If asked "do you know who I am", say you identify the business by its registered WhatsApp number, and that they can add their name under Settings > People in the Margyn app so you'll know them next time.`;
 }
@@ -737,15 +741,17 @@ async function toolRouteMessage(input, ctx) {
 // (chat_messages, written by the app). Appended to the system prompt as a
 // labelled transcript. Never throws: no memory is better than no reply.
 const APP_MEMORY_HOURS = 24;
-async function appMemoryBlock(profileId) {
+async function appMemoryBlock(profileId, authorId) {
   try {
     const since = new Date(Date.now() - APP_MEMORY_HOURS * 3600000).toISOString();
     // The owner's own messages only: with team logins, other people on the
     // account have their own threads (author_id). Before that column exists,
     // every message on the account is the owner's.
     const q = `select=thread_key,role,content,created_at&user_id=eq.${profileId}&created_at=gte.${since}&order=created_at.desc&limit=30`;
-    const rows = await selectRows('chat_messages', `${q}&or=(author_id.is.null,author_id.eq.${profileId})`)
-      .catch(() => selectRows('chat_messages', q));
+    const rows = authorId
+      ? await selectRows('chat_messages', `${q}&author_id=eq.${authorId}`).catch(() => [])
+      : await selectRows('chat_messages', `${q}&or=(author_id.is.null,author_id.eq.${profileId})`)
+        .catch(() => selectRows('chat_messages', q));
     const turns = rows.filter(r => (r.role === 'user' || r.role === 'assistant') && r.content && r.content.trim());
     if (!turns.length) return '';
     const key = turns[0].thread_key;

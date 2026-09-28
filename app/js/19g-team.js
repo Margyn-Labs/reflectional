@@ -123,7 +123,7 @@ async function mgResolveAccount(user){
   if(pick){
     lsSet(MG_ACCT_LS, pick.account_id);
     mgActor = { authId:user.id, email:user.email, accountId:pick.account_id, isOwner:false, role:pick.role, roleLabel:pick.role_label,
-      name:pick.name, company:pick.company_name, permissions:pick.permissions || [] };
+      name:pick.name, company:pick.company_name, permissions:pick.permissions || [], prefs:Object.assign({}, pick.preferences || {}) };
   } else {
     mgActor = { authId:user.id, email:user.email, accountId:user.id, isOwner:true, role:'owner', roleLabel:'Owner', name:null,
       company:own ? own.company_name : null, permissions:MG_ALL_PERMS.slice() };
@@ -242,7 +242,8 @@ async function mgRenderTeam(reload){
   const row = (m, isOwnerRow) => {
     const me = m.user_id === (mgActor && mgActor.authId);
     const editable = manage && !isOwnerRow && !me && (m.role !== 'admin' || d.you.is_owner);
-    return '<tr' + (m.status === 'suspended' ? ' class="mg-muted"' : '') + '><td><b>' + escapeHtml(m.name || (m.email || '').split('@')[0]) + (me ? ' (you)' : '') + '</b><div class="mg-sub">' + escapeHtml(m.email || '') + '</div></td>' +
+    const wa = isOwnerRow ? '' : '<div class="mg-sub">' + (m.whatsapp ? 'WhatsApp ' + escapeHtml(typeof waPrettyPhone === 'function' ? waPrettyPhone(m.whatsapp) : m.whatsapp) : 'No WhatsApp number linked') + '</div>';
+    return '<tr' + (m.status === 'suspended' ? ' class="mg-muted"' : '') + '><td><b>' + escapeHtml(m.name || (m.email || '').split('@')[0]) + (me ? ' (you)' : '') + '</b><div class="mg-sub">' + escapeHtml(m.email || '') + '</div>' + wa + '</td>' +
       '<td>' + (editable ? roleSel(m.role, m.id) : escapeHtml(m.role_label)) + '<div class="mg-sub">' + escapeHtml((MG_ROLE_INFO[m.role] || ['', ''])[1]) + '</div></td>' +
       '<td>' + (isOwnerRow ? '—' : escapeHtml(m.status === 'suspended' ? 'Suspended' : m.last_seen_at ? 'Last seen ' + when(m.last_seen_at) : 'Hasn’t signed in yet')) + '</td>' +
       '<td class="r">' + (editable ? '<button class="mg-btn" type="button" data-team-access="' + m.id + '">Access</button> ' +
@@ -303,15 +304,25 @@ async function mgRenderTeam(reload){
 function mgTeamAccessDrawer(m){
   if(!m) return;
   const def = new Set((MG_ROLE_DEFAULTS[m.role] || []));
+  const canLink = !!(mgMe && mgMe.features && mgMe.features.phone_link);
+  const phoneNow = m.whatsapp ? (typeof waPrettyPhone === 'function' ? waPrettyPhone(m.whatsapp) : m.whatsapp) : '';
   mgDrawer({ title:'Access for ' + (m.name || m.email), sub:escapeHtml(MG_ROLE_INFO[m.role][0] + ': ' + MG_ROLE_INFO[m.role][1] + ' Change any of these for this person only.'),
-    body:'<div class="mg-team-perms">' + MG_ALL_PERMS.map(p => {
+    body:(canLink ? '<label class="mg-tf mg-team-wa"><span>WhatsApp number</span><input type="tel" class="mono" id="mgTeamPhone" inputmode="numeric" placeholder="98765 43210" value="' + escapeHtml(phoneNow) + '">' +
+        '<small class="mg-sub">Margyn will recognise this number as ' + escapeHtml(m.name || m.email) + ' and give it the same access on WhatsApp. Leave empty to unlink.</small></label>' : '') +
+      '<div class="mg-team-perms">' + MG_ALL_PERMS.map(p => {
       const on = m.permissions.includes(p), changed = on !== def.has(p);
       return '<label class="set-row"><span>' + escapeHtml(MG_PERM_LABEL[p]) + (changed ? '<span class="set-desc">Changed from the role’s default</span>' : '') + '</span>' +
         '<label class="rd-toggle"><input type="checkbox" data-perm="' + p + '"' + (on ? ' checked' : '') + '><span class="track"></span></label></label>';
     }).join('') + '</div><div class="mg-form-err" id="mgTeamPermErr" hidden></div>',
     foot:'<button class="mg-btn" type="button" id="mgTeamPermReset">Back to role defaults</button><button class="mg-btn primary" type="button" id="mgTeamPermSave">Save</button>' });
   const save = async overrides => {
-    try { await mgTeamApi('team-update', { member_id:m.id, permissions:overrides }); mgCloseDrawer(); mgRenderTeam(true); }
+    const norm = o => JSON.stringify(Object.keys(o || {}).sort().map(k => [k, o[k]]));
+    const body = { member_id:m.id };
+    if(norm(overrides) !== norm(m.overrides)) body.permissions = overrides;
+    const ph = document.getElementById('mgTeamPhone');
+    if(ph && ph.value.replace(/[^\d]/g, '') !== String(phoneNow).replace(/[^\d]/g, '')) body.phone = ph.value;
+    if(Object.keys(body).length === 1){ mgCloseDrawer(); return; }   // nothing changed
+    try { await mgTeamApi('team-update', body); mgCloseDrawer(); mgRenderTeam(true); }
     catch(e){ const x = document.getElementById('mgTeamPermErr'); x.textContent = e.message; x.hidden = false; }
   };
   document.getElementById('mgTeamPermReset').addEventListener('click', () => save({}));

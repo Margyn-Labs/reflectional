@@ -22,7 +22,7 @@ const STRANGER = '44444444-4444-4444-8444-444444444444';
 const USERS = { 'tok-owner': { id: OWNER, email: 'owner@acme.in' }, 'tok-fin': { id: FIN, email: 'fin@acme.in' }, 'tok-admin': { id: ADMIN, email: 'admin@acme.in' }, 'tok-stranger': { id: STRANGER, email: 'x@else.in' } };
 
 /* ---------- fake PostgREST over an in-memory store ---------- */
-const DB = { profiles: [{ id: OWNER, company_name: 'Margyn Demo' }, { id: STRANGER, company_name: 'Else Co' }], account_members: [], account_invites: [], business_stakeholders: [] };
+const DB = { profiles: [{ id: OWNER, company_name: 'Margyn Demo', whatsapp_phone: '919800000001' }, { id: STRANGER, company_name: 'Else Co' }], account_members: [], account_invites: [], business_stakeholders: [{ id: 'bs-owner', business_id: OWNER, name: 'Arjun Kapoor', phone: '919800000001', role: 'owner', is_primary: true, whatsapp_access: false }, { id: 'bs-else', business_id: STRANGER, name: 'Else', phone: '919800000009', role: 'owner', whatsapp_access: true }], ledger_events: [] };
 let seq = 0;
 function filterRows(rows, qs) {
   const p = new URLSearchParams(qs);
@@ -30,6 +30,8 @@ function filterRows(rows, qs) {
   for (const [k, v] of p) {
     if (['select', 'order', 'limit', 'offset', 'on_conflict'].includes(k)) continue;
     if (v.startsWith('eq.')) out = out.filter((r) => String(r[k]) === decodeURIComponent(v.slice(3)));
+    else if (v.startsWith('neq.')) out = out.filter((r) => String(r[k]) !== decodeURIComponent(v.slice(4)));
+    else if (v === 'not.is.null') out = out.filter((r) => r[k] != null);
     else if (v === 'is.null') out = out.filter((r) => r[k] == null);
     else if (v.startsWith('in.(')) { const set = v.slice(4, -1).split(','); out = out.filter((r) => set.includes(String(r[k]))); }
   }
@@ -191,6 +193,55 @@ const call = async (tok, action, o) => { const res = mkRes(); await team.handle(
   check('an admin cannot remove themselves', (r.code === 400 || r.code === 403) && DB.account_members.some((m) => m.user_id === ADMIN));
   r = await call('tok-owner', 'team-remove', { method: 'POST', body: { member_id: ravi.id } });
   check('the owner can remove an admin', r.code === 200);
+
+  /* ---------- 2026-09-30: who did it, WhatsApp link, personal settings ---------- */
+  const ev = (event) => DB.ledger_events.filter((e) => e.event === event);
+  check('audit: the invite is logged with who sent it', ev('invited').length >= 3 && ev('invited')[0].actor_name === 'Arjun Kapoor' && ev('invited')[0].actor_id === OWNER && ev('invited')[0].entity_type === 'person' && ev('invited')[0].user_id === OWNER, ev('invited')[0]);
+  check('audit: joining is logged as the person who joined', ev('joined').some((e) => e.actor_id === FIN && e.user_id === OWNER));
+  check('audit: access, suspend and remove are logged by whoever did them', ['access_changed', 'suspended'].every((k) => ev(k).length && ev(k).every((e) => e.actor_id === ADMIN && e.actor_name === 'Ravi'))
+    && ev('removed')[0].actor_name === 'Ravi' && ev('removed')[0].party_name === 'Priya' && ev('removed')[1].actor_name === 'Arjun Kapoor' && ev('removed')[1].party_name === 'Ravi', ev('removed'));
+
+  // Priya comes back as Finance, and her WhatsApp number is linked to her login
+  r = await call('tok-owner', 'team-invite', { method: 'POST', body: { email: 'fin@acme.in', name: 'Priya', role: 'finance' } });
+  await call('tok-fin', 'team-join', { method: 'POST', body: { code: r.body.code } });
+  const priya2 = DB.account_members.find((m) => m.user_id === FIN);
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, phone: '98765 43210' } });
+  const waRow = DB.business_stakeholders.find((x) => x.member_id === priya2.id);
+  check('link WhatsApp: a People row for Priya\'s number, tied to her login', r.code === 200 && waRow && waRow.phone === '919876543210' && waRow.whatsapp_access === true && waRow.business_id === OWNER, waRow);
+  check('link WhatsApp: its switches follow Finance (ask, act, forward)', waRow.permissions.ask && waRow.permissions.act && waRow.permissions.forward);
+  r = await call('tok-owner', 'team-list');
+  check('App logins shows the linked number', r.body.members.find((m) => m.id === priya2.id).whatsapp === '919876543210');
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, role: 'viewer' } });
+  check('role change to Viewer: her WhatsApp can ask, not act', !waRow.permissions.act && !waRow.permissions.forward && waRow.permissions.ask);
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, phone: '9800000001' } });
+  check('the owner\'s own number cannot be linked to someone else', r.code === 409);
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, phone: '9800000009' } });
+  check('a number that talks to another business is refused', r.code === 409 && /another business/.test(r.body.error));
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, phone: '' } });
+  check('unlink: the row stays for routing but loses access', r.code === 200 && waRow.member_id === null && waRow.whatsapp_access === false);
+  check('audit: linking is logged', ev('whatsapp_linked').length === 2);
+
+  r = await call('tok-fin', 'team-prefs', { method: 'POST', account: OWNER, body: { prefs: { forecast: { collectDelay: 21 }, whats_new_seen: 'x' } } });
+  check('personal settings: saved on Priya\'s membership', r.code === 200 && priya2.preferences.forecast.collectDelay === 21 && !('preferences' in DB.profiles[0]));
+  r = await call('tok-fin', 'team-prefs', { method: 'POST', account: OWNER, body: { prefs: { forecast: null } } });
+  check('personal settings: null goes back to the business default', !('forecast' in priya2.preferences) && priya2.preferences.whats_new_seen === 'x');
+  r = await call('tok-owner', 'team-prefs', { method: 'POST', body: { prefs: { a: 1 } } });
+  check('the owner has no separate personal settings', r.code === 400);
+  r = await call('tok-fin', 'team-whoami');
+  check('whoami: features on, and her settings come back', r.body.features.member_prefs && r.body.memberships[0].preferences.whats_new_seen === 'x');
+
+  await call('tok-owner', 'team-remove', { method: 'POST', body: { member_id: priya2.id } });
+
+  /* ---------- WhatsApp follows the login ---------- */
+  const MA = require('../memberAccess');
+  const row = { id: 'x', member_id: 'm', permissions: { opening_bell: true } };
+  const viewer = MA.memberPerms(row, false, { status: 'active', role: 'viewer', permissions: {}, user_id: FIN });
+  const approver = MA.memberPerms(row, false, { status: 'active', role: 'approver', permissions: {}, user_id: FIN });
+  const gone = MA.memberPerms(row, false, { status: 'suspended', role: 'finance', permissions: {} });
+  check('linked Viewer: may ask, may not act or forward; Bells kept', viewer.ask && !viewer.act && !viewer.forward && viewer.opening_bell);
+  check('linked and suspended: nothing', !gone.ask && !gone.act && !gone.forward && !gone.opening_bell);
+  check('linked Approver: may confirm approvals, not ledger changes', MA.mayConfirm(approver, 'approve_suggestion') && !MA.mayConfirm(approver, 'mark_ledger_item_paid'));
+  check('an unlinked number keeps its Act switch', MA.mayConfirm(MA.memberPerms({ permissions: { ask: true, act: true } }, false), 'mark_ledger_item_paid'));
 
   /* ---------- expiry / revoke ---------- */
   r = await call('tok-owner', 'team-invite', { method: 'POST', body: { email: 'fin@acme.in', role: 'viewer' } });
