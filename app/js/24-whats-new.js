@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-29-team-logins', date:'29 Sept 2026', title:'Your team can now sign in as themselves',
+    items:[
+      { t:'Invite your team', what:'Your finance lead, an approver or your CA can each have their own login. Margyn knows who is signed in and shows each person only what their role allows.',
+        how:'Open <b>Settings</b>, then <b>App logins</b>. Enter their email, pick a role and choose <b>Create invite</b>. Send them the link or the code.', act:'team' },
+      { t:'Joining with a code', what:'The person signs in with the email the invite was sent to and goes straight into your business.',
+        how:'Open the link, or after signing in choose your initials at the top right, then <b>Join a team with a code</b>.' },
+      { t:'Roles you can fine-tune', what:'Admin, Finance, Approver, Viewer and Advisor (CA). Turn any single permission on or off for one person, or suspend them in a click.',
+        how:'In <b>App logins</b>, choose <b>Access</b> next to the person.' },
+      { t:'Every open invoice, counted', what:'Receivables, Payables, Customers and Vendors now count every open invoice from Zoho, Tally and Odoo, not the first few hundred. Ask Margyn and WhatsApp use the same figures as the screen.',
+        how:'Nothing to do. If a source is ever too large or can’t be read, the page says so in a line above the list.' }
+    ]
+  },
+  {
     id:'2026-09-27-voice-keys', date:'27 Sept 2026', title:'Talking to Margyn got faster and more hands-free',
     items:[
       { t:'Start and end a call from the keyboard', what:'Talk to Margyn from anywhere in the app without reaching for the mouse.',
@@ -34,7 +47,10 @@ const MG_RELEASES = [
   }
 ];
 const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
-const MG_WN_ACTS = { talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } } };
+const MG_WN_ACTS = {
+  talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
+  team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
+};
 
 function mgWnSeen(){
   let v = null;

@@ -138,6 +138,7 @@ async function routeFor(session){
     zohoConnected = false; zohoVitals = null; zohoLedgerRows = { receivables: [], payables: [] }; zohoPendingOrgRef = null; zohoChosenOrgId = null;
     odooConnected = false; odooStatus = null;
     if(typeof mgPos !== 'undefined'){ mgPos = null; mgPosSigAt = null; }
+    if(typeof mgActor !== 'undefined'){ mgActor = null; mgMe = null; mgTeamData = null; mgTeamFresh = null; document.body.classList.remove('mg-member', 'mg-ro'); }
     cashfreeConnected = false; cashfreeStatus = null;
     shopifyConnected = false; shopifyStore = null;
     if(shopifyPollTimer){ clearInterval(shopifyPollTimer); shopifyPollTimer = null; }
@@ -158,12 +159,20 @@ async function routeFor(session){
   currentUser = session.user;
   document.getElementById('userEmail').textContent = currentUser.email;
   document.getElementById('authGate').classList.add('hidden');
+  // Team logins (19g-team.js): who is this, and which business are they
+  // working in? currentUser.id becomes that ACCOUNT (every query is keyed
+  // to it); mgActor is the person, their role and permissions.
+  if(typeof mgResolveAccount === 'function'){
+    const accountId = await mgResolveAccount(session.user);
+    if(accountId && accountId !== session.user.id) currentUser = Object.assign({}, session.user, { id:accountId });
+  }
   currentProfile = await loadProfile();
   if(!currentProfile){ document.getElementById('appShell').classList.add('hidden'); document.getElementById('onboardGate').classList.remove('hidden'); return; }
   document.getElementById('onboardGate').classList.add('hidden');
   document.getElementById('appShell').classList.remove('hidden');
   mtrack('app_open');
   await refreshAll();
+  if(typeof mgApplyActor === 'function') mgApplyActor();
 }
 async function loadProfile(){
   const { data, error } = await sbClient.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();

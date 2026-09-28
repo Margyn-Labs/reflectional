@@ -259,7 +259,7 @@ async function vxRecentConversation(){
   const since = new Date(Date.now() - VX_RESUME_HOURS * 3600000).toISOString();
   const clean = (role, text) => ({ role, text:String(text || '').replace(/\s+/g, ' ').trim().slice(0, 400) });
   const cands = [];
-  try {
+  if(typeof mgActor === 'undefined' || !mgActor || mgActor.isOwner) try {
     // Only the owner's own thread: other people on the account have theirs.
     const own = String((currentProfile && currentProfile.whatsapp_phone) || '').replace(/[^\d]/g, '');
     const { data } = await sbClient.from('whatsapp_conversations').select('role,content,created_at,from_phone')
@@ -269,8 +269,9 @@ async function vxRecentConversation(){
     if(rows.length) cands.push({ channel:'whatsapp', label:'WhatsApp', last_at:rows[0].created_at, turns:rows.slice(0, 12).reverse().map(r => clean(r.role, r.content)) });
   } catch(e){ /* table missing or offline: no WhatsApp memory, carry on */ }
   try {
-    const { data } = await sbClient.from('chat_messages').select('thread_key,role,content,created_at')
-      .eq('user_id', currentUser.id).gte('created_at', since).order('created_at', { ascending:false }).limit(40);
+    let q = sbClient.from('chat_messages').select('thread_key,role,content,created_at').eq('user_id', currentUser.id).gte('created_at', since);
+    if(typeof mgChatScope === 'function') q = mgChatScope(q);   // this person's own conversations
+    const { data } = await q.order('created_at', { ascending:false }).limit(40);
     const rows = (data || []).filter(r => r.content && r.content.trim() && (r.role === 'user' || r.role === 'assistant'));
     if(rows.length){
       const key = rows[0].thread_key;

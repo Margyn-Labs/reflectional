@@ -291,6 +291,19 @@ async function seedApp() {
     };
     return { as_of: dayISO(0), receivables: dirOut('recv'), payables: dirOut('pay') };
   };
+  // Team logins (19g-team.js): the owner, two people and an open invite.
+  window.__teamCalls = [];
+  API['ops?action=team-whoami'] = { ready: true, me: { id: UID, email: 'owner@anvaya.in' }, own_account: { account_id: UID, company_name: 'Anvaya Home Goods Pvt Ltd' }, memberships: [] };
+  API['ops?action=team-list'] = {
+    you: { user_id: UID, role: 'owner', can_manage: true, is_owner: true },
+    owner: { user_id: UID, email: 'owner@anvaya.in', name: 'Arjun Kapoor', role: 'owner', role_label: 'Owner' },
+    members: [
+      { id: 'tm1', user_id: 'u-priya', email: 'priya@anvaya.in', name: 'Priya Mehta', role: 'finance', role_label: 'Finance', overrides: {}, permissions: ['view_cash', 'view_receivables', 'view_payables', 'view_gst', 'edit', 'approve'], status: 'active', joined_at: iso(12 * DAY), last_seen_at: minsAgo(90) },
+      { id: 'tm2', user_id: 'u-ca', email: 'rao@raoandco.in', name: 'S. Rao (CA)', role: 'advisor', role_label: 'Advisor (CA)', overrides: {}, permissions: ['view_cash', 'view_receivables', 'view_payables', 'view_gst'], status: 'active', joined_at: iso(5 * DAY), last_seen_at: null }
+    ],
+    invites: [{ id: 'ti1', email: 'ravi@anvaya.in', name: 'Ravi', role: 'approver', role_label: 'Approver', expires_at: iso(-5 * DAY) }]
+  };
+  API['ops?action=team-invite'] = () => { window.__teamCalls.push('invite'); return { invite_id: 'ti2', email: 'new@anvaya.in', role: 'viewer', role_label: 'Viewer', code: 'K7QM-4XPA-9TRW', link: 'https://www.margynlabs.com/app.html#/join?code=K7QM-4XPA-9TRW', expires_at: iso(-7 * DAY), emailed: false }; };
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;

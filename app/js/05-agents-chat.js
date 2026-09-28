@@ -132,14 +132,15 @@ async function openAgentHome(agentId){
 
 async function saveChatMessage(threadKey, vital, role, content, agentId){
   try {
-    await sbClient.from('chat_messages').insert({ user_id: currentUser.id, thread_key: threadKey, vital: vital || null, role, content, agent_id: agentId || 'margyn' });
+    const row = { user_id: currentUser.id, thread_key: threadKey, vital: vital || null, role, content, agent_id: agentId || 'margyn' };
+    await sbClient.from('chat_messages').insert(typeof mgChatAuthor === 'function' ? mgChatAuthor(row) : row);
   } catch(e){ console.error('[margyn] saveChatMessage:', e); }
 }
 
 async function loadChatThread(threadKey, limit){
-  const { data, error } = await sbClient.from('chat_messages')
-    .select('*').eq('user_id', currentUser.id).eq('thread_key', threadKey)
-    .order('created_at', { ascending:false }).limit(limit || (CHAT_CONTEXT_CAP * 2));
+  let q = sbClient.from('chat_messages').select('*').eq('user_id', currentUser.id).eq('thread_key', threadKey);
+  if(typeof mgChatScope === 'function') q = mgChatScope(q);   // each person's own threads
+  const { data, error } = await q.order('created_at', { ascending:false }).limit(limit || (CHAT_CONTEXT_CAP * 2));
   if(error){ console.error('[margyn] loadChatThread:', error); return []; }
   return data.reverse(); // oldest first, for natural replay order
 }
@@ -151,8 +152,9 @@ async function loadAllThreadSummaries(){
   // ones ate most of that window. Not a perfect fix (a proper one would
   // be a small Postgres view doing DISTINCT ON thread_key server-side),
   // but comfortably covers real usage without a new migration.
-  const { data, error } = await sbClient.from('chat_messages')
-    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(3000);
+  let q = sbClient.from('chat_messages').select('*').eq('user_id', currentUser.id);
+  if(typeof mgChatScope === 'function') q = mgChatScope(q);
+  const { data, error } = await q.order('created_at', { ascending:false }).limit(3000);
   if(error){ console.error('[margyn] loadAllThreadSummaries:', error); return []; }
   const seen = new Map();
   data.forEach(m => { if(!seen.has(m.thread_key)) seen.set(m.thread_key, m); });

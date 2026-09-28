@@ -128,7 +128,8 @@ function renderSettingsView(){
   const bands = scoreBandCutoffs();
   const toggle = (id, on) => '<label class="rd-toggle"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><span class="track"></span></label>';
   mount.innerHTML =
-    '<div class="set-block"><h3>People</h3><div class="set-card" id="setPeopleMount"></div></div>' +
+    '<div class="set-block"><h3>App logins</h3><div class="set-card" id="setTeamMount"></div></div>' +
+    '<div class="set-block"><h3>People on WhatsApp</h3><div class="set-card" id="setPeopleMount"></div></div>' +
     '<div class="set-block"><h3>Notifications</h3><div class="set-card">' +
       '<div class="set-row"><span>Weekly email digest<span class="set-desc">A short summary of your Pulse Score and open items, once a week.</span></span>' +
         '<span class="rd-tag">Coming</span></div>' +
@@ -180,6 +181,7 @@ function renderSettingsView(){
   const bind = (id, view) => { const el = document.getElementById(id); if(el) el.addEventListener('click', () => showView(view)); };
   bind('setGoAgents', 'agents'); bind('setGoConnections', 'connectors'); bind('setGoProfile', 'profile');
   renderPeopleMounts(true);
+  if(typeof mgRenderTeam === 'function') mgRenderTeam(true);
   const del = document.getElementById('setDeleteAccount');
   if(del) del.addEventListener('click', () => { if(typeof confirmAccountDelete === 'function') confirmAccountDelete(); });
 }

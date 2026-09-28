@@ -740,8 +740,12 @@ const APP_MEMORY_HOURS = 24;
 async function appMemoryBlock(profileId) {
   try {
     const since = new Date(Date.now() - APP_MEMORY_HOURS * 3600000).toISOString();
-    const rows = await selectRows('chat_messages',
-      `select=thread_key,role,content,created_at&user_id=eq.${profileId}&created_at=gte.${since}&order=created_at.desc&limit=30`);
+    // The owner's own messages only: with team logins, other people on the
+    // account have their own threads (author_id). Before that column exists,
+    // every message on the account is the owner's.
+    const q = `select=thread_key,role,content,created_at&user_id=eq.${profileId}&created_at=gte.${since}&order=created_at.desc&limit=30`;
+    const rows = await selectRows('chat_messages', `${q}&or=(author_id.is.null,author_id.eq.${profileId})`)
+      .catch(() => selectRows('chat_messages', q));
     const turns = rows.filter(r => (r.role === 'user' || r.role === 'assistant') && r.content && r.content.trim());
     if (!turns.length) return '';
     const key = turns[0].thread_key;

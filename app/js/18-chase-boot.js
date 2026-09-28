@@ -283,6 +283,11 @@ async function runAccountDelete(){
 }
 
 function confirmAccountDelete(){
+  // Only the owner can delete the business (team logins, 19g-team.js).
+  if(typeof mgActor !== 'undefined' && mgActor && !mgActor.isOwner){
+    mgConfirm({ title:'Only the owner can delete this account', body:'You’re signed in as ' + mgActor.roleLabel + '. Ask the account’s owner.', confirmLabel:'OK', cancelLabel:'Close' });
+    return;
+  }
   openAgentModal(
     '<div class="agent-modal-title">Delete account</div>' +
     '<div class="hint">This deactivates your account immediately, revokes every connected source (Razorpay, Zoho, Shopify), and signs you out. Data is purged later by a scheduled job. This cannot be undone from the app.</div>' +

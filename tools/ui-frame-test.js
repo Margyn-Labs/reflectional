@@ -297,6 +297,55 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/Fresh Entry Traders/.test(await p.textContent('#view-receivables')), 'the entry is still there after the refresh');
   ok(await p.evaluate(() => { const c = buildCrossLedgerSummary(); return !!c && c.receivables.reconciledTotal > 0 && 'odoo' in c.sourcesPresent; }), 'chat cross-source summary built from the reconciled model');
 
+  // 10b. Team logins (19g-team.js): the owner manages the team
+  await boot('#/settings');
+  await p.waitForTimeout(400);
+  const teamTxt = await p.textContent('#setTeamMount');
+  ok(/Arjun Kapoor/.test(teamTxt) && /Priya Mehta/.test(teamTxt) && /S\. Rao \(CA\)/.test(teamTxt), 'App logins lists the owner and both people');
+  ok(/Waiting to join/.test(teamTxt) && /ravi@anvaya\.in/.test(teamTxt), 'open invite listed');
+  await p.fill('#mgTeamEmail', 'new@anvaya.in'); await p.selectOption('#mgTeamRole', 'viewer');
+  ok(/changes nothing/.test(await p.textContent('#mgTeamRoleDesc')), 'role description follows the picked role');
+  await p.click('#mgTeamGo'); await p.waitForTimeout(500);
+  ok(await p.evaluate(() => window.__teamCalls.includes('invite')) && /K7QM-4XPA-9TRW/.test(await p.textContent('#setTeamMount .mg-team-code')), 'Create invite shows the code once');
+  await p.click('[data-team-copy="done"]'); await p.waitForTimeout(200);
+  ok(!(await p.$('#setTeamMount .mg-team-code')), 'Done hides the code');
+  await p.click('[data-team-access="tm1"]'); await p.waitForTimeout(250);
+  ok(await p.evaluate(() => document.querySelectorAll('.mg-team-perms [data-perm]').length === 8 && !document.querySelector('.mg-team-perms [data-perm="manage_people"]').checked), 'Access drawer: 8 switches, Finance defaults shown');
+  await p.keyboard.press('Escape');
+
+  // 10c. A member is recognised and the app is tailored to them
+  const asMember = (role, label, perms) => p.evaluate(([role, label, perms]) => {
+    mgMe = { ready: true, me: { id: 'u-ca' }, own_account: null, memberships: [{ account_id: 'demo', company_name: 'Anvaya Home Goods Pvt Ltd', role, role_label: label, name: 'S. Rao', permissions: perms }] };
+    mgActor = { authId: 'u-ca', email: 'rao@raoandco.in', accountId: 'demo', isOwner: false, role, roleLabel: label, name: 'S. Rao', company: 'Anvaya Home Goods Pvt Ltd', permissions: perms };
+    mgApplyActor(); showView('home');
+  }, [role, label, perms]);
+  await asMember('advisor', 'Advisor (CA)', ['view_cash', 'view_receivables', 'view_payables', 'view_gst']);
+  await p.waitForTimeout(300);
+  const hidden = await p.$$eval('.pagenav button.mg-hide-perm', x => x.map(b => b.dataset.view).sort());
+  ok(JSON.stringify(hidden) === JSON.stringify(['calculate', 'connectors', 'invoicing', 'people', 'settings'].filter(v => hidden.includes(v))) && hidden.includes('connectors') && hidden.includes('settings') && !hidden.includes('receivables'), 'Advisor: admin and edit pages hidden from the rail (' + hidden + ')');
+  ok(await p.evaluate(() => document.body.classList.contains('mg-ro')), 'Advisor: read-only');
+  ok(/Welcome, S\./.test(await p.textContent('#view-home h1')) && /Advisor \(CA\), read-only/.test(await p.textContent('#view-home')), 'Home greets them by name and role');
+  ok((await p.textContent('#mgUserName')) === 'S. Rao' && /Advisor \(CA\) · Anvaya Home Goods Pvt Ltd · read-only/.test(await p.textContent('#mgUserRole')), 'user menu shows the person, role and business');
+  await p.evaluate(() => showView('receivables')); await p.waitForTimeout(200);
+  ok(!(await p.isVisible('#view-receivables .mg-ph-actions .mg-btn.primary')), 'Advisor: no New invoice button');
+  await p.evaluate(() => { location.hash = '#/settings'; }); await p.waitForTimeout(400);
+  ok(JSON.stringify(await vis()) === '["view-home"]', 'Advisor: a Settings link opens Home instead');
+  ok(await p.evaluate(() => mgAccountHeaderFor('/api/reconcile?action=position') === 'demo' && mgAccountHeaderFor('/api/ops?action=team-whoami') === null && mgAccountHeaderFor('https://cdn.example.com/x.js') === null), 'API calls carry the account; whoami and other hosts do not');
+  await asMember('approver', 'Approver', ['view_receivables', 'view_payables', 'approve']);
+  await p.waitForTimeout(300);
+  const tiles = await p.$$eval('#view-home .mg-tile .mg-tile-l, #view-home .mg-tile-label, #view-home .mg-tile', x => x.map(e => e.textContent).join('|'));
+  ok(!/Cash|Runway|GST payable/.test(tiles) && /Receivables overdue/.test(tiles), 'Approver: Home shows no cash, runway or GST tiles');
+  const homeHeads = await p.$$eval('#view-home .mg-panel-h h2', x => x.map(e => e.textContent).join('|'));
+  ok(!(await p.$('#view-home [data-fc-adjust]')) && !/Cash position|forecast/i.test(homeHeads), 'Approver: no cash chart or forecast panel (' + homeHeads + ')');
+  ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="cash"]').classList.contains('mg-hide-perm') && !document.querySelector('.pagenav button[data-view="payables"]').classList.contains('mg-hide-perm')), 'Approver: Cash hidden, Payables shown');
+  await p.evaluate(() => { mgMe = null; mgActor = null; mgApplyActor(); showView('home'); });
+
+  // 10d. An invite link is kept through sign-in and the URL is cleaned
+  await p.goto('about:blank'); await p.goto(B + '#/join?code=ABCD-EFGH-JKLM'); await p.waitForTimeout(800);
+  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('margyn_join_code') || '{}').code === 'ABCD-EFGH-JKLM'), 'invite code kept for after sign-in');
+  ok(await p.isVisible('#authInviteNote') && !p.url().includes('ABCD'), 'sign-in says you were invited; code gone from the URL');
+  await p.evaluate(() => localStorage.removeItem('margyn_join_code'));
+
   // 10. Zoho callback hash is left alone
   await boot('#zoho=select-org&org_ref=abc');
   ok(!/#\/home/.test(p.url()) || !p.url().includes('zoho='), 'Zoho callback hash not overwritten before it is handled (' + p.url().split('#')[1] + ')');
