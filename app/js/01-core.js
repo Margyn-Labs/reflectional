@@ -137,6 +137,7 @@ async function routeFor(session){
     razorpayConnected = false; lastSyncedAt = null;
     zohoConnected = false; zohoVitals = null; zohoLedgerRows = { receivables: [], payables: [] }; zohoPendingOrgRef = null; zohoChosenOrgId = null;
     odooConnected = false; odooStatus = null;
+    if(typeof mgPos !== 'undefined'){ mgPos = null; mgPosSigAt = null; }
     cashfreeConnected = false; cashfreeStatus = null;
     shopifyConnected = false; shopifyStore = null;
     if(shopifyPollTimer){ clearInterval(shopifyPollTimer); shopifyPollTimer = null; }

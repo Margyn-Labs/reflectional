@@ -73,6 +73,7 @@
 .mg-search{ height:32px; min-width:200px; border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 10px; font:500 var(--f13) var(--font-ui); background:var(--g0); color:var(--g900); }
 .mg-chip{ height:28px; display:inline-flex; align-items:center; gap:6px; padding:0 10px; border:1px solid var(--g300); border-radius:14px; background:var(--g0); font:600 var(--f12) var(--font-ui); color:var(--g600); cursor:pointer; }
 .mg-count{ margin-left:auto; font-size:var(--f12); color:var(--g500); }
+.mg-posnote{ margin:0 0 12px; padding:8px 12px; border-radius:6px; background:var(--g50); border:1px solid var(--g200); font-size:var(--f12); color:var(--g700); }
 .mg-aging{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:1px; background:var(--g200); border:1px solid var(--g200); border-radius:var(--r-panel); overflow:hidden; margin-bottom:12px; }
 .mg-aging button{ background:var(--g0); border:0; padding:10px 14px; text-align:left; cursor:pointer; font:inherit; color:inherit; }
 .mg-aging button:hover{ background:var(--g25); }

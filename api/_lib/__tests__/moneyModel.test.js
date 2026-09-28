@@ -105,9 +105,10 @@ const browserSrc = [
   extract('07-ledger.js', 'unifiedLedgerRows'),
   extract('03-data.js', 'daysFromToday'),
   extract('19-pages.js', 'MG_SRC_ORDER', 'const'),
-  extract('19-pages.js', 'mgMoneyRows'),
-  extract('19-pages.js', 'mgMoneyGroups')
-].join('\n') + '\nthis.groups = mgMoneyGroups;';
+  extract('19-pages.js', 'mgMoneyRowsLocal'),
+  extract('19-pages.js', 'mgMoneyGroupsLocal'),
+  extract('19-pages.js', 'mgGroupsFromPos')
+].join('\n') + '\nthis.groups = mgMoneyGroupsLocal; this.fromPos = mgGroupsFromPos;';
 
 function browserGroups(dir, inputs) {
   const RealDate = Date;
@@ -119,6 +120,12 @@ function browserGroups(dir, inputs) {
   vm.createContext(ctx);
   vm.runInContext(browserSrc, ctx);
   return ctx.groups(dir);
+}
+function browserFromPos(dir, inputs, pos) {
+  const ctx = Object.assign({ Math, Number, String, Set, Map, Object, console }, inputs);
+  vm.createContext(ctx);
+  vm.runInContext(browserSrc, ctx);
+  return ctx.fromPos(dir, pos);
 }
 
 // A mixed book: manual + upload rows, Zoho, Tally, Odoo; name variants,
@@ -169,6 +176,22 @@ for (const dir of ['recv', 'pay']) {
   const s = M.groupRows(serverRows(dir), T).map(shape);
   check(`parity ${dir}: ${b.length} parties, identical to the browser`, JSON.stringify(b) === JSON.stringify(s), { browser: b, server: s });
 }
+// The app's view of the server position (mgGroupsFromPos) must equal its own
+// local model: same parties, figures, statuses, and manual rows still editable.
+const withIds = (arr) => arr.map((r, i) => Object.assign({ id: 100 + i }, r));
+fx.receivables = withIds(fx.receivables); fx.payables = withIds(fx.payables);
+for (const dir of ['recv', 'pay']) {
+  const rows = serverRows(dir).map((r) => r);
+  const own = dir === 'recv' ? fx.receivables : fx.payables;
+  rows.filter((r) => r.src === 'manual').forEach((r, i) => { r.id = own[i].id; });
+  const pos = M.position(rows, T);
+  const viaServer = browserFromPos(dir, browserInputs(), pos);
+  const local = browserGroups(dir, browserInputs());
+  check(`app reads the server position ${dir}: identical to its local model`, JSON.stringify(viaServer.map(shape)) === JSON.stringify(local.map(shape)), { server: viaServer.map(shape), local: local.map(shape) });
+  const m = viaServer.flatMap((g) => (g.by.manual ? g.by.manual.rows : []));
+  check(`manual rows from the server stay editable with their entry (${dir})`, m.length === own.length && m.every((r) => r.editable && r.raw && r.raw.id === Number(r.raw.id)), m.map((r) => r.raw && r.raw.id));
+}
+
 check('parity fixture covers agree, conflict and single', (() => {
   const st = M.groupRows(serverRows('recv'), T).map((g) => g.status);
   return st.includes('agree') && st.includes('conflict') && st.includes('single');
@@ -222,6 +245,14 @@ check('parity fixture covers agree, conflict and single', (() => {
   const broken = await M.positionForAccount('u1', { dirs: ['recv'] });
   check('a failing source lands in errors, others still load',
     'tally' in broken.receivables.errors && !broken.receivables.coverage.tally && broken.receivables.coverage.zoho.rows === 1, broken.receivables.errors);
+
+  /* ---------- WhatsApp list_receivables reads the same model ---------- */
+  DB.tally_installs = [{ id: 't1', user_id: 'u1', status: 'active' }];
+  const { execTool } = require('../whatsappAgent');
+  const wa = await execTool('list_receivables', {}, { profileId: 'u1' });
+  check('WhatsApp: reconciled total matches the position (never a sum of sources)', wa.total_reconciled === 150000 && !('total_all_sources' in wa), wa.total_reconciled);
+  check('WhatsApp: largest 25 of 150 customers, coverage complete', wa.open_receivables.length === 25 && /of 150/.test(wa.showing) && wa.coverage === 'complete', wa.showing);
+  check('WhatsApp: per-source totals labelled, kept apart', wa.total_by_source['Zoho Books'] === 1000 && wa.total_by_source.Tally === 149000, wa.total_by_source);
 
   /* ---------- actor ---------- */
   const actor = await A.resolveActor({ headers: { authorization: 'Bearer good' } });

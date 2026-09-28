@@ -265,6 +265,9 @@ async function refreshAll(){
   await loadShopifyStatus();
   await loadTallyStatus();
   tallyData = await loadTallyData();
+  // The reconciled receivables / payables position, computed on the server
+  // over every open row (19-pages.js). Falls back to the local model if slow.
+  if(typeof mgLoadPosition === 'function') await mgLoadPosition();
   // Every connector global is loaded by this point. Rebuild the scoring
   // inputs from the best source available per field; if that moved the
   // picture, a fresh `resolved` snapshot is written and re-read so every

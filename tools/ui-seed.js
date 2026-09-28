@@ -275,13 +275,30 @@ async function seedApp() {
       provenance: 'signal'
     }
   };
+  // The server position (api/_lib/moneyModel.js), built here from the same
+  // seeded rows through the app's local model, so every page renders through
+  // the server path (mgGroupsFromPos) exactly as it does in production.
+  API['reconcile?action=position'] = () => {
+    const dirOut = dir => {
+      const groups = mgMoneyGroupsLocal(dir).map(g => ({
+        key: g.key, party: g.party, amount: g.amount, primary: g.primary, sources: g.sources, status: g.status, diff: g.diff,
+        oldest_days: g.oldestDays, open_items: g.invoices, overdue: g.overdue, due_7d: g.due7,
+        by: Object.fromEntries(g.sources.map(s => [s, { amount: g.by[s].amount, rows: g.by[s].rows.map(r => Object.assign({ party: r.party, ref: r.ref, amount: r.amount, due: r.due, days: r.days }, r.raw && r.raw.id != null ? { id: r.raw.id } : {})) }]))
+      }));
+      const coverage = {};
+      groups.forEach(g => g.sources.forEach(s => { coverage[s] = coverage[s] || { rows: 0, truncated: false, cap: 20000 }; coverage[s].rows += g.by[s].rows.length; }));
+      return { groups, totals: { parties: groups.length, total: groups.reduce((t, g) => t + g.amount, 0) }, coverage, errors: {} };
+    };
+    return { as_of: dayISO(0), receivables: dirOut('recv'), payables: dirOut('pay') };
+  };
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
     const m = url.match(/\/api\/(.+)$/);
     if (!m) return realFetch(input, init);
     const key = Object.keys(API).find(k => m[1].startsWith(k));
-    return new Response(JSON.stringify(key ? API[key] : {}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const body = key ? (typeof API[key] === 'function' ? API[key]() : API[key]) : {};
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
 
   // ---------- globals the loaders don't set ----------
@@ -291,6 +308,11 @@ async function seedApp() {
 
   document.querySelectorAll('.gate').forEach(g => g.classList.add('hidden'));
   document.getElementById('appShell').classList.remove('hidden');
+  // A signed-in session, so calls that need a token (the position) are made.
+  try { sbClient.auth.getSession = async () => ({ data: { session: { access_token: 'seed-token', user: { id: UID } } } }); } catch (e) {}
+  // The What's new card opens over the app after a release; the harness is
+  // an account that has already seen it (it would block every click).
+  try { if(typeof MG_RELEASES !== 'undefined' && MG_RELEASES.length) localStorage.setItem('margyn_whats_new_seen', MG_RELEASES[0].id); } catch (e) {}
   await refreshAll();
   // refreshAll's resolve step may write a fresh snapshot (stubbed to no-op);
   // make sure the seeded history is what every view renders.

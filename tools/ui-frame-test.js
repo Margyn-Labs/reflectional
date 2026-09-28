@@ -283,6 +283,20 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.keyboard.press('Escape');
   await p.evaluate(() => { localStorage.clear(); window.__seedNoPrefsColumn = false; });
 
+  // 10a. Receivables / Payables read the server position (single truth, PR B)
+  await boot('#/receivables');
+  ok(await p.evaluate(() => !!mgPosFor('recv') && !!mgPosFor('pay')), 'position loaded and current after refresh');
+  ok(await p.evaluate(() => JSON.stringify(mgMoneyGroups('recv').map(g => [g.key, g.amount, g.status])) === JSON.stringify(mgMoneyGroupsLocal('recv').map(g => [g.key, g.amount, g.status]))), 'server position = local model on the seed');
+  ok(!(await p.isVisible('#view-receivables .mg-posnote')), 'no coverage note when every source is complete');
+  await p.evaluate(() => { mgPos.receivables.coverage.zoho = { rows: 20000, truncated: true, cap: 20000 }; mgRenderOwn('receivables'); });
+  ok(/Zoho Books has more than 20,000 open items/.test(await p.textContent('#view-receivables .mg-posnote')), 'coverage note shows when a source is capped');
+  await p.evaluate(() => { receivables = receivables.concat([{ id: 'new1', party_name: 'Fresh Entry Traders', amount: 5000, due_date: null, status: 'open', source: 'manual' }]); window.__calls = []; const f = window.fetch; window.fetch = (u, o) => { window.__calls.push(String(u)); return f(u, o); }; mgRenderOwn('receivables'); });
+  ok(/Fresh Entry Traders/.test(await p.textContent('#view-receivables')), 'a new entry shows at once (local model while the position refreshes)');
+  await p.waitForTimeout(900);
+  ok(await p.evaluate(() => window.__calls.some(u => u.includes('action=position')) && !!mgPosFor('recv')), 'position fetched again after the entry and current');
+  ok(/Fresh Entry Traders/.test(await p.textContent('#view-receivables')), 'the entry is still there after the refresh');
+  ok(await p.evaluate(() => { const c = buildCrossLedgerSummary(); return !!c && c.receivables.reconciledTotal > 0 && 'odoo' in c.sourcesPresent; }), 'chat cross-source summary built from the reconciled model');
+
   // 10. Zoho callback hash is left alone
   await boot('#zoho=select-org&org_ref=abc');
   ok(!/#\/home/.test(p.url()) || !p.url().includes('zoho='), 'Zoho callback hash not overwritten before it is handled (' + p.url().split('#')[1] + ')');
