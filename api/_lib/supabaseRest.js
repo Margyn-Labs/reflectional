@@ -116,6 +116,23 @@ async function selectRows(table, query) {
   return res.json();
 }
 
+/**
+ * Every row matching a query, paged 1,000 at a time (PostgREST's own
+ * per-request ceiling), up to `max`. `query` must not carry limit/offset
+ * and needs a stable `order=` so pages don't overlap.
+ * Returns { rows, truncated } — truncated means more than `max` rows exist,
+ * so the caller can say "latest N of more" instead of a silently short total.
+ */
+async function selectAllRows(table, query, { pageSize = 1000, max = 20000 } = {}) {
+  const rows = [];
+  for (let offset = 0; offset <= max; offset += pageSize) {
+    const page = await selectRows(table, `${query}&limit=${pageSize}&offset=${offset}`);
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows.length > max ? { rows: rows.slice(0, max), truncated: true } : { rows, truncated: false };
+}
+
 /** Call a Postgres function exposed via PostgREST (`/rest/v1/rpc/<name>`). */
 async function rpc(fnName, args) {
   const res = await restRequest(`rpc/${fnName}`, { method: 'POST', body: args });
@@ -183,6 +200,7 @@ module.exports = {
   insertRows,
   updateRows,
   selectRows,
+  selectAllRows,
   rpc,
   logConnectorEvent,
   setConnectorStatus

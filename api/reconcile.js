@@ -2,6 +2,9 @@
  * POST /api/reconcile?action=run          — reconcile one user (JWT-authed) or all users (cron)
  * POST /api/reconcile?action=resolve       — manually resolve a pending_review row (JWT-authed)
  * GET  /api/reconcile?action=summary       — read-only view of reconciliation output for the UI (JWT-authed)
+ * GET  /api/reconcile?action=position      — the reconciled receivables / payables position, every open
+ *                                            row from every source (JWT-authed; see _lib/moneyModel.js).
+ *                                            ?dir=recv|pay (default both), ?rows=0 to omit invoice rows
  *
  * Wraps the pure matching logic in api/_lib/reconcileMatcher.js with real
  * Supabase reads/writes. Zero-npm: plain fetch() only, matching the rest
@@ -25,6 +28,8 @@ const {
 } = require('./_lib/reconcilerV2');
 const { runAgent } = require('./_lib/closeCollectionsAgent');
 const { runLlmTier } = require('./_lib/closeCollectionsLlmTier');
+const { resolveActor, can } = require('./_lib/actor');
+const { positionForAccount } = require('./_lib/moneyModel');
 
 const LOOKBACK_DAYS = 30;
 
@@ -752,6 +757,24 @@ async function reviewAgentAction({ actionId, userId, decision }) {
 
 module.exports = async (req, res) => {
   const action = req.query.action;
+
+  if (action === 'position') {
+    if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
+    const actor = await resolveActor(req);
+    if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    const want = req.query.dir === 'recv' ? ['recv'] : req.query.dir === 'pay' ? ['pay'] : ['recv', 'pay'];
+    const dirs = want.filter((d) => can(actor, d === 'recv' ? 'view_receivables' : 'view_payables'));
+    if (!dirs.length) { res.status(403).json({ error: 'Not permitted' }); return; }
+    try {
+      const result = await positionForAccount(actor.accountId, { dirs, withRows: req.query.rows !== '0' });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(result);
+    } catch (err) {
+      console.error('[reconcile] position failed:', err.message);
+      res.status(500).json({ error: 'Could not build the position' });
+    }
+    return;
+  }
 
   if (action === 'summary') {
     const user = await getUserFromRequest(req);
