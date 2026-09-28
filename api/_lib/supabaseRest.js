@@ -52,7 +52,39 @@ async function getUserFromRequest(req) {
   });
 
   if (!res.ok) return null;
-  return res.json();
+  return accountFor(req, await res.json());
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Team logins (2026-09-29). The app sends X-Margyn-Account when the person
+ * signed in is working in someone else's account. Every endpoint then acts
+ * on that account: the returned user's `id` is the ACCOUNT, `auth_id` is the
+ * person, and `member` carries their role and permissions. A header that
+ * doesn't match an active membership, or a call the person's role doesn't
+ * allow (teamAccess.memberMayCall), is refused: null, which every endpoint
+ * already answers with 401. No header = the login's own account, as before.
+ */
+async function accountFor(req, user) {
+  if (!user || !user.id) return null;
+  const hdr = (req.headers && (req.headers['x-margyn-account'] || req.headers['X-Margyn-Account'])) || '';
+  const want = String(hdr).trim();
+  if (!want || want === user.id) return user;
+  if (!UUID_RE.test(want)) return null;
+  let rows;
+  try {
+    rows = await selectRows('account_members',
+      `select=id,role,permissions,name&account_id=eq.${want}&user_id=eq.${user.id}&status=eq.active&limit=1`);
+  } catch (e) {
+    return null;   // no team table yet: a membership can't be honoured
+  }
+  if (!rows.length) return null;
+  const { effectivePermissions, memberMayCall } = require('./teamAccess');
+  const m = rows[0];
+  const permissions = effectivePermissions(m.role, m.permissions);
+  if (!memberMayCall(req, permissions)) return null;
+  return { ...user, id: want, auth_id: user.id, member: { id: m.id, role: m.role, name: m.name || null, permissions } };
 }
 
 /**
@@ -201,6 +233,7 @@ module.exports = {
   updateRows,
   selectRows,
   selectAllRows,
+  accountFor,
   rpc,
   logConnectorEvent,
   setConnectorStatus

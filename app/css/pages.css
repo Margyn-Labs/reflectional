@@ -238,3 +238,49 @@
 .mg-imp-party.new > span:first-child{ font-weight:600; color:var(--ai, #CC5B34); }
 .mg-imp-party select{ width:auto !important; max-width:100%; height:28px !important; margin:0 !important; font:400 var(--f12) var(--font-ui); border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 6px !important; background:var(--g0); }
 @media (max-width:600px){ .mg-pf{ grid-template-columns:1fr; } .mg-pf-none{ flex-direction:column; align-items:flex-start; } }
+
+/* ---------- team logins (19g-team.js) ---------- */
+.mg-invite-note{ margin:0 0 16px; padding:10px 12px; border-radius:var(--r-ctl); background:var(--brand-50); color:var(--brand-700); font-size:var(--f13); line-height:1.5; }
+.mg-join-box{ margin:0 0 18px; padding:12px; border:1px solid var(--g200); border-radius:var(--r-panel); background:var(--g25); }
+.mg-join-q{ font-size:var(--f13); color:var(--g700); }
+.mg-join-form{ margin-top:12px; }
+.mg-linkbtn{ border:0; background:none; padding:0; color:var(--link, var(--brand-700)); font:inherit; font-weight:600; cursor:pointer; text-decoration:underline; }
+.mg-user-role{ margin-top:4px; font-size:var(--f12); color:var(--g500); }
+.mg-acct-h{ padding:6px 10px 2px; font-size:var(--f12); color:var(--g500); }
+.mg-acct-opt{ justify-content:space-between; }
+.mg-acct-opt small{ color:var(--g500); font-size:var(--f12); }
+.mg-acct-opt.on{ background:var(--g50); font-weight:600; }
+.mg-team-toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:200; max-width:min(520px, calc(100vw - 32px)); padding:10px 16px; border-radius:var(--r-panel); background:var(--g900); color:var(--g0); font-size:var(--f13); box-shadow:0 6px 24px rgba(0,0,0,.18); }
+.mg-team-toast.bad{ background:var(--neg); }
+.pagenav button.mg-hide-perm{ display:none; }
+.mg-team td{ vertical-align:top; }
+.mg-team .mg-sub, .mg-team-invite .mg-sub{ display:block; margin-top:2px; font-size:var(--f12); color:var(--g500); white-space:normal; }
+.mg-team .r .mg-btn{ margin:0 0 4px 4px; }
+.mg-team-h{ margin:18px 0 8px; font-size:var(--f14); font-weight:600; color:var(--g900); }
+.mg-team-code{ margin:16px 0; padding:14px; border:1px solid var(--brand); border-radius:var(--r-panel); background:var(--brand-50); font-size:var(--f13); line-height:1.5; }
+.mg-team-code-v{ margin:10px 0; font-size:var(--f20); letter-spacing:.08em; color:var(--g900); overflow-wrap:anywhere; }
+.mg-team-code-a{ display:flex; flex-wrap:wrap; gap:8px; }
+.mg-team-fields{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+.mg-tf{ display:grid; gap:4px; font-size:var(--f12); color:var(--g700); }
+.mg-tf input, .mg-tf select, .mg-team-role{ height:34px; padding:0 10px; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0); font:inherit; font-size:var(--f13); color:var(--g900); min-width:0; }
+.mg-team-invite .mg-btn.primary{ margin-top:12px; }
+.mg-form-err{ margin-top:8px; font-size:var(--f13); color:var(--neg); }
+.mg-team-perms .set-row{ cursor:pointer; }
+@media (max-width:700px){
+  .mg-team-fields{ grid-template-columns:1fr; }
+  /* One card per person on a phone, not a sideways-scrolling table. */
+  .mg-team thead{ display:none; }
+  .mg-team, .mg-team tbody, .mg-team tr, .mg-team td{ display:block; width:100%; }
+  .mg-team tr{ padding:12px 0; border-bottom:1px solid var(--g100); }
+  .mg-team td{ padding:3px 0; border:0; text-align:left; white-space:normal; }
+  .mg-team td.r, .mg-grid.mg-team td.r{ padding-top:8px; text-align:left; }
+  .mg-team .r .mg-btn{ margin:0 6px 6px 0; }
+  .mg-team-role{ width:100%; }
+}
+/* Read-only roles: no add / edit / settle controls (the server and the
+   database refuse these anyway; this keeps the screen honest). */
+body.mg-ro .mg-ph-actions .mg-btn.primary, body.mg-ro [data-money-settle], body.mg-ro .mg-row-act,
+body.mg-ro [data-party-new], body.mg-ro [data-party-edit], body.mg-ro [data-party-add-dir],
+body.mg-ro #ledgerAddBtn, body.mg-ro #mgImportBtn, body.mg-ro .ledger-form, body.mg-ro [data-fc-adjust]{ display:none !important; }
+body.mg-member #setDeleteAccount, body.mg-member #deleteAccountBtn{ display:none !important; }
+.mg-row2 > .mg-panel:only-child{ grid-column:1 / -1; }   /* Home without the cash panel (a role without cash) */

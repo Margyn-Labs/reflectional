@@ -258,7 +258,7 @@ check('parity fixture covers agree, conflict and single', (() => {
   const actor = await A.resolveActor({ headers: { authorization: 'Bearer good' } });
   check('owner today: accountId is the login, every permission', actor.accountId === 'u1' && A.can(actor, 'view_payables') && A.can(actor, 'manage_people'));
   check('no session -> null', (await A.resolveActor({ headers: {} })) === null && (await A.resolveActor({ headers: { authorization: 'Bearer bad' } })) === null);
-  check('viewer default sees receivables only', JSON.stringify(A.effectivePermissions('viewer')) === '["view_receivables"]');
+  check('viewer default: reads everything, changes nothing', JSON.stringify(A.effectivePermissions('viewer')) === '["view_cash","view_receivables","view_payables","view_gst"]');
   check('overrides add and remove', (() => { const p2 = A.effectivePermissions('finance', { approve: false, manage_people: true }); return !p2.includes('approve') && p2.includes('manage_people'); })());
   check('unknown role gets nothing', A.effectivePermissions('intruder').length === 0);
   check('can() with no actor is false', A.can(null, 'view_cash') === false);

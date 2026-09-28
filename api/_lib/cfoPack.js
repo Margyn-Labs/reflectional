@@ -259,5 +259,5 @@ async function sendTest(deps, { user, period }) {
 }
 
 module.exports = {
-  runCron, sendTest, buildEmail, packConfig, isDue, previousPeriod, shiftPeriod, periodBounds, periodLabel, inr, inrShort, isPeriod
+  runCron, sendTest, sendViaResend, buildEmail, packConfig, isDue, previousPeriod, shiftPeriod, periodBounds, periodLabel, inr, inrShort, isPeriod
 };

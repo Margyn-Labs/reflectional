@@ -204,6 +204,7 @@ function mgVitalName(l){ return MG_VITAL_NAME[l] || l; }
 function mgVital(snap, label){ return snap && Array.isArray(snap.vitals) ? snap.vitals.find(v => v.label === label) : null; }
 function mgPct(now, prev){ return (prev == null || !isFinite(prev) || prev === 0) ? null : ((now - prev) / Math.abs(prev)) * 100; }
 function mgTile(o){
+  if(o.need && typeof mgCan === 'function' && !mgCan(o.need)) return '';   // not in this person's role (19g-team.js)
   let chg = '<div class="mg-tile-chg flat">' + (o.note ? escapeHtml(o.note) : '&nbsp;') + '</div>';
   if(o.delta != null && isFinite(o.delta)){
     const up = o.delta > 0, flat = Math.abs(o.delta) < 0.05;
@@ -275,12 +276,12 @@ function mgRenderHome(){
   const runway = mgVital(s, 'Working Capital Runway'), runwayP = mgVital(p, 'Working Capital Runway');
   const rNow = runway ? parseFloat(runway.value) : null, rPrev = runwayP ? parseFloat(runwayP.value) : null;
   const tiles = !s ? '' : '<div class="mg-tiles">' +
-    mgTile({ label:'Cash', value:fmtINR(s.cash, 'tile'), full:fmtINR(s.cash), delta:p ? mgPct(Number(s.cash), Number(p.cash)) : null, goodUp:true, src:srcLine, go:'cash' }) +
-    mgTile({ label:'Runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less payables due, over monthly spend',
+    mgTile({ need:'view_cash', label:'Cash', value:fmtINR(s.cash, 'tile'), full:fmtINR(s.cash), delta:p ? mgPct(Number(s.cash), Number(p.cash)) : null, goodUp:true, src:srcLine, go:'cash' }) +
+    mgTile({ need:'view_cash', label:'Runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less payables due, over monthly spend',
       delta:(rNow != null && rPrev != null) ? rNow - rPrev : null, deltaText:(rNow != null && rPrev != null) ? Math.abs(rNow - rPrev).toFixed(1) + ' months' : '', goodUp:true, src:srcLine, go:'pulse' }) +
-    mgTile({ label:'Receivables overdue', value:fmtINR(overdue, 'tile'), full:fmtINR(overdue), delta:null, note:nOver + ' customer' + (nOver === 1 ? '' : 's') + ' overdue', goodUp:false, src:srcLine, go:'receivables' }) +
-    mgTile({ label:'Payables due in 7 days', value:fmtINR(due7, 'tile'), full:fmtINR(due7) + ', including anything already overdue', delta:null, note:nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay', goodUp:false, src:srcLine, go:'payables' }) +
-    mgTile({ label:'GST payable this month', value:fmtINR(s.gst_payable, 'tile'), full:fmtINR(s.gst_payable), delta:p ? mgPct(Number(s.gst_payable), Number(p.gst_payable)) : null, goodUp:false, src:srcLine, go:'gst' }) +
+    mgTile({ need:'view_receivables', label:'Receivables overdue', value:fmtINR(overdue, 'tile'), full:fmtINR(overdue), delta:null, note:nOver + ' customer' + (nOver === 1 ? '' : 's') + ' overdue', goodUp:false, src:srcLine, go:'receivables' }) +
+    mgTile({ need:'view_payables', label:'Payables due in 7 days', value:fmtINR(due7, 'tile'), full:fmtINR(due7) + ', including anything already overdue', delta:null, note:nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay', goodUp:false, src:srcLine, go:'payables' }) +
+    mgTile({ need:'view_gst', label:'GST payable this month', value:fmtINR(s.gst_payable, 'tile'), full:fmtINR(s.gst_payable), delta:p ? mgPct(Number(s.gst_payable), Number(p.gst_payable)) : null, goodUp:false, src:srcLine, go:'gst' }) +
     '</div>';
 
   // Pulse: the three vitals moving the score most, in points vs a neutral 50.
@@ -302,11 +303,14 @@ function mgRenderHome(){
   const hist = (snapshots || []).slice(0, 13).slice().reverse();
   const brief = s && s.briefing;
   const fc = s && typeof mgForecastPanel === 'function' ? mgForecastPanel() : null;
-  host.innerHTML = mgPageHead({ group:'Overview', title:'Home', scope:mgScopeText('Reconciled') }) +
+  // A team member is greeted by name, with the role they're signed in as.
+  const who = typeof mgActorName === 'function' ? mgActorName() : '';
+  host.innerHTML = mgPageHead({ group:'Overview', title:who ? 'Welcome, ' + who.split(' ')[0] : 'Home',
+      sub:who ? 'Signed in as ' + mgActor.roleLabel + (mgCan('edit') ? '' : ', read-only') + '. You see what your role allows.' : '', scope:mgScopeText('Reconciled') }) +
     (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>') +
     tiles +
     '<div class="mg-row2">' +
-      (fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
+      (typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
         (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>')) +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Pulse Score</h2><span class="mg-aside">Operating health, not a credit score</span></div><div class="mg-panel-b">' + pulse + '</div></div>' +
     '</div>' +

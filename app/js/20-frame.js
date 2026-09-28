@@ -257,8 +257,8 @@ function mgRenderPageHead(page, p){
 }
 function mgRenderUser(){
   const nameEl = document.getElementById('mgUserName'); if(!nameEl) return;
-  let who = '';
-  try { const me = (agentStakeholders || []).find(x => x.is_primary && x.name); if(me) who = me.name; } catch(e){}
+  let who = typeof mgActorName === 'function' ? mgActorName() : '';   // a team member: their own name
+  if(!who){ try { const me = (agentStakeholders || []).find(x => x.is_primary && x.name); if(me) who = me.name; } catch(e){} }
   if(!who){ try { who = (typeof lsGet === 'function' && lsGet('margyn_owner_name')) || ''; } catch(e){} }
   nameEl.textContent = who || mgOrgName();
   const av = document.getElementById('topAvatar');
@@ -270,6 +270,8 @@ function mgGo(pageOrSlug){ const k = MG_PAGES[pageOrSlug] ? pageOrSlug : MG_BY_S
 const mgBaseShowView = showView;
 showView = function(name){
   let page = name === 'summary' ? 'home' : name === 'ledger' ? 'books' : name;
+  // A page this person's role can't see (19g-team.js) opens Home instead.
+  if(typeof mgPageAllowed === 'function' && !mgPageAllowed(page)){ page = 'home'; name = 'home'; }
   const P = MG_PAGES[page];
   MG_OWN.forEach(k => { const el = document.getElementById('view-' + k); if(el) el.classList.add('hidden'); });
   if(!P){ mgBaseShowView(name); }

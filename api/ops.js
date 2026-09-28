@@ -17,6 +17,8 @@
  *                                                             (&user_id=<id> one account, &force=1 ignore the day)
  *   POST /api/ops?action=cfo-pack-test         (user JWT)     email the pack to the signed-in user only
  *                                                             (see api/_lib/cfoPack.js)
+ *   GET|POST /api/ops?action=team-*            (user JWT)     team logins: whoami, list, invite, revoke,
+ *                                                             update, remove, join (see api/_lib/team.js)
  *
  * AUTH
  *   - track: the partner user's own Supabase JWT (Authorization: Bearer ...).
@@ -39,8 +41,10 @@ const {
   getUserFromRequest,
   selectRows,
   insertRows,
+  updateRows,
   restRequest
 } = require('./_lib/supabaseRest');
+const team = require('./_lib/team');
 const { track, ALLOWED_NAMES } = require('./_lib/track');
 const waitlist = require('./_lib/waitlist');
 const cfoPack = require('./_lib/cfoPack');
@@ -524,6 +528,14 @@ module.exports = async (req, res) => {
       res.status(202).json({ ok: true });
     }
     return;
+  }
+
+  // ---- team logins (api/_lib/team.js): the signed-in person's own JWT ----
+  if (/^team-/.test(action || '')) {
+    return team.handle(action, req, res, {
+      getUserFromRequest, selectRows, insertRows, updateRows, restRequest,
+      sendEmail: (msg) => cfoPack.sendViaResend(fetch, msg)
+    });
   }
 
   // ---- waitlist: public marketing-site signup (reached via the
