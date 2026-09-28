@@ -28,6 +28,7 @@
 const { selectRows, insertRows, rpc } = require('./supabaseRest');
 const bsp = require('./whatsappBsp');
 const marginActions = require('./marginActions');
+const moneyModel = require('./moneyModel');
 
 const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -112,13 +113,13 @@ const TOOLS = [
   {
     name: 'list_receivables',
     description:
-      "List the business's OPEN receivables (money customers owe) merged from ALL sources — the self-entered app ledger, Zoho Books, and Tally — each row tagged with its source, plus per-source totals and cross-source agree/conflict flags. Read-only. Use for 'who owes me', 'what's overdue', 'receivables aging', '30/60/90-day receivables', 'top receivables to chase'. Never add the per-source totals together.",
+      "List the business's OPEN receivables (money customers owe) merged from ALL sources — the self-entered app ledger, Zoho Books, Tally and Odoo — one row per counterparty (largest first) with the reconciled total the app shows, per-source totals and agree/conflict flags. Read-only. Use for 'who owes me', 'what's overdue', 'receivables aging', '30/60/90-day receivables', 'top receivables to chase'. Never add the per-source totals together.",
     input_schema: { type: 'object', properties: {}, additionalProperties: false }
   },
   {
     name: 'list_payables',
     description:
-      "List the business's OPEN payables (bills it owes) merged from ALL sources — the self-entered app ledger, Zoho Books, and Tally — each row tagged with its source, plus per-source totals and cross-source agree/conflict flags. Read-only. Use for 'what do I owe', 'upcoming bills', 'payables due', 'what's due this week'. Never add the per-source totals together.",
+      "List the business's OPEN payables (bills it owes) merged from ALL sources — the self-entered app ledger, Zoho Books, Tally and Odoo — one row per counterparty (largest first) with the reconciled total the app shows, per-source totals and agree/conflict flags. Read-only. Use for 'what do I owe', 'upcoming bills', 'payables due', 'what's due this week'. Never add the per-source totals together.",
     input_schema: { type: 'object', properties: {}, additionalProperties: false }
   },
   {
@@ -476,108 +477,53 @@ async function execTool(name, input, ctx) {
   }
 }
 
-// Whole-number days since a YYYY-MM-DD date (positive = in the past / overdue).
-function daysPast(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00Z');
-  if (isNaN(d.getTime())) return null;
-  return Math.round((Date.now() - d.getTime()) / 86400000);
-}
-
-function normPartyName(s) {
-  return String(s || '').toLowerCase()
-    .replace(/\b(pvt|private|ltd|limited|llp|inc|co|corp|corporation|company|the|and)\b/g, '')
-    .replace(/[^a-z0-9]/g, '');
-}
-
+// The same reconciled position the app shows (api/_lib/moneyModel.js): every
+// open row from the ledger, Zoho, Tally and Odoo, each counterparty counted
+// once from its most trusted source. Source totals sit side by side and are
+// never added together.
 async function toolListLedger(ctx, kind) {
-  // kind is 'receivables' | 'payables'. Merge all three sources the app shows:
-  // the self-entered ledger, Zoho Books, and Tally — each row tagged, and
-  // counterparties that appear in 2+ sources flagged agree / conflict.
+  const dir = kind === 'receivables' ? 'recv' : 'pay';
   const partyKey = kind === 'receivables' ? 'customer' : 'vendor';
-  const dir = kind === 'receivables' ? 'receivable' : 'payable';
-  const all = [];
-
-  // 1. self-entered ledger
+  let pos;
   try {
-    const self = await selectRows(
-      kind,
-      `select=party_name,amount,due_date&user_id=eq.${ctx.profileId}&status=eq.open&order=due_date.asc&limit=100`
-    );
-    for (const r of self) all.push({ party: r.party_name, amount: Number(r.amount) || 0, due_date: r.due_date || null, source: 'your ledger' });
-  } catch (e) { /* non-fatal */ }
-
-  // 2. Zoho Books (open invoices / bills for the user's active org)
-  try {
-    const orgs = await selectRows('zoho_organizations', `select=id&user_id=eq.${ctx.profileId}&status=eq.active&limit=1`);
-    if (orgs[0]) {
-      if (kind === 'receivables') {
-        const inv = await selectRows('zoho_invoices', `select=customer_name,balance,due_date&org_ref=eq.${orgs[0].id}&balance=gt.0&limit=150`);
-        for (const r of inv) all.push({ party: r.customer_name, amount: Number(r.balance) || 0, due_date: r.due_date || null, source: 'Zoho Books' });
-      } else {
-        const bl = await selectRows('zoho_bills', `select=vendor_name,balance,due_date&org_ref=eq.${orgs[0].id}&balance=gt.0&limit=150`);
-        for (const r of bl) all.push({ party: r.vendor_name, amount: Number(r.balance) || 0, due_date: r.due_date || null, source: 'Zoho Books' });
-      }
-    }
-  } catch (e) { /* non-fatal */ }
-
-  // 3. Tally (Signal)
-  try {
-    const insts = await selectRows('tally_installs', `select=id&user_id=eq.${ctx.profileId}&status=eq.active`);
-    if (insts.length) {
-      const inList = `(${insts.map((i) => i.id).join(',')})`;
-      const tb = await selectRows('tally_bills', `select=party_name,closing_balance,due_date,direction&install_id=in.${inList}&direction=eq.${dir}&limit=200`);
-      for (const r of tb) all.push({ party: r.party_name, amount: Math.abs(Number(r.closing_balance) || 0), due_date: r.due_date || null, source: 'Tally (Signal)' });
-    }
-  } catch (e) { /* non-fatal */ }
-
-  if (!all.length) {
-    return { [`open_${kind}`]: [], note: `No open ${kind} in any source (your ledger, Zoho, or Tally).` };
+    pos = await moneyModel.positionForAccount(ctx.profileId, { dirs: [dir], withRows: false });
+  } catch (e) {
+    console.error('[whatsappAgent] position failed:', e.message);
+    return { error: 'That lookup failed just now.' };
   }
-
-  // group by counterparty to flag agreement / conflict
-  const groups = {};
-  for (const r of all) {
-    const k = normPartyName(r.party) || ('~' + String(r.party || '').toLowerCase());
-    (groups[k] = groups[k] || { party: r.party, bySource: {} });
-    groups[k].bySource[r.source] = (groups[k].bySource[r.source] || 0) + r.amount;
+  const d = pos[kind];
+  if (!d || !d.groups.length) {
+    return { [`open_${kind}`]: [], note: `No open ${kind} in any source (your ledger, Zoho, Tally or Odoo).` };
   }
-  const agreements = [];
-  const conflicts = [];
-  for (const g of Object.values(groups)) {
-    const srcs = Object.keys(g.bySource);
-    if (srcs.length < 2) continue;
-    const amts = Object.values(g.bySource);
-    const max = Math.max(...amts), min = Math.min(...amts);
-    if (max - min <= Math.max(1, max * 0.02)) agreements.push({ [partyKey]: g.party, amount: Math.round(max), sources: srcs });
-    else conflicts.push({ [partyKey]: g.party, by_source: g.bySource, note: 'sources disagree — give every number, do not blend' });
-  }
-
-  const bySourceTotal = {};
-  let total = 0, overdueTotal = 0;
-  const items = all.map((r) => {
-    total += r.amount;
-    bySourceTotal[r.source] = (bySourceTotal[r.source] || 0) + r.amount;
-    const dp = daysPast(r.due_date);
-    if (dp != null && dp > 0) overdueTotal += r.amount;
-    return {
-      [partyKey]: r.party,
-      amount: Math.round(r.amount),
-      source: r.source,
-      due_date: r.due_date || null,
-      status: dp == null ? 'no due date' : dp > 0 ? `${dp} days overdue` : dp === 0 ? 'due today' : `due in ${-dp} days`
-    };
-  });
-
+  const name = (s) => moneyModel.SRC_NAME[s] || s;
+  const when = (days) => days == null ? 'no due date' : days < 0 ? `${-days} days overdue` : days === 0 ? 'due today' : `due in ${days} days`;
+  const t = d.totals;
+  const coverage = [];
+  for (const [s, c] of Object.entries(d.coverage || {})) if (c.truncated) coverage.push(`${name(s)} has more than ${c.cap} open items; only the first ${c.rows} are counted`);
+  for (const s of Object.keys(d.errors || {})) coverage.push(`${name(s)} could not be read just now and is left out`);
+  const TOP = 25;
   return {
-    [`open_${kind}`]: items,
-    count: items.length,
-    total_by_source: bySourceTotal,
-    total_all_sources: Math.round(total),
-    total_overdue: Math.round(overdueTotal),
-    cross_source_agreements: agreements,
-    cross_source_conflicts: conflicts,
-    source_note: 'Merged from the self-entered app ledger + Zoho Books + Tally. Only the app ledger is self-reported; Zoho is connector-synced; Tally is Signal (one source). Never add the source totals together — the same item can appear in more than one. Where sources agree, say so; where they conflict, give each number.'
+    as_of: pos.as_of,
+    [partyKey + 's']: t.parties,
+    total_reconciled: Math.round(t.total),
+    total_overdue: Math.round(t.overdue),
+    due_within_7_days: Math.round(t.due_7d),
+    ageing: { '0-30 days or not yet due': Math.round(t.ageing.b0), '31-60 days': Math.round(t.ageing.b1), '61-90 days': Math.round(t.ageing.b2), '90+ days': Math.round(t.ageing.b3) },
+    total_by_source: Object.fromEntries(Object.entries(t.by_source).map(([s, v]) => [name(s), Math.round(v.total)])),
+    [`open_${kind}`]: d.groups.slice(0, TOP).map((g) => ({
+      [partyKey]: g.party,
+      amount: Math.round(g.amount),
+      overdue: Math.round(g.overdue),
+      oldest: when(g.oldest_days),
+      open_items: g.open_items,
+      figures_from: name(g.primary),
+      agreement: g.status === 'single' ? `one source (${name(g.primary)}), Signal` : g.status === 'agree' ? `${g.sources.map(name).join(' and ')} agree` : `sources disagree by Rs ${Math.round(g.diff)}`,
+      by_source: g.status === 'conflict' ? Object.fromEntries(g.sources.map((s) => [name(s), Math.round(g.by[s].amount)])) : undefined
+    })),
+    showing: d.groups.length > TOP ? `largest ${TOP} of ${d.groups.length} by amount` : `all ${d.groups.length}`,
+    cross_source_conflicts: d.groups.filter((g) => g.status === 'conflict').slice(0, 10).map((g) => ({ [partyKey]: g.party, by_source: Object.fromEntries(g.sources.map((s) => [name(s), Math.round(g.by[s].amount)])) })),
+    coverage: coverage.length ? coverage.join('. ') : 'complete',
+    source_note: 'total_reconciled is the figure the Margyn app shows: each counterparty counted once, from its most trusted source (Zoho, then Tally, then Odoo, then the self-entered ledger). total_by_source is each system on its own; never add those together. Where sources agree, say so; where they conflict, give each number. Tally and Odoo on their own are Signal.'
   };
 }
 
@@ -877,4 +823,4 @@ async function persist(thread, role, content, toolCalls, waMessageId) {
   }
 }
 
-module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand };
+module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool };

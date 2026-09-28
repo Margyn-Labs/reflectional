@@ -167,31 +167,35 @@ export function formatMargynContext(context) {
   }
 
   // ---- Cross-source ledger (all three receivables/payables origins side by side) ----
-  // ctx.crossLedger is client-computed in buildCrossLedgerSummary(): it groups
-  // every open receivable/payable by counterparty across self-entered, Zoho and
-  // Tally, and flags where 2+ sources agree vs conflict. This is the ONLY place
-  // the three are compared — the blocks above are each source on its own.
+  // ctx.crossLedger comes from buildCrossLedgerSummary() in the app, which reads
+  // the reconciled position (api/_lib/moneyModel.js): every open receivable /
+  // payable grouped by counterparty across self-entered, Zoho, Tally and Odoo,
+  // flagged agree / conflict. This is the ONLY place the sources are compared —
+  // the blocks above are each source on its own.
   const xl = ctx.crossLedger || null;
   let crossLedgerBlock = 'Only one source of receivables/payables is present (or none) — nothing to cross-check yet.';
   if (xl) {
     const sp = xl.sourcesPresent || {};
-    const present = [sp.self && 'your manual/CSV ledger', sp.zoho && 'Zoho Books', sp.tally && 'Tally (Signal)'].filter(Boolean);
+    const present = [sp.self && 'your manual/CSV ledger', sp.zoho && 'Zoho Books', sp.tally && 'Tally (Signal)', sp.odoo && 'Odoo (Signal)'].filter(Boolean);
+    const srcLabel = (k) => ({ self: 'your ledger', zoho: 'Zoho', tally: 'Tally', odoo: 'Odoo' }[k] || k);
     const dirLines = (label, d) => {
       if (!d) return null;
       const t = d.totalsBySource || {};
-      const totalStr = ['self', 'zoho', 'tally'].filter((k) => t[k]).map((k) => `${k === 'self' ? 'your ledger' : k === 'zoho' ? 'Zoho' : 'Tally'} ${inr(t[k])}`).join(' · ');
+      const totalStr = ['self', 'zoho', 'tally', 'odoo'].filter((k) => t[k]).map((k) => `${srcLabel(k)} ${inr(t[k])}`).join(' · ');
       const out = [`${label} totals by source: ${totalStr || 'none'}`];
+      if (d.reconciledTotal != null) out.push(`  Reconciled total (each counterparty counted once, from its most trusted source; the figure the app shows): ${inr(d.reconciledTotal)}`);
+      if (d.note) out.push(`  Coverage: ${d.note}`);
       if (d.agree && d.agree.length) {
         out.push(`  Agree across sources (${d.agree.length}): ` + d.agree.slice(0, 12).map((a) => `${a.party} ${inr(a.amount)} [${a.sources.join('+')}]`).join('; '));
       }
       if (d.conflict && d.conflict.length) {
         out.push(`  CONFLICT — same counterparty, different numbers (${d.conflict.length}) — surface these, never pick one silently:`);
         d.conflict.slice(0, 12).forEach((c) => {
-          out.push('    · ' + c.party + ': ' + Object.keys(c.bySource).map((k) => `${k === 'self' ? 'your ledger' : k} ${inr(c.bySource[k])}`).join(' vs '));
+          out.push('    · ' + c.party + ': ' + Object.keys(c.bySource).map((k) => `${srcLabel(k)} ${inr(c.bySource[k])}`).join(' vs '));
         });
       }
       if (d.singleSource && d.singleSource.length) {
-        out.push(`  Only one source has these (${d.singleSource.length}) — Signal, not confirmed: ` + d.singleSource.slice(0, 10).map((s) => `${s.party} ${inr(s.amount)} [${s.source === 'self' ? 'your ledger' : s.source}]`).join('; '));
+        out.push(`  Only one source has these (${d.singleSource.length}) — Signal, not confirmed: ` + d.singleSource.slice(0, 10).map((s) => `${s.party} ${inr(s.amount)} [${srcLabel(s.source)}]`).join('; '));
       }
       return out.join('\n');
     };

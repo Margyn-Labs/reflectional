@@ -16,7 +16,7 @@ const MG_SRC_NAME = { zoho:'Zoho Books', tally:'Tally', odoo:'Odoo', manual:'Man
 const MG_SRC_LOGO = { zoho:['Z', '#E0482F'], tally:['T', '#1F5FAD'], odoo:['O', '#714B67'], manual:['M', '#5B6472'], razorpay:['R', '#2B6DE8'], cashfree:['C', '#5F259F'], shopify:['S', '#5E8E3E'] };
 function mgLogo(src){ const l = MG_SRC_LOGO[src] || ['?', '#8B93A0']; return '<span class="mg-src-logo" style="background:' + l[1] + '">' + l[0] + '</span>'; }
 
-function mgMoneyRows(dir){
+function mgMoneyRowsLocal(dir){
   const out = [];
   try {
     unifiedLedgerRows(dir).forEach(r => out.push({
@@ -38,9 +38,9 @@ function mgMoneySources(dir){ const s = new Set(mgMoneyRows(dir).map(r => r.src)
 /* One row per counterparty. `amount` comes from the most trusted source that
    has the party (connector before manual); the other sources are compared
    against it, never added to it. Same 2% / ₹1 tolerance as crossLedgerGroups(). */
-function mgMoneyGroups(dir){
+function mgMoneyGroupsLocal(dir){
   const map = new Map();
-  mgMoneyRows(dir).forEach(r => {
+  mgMoneyRowsLocal(dir).forEach(r => {
     if(!map.has(r.key)) map.set(r.key, { key:r.key, party:r.party, by:{} });
     const g = map.get(r.key);
     if(!g.by[r.src]) g.by[r.src] = { amount:0, rows:[] };
@@ -63,6 +63,98 @@ function mgMoneyGroups(dir){
       due7:prow.filter(r => r.days !== null && r.days <= 7).reduce((s, r) => s + r.amount, 0)
     };
   }).sort((a, b) => b.amount - a.amount);
+}
+/* ---------- the server position (GET /api/reconcile?action=position) ----------
+   The same rules as mgMoneyGroupsLocal(), computed once on the server over
+   EVERY open row (this browser only ever received Zoho 250, Tally 100 and
+   Odoo 100). Chat, voice and WhatsApp read the same model.
+   Freshness: the position is tied to a fingerprint of what this browser has
+   loaded (manual entries, connector sync times). Add or settle an entry and
+   the fingerprint moves: the page shows the local figures at once and the
+   position is fetched again in the background. If the server can't be
+   reached, the local model is used, as before. */
+let mgPos = null, mgPosSigAt = null, mgPosBusy = null, mgPosTimer = null, mgPosFailed = false;
+function mgPosSig(){
+  const own = a => (a || []).map(r => r.id + ':' + r.amount + ':' + (r.due_date || '')).join(',');
+  const z = (typeof zohoLedgerRows !== 'undefined' && zohoLedgerRows) || {};
+  return [(typeof currentUser !== 'undefined' && currentUser && currentUser.id) || '', own(receivables), own(payables),
+    (z.receivables || []).length + '/' + (z.payables || []).length + '/' + ((typeof zohoVitals !== 'undefined' && zohoVitals && (zohoVitals.last_synced_at || zohoVitals.as_of)) || ''),
+    (typeof tallyData !== 'undefined' && tallyData && tallyData.as_of) || '',
+    (typeof odooStatus !== 'undefined' && odooStatus && odooStatus.last_success_at) || ''].join('|');
+}
+function mgLoadPosition(){
+  if(mgPosBusy) return mgPosBusy;
+  const sig = mgPosSig();
+  mgPosBusy = (async () => {
+    try {
+      const { data:{ session } } = await sbClient.auth.getSession();
+      if(!session) return;
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
+      const res = await fetch('/api/reconcile?action=position', { headers:{ 'Authorization':'Bearer ' + session.access_token }, signal:ctl.signal });
+      clearTimeout(timer);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      mgPos = await res.json(); mgPosSigAt = sig; mgPosFailed = false;
+    } catch(e){ mgPosFailed = true; console.error('[margyn] position:', e.message); }
+    finally { mgPosBusy = null; }
+  })();
+  return mgPosBusy;
+}
+/* Re-draw the page on screen once a fresher position arrives, unless the
+   person is typing in it. */
+function mgPosRefreshSoon(){
+  clearTimeout(mgPosTimer);
+  mgPosTimer = setTimeout(async () => {
+    await mgLoadPosition();
+    if(mgPosFailed || mgPosSigAt !== mgPosSig()) return;
+    const P = typeof MG_PAGES !== 'undefined' && MG_PAGES[mgCurrentView];
+    const host = document.getElementById('view-' + mgCurrentView);
+    const ae = document.activeElement;
+    const typing = !!(host && ae && ae.matches && ae.matches('input,textarea,select') && host.contains(ae));
+    if(P && P.own && host && !typing) mgRenderOwn(mgCurrentView);
+  }, 400);
+}
+function mgPosFor(dir){
+  if(!mgPos) return null;
+  if(mgPosSigAt !== mgPosSig()){ mgPosRefreshSoon(); return null; }
+  return mgPos[dir === 'recv' ? 'receivables' : 'payables'] || null;
+}
+function mgGroupsFromPos(dir, P){
+  const own = new Map(((dir === 'recv' ? receivables : payables) || []).map(r => [String(r.id), r]));
+  return P.groups.map(g => {
+    const by = {};
+    g.sources.forEach(src => {
+      by[src] = { amount:g.by[src].amount, rows:(g.by[src].rows || []).map(r => {
+        const raw = src === 'manual' && r.id != null ? own.get(String(r.id)) || null : null;
+        return { party:r.party || g.party, amount:r.amount, due:r.due, ref:r.ref, src, editable:!!raw, raw, key:g.key, days:r.days };
+      }) };
+    });
+    return { key:g.key, party:g.party, by, sources:g.sources, primary:g.primary, status:g.status, amount:g.amount,
+      diff:g.diff, oldestDays:g.oldest_days, invoices:g.open_items, overdue:g.overdue, due7:g.due_7d };
+  });
+}
+function mgMoneyGroups(dir){
+  const P = mgPosFor(dir);
+  return P ? mgGroupsFromPos(dir, P) : mgMoneyGroupsLocal(dir);
+}
+function mgMoneyRows(dir){
+  const P = mgPosFor(dir);
+  if(!P) return mgMoneyRowsLocal(dir);
+  const out = [];
+  mgGroupsFromPos(dir, P).forEach(g => g.sources.forEach(s => out.push(...g.by[s].rows)));
+  return out;
+}
+/* A plain sentence when a figure may be short: a source over the server's
+   row cap, a source that failed to load, or the fallback local model. */
+function mgPosNote(dir){
+  const P = mgPosFor(dir);
+  if(!P){
+    if(!mgPosFailed) return '';
+    return 'Showing what this browser loaded. Margyn couldn’t reach the full position, so very large books may show only their first few hundred open items per source.';
+  }
+  const bits = [];
+  Object.entries(P.coverage || {}).forEach(([s, c]) => { if(c.truncated) bits.push(MG_SRC_NAME[s] + ' has more than ' + c.cap.toLocaleString('en-IN') + ' open items; the first ' + c.rows.toLocaleString('en-IN') + ' are shown'); });
+  Object.keys(P.errors || {}).forEach(s => bits.push(MG_SRC_NAME[s] + ' couldn’t be read just now, so it is left out'));
+  return bits.length ? bits.join('. ') + '.' : '';
 }
 function mgBucketOf(days){
   if(days === null || days >= 0) return 'b0';
@@ -295,7 +387,8 @@ function mgRenderMoney(dir){
       actions:mgExportBtn('mgExport-' + page) + (dir === 'recv' ? mgBtn('New invoice', 'data-go-page="invoicing"', true) : mgBtn('Add a bill', 'data-go-page="ledger"', true)) }) +
     '<div class="mg-toolbar">' + seg + '<input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + '" value="' + escapeHtml(mgMoneyQ) + '" data-money-q>' +
     (mgMoneyAge ? '<button class="mg-chip" type="button" data-money-age="">Age ' + escapeHtml(MG_BUCKETS.find(b => b[0] === mgMoneyAge)[1]) + ' ✕</button>' : '') +
-    '<span class="mg-count">' + count + (mode === 'reconciled' || mode === 'compare' ? ' ' + who.toLowerCase() + (count === 1 ? '' : 's') : ' open') + '</span></div>' + body;
+    '<span class="mg-count">' + count + (mode === 'reconciled' || mode === 'compare' ? ' ' + who.toLowerCase() + (count === 1 ? '' : 's') : ' open') + '</span></div>' +
+    (mgPosNote(dir) ? '<div class="mg-posnote" role="note">' + escapeHtml(mgPosNote(dir)) + '</div>' : '') + body;
 }
 
 /* ---------- Customers / Vendors ----------

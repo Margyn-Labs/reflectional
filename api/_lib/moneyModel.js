@@ -127,7 +127,13 @@ function position(rows, today, { withRows = true } = {}) {
     const by = {};
     for (const s of g.sources) {
       by[s] = { amount: g.by[s].amount };
-      if (withRows) by[s].rows = g.by[s].rows.map((r) => ({ ref: r.ref || null, amount: r.amount, due: r.due || null, days: r.days }));
+      if (withRows) {
+        by[s].rows = g.by[s].rows.map((r) => {
+          const o = { party: r.party, ref: r.ref || null, amount: r.amount, due: r.due || null, days: r.days };
+          if (r.id != null) o.id = r.id;   // manual rows: lets the app act on the entry
+          return o;
+        });
+      }
     }
     return {
       key: g.key, party: g.party, amount: g.amount, primary: g.primary, sources: g.sources,
@@ -148,7 +154,7 @@ async function loadManual(accountId, dir) {
     `select=id,party_name,amount,due_date&user_id=eq.${accountId}&status=eq.open&order=due_date.asc.nullslast,id.asc`,
     { max: MAX_ROWS });
   return {
-    rows: rows.map((r) => ({ party: r.party_name || 'Unnamed', amount: num(r.amount), due: r.due_date || null, ref: null, src: 'manual' })),
+    rows: rows.map((r) => ({ id: r.id, party: r.party_name || 'Unnamed', amount: num(r.amount), due: r.due_date || null, ref: null, src: 'manual' })),
     truncated
   };
 }

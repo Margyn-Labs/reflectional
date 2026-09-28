@@ -36,6 +36,16 @@ function unifiedLedgerRows(direction){
     source: (r.source === 'upload' ? 'upload' : 'manual'), editable: true,
     kind: direction, raw: r, ref: null, recon: r.reconciliation_status || null
   }));
+  // Connector rows: from the server position when it's current (every open
+  // row), otherwise from the capped lists this browser loaded.
+  const P = typeof mgPosFor === 'function' ? mgPosFor(direction) : null;
+  const srvRows = src => { const o = []; P.groups.forEach(g => { if(g.by[src]) (g.by[src].rows || []).forEach(r => o.push(r)); }); return o; };
+  if(P){
+    srvRows('zoho').forEach(r => out.push({ party: r.party, amount: Number(r.amount)||0, due_date: r.due || null, source: 'zoho', editable: false, kind: direction, ref: r.ref || null }));
+    srvRows('tally').forEach(r => out.push({ party: r.party, amount: Number(r.amount)||0, due_date: r.due || null, source: 'tally', editable: false, kind: direction, ref: r.ref || null,
+      overdue: r.days != null && r.days < 0 ? -r.days : null }));
+    return out;
+  }
   const zArr = direction === 'recv'
     ? (zohoLedgerRows && zohoLedgerRows.receivables) || []
     : (zohoLedgerRows && zohoLedgerRows.payables) || [];
@@ -72,32 +82,29 @@ function crossLedgerGroups(direction){
     return { party: g.party, bySource: g.bySource, sources:[...g.srcGroups], multi, agree, conflict: multi && !agree };
   });
 }
-/* compact structure passed to the AI context so it can reason across sources */
+/* compact structure passed to the AI context so it can reason across sources.
+   Built from mgMoneyGroups() (the server position when current), so chat
+   quotes the same parties and figures as the Receivables and Payables pages,
+   Odoo included. Keys: self (manual), zoho, tally, odoo. */
 function buildCrossLedgerSummary(){
+  const k = s => s === 'manual' ? 'self' : s;
   const pack = dir => {
-    const groups = crossLedgerGroups(dir);
-    const bySourceTotal = {};
-    unifiedLedgerRows(dir).forEach(r => {
-      const grp = (LEDGER_SOURCE_META[r.source]||{}).group || r.source;
-      bySourceTotal[grp] = (bySourceTotal[grp]||0) + r.amount;
-    });
+    const groups = typeof mgMoneyGroups === 'function' ? mgMoneyGroups(dir) : [];
+    const totalsBySource = {};
+    groups.forEach(g => g.sources.forEach(s => { totalsBySource[k(s)] = (totalsBySource[k(s)] || 0) + g.by[s].amount; }));
     return {
-      totalsBySource: bySourceTotal,
-      agree: groups.filter(g => g.agree).map(g => ({ party:g.party, amount: Math.max(...Object.values(g.bySource)), sources:g.sources })),
-      conflict: groups.filter(g => g.conflict).map(g => ({ party:g.party, bySource:g.bySource, sources:g.sources })),
-      singleSource: groups.filter(g => !g.multi).map(g => ({ party:g.party, amount: Object.values(g.bySource)[0], source:g.sources[0] }))
+      totalsBySource,
+      reconciledTotal: groups.reduce((t, g) => t + g.amount, 0),
+      agree: groups.filter(g => g.status === 'agree').map(g => ({ party:g.party, amount:g.amount, sources:g.sources.map(k) })),
+      conflict: groups.filter(g => g.status === 'conflict').map(g => ({ party:g.party, bySource:Object.fromEntries(g.sources.map(s => [k(s), g.by[s].amount])), sources:g.sources.map(k) })),
+      singleSource: groups.filter(g => g.status === 'single').map(g => ({ party:g.party, amount:g.amount, source:k(g.primary) })),
+      note: typeof mgPosNote === 'function' ? mgPosNote(dir) : ''
     };
   };
-  const hasAny = receivables.length || payables.length
-    || (zohoLedgerRows && ((zohoLedgerRows.receivables||[]).length || (zohoLedgerRows.payables||[]).length))
-    || (tallyData && tallyData.bills && (tallyData.bills.items||[]).length);
-  if(!hasAny) return null;
+  const present = new Set([...(typeof mgMoneySources === 'function' ? mgMoneySources('recv') : []), ...(typeof mgMoneySources === 'function' ? mgMoneySources('pay') : [])]);
+  if(!present.size) return null;
   return {
-    sourcesPresent: {
-      self: !!(receivables.length || payables.length),
-      zoho: !!(zohoConnected && zohoLedgerRows && ((zohoLedgerRows.receivables||[]).length || (zohoLedgerRows.payables||[]).length)),
-      tally: !!(tallyConnected && tallyData && tallyData.bills && (tallyData.bills.items||[]).length)
-    },
+    sourcesPresent: { self: present.has('manual'), zoho: present.has('zoho'), tally: present.has('tally'), odoo: present.has('odoo') },
     receivables: pack('recv'),
     payables: pack('pay')
   };
