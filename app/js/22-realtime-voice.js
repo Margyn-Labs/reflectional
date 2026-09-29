@@ -2,11 +2,11 @@
    LIVE CONVERSATION — Margyn on a call, driving the app.
    OpenAI Realtime API over WebRTC (continuous speech-to-speech).
 
-   Two floating, see-through, draggable panels over the live app:
-     - the talk panel: orb, last few lines of the conversation, controls;
-     - the workspace: whatever Margyn shows (P&L, receivables, cash, charts,
-       change cards). It comes and goes as Margyn shows and clears things,
-       so answering "show me X" never needs a page change.
+   Since 2026-09-30 a call is the Margyn panel in voice mode (25-margyn.js):
+   the orb and controls sit at the top of the panel, the transcript is the
+   same conversation you type into, and whatever Margyn shows (P&L,
+   receivables, cash, charts, change cards) lands in it as cards, so
+   answering "show me X" never needs a page change.
 
    Entry points: the top-bar mic, the "Talk to Margyn" pill on Ask Margyn,
    the command palette, and Option+M / Ctrl+M anywhere. The same keys again,
@@ -32,7 +32,7 @@ function vxEl(id){ return document.getElementById(id); }
 function rtSend(obj){ if(rtDc && rtDc.readyState === 'open') rtDc.send(JSON.stringify(obj)); }
 
 /* ---------- dock state ---------- */
-const VX_STATE_TEXT = { connecting:'Connecting', listening:'Listening', hearing:'Hearing you', thinking:'Working', speaking:'Margyn', muted:'Muted' };
+const VX_STATE_TEXT = { connecting:'Connecting', listening:'Listening', hearing:'Hearing you', thinking:'Working', speaking:'Speaking', muted:'Muted' };
 function vxSetState(state, caption){
   vxState = state;
   const dock = vxEl('vxDock'); if(!dock) return;
@@ -49,149 +49,64 @@ function vxSetCaption(text){
 }
 let vxActTimer = null;
 function vxActivity(text){
+  if(typeof mgStatus === 'function') mgStatus(text);
   const a = vxEl('vxAct'); if(!a) return;
   a.textContent = text; a.classList.add('on');
   clearTimeout(vxActTimer); vxActTimer = setTimeout(() => a.classList.remove('on'), 3200);
 }
 function vxTouch(){ vxLastActivity = Date.now(); }
 
-/* ---------- conversation panel ---------- */
+/* ---------- the conversation lives in the Margyn panel ----------
+   (app/js/25-margyn.js). A call is the panel in voice mode: the transcript
+   is the same thread you type into, and what Margyn shows (views, tables,
+   change cards) lands in it as cards. No floating windows any more. */
 function vxFeed(){ return vxEl('vxFeed'); }
-/* Workspace: a floating panel that holds only what Margyn puts on screen
-   (P&L, receivables, charts, change cards). It opens when something lands in
-   it, closes when Margyn clears it or the user closes it, and never holds
-   the transcript (that's the talk panel's job). */
-function vxDeskOpen(open){
-  const desk = vxEl('vxDesk'), btn = vxEl('vxDeskBtn'); if(!desk) return;
-  let on = open === undefined ? desk.classList.contains('hidden') : open;
-  if(on && !(vxFeed() && vxFeed().children.length)) on = false;   // nothing to show
-  desk.classList.toggle('hidden', !on);
-  if(on) vxPlaceDesk(desk);
-  if(btn){ btn.setAttribute('aria-expanded', on ? 'true' : 'false'); btn.classList.toggle('on', on); }
-}
+/* "Show the workspace" = make sure the panel is open. */
+function vxDeskOpen(open){ if(open !== false && typeof mgrOpen === 'function') mgrOpen(); }
+function vxCards(){ const f = vxFeed(); return f ? [...f.querySelectorAll(':scope > .vx-card')] : []; }
 function vxClearWorkspace(){
-  const f = vxFeed(); if(!f) return;
   // A change still waiting for an OK stays: clearing must never hide it.
-  [...f.children].forEach(c => { if(!(vxPending && vxPending.card === c)) c.remove(); });
-  if(!f.children.length) vxDeskOpen(false);
+  vxCards().forEach(c => { if(!(vxPending && vxPending.card === c)) c.remove(); });
 }
-/* On a page change, what was in the workspace was about the old page (the
-   Northwind note sat over the Vendors form, the cash chart over Sources).
-   Cards drawn in the last few seconds stay: that's Margyn showing something
-   for the page it just opened. A change waiting for an OK always stays. */
+/* On a page change, cards about the old page fold to their title rather than
+   vanish: they're part of the conversation. A change waiting for an OK stays open. */
 function vxTidyWorkspace(){
-  const f = vxFeed(); if(!f) return;
   const now = Date.now();
-  [...f.children].forEach(c => { if(!(vxPending && vxPending.card === c) && now - Number(c.dataset.at || 0) > 4000) c.remove(); });
-  if(!f.children.length) vxDeskOpen(false);
+  vxCards().forEach(c => { if(!(vxPending && vxPending.card === c) && now - Number(c.dataset.at || 0) > 4000) c.classList.add('vx-old'); });
 }
-/* Transcript lines live in the talk panel only; the full thread is saved to Ask Margyn. */
-function vxAddLine(who, text, id){ vxMiniLine(who, text, id); }
-/* The floating panel shows only the last few lines, newest at the bottom. */
-const VX_MINI_LINES = 4;
-function vxMiniLine(who, text, id){
-  const m = vxEl('vxMini'); if(!m) return;
-  const empty = m.querySelector('.vx-mini-empty'); if(empty && text) empty.remove();
-  let row = id ? m.querySelector('[data-item="' + id + '"]') : null;
-  if(!row){
-    // An empty row is a placeholder for speech still being transcribed:
-    // hidden, but it holds its place above Margyn's reply.
-    row = document.createElement('div');
-    row.className = 'vx-line ' + who;
-    if(id) row.dataset.item = id;
-    m.appendChild(row);
-  }
-  row.innerHTML = '<b>' + (who === 'user' ? 'You' : 'Margyn') + '</b>' + escapeHtml(text);
-  row.classList.toggle('pending', !text);
-  const shown = m.querySelectorAll('.vx-line:not(.pending)');
-  for(let i = 0; i < shown.length - VX_MINI_LINES; i++) shown[i].remove();
-}
-const VX_IDEAS = ['Show my P&L', 'Who owes us the most?', 'Will cash dip soon?', 'What needs my OK?'];
-function vxMiniReset(){
-  const m = vxEl('vxMini'); if(!m) return;
-  m.innerHTML = '<div class="vx-mini-empty">Talk naturally, or try:<div class="vx-ideas">' + VX_IDEAS.map(i => '<button type="button" class="vx-idea">' + escapeHtml(i) + '</button>').join('') + '</div></div>';
-}
-
-/* ---------- both floating panels drag by their header; remembered per browser ---------- */
-const VX_POS_KEY = 'mg.voice.pos', VX_DESK_KEY = 'mg.voice.desk';
-function vxPlaceEl(el, pos){
-  if(!el || window.innerWidth <= 900) return;
-  if(!pos){ el.style.left = el.style.top = el.style.right = ''; return; }
-  const w = el.offsetWidth || 320, h = el.offsetHeight || 200;
-  const x = Math.min(Math.max(8, pos.x), window.innerWidth - w - 8), y = Math.min(Math.max(8, pos.y), Math.max(8, window.innerHeight - Math.min(h, 160) - 8));
-  el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.right = 'auto';
-}
-function vxPlace(pos){ vxPlaceEl(vxEl('vxDock'), pos); }
-/* The workspace sits where the user left it, but never on top of the talk
-   panel: once the talk panel has been dragged, the workspace's default corner
-   can land right under it. Then it goes beside the panel instead. */
-function vxOverlap(a, b){ return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top); }
-function vxPlaceDesk(desk){
-  vxPlaceEl(desk, vxSavedPos(VX_DESK_KEY));
-  const dock = vxEl('vxDock');
-  if(!dock || dock.classList.contains('hidden') || window.innerWidth <= 900) return;
-  const d = dock.getBoundingClientRect();
-  if(!vxOverlap(desk.getBoundingClientRect(), d)) return;
-  const w = desk.offsetWidth || 460, gap = 12;
-  const x = d.left - w - gap >= 8 ? d.left - w - gap : d.right + gap + w <= window.innerWidth - 8 ? d.right + gap : null;
-  if(x == null) return;
-  vxPlaceEl(desk, { x, y:d.top });
-}
-function vxSavedPos(key){ try { return JSON.parse(localStorage.getItem(key || VX_POS_KEY) || 'null'); } catch(e){ return null; } }
-function vxDraggable(el, handle, key){
-  if(!el || !handle) return;
-  let start = null;
-  handle.addEventListener('pointerdown', e => {
-    if(window.innerWidth <= 900 || e.button !== 0 || e.target.closest('button')) return;
-    const r = el.getBoundingClientRect();
-    start = { dx:e.clientX - r.left, dy:e.clientY - r.top };
-    el.classList.add('dragging'); handle.setPointerCapture(e.pointerId); e.preventDefault();
-  });
-  handle.addEventListener('pointermove', e => { if(start) vxPlaceEl(el, { x:e.clientX - start.dx, y:e.clientY - start.dy }); });
-  const end = () => {
-    if(!start) return; start = null; el.classList.remove('dragging');
-    const r = el.getBoundingClientRect();
-    try { localStorage.setItem(key, JSON.stringify({ x:Math.round(r.left), y:Math.round(r.top) })); } catch(e){}
-    if(key === VX_POS_KEY){ const dk = vxEl('vxDesk'); if(dk && !dk.classList.contains('hidden')) vxPlaceDesk(dk); }   // dropped the talk panel on the workspace
-  };
-  handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
-  handle.addEventListener('dblclick', e => { if(e.target.closest('button')) return; try { localStorage.removeItem(key); } catch(err){} vxPlaceEl(el, null); });   // double-click: back to its corner
-}
-vxDraggable(vxEl('vxDock'), vxEl('vxHandle'), VX_POS_KEY);
-vxDraggable(vxEl('vxDesk'), vxEl('vxDeskHandle'), VX_DESK_KEY);
-window.addEventListener('resize', () => {
-  if(!vxActive) return;
-  const p = vxSavedPos(VX_POS_KEY); if(p) vxPlace(p);
-  const desk = vxEl('vxDesk'); if(desk && !desk.classList.contains('hidden')) vxPlaceDesk(desk);
-});
-const VX_MAX_CARDS = 3;
-/* Newest on top. `key` makes a view replace its older copy ("show P&L" twice
-   refreshes one card instead of stacking two). */
+/* Transcript lines are chat rows in the panel, updated in place while they stream. */
+function vxAddLine(who, text, id){ if(typeof mgrLine === 'function') mgrLine(who === 'user' ? 'user' : 'margyn', text, id); }
+function vxMiniLine(who, text, id){ vxAddLine(who, text, id); }
+function vxMiniReset(){ if(typeof mgrSuggest === 'function') mgrSuggest(); }
+const VX_MAX_CARDS = 14;
+/* Cards join the conversation at the bottom. `key` makes a view replace its
+   older copy ("show P&L" twice refreshes one card instead of stacking two). */
 function vxAddCard(html, cls, key){
   const f = vxFeed(); if(!f) return null;
-  if(key){ const old = f.querySelector('[data-key="' + key + '"]'); if(old && !(vxPending && vxPending.card === old)) old.remove(); }
+  if(key){ const old = f.querySelector(':scope > [data-key="' + key + '"]'); if(old && !(vxPending && vxPending.card === old)) old.remove(); }
   const card = document.createElement('div');
   card.className = 'vx-card' + (cls ? ' ' + cls : '');
   card.dataset.at = Date.now();
   if(key) card.dataset.key = key;
   card.innerHTML = html;
-  f.insertBefore(card, f.firstChild);
-  [...f.children].slice(VX_MAX_CARDS).forEach(c => { if(!(vxPending && vxPending.card === c)) c.remove(); });
+  f.appendChild(card);
+  const all = vxCards();
+  all.slice(0, Math.max(0, all.length - VX_MAX_CARDS)).forEach(c => { if(!(vxPending && vxPending.card === c)) c.remove(); });
   vxFocusCard(card);
   vxDeskOpen(true);
-  f.scrollTop = 0;
   return card;
 }
 /* The newest card is open; older ones fold to their title (a change card
-   waiting for an OK never folds). Clicking a folded card brings it back. */
+   waiting for an OK never folds). Clicking a folded card opens it again. */
 function vxFocusCard(card){
-  const f = vxFeed(); if(!f || !card) return;
-  [...f.children].forEach(c => c.classList.toggle('vx-old', c !== card && !(vxPending && vxPending.card === c)));
-  if(card !== f.firstChild) f.insertBefore(card, f.firstChild);
-  f.scrollTop = 0;
+  if(!card) return;
+  vxCards().forEach(c => c.classList.toggle('vx-old', c !== card && !(vxPending && vxPending.card === c)));
+  requestAnimationFrame(() => { const f = vxFeed(); if(f) f.scrollTop = f.scrollHeight; });
 }
 function vxPersist(role, content){
-  if(!vxThreadKey || !content || typeof saveChatMessage !== 'function') return;
+  if(!content) return;
+  if(typeof mgrRemember === 'function') mgrRemember(role, content);
+  if(!vxThreadKey || typeof saveChatMessage !== 'function') return;
   saveChatMessage(vxThreadKey, 'Voice conversation', role, String(content).slice(0, 4000), 'margyn');
 }
 
@@ -332,23 +247,24 @@ async function openRealtimeOverlay(){
   }
   const dock = vxEl('vxDock'); if(!dock) return;
   vxActive = true; vxEnding = false; vxMuted = false; vxRecent = null; vxResumeCard = null; vxUtterances = []; vxThinkHistory = []; vxCallsThisResponse = []; vxResponseActive = false;
-  vxThreadKey = 'voice:' + new Date().toISOString();
+  // One conversation: the call joins the panel's thread, typed lines and all.
+  vxThreadKey = typeof mgrThreadKey === 'function' ? mgrThreadKey() : 'voice:' + new Date().toISOString();
   document.body.classList.add('vx-on');
+  if(typeof mgrOpen === 'function') mgrOpen();
   dock.classList.remove('hidden');
-  vxMiniReset();
-  vxPlace(vxSavedPos(VX_POS_KEY));
-  const f = vxFeed(); if(f) f.innerHTML = '';
-  vxDeskOpen(false);
   vxSetState('connecting', 'Getting Margyn on the line…');
   vxTouch();
   if(!vxRaf) vxRaf = requestAnimationFrame(vxDrawOrb);
   try {
-    const [headers, recent] = await Promise.all([voiceAuthHeaders(), vxRecentConversation().catch(() => null)]);
+    // Already talking in the panel: the call carries straight on from it.
+    const inPanel = typeof mgrHistory !== 'undefined' && mgrHistory.length
+      ? { channel:'app', ago:'just now', continuing:true, turns:mgrHistory.slice(-12).map(m => ({ role:m.role, text:m.content })) } : null;
+    const [headers, recent] = await Promise.all([voiceAuthHeaders(), inPanel ? Promise.resolve(inPanel) : vxRecentConversation().catch(() => null)]);
     vxRecent = recent;
     const [sessRes, stream] = await Promise.all([
       fetch('/api/ask-margyn?action=realtime-session', {
         method:'POST', headers:{ 'Content-Type':'application/json', ...headers },
-        body:JSON.stringify({ context:(typeof buildMargynContext === 'function') ? buildMargynContext() : {}, screen:vxScreenBrief(), parties:vxPartyNames(), recent })
+        body:JSON.stringify({ context:(typeof mgrContext === 'function') ? mgrContext() : (typeof buildMargynContext === 'function') ? buildMargynContext() : {}, screen:vxScreenBrief(), parties:vxPartyNames(), recent })
       }),
       navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } })
     ]);
@@ -376,11 +292,14 @@ async function openRealtimeOverlay(){
       vxSetState('listening', '');
       // A system note, not response.instructions: those would replace the
       // session prompt (and its snapshot) for this response.
-      if(vxRecent){
+      const who = (typeof mgrName !== 'undefined' && mgrName) ? ' Greet ' + mgrName + ' by first name.' : '';
+      if(vxRecent && vxRecent.continuing){
+        vxTellModel('You are joining the conversation they were just having with you in the Margyn panel (the RECENT CONVERSATION). Say a very short hello' + (who ? ' using their first name' : '') + ', then pick up naturally: if their last request is still open, get on with it; otherwise ask what is next. Under 20 words. No figures yet.', true);
+      } else if(vxRecent){
         vxResumeChoice(vxRecent);
-        vxTellModel('Open the call now. One short greeting that fits the time of day in India. Then say that last time, on ' + (vxRecent.channel === 'whatsapp' ? 'WhatsApp' : vxRecent.channel === 'voice' ? 'your last call' : 'Ask Margyn in the app') + ' ' + vxRecent.ago + ', you were talking about <the topic of the RECENT CONVERSATION in five words or fewer>, and ask if they want to pick that up or start something new. Under 30 words. No tools, no figures yet.', true);
+        vxTellModel('Open the call now. One short greeting that fits the time of day in India.' + who + ' Then say that last time, on ' + (vxRecent.channel === 'whatsapp' ? 'WhatsApp' : vxRecent.channel === 'voice' ? 'your last call' : 'Ask Margyn in the app') + ' ' + vxRecent.ago + ', you were talking about <the topic of the RECENT CONVERSATION in five words or fewer>, and ask if they want to pick that up or start something new. Under 30 words. No tools, no figures yet.', true);
       } else {
-        vxTellModel('Open the call now. One short greeting that fits the time of day in India. Then, in one sentence, the single thing that most needs their attention according to your snapshot (an overdue customer, a cash dip, a pending decision), with the amount. Then ask what they want to do. Under 25 words in total. No tools for this greeting.', true);
+        vxTellModel('Open the call now. One short greeting that fits the time of day in India.' + who + ' Then, in one sentence, the single thing that most needs their attention according to your snapshot (an overdue customer, a cash dip, a pending decision), with the amount. Then ask what they want to do. Under 25 words in total. No tools for this greeting.', true);
       }
       vxIdleTimer = setInterval(() => {
         if(vxActive && Date.now() - vxLastActivity > VX_IDLE_MS){ toast('Ended the call after a quiet few minutes'); closeRealtimeOverlay(); }
@@ -631,13 +550,8 @@ document.addEventListener('visibilitychange', () => {
   const on = (id, ev, fn) => { const el = vxEl(id); if(el) el.addEventListener(ev, fn); };
   on('vxEndBtn', 'click', closeRealtimeOverlay);
   on('vxMuteBtn', 'click', () => vxToggleMute());
-  on('vxDeskBtn', 'click', () => vxDeskOpen());
-  on('vxDeskClose', 'click', () => vxDeskOpen(false));
   on('vxTopBtn', 'click', () => { if(!vxActive) openRealtimeOverlay(); });
-  on('vxType', 'submit', e => { e.preventDefault(); const i = vxEl('vxTypeInput'); if(i){ vxSendText(i.value); i.value = ''; } });
-  on('vxDeskClear', 'click', vxClearWorkspace);
   on('vxFeed', 'click', e => { const c = e.target.closest('.vx-card.vx-old'); if(c){ e.preventDefault(); vxFocusCard(c); } });
-  on('vxMini', 'click', e => { const b = e.target.closest('.vx-idea'); if(b) vxSendText(b.textContent); });
   // Option+M or Ctrl+M: start the call; the same again ends it.
   document.addEventListener('keydown', e => {
     if(e.code !== 'KeyM' || e.metaKey || e.shiftKey || !(e.altKey || e.ctrlKey) || (e.altKey && e.ctrlKey)) return;
@@ -650,7 +564,7 @@ document.addEventListener('visibilitychange', () => {
     if(e.key !== 'Escape' || !vxActive || e.defaultPrevented) return;
     if(document.querySelector('.mg-dialog-scrim') || (typeof mgDrawerEl !== 'undefined' && mgDrawerEl) || document.querySelector('.cmdk:not(.hidden)')) return;
     const t = e.target;
-    if(t && t.closest && t.closest('input, textarea, select') && !t.closest('#vxType')) return;
+    if(t && t.closest && t.closest('input, textarea, select') && !t.closest('#mgrInput')) return;
     closeRealtimeOverlay();
   });
 })();

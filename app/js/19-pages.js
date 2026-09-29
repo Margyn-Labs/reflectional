@@ -235,7 +235,7 @@ function mgCashChart(hist){
 }
 function mgDecisions(){
   const out = [];
-  try { ((agentActions && agentActions.actions) || []).forEach(a => out.push({ t:a.title, s:(AGENT_KIND_LABEL[a.kind] || a.kind) + ' · Agents' + (a.confidence != null ? ' · ' + Math.round(a.confidence * 100) + '% sure' : ''), amt:Number(a.amount) || 0 })); } catch(e){}
+  try { ((agentActions && agentActions.actions) || []).forEach(a => out.push({ t:a.title, s:(AGENT_KIND_LABEL[a.kind] || a.kind) + ' · Margyn' + (a.confidence != null ? ' · ' + Math.round(a.confidence * 100) + '% sure' : ''), amt:Number(a.amount) || 0 })); } catch(e){}
   try { ((reconSummary && reconSummary.connected && reconSummary.review_queue) || []).forEach(q => out.push({ t:(q.customer_name || 'Payment') + ': ' + (q.reason || 'needs review'), s:'Reconciliation · ' + (q.invoice_number || ''), amt:Number(q.amount) || 0 })); } catch(e){}
   try { (pendingSuggestions || []).forEach(p => {
     const ents = (p.proposal && p.proposal.entries) || [];
@@ -303,20 +303,26 @@ function mgRenderHome(){
   const hist = (snapshots || []).slice(0, 13).slice().reverse();
   const brief = s && s.briefing;
   const fc = s && typeof mgForecastPanel === 'function' ? mgForecastPanel() : null;
-  // A team member is greeted by name, with the role they're signed in as.
+  // Margyn's desk (25-margyn.js): greeted by name, Margyn's read of the
+  // business, how it works on its own, what needs you and what it's on.
+  // A team member also sees the role they're signed in as.
   const who = typeof mgActorName === 'function' ? mgActorName() : '';
-  host.innerHTML = mgPageHead({ group:'Overview', title:who ? 'Welcome, ' + who.split(' ')[0] : 'Home',
+  const first = who ? who.split(' ')[0] : ((typeof mgrName !== 'undefined' && mgrName) || '');
+  const since = typeof currentUser !== 'undefined' && currentUser && typeof lsGet === 'function' && lsGet('mg.lastSeen.' + currentUser.id, '');
+  const desk = typeof mgrDeskTop === 'function';
+  host.innerHTML = mgPageHead({ group:'Overview', title:first ? (since ? 'Welcome back, ' : 'Welcome, ') + first : (desk ? 'Welcome back' : 'Home'),
       sub:who ? 'Signed in as ' + mgActor.roleLabel + (mgCan('edit') ? '' : ', read-only') + '. You see what your role allows.' : '', scope:mgScopeText('Reconciled') }) +
     (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>') +
+    (desk ? mgrDeskTop() + '<div class="mgd-sec"><h2>Where things stand</h2><span>' + escapeHtml(mgAsOf ? mgAsOf() : '') + '</span></div>' : '') +
     tiles +
     '<div class="mg-row2">' +
       (typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
         (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>')) +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Pulse Score</h2><span class="mg-aside">Operating health, not a credit score</span></div><div class="mg-panel-b">' + pulse + '</div></div>' +
     '</div>' +
-    '<div class="mg-row3">' +
-      '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs your decision</h2>' + (dec.length ? '<button class="mg-link mg-aside" type="button" data-go-page="inbox">All ' + dec.length + ' in Inbox →</button>' : '') + '</div>' +
-        (dec.length ? listRows(dec) : '<div class="mg-empty">Nothing is waiting on you.</div>') + '</div>' +
+    '<div class="mg-row3' + (desk ? ' mgd-one' : '') + '">' +
+      (desk ? '' : '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs your decision</h2>' + (dec.length ? '<button class="mg-link mg-aside" type="button" data-go-page="inbox">All ' + dec.length + ' in Inbox →</button>' : '') + '</div>' +
+        (dec.length ? listRows(dec) : '<div class="mg-empty">Nothing is waiting on you.</div>') + '</div>') +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Sources disagree</h2>' + (dis.length ? '<button class="mg-link mg-aside" type="button" data-compare="receivables">Open in Compare →</button>' : '') + '</div>' +
         (dis.length ? listRows(dis, 'neg') : '<div class="mg-empty">Your connected sources agree.</div>') + '</div>' +
     '</div>' +

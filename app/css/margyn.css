@@ -1,0 +1,191 @@
+/* The Margyn panel, the desk on Home, nudges and the status line
+   (app/js/25-margyn.js). Light theme; orange stays for what Margyn wrote. */
+
+/* ---------- the panel ---------- */
+.mgr{ order:9; flex:none; width:380px; height:100%; display:flex; flex-direction:column; min-width:0;
+  background:var(--g0); border-left:1px solid var(--g200); font-family:var(--font-ui); }
+.mgr.hidden{ display:none; }
+.mgr-h{ display:flex; align-items:center; gap:8px; padding:10px 10px 10px 14px; border-bottom:1px solid var(--g200); flex:none; }
+.mgr-mark{ width:26px; height:26px; object-fit:contain; }
+.mgr-id{ flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.25; }
+.mgr-id b{ font-size:var(--f14); font-weight:800; color:var(--g900); }
+.mgr-id span{ font-size:var(--f12); color:var(--g500); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:color .2s ease; }
+.mgr-id span{ cursor:pointer; }
+.mgr-id span.live{ color:var(--brand-700); }
+.mgr-b .mg-act-row{ padding:4px 0; }
+.mgr-id span.live::before{ content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--brand); margin-right:6px; vertical-align:1px; animation:mgrPip 1.6s infinite; }
+.mgr-h .mg-icon-btn{ width:30px; height:30px; }
+.mgr-h .mg-icon-btn svg{ width:15px; height:15px; }
+
+/* a call is the panel in voice mode */
+.mgr-call{ display:flex; align-items:center; gap:10px; padding:10px 12px; flex:none;
+  background:linear-gradient(180deg, var(--brand-50), var(--g0)); border-bottom:1px solid var(--g200); }
+.mgr-call.hidden{ display:none; }
+.mgr-call .vx-orb{ width:44px; height:44px; flex:none; }
+.mgr-call .vx-btn{ width:34px; height:34px; }
+.mgr-call .vx-end{ margin-left:0; height:34px; padding:0 14px; }
+.mgr-call[data-state="speaking"] .vx-state{ color:var(--ai); }
+.mgr-call[data-state="muted"] .vx-state, .mgr-call[data-state="connecting"] .vx-state{ color:var(--g500); }
+
+.mgr-feed{ flex:1; min-height:0; overflow-y:auto; padding:14px 14px 6px; display:flex; flex-direction:column; gap:12px; overscroll-behavior:contain; }
+.mgr-msg{ max-width:100%; animation:vxLineIn .22s ease; }
+.mgr-msg.pending{ display:none; }
+.mgr-who{ font-family:var(--font-num); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--g500); margin:0 0 4px 2px; }
+.mgr-msg.m .mgr-b{ border:1px solid var(--g200); border-left:3px solid var(--ai); border-radius:var(--r-panel); padding:10px 12px;
+  font-size:var(--f13); line-height:1.55; color:var(--g900); white-space:pre-wrap; overflow-wrap:anywhere; background:var(--g0); }
+.mgr-msg.m .mgr-b:empty{ display:none; }
+.mgr-msg.m.follow .mgr-who{ display:none; }
+.mgr-msg.me{ align-self:flex-end; max-width:86%; }
+.mgr-msg.me .mgr-b{ background:var(--g50); border:1px solid var(--g100); border-radius:var(--r-panel); padding:8px 12px; font-size:var(--f13); line-height:1.5; color:var(--g900); white-space:pre-wrap; overflow-wrap:anywhere; }
+.mgr-msg.quiet .mgr-b{ border-left-color:var(--g300); color:var(--g600); }
+.mgr-b h5{ font-size:var(--f16); font-weight:800; letter-spacing:-.01em; margin:0 0 6px; color:var(--g900); }
+.mgr-b p{ margin:0 0 6px; white-space:normal; }
+.mgr-b p:last-child{ margin-bottom:0; }
+.mgr-b .mgr-new{ color:var(--g600); }
+.mgr-msg.greet .mgr-b{ white-space:normal; }
+.mgr-steps{ font-family:var(--font-num); font-size:12px; line-height:1.7; color:var(--g500); white-space:normal; }
+.mgr-steps:empty{ display:none; }
+.mgr-steps + .mgr-text, .mgr-steps + .mgr-dots{ margin-top:6px; }
+.mgr-msg.working .mgr-b, .mgr-msg.m .mgr-b:has(.mgr-steps:not(:empty)){ white-space:normal; }
+.mgr-text{ white-space:pre-wrap; }
+.mgr-dots{ display:inline-flex; gap:4px; padding:4px 0; }
+.mgr-dots i{ width:6px; height:6px; border-radius:50%; background:var(--g400); animation:mgrDot 1s infinite ease-in-out; }
+.mgr-dots i:nth-child(2){ animation-delay:.15s; } .mgr-dots i:nth-child(3){ animation-delay:.3s; }
+@keyframes mgrDot{ 0%,80%,100%{ opacity:.3; transform:translateY(0); } 40%{ opacity:1; transform:translateY(-2px); } }
+.mgr-divider{ display:flex; align-items:center; gap:8px; margin:6px 0 2px; color:var(--ai); font:600 10.5px/1 var(--font-num); letter-spacing:.08em; text-transform:uppercase; }
+.mgr-divider::before{ content:''; flex:1; height:1px; background:var(--ai); opacity:.7; }
+.mgr-acts{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; white-space:normal; }
+.mgr-chip{ border:1px solid var(--g200); background:var(--g25); color:var(--g900); border-radius:999px; padding:5px 11px; font:600 var(--f12)/1.3 var(--font-ui); cursor:pointer; }
+.mgr-chip:hover{ border-color:var(--brand); background:var(--brand-50); }
+.mgr-chip.on{ background:var(--brand); border-color:var(--brand); color:#fff; }
+.mgr-chip.on:hover{ background:var(--brand-700); }
+.mgr-chip.ghost{ background:none; border-color:transparent; color:var(--g600); }
+.mgr-chip:disabled{ opacity:.5; cursor:default; }
+.mgr-name{ margin-top:10px; white-space:normal; }
+.mgr-name label{ display:block; font-size:var(--f12); font-weight:600; color:var(--g600); margin-bottom:5px; }
+.mgr-name div{ display:flex; gap:6px; }
+.mgr-name input{ flex:1; min-width:0; height:32px; border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 10px; font:500 var(--f13) var(--font-ui); }
+.mgr-name input:focus{ outline:none; border-color:var(--brand); }
+.mgr-nudge-msg .mgr-b{ background:var(--warn-50); border-color:#EEDFB5; border-left-color:var(--warn); white-space:normal; }
+.mgr-feed > .vx-card{ background:var(--g0); border-color:var(--g200); }
+.mgr-feed > .vx-card.vx-old{ background:var(--g25); }
+
+.mgr-sugg{ display:flex; flex-wrap:wrap; gap:6px; padding:4px 14px 8px; flex:none; }
+.mgr-sugg:empty{ display:none; }
+.mgr-sugg button{ border:1px solid var(--g200); background:var(--g25); color:var(--g600); border-radius:999px; padding:5px 10px; font:600 var(--f12)/1.3 var(--font-ui); cursor:pointer; }
+.mgr-sugg button:hover{ color:var(--g900); border-color:var(--brand); background:var(--brand-50); }
+.mgr-compose{ display:flex; align-items:flex-end; gap:6px; padding:10px 12px 12px; border-top:1px solid var(--g200); flex:none; }
+.mgr-compose textarea{ flex:1; min-width:0; min-height:38px; max-height:120px; resize:none; border:1px solid var(--g200); border-radius:var(--r-ctl);
+  padding:9px 10px; font:500 var(--f13)/1.4 var(--font-ui); color:var(--g900); background:var(--g0); }
+.mgr-compose textarea:focus{ outline:none; border-color:var(--brand); }
+.mgr-send{ width:38px; height:38px; flex:none; display:grid; place-items:center; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g0); color:var(--g900); cursor:pointer; }
+.mgr-send svg{ width:16px; height:16px; }
+.mgr-send:disabled{ opacity:.45; cursor:default; }
+.mgr-talk{ height:38px; flex:none; display:inline-flex; align-items:center; gap:6px; padding:0 12px; border:0; border-radius:var(--r-ctl); background:var(--g900); color:#fff; font:700 var(--f13) var(--font-ui); cursor:pointer; }
+.mgr-talk svg{ width:14px; height:14px; }
+body.vx-on .mgr-talk{ background:var(--neg); }
+body.vx-on .mgr-talk span{ font-size:0; }
+body.vx-on .mgr-talk span::after{ content:'End'; font-size:var(--f13); }
+.mgr.busy .mgr-send{ opacity:.45; }
+
+/* top bar: the Margyn button shows when the panel is open */
+.mg-tb-btn.mg-ai.on{ background:var(--brand-50); color:var(--brand-700); }
+
+/* ---------- when the panel is closed ---------- */
+.mgr-launch{ position:fixed; right:18px; bottom:18px; z-index:880; display:inline-flex; align-items:center; gap:8px; padding:9px 14px 9px 10px;
+  border:0; border-radius:999px; background:var(--g900); color:#fff; font:700 var(--f13) var(--font-ui); cursor:pointer; box-shadow:0 8px 24px rgba(20,24,31,.22); }
+.mgr-launch img{ width:20px; height:20px; object-fit:contain; background:#fff; border-radius:50%; padding:2px; }
+.mgr-launch.hidden, body.mgr-open .mgr-launch{ display:none; }
+.mgr-bubble{ position:fixed; right:18px; bottom:70px; z-index:881; width:min(330px, calc(100vw - 32px)); padding:12px 14px; background:var(--g0);
+  border:1px solid var(--g200); border-left:3px solid var(--ai); border-radius:var(--r-panel); box-shadow:0 12px 32px rgba(20,24,31,.16); font-family:var(--font-ui); animation:vxDeskIn .22s cubic-bezier(.16,1,.3,1); }
+.mgr-bubble.hidden, body.mgr-open .mgr-bubble{ display:none; }
+.mgr-bub-h{ display:flex; align-items:center; gap:6px; font:600 10.5px/1 var(--font-num); letter-spacing:.06em; text-transform:uppercase; color:var(--g500); margin-bottom:6px; }
+.mgr-bub-h img{ width:16px; height:16px; object-fit:contain; }
+.mgr-bubble p{ margin:0; font-size:var(--f13); line-height:1.5; color:var(--g900); }
+
+/* ---------- status line: what Margyn is doing ---------- */
+.mg-status-wrap{ position:relative; }
+nav.mg-top .mg-status-wrap .top-sync{ display:inline-flex !important; max-width:220px; cursor:pointer; }
+@media (max-width:1599px){ nav.mg-top .mg-status-wrap .top-sync{ display:none !important; } }
+nav.mg-top .mg-status-wrap .top-sync:hover{ border-color:var(--g300); color:var(--g900); }
+#topSyncText{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:opacity .18s ease; }
+.top-sync.live-act{ color:var(--g900); border-color:var(--brand); background:var(--brand-50); }
+.top-sync.live-act .pip{ animation:mgrPip 1.6s infinite; }
+@keyframes mgrPip{ 0%{ box-shadow:0 0 0 0 rgba(14,143,92,.45); } 70%{ box-shadow:0 0 0 6px rgba(14,143,92,0); } 100%{ box-shadow:0 0 0 0 rgba(14,143,92,0); } }
+.mg-status-pop{ width:360px; max-width:calc(100vw - 24px); padding-bottom:8px; }
+.mg-act-row{ display:flex; gap:10px; padding:6px 10px; font-size:var(--f12); color:var(--g900); line-height:1.4; border-bottom:1px solid var(--g100); }
+.mg-act-row span{ flex:none; width:58px; font-family:var(--font-num); color:var(--g500); }
+.mg-act-src{ padding:8px 10px 0; display:flex; flex-direction:column; gap:3px; font-size:var(--f12); color:var(--g600); }
+.mg-act-src b{ color:var(--g900); font-weight:600; }
+.mg-act-src .warn{ color:var(--warn); }
+
+/* ---------- Conversations page is the archive; talking happens in the panel ---------- */
+#view-history .ask-composer, #view-history #askTabs{ display:none; }
+
+/* ---------- Home: Margyn's desk ---------- */
+.mgd-hero{ display:grid; grid-template-columns:auto minmax(0, 1fr) minmax(220px, 280px); gap:18px; align-items:start;
+  background:var(--g0); border:1px solid var(--g200); border-radius:var(--r-panel); padding:18px 20px; margin-bottom:16px; }
+.mgd-mark{ width:52px; height:52px; border-radius:14px; background:var(--brand-50); display:grid; place-items:center; position:relative; }
+.mgd-mark img{ width:28px; height:28px; object-fit:contain; }
+.mgd-mark::after{ content:''; position:absolute; right:-3px; bottom:-3px; width:13px; height:13px; border-radius:50%; background:var(--brand); border:3px solid var(--g0); }
+.mgd-tag{ display:inline-block; font:600 10.5px/1 var(--font-num); letter-spacing:.08em; text-transform:uppercase; padding:4px 7px; border-radius:4px; margin-bottom:8px;
+  color:var(--brand-700); background:var(--brand-50); }
+.mgd-watch .mgd-tag{ color:var(--warn); background:var(--warn-50); }
+.mgd-act .mgd-tag{ color:var(--neg); background:var(--neg-50); }
+.mgd-watch .mgd-mark::after{ background:var(--warn); }
+.mgd-act .mgd-mark::after{ background:var(--neg); }
+.mgd-read h2{ font-size:var(--f20); font-weight:700; letter-spacing:-.01em; line-height:1.3; color:var(--g900); margin:0; }
+.mgd-sub{ font-size:var(--f13); color:var(--g600); margin-top:6px; }
+.mgd-away{ font-size:var(--f13); color:var(--g600); margin-top:8px; line-height:1.5; }
+.mgd-away b{ color:var(--g900); font-weight:600; }
+.mgd-ask{ display:flex; gap:6px; margin-top:14px; }
+.mgd-ask input{ flex:1; min-width:0; height:34px; border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 10px; font:500 var(--f13) var(--font-ui); color:var(--g900); background:var(--g25); }
+.mgd-ask input:focus{ outline:none; border-color:var(--brand); background:var(--g0); }
+.mgd-how{ border-left:1px solid var(--g100); padding-left:18px; display:flex; flex-direction:column; gap:7px; font-size:var(--f12); }
+.mgd-how-h{ font:600 10.5px/1 var(--font-num); letter-spacing:.08em; text-transform:uppercase; color:var(--g500); margin-bottom:2px; }
+.mgd-how > div:not(.mgd-how-h){ display:flex; justify-content:space-between; gap:10px; color:var(--g600); line-height:1.35; }
+.mgd-how b{ color:var(--g900); font-weight:600; text-align:right; white-space:nowrap; }
+.mgd-how b.pos{ color:var(--brand-700); }
+.mgd-how .mg-link{ align-self:flex-start; margin-top:2px; font-size:var(--f12); }
+.mgd-need{ display:flex; justify-content:space-between; gap:12px; padding:11px 16px; border-bottom:1px solid var(--g100); }
+.mgd-need-t{ font-size:var(--f13); font-weight:600; color:var(--g900); }
+.mgd-need-s{ font-size:var(--f12); color:var(--g500); margin-top:2px; }
+.mgd-need-a{ font-family:var(--font-num); font-size:var(--f13); color:var(--g900); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.mgd-need-f{ display:flex; gap:8px; flex-wrap:wrap; padding:12px 16px; }
+.mgd-task{ display:grid; grid-template-columns:auto minmax(0, 1fr) auto; gap:10px; align-items:start; padding:10px 16px; border-bottom:1px solid var(--g100); }
+.mgd-task:last-child{ border-bottom:0; }
+.mgd-task.click{ cursor:pointer; }
+.mgd-task.click:hover{ background:var(--g25); }
+.mgd-task b{ display:block; font-size:var(--f13); font-weight:600; color:var(--g900); }
+.mgd-task span{ font-size:var(--f12); color:var(--g500); }
+.mgd-st{ font:600 10.5px/1.6 var(--font-num) !important; letter-spacing:.04em; color:var(--g500) !important; white-space:nowrap; }
+.mgd-dot{ width:8px; height:8px; border-radius:50%; margin-top:5px; background:var(--g300); }
+.mgd-dot.doing{ background:var(--brand); animation:mgrPip 1.8s infinite; }
+.mgd-dot.wait{ background:var(--ai); }
+.mgd-dot.warn{ background:var(--warn); }
+.mgd-row{ grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); }
+.mgd-sec{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:8px 0 12px; }
+.mgd-sec h2{ font-size:var(--f16); font-weight:800; color:var(--g900); }
+.mgd-sec span{ font:500 var(--f12) var(--font-num); color:var(--g500); }
+.mg-row3.mgd-one{ grid-template-columns:minmax(0, 1fr); }
+
+/* ---------- narrower screens: the panel slides over the page ---------- */
+@media (max-width:1280px){
+  .mgd-hero{ grid-template-columns:auto minmax(0, 1fr); }
+  .mgd-how{ grid-column:1 / -1; border-left:0; border-top:1px solid var(--g100); padding:12px 0 0; }
+}
+@media (max-width:1099px){
+  .mgr{ position:fixed; top:var(--top-h); right:0; bottom:0; height:auto; width:min(420px, 100vw); z-index:890; box-shadow:-12px 0 32px rgba(20,24,31,.14); }
+  nav.mg-top .mg-status-wrap .top-sync{ display:none !important; }
+}
+@media (max-width:900px){
+  .mgd-row{ grid-template-columns:minmax(0, 1fr); }
+  .mgd-hero{ grid-template-columns:minmax(0, 1fr); padding:16px; }
+  .mgd-mark{ display:none; }
+  .mgd-ask{ flex-wrap:wrap; }
+  .mgd-ask input{ flex-basis:100%; }
+  .mgr-launch{ right:12px; bottom:12px; }
+  .mgr-bubble{ right:12px; bottom:62px; }
+}
+/* With the panel open, its own Talk button is right there; the top bar gets its room back. */
+body.mgr-open #vxTopBtn{ display:none; }

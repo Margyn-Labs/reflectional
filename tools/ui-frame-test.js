@@ -203,8 +203,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   // 6. Import / Ask / user menu
   await p.click('#mgImportBtn'); await p.waitForTimeout(250);
   ok(JSON.stringify(await vis()) === '["view-calculate"]' && p.url().endsWith('#/import'), 'Import button opens the upload page');
+  // The top bar's Margyn button toggles the Margyn panel (25-margyn.js); Conversations is in the rail.
+  const railWas = await p.isVisible('#mgRail');
   await p.click('#mgAskBtn'); await p.waitForTimeout(250);
-  ok(JSON.stringify(await vis()) === '["view-history"]', 'Ask button opens Ask Margyn');
+  ok(await p.isVisible('#mgRail') === !railWas, 'Margyn button toggles the Margyn panel');
+  await p.click('#mgAskBtn'); await p.waitForTimeout(250);
+  ok(await p.isVisible('#mgRail') === railWas, 'and again closes/opens it');
   await p.click('#topAvatar'); await p.waitForTimeout(150);
   ok(await p.isVisible('#mgUserPop') && await p.isVisible('#logoutBtn'), 'user menu opens with Log out');
   ok((await p.textContent('#mgUserName')) === 'Aditi Kulkarni', 'user menu names the primary person');
@@ -337,7 +341,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const hidden = await p.$$eval('.pagenav button.mg-hide-perm', x => x.map(b => b.dataset.view).sort());
   ok(JSON.stringify(hidden) === JSON.stringify(['calculate', 'connectors', 'invoicing', 'people', 'settings'].filter(v => hidden.includes(v))) && hidden.includes('connectors') && hidden.includes('settings') && !hidden.includes('receivables'), 'Advisor: admin and edit pages hidden from the rail (' + hidden + ')');
   ok(await p.evaluate(() => document.body.classList.contains('mg-ro')), 'Advisor: read-only');
-  ok(/Welcome, S\./.test(await p.textContent('#view-home h1')) && /Advisor \(CA\), read-only/.test(await p.textContent('#view-home')), 'Home greets them by name and role');
+  ok(/Welcome( back)?, S\./.test(await p.textContent('#view-home h1')) && /Advisor \(CA\), read-only/.test(await p.textContent('#view-home')), 'Home greets them by name and role');
   ok((await p.textContent('#mgUserName')) === 'S. Rao' && /Advisor \(CA\) · Anvaya Home Goods Pvt Ltd · read-only/.test(await p.textContent('#mgUserRole')), 'user menu shows the person, role and business');
   await p.evaluate(() => showView('receivables')); await p.waitForTimeout(200);
   ok(!(await p.isVisible('#view-receivables .mg-ph-actions .mg-btn.primary')), 'Advisor: no New invoice button');

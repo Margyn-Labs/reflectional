@@ -58,6 +58,7 @@ function reflectAskDepth(){
 }
 function askGroundChips(){
   const host = document.getElementById('askGround'); if(!host) return;
+  if(host.querySelector('[data-mgr-continue]')) return;   // an open conversation's "Continue in Margyn" stays
   const live = (typeof CONN_FEED_MAP !== 'undefined' ? CONN_FEED_MAP : []).filter(c => connIsLive(c.key));
   const bits = live.map(c => '<span class="gchip"><i></i>' + escapeHtml(c.label) + '</span>');
   bits.unshift('<span class="gchip"><i></i>Your ledger</span>');
@@ -148,6 +149,8 @@ function askSubmit(q){
    wants to hand a question to Margyn: land on the page and ask it there. */
 function askFromPage(q){
   q = (q || '').trim(); if(!q) return;
+  // One place: questions from anywhere go to the Margyn panel.
+  if(typeof mgrAsk === 'function') return mgrAsk(q);
   showView('history');
   setTimeout(() => { askNewConversation(); askSubmit(q); }, 60);
 }
@@ -173,27 +176,36 @@ function askDecorateStream(){
     msg.insertAdjacentElement('afterend', row);
   });
 }
+/* Conversations: the archive of every conversation with Margyn (typed in the
+   panel, calls, and the older Ask Margyn threads). Reading happens here;
+   talking happens in the Margyn panel, so an open thread offers to carry on there. */
 async function renderHistoryView(){
   const openEl = document.getElementById('historyThreadOpen');
   if(openEl) openEl.classList.remove('hidden');
+  document.body.classList.add('ask-archive');
   reflectAskDepth();
-  askGroundChips();
-  askActivateTab(askActiveTab); // re-applies current tab's visibility; refreshes its list/statuses
-  // First visit this session lands on Margyn's own home thread (Agents tab
-  // default) rather than an ad hoc conversation — matches the sidebar
-  // defaulting to Agents. Returning to an already-open thread just rewires
-  // the composer instead of resetting anything.
-  if(!askPageThreadKey) await openAgentHome('margyn');
-  else askRewireComposer();
+  askActivateTab('chats');
+  if(!askPageThreadKey){
+    askSetTitle('Pick a conversation', 'Or start one in the Margyn panel', 'margyn');
+    const stream = document.getElementById('historyThreadMessages');
+    if(stream) stream.innerHTML = '<div class="ask-empty"><div class="ae-mark">' + agentAvatarInner('margyn') + '</div><h3>Your conversations with Margyn</h3>' +
+      '<p>Everything you’ve typed or said to Margyn is kept here. Pick one on the left to reread it, or carry it on in the Margyn panel.</p>' +
+      '<div class="ae-grid"><button type="button" data-mgr-open><span class="k">Margyn</span>Open the Margyn panel</button></div></div>';
+  }
   askGroundChips();
 }
+document.addEventListener('click', e => {
+  if(e.target.closest('[data-mgr-open]') && typeof mgrOpen === 'function') mgrOpen(true);
+  const c = e.target.closest('[data-mgr-continue]');
+  if(c && typeof mgrLoadThread === 'function') mgrLoadThread(c.dataset.mgrContinue, c.dataset.label || '');
+});
 (function wireAskWorkspace(){
   const tabs = document.getElementById('askTabs');
   if(tabs) tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => askActivateTab(b.dataset.tab)));
   const depth = document.getElementById('askDepth');
   if(depth) depth.querySelectorAll('button').forEach(b => b.addEventListener('click', () => setAskDepth(b.dataset.d)));
   const nc = document.getElementById('askNewChat');
-  if(nc) nc.addEventListener('click', () => askNewConversation());
+  if(nc) nc.addEventListener('click', () => { if(typeof mgrOpen === 'function'){ mgrOpen(true); mgrNewThread(); } else askNewConversation(); });
   const search = document.getElementById('askThreadSearch');
   if(search) search.addEventListener('input', () => {
     const q = search.value.trim().toLowerCase();
@@ -235,16 +247,18 @@ async function renderHistoryThreadList(){
   // Agent-home threads (Margyn/Chase/Close/Import's persistent conversations,
   // see the Agents tab) live in the same chat_messages table but belong in
   // that tab, not this ad hoc thread list.
-  const summaries = (await loadAllThreadSummaries()).filter(m => !isAgentHomeThread(m.thread_key));
+  const summaries = await loadAllThreadSummaries();
   if(!summaries.length){
-    listEl.innerHTML = '<div class="hint" style="padding:14px 11px;">No conversations yet. Ask something on the right, or tap any number anywhere in Margyn.</div>';
+    listEl.innerHTML = '<div class="hint" style="padding:14px 11px;">No conversations yet. Open the Margyn panel and ask something, or tap any number anywhere in Margyn.</div>';
     return;
   }
   listEl.innerHTML = '';
   summaries.forEach(m => {
     const row = document.createElement('div');
     row.className = 'chat-history-row';
-    const label = (m.thread_key === 'global' || m.thread_key.startsWith('global:')) ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
+    const tk = m.thread_key;
+    const label = tk.startsWith('panel:') ? 'Margyn panel' : tk.startsWith('voice:') ? 'Call' : isAgentHomeThread(tk) ? 'Margyn (earlier)'
+      : (tk === 'global' || tk.startsWith('global:')) ? 'General' : (m.vital && m.vital !== 'Voice conversation' ? m.vital : tk.replace(/^finding:|^vital:/, '').replace(/::.*$/, ''));
     const when = new Date(m.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
     row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,90)) + '</div>';
     row.addEventListener('click', () => {
@@ -262,7 +276,9 @@ async function openHistoryThread(threadKey, label){
   const messagesEl = document.getElementById('historyThreadMessages');
   messagesEl.innerHTML = '';
   askPageThreadKey = threadKey;
-  askSetTitle(label || 'Conversation', 'Reopened, same context as when you left it', 'margyn');
+  askSetTitle(label || 'Conversation', 'Read it here, or carry it on in the Margyn panel', 'margyn');
+  const ground = document.getElementById('askGround');
+  if(ground) ground.innerHTML = '<button type="button" class="mg-btn primary mg-btn-sm" data-mgr-continue="' + escapeHtml(threadKey) + '" data-label="' + escapeHtml(label || '') + '">Continue in Margyn</button>';
   const historyRef = [];
   const past = await loadChatThread(threadKey, 200); // full read for browsing, API calls still cap at CHAT_CONTEXT_CAP
   let lastAgentId = 'margyn';
@@ -271,11 +287,7 @@ async function openHistoryThread(threadKey, label){
     historyRef.push({ role:m.role, content:m.content });
     if(m.role === 'assistant' && m.agent_id) lastAgentId = m.agent_id;
   });
-  threadAgentMap.set(threadKey, lastAgentId);
-  if(lastAgentId !== 'margyn'){
-    const meta = AGENT_META[lastAgentId] || AGENT_META.margyn;
-    askSetTitle(label || meta.name, 'Reopened with ' + meta.name + ' — ' + meta.sub, lastAgentId);
-  }
+  threadAgentMap.set(threadKey, 'margyn');
   askPageHistory.length = 0;
   historyRef.forEach(m => askPageHistory.push(m));
   // Prefer the vital recorded on the messages themselves over parsing the

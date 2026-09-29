@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="/app/css/frame.css">
 <link rel="stylesheet" href="/app/css/pages.css">
 <link rel="stylesheet" href="/app/css/voice.css">
+<link rel="stylesheet" href="/app/css/margyn.css">
 </head>
 <body>
 <!-- ============ AUTH GATE ============ -->
@@ -158,13 +159,13 @@
         <span class="kbd">&#8984;K</span>
       </button>
     <button class="mg-tb-btn" id="mgImportBtn" type="button" data-go="calculate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span>Import</span></button>
-    <button class="mg-tb-btn mg-ai" id="mgAskBtn" type="button" data-go="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Ask</span></button>
+    <button class="mg-tb-btn mg-ai" id="mgAskBtn" type="button" title="Margyn (⌘J)" aria-controls="mgRail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Margyn</span></button>
     <button class="mg-tb-btn mg-voice" id="vxTopBtn" type="button" title="Talk to Margyn (⌥M or ⌃M · Esc to end)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg><span>Talk</span></button>
     <div class="mg-bell">
       <button class="mg-icon-btn" id="mgBellBtn" type="button" aria-label="Notifications" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="mg-bell-dot hidden" id="mgBellDot"></span></button>
       <div class="mg-pop mg-pop-right" id="mgBellPop" role="menu"></div>
     </div>
-    <span class="top-sync" id="topSync"><span class="pip"></span><span id="topSyncText">No sources</span></span>
+    <div class="mg-status-wrap"><span class="top-sync" id="topSync"><span class="pip"></span><span id="topSyncText">No sources</span></span><div class="mg-pop mg-pop-right mg-status-pop" id="mgStatusPop" role="dialog" aria-label="What Margyn has been doing"></div></div>
     <div class="nav-user mg-user" id="mgUser">
       <button class="top-avatar" id="topAvatar" type="button" title="" aria-haspopup="true" aria-expanded="false" aria-controls="mgUserPop">M</button>
       <div class="mg-pop mg-pop-right" id="mgUserPop" role="menu">
@@ -201,9 +202,9 @@
       <button data-view="analytics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg><span>Reports</span></button>
       <button data-view="cfopack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 17v-3M12 17v-6M16 17v-2"/></svg><span>CFO pack</span></button>
       <button data-view="scores"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Pulse Score</span></button>
-      <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Ask Margyn</span></button>
+      <button data-view="history"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Conversations</span></button>
       <div class="nav-group-label">Automation</div>
-      <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Agents</span></button>
+      <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Automations</span></button>
       <div class="mg-rail-bottom">
       <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg><span>Organisations and sources</span></button>
       <button data-view="people"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>People and roles</span></button>
@@ -535,6 +536,7 @@
       <div class="hint">Used in your scorecard and your AI briefing.</div>
       <form id="profileForm">
         <div class="grid-2">
+          <div><label>Your name</label><input type="text" id="pfName" maxlength="60" autocomplete="name" placeholder="What Margyn calls you"></div>
           <div><label>Company name</label><input type="text" id="pfCompany" required></div>
           <div><label>Annual revenue</label>
             <select id="pfRevenue" required>
@@ -748,26 +750,25 @@
   <div id="view-history" class="hidden">
     <div class="rd-head">
       <div>
-        <div class="rd-eyebrow">Ask Margyn</div>
-        <h1>Ask about your numbers</h1>
-        <div class="rd-sub">Margyn answers from your connected financial data, or says it does not know. It narrates, it never recalculates a figure.</div>
+        <div class="rd-eyebrow">Conversations</div>
+        <h1>Every conversation with Margyn</h1>
+        <div class="rd-sub">Typed, spoken, or about a figure you tapped. Reread any of them, or carry one on in the Margyn panel.</div>
       </div>
     </div>
     <div class="ask-shell">
       <aside class="ask-side">
         <div class="ask-tabs" id="askTabs">
-          <button type="button" data-tab="agents" class="on">Agents</button>
-          <button type="button" data-tab="chats">Chats</button>
+          <button type="button" data-tab="chats" class="on">Conversations</button>
         </div>
-        <div class="ask-side-top" id="askChatsTopBar" hidden>
+        <div class="ask-side-top" id="askChatsTopBar">
           <button class="btn-primary" id="askNewChat" type="button">+ New conversation</button>
           <div class="ask-side-search">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" id="askThreadSearch" placeholder="Search conversations" autocomplete="off">
           </div>
         </div>
-        <div class="ask-threads" id="historyThreadList" hidden></div>
-        <div class="ask-agents-grid" id="askAgentsList"></div>
+        <div class="ask-threads" id="historyThreadList"></div>
+        <div class="ask-agents-grid" id="askAgentsList" hidden></div>
       </aside>
       <section class="ask-main" id="historyThreadOpen">
         <div class="ask-main-head">
@@ -1089,16 +1090,15 @@
   <div id="view-agents" class="hidden">
     <div class="rd-head">
       <div>
-        <div class="rd-eyebrow">Agents</div>
-        <h1>Automations on your data</h1>
-        <div class="rd-sub">One roster, one queue, one place to talk to them. An agent never edits a figure by itself &mdash; it proposes, you approve, and only then does anything reach your books or your score.</div>
+        <div class="rd-eyebrow">Automations</div>
+        <h1>What Margyn runs for you</h1>
+        <div class="rd-sub">The work Margyn does in the background: payment reminders, reconciliation, reading forwarded documents and the daily Bells. Margyn never edits a figure by itself &mdash; it proposes, you approve, and only then does anything reach your books or your score. To talk to Margyn, open the Margyn panel.</div>
       </div>
       <div class="rd-asof"><span class="dot"></span><span id="agentsAsOf">&mdash;</span></div>
     </div>
     <div class="srcseg" id="agentTabs">
       <button data-atab="queue" class="active">Queue<span class="seg-count hidden" id="agentQueueCount"></span></button>
       <button data-atab="roster">Roster</button>
-      <button data-atab="chat">Conversations</button>
     </div>
 
     <div id="agentPanel-queue">
@@ -1109,13 +1109,13 @@
         <div id="reconReviewList"></div>
       </div>
       <div class="card hidden" id="agentQueueCard">
-        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Close &amp; Collections proposals <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">Beta</span></div>
-        <div class="hint" style="margin-bottom:10px;">The Close &amp; Collections agent worked the reconciliation exceptions overnight. Each item below is a proposal &mdash; the money figure, why, and what to book.</div>
+        <div class="ledger-list-title" id="agentQueueTitle" style="margin-top:0; padding-top:0; border-top:none;">Reconciliation proposals <span class="tier-chip" style="margin-left:6px; background:rgba(230,126,34,.14); color:#c0621b;">Beta</span></div>
+        <div class="hint" style="margin-bottom:10px;">Margyn worked the reconciliation exceptions overnight. Each item below is a proposal &mdash; the money figure, why, and what to book.</div>
         <div id="agentQueueList"></div>
       </div>
       <div class="card hidden" id="agentSuggestCard">
         <div class="ledger-list-title" style="margin-top:0; padding-top:0; border-top:none;">Forwarded documents <span class="tier-chip free" style="margin-left:6px;">Import</span></div>
-        <div class="hint" style="margin-bottom:10px;">Invoices, bills and receipts you forwarded to your Margyn WhatsApp number. The Import agent read each one and proposed where it goes.</div>
+        <div class="hint" style="margin-bottom:10px;">Invoices, bills and receipts you forwarded to your Margyn WhatsApp number. Margyn read each one and proposed where it goes.</div>
         <div id="suggestionsList"></div>
       </div>
       <div class="rd-empty hidden" id="agentQueueEmpty">
@@ -1130,7 +1130,7 @@
       <div id="agentCards"></div>
     </div>
 
-    <div id="agentPanel-chat" class="hidden">
+    <div id="agentPanel-chat" class="hidden" hidden>
       <div class="hint" style="margin-bottom:16px;">Every agent is also someone you can talk to. Pick one to open its thread &mdash; Margyn leads and will hand off to a specialist when a question is squarely theirs.</div>
       <div class="ask-agents-grid" id="agentChatList"></div>
     </div>
@@ -1208,32 +1208,38 @@
       </form>
     </div>
   </div>
-</div>
-</div>
-<!-- ---------- Live voice: dock + conversation panel, see app/js/22-realtime-voice.js ---------- -->
-<div class="vx-dock hidden" id="vxDock" data-state="connecting" role="region" aria-label="Live call with Margyn">
-  <div class="vx-head" id="vxHandle" title="Drag to move">
-    <canvas class="vx-orb" id="vxOrb" width="44" height="44" aria-hidden="true"></canvas>
-    <div class="vx-mid">
-      <div class="vx-state"><span id="vxState">Connecting</span></div>
-      <div class="vx-act" id="vxAct"></div>
+
+  <!-- ---------- The Margyn panel: one conversation for typing and talking; what Margyn shows lands in it (app/js/25-margyn.js, 22-realtime-voice.js) ---------- -->
+  <aside class="mgr hidden" id="mgRail" aria-label="Margyn">
+    <div class="mgr-h">
+      <img class="mgr-mark" src="images/margyn-logo-mark.png" alt="">
+      <div class="mgr-id"><b>Margyn</b><span id="mgrSub">Your finance operator</span></div>
+      <button type="button" class="mg-icon-btn" id="mgrNew" title="New conversation" aria-label="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+      <button type="button" class="mg-icon-btn" id="mgrHistoryBtn" title="Past conversations" aria-label="Past conversations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg></button>
+      <button type="button" class="mg-icon-btn" id="mgrClose" title="Hide Margyn (⌘J)" aria-label="Hide Margyn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
-    <span class="vx-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
-  </div>
-  <div class="vx-mini" id="vxMini" aria-live="polite"><div class="vx-mini-empty">Say anything, like “who owes us the most?”</div></div>
-  <form class="vx-type" id="vxType" autocomplete="off"><input id="vxTypeInput" type="text" placeholder="Or type to Margyn…" aria-label="Type to Margyn"><button type="submit" aria-label="Send">↵</button></form>
-  <div class="vx-ctrls">
-    <button type="button" class="vx-btn" id="vxMuteBtn" title="Mute" aria-label="Mute microphone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 13.2A7 7 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
-    <button type="button" class="vx-btn" id="vxDeskBtn" title="Workspace: what Margyn is showing you" aria-label="Show workspace" aria-expanded="false" aria-controls="vxDesk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><span class="vx-badge hidden" id="vxDeskBadge"></span></button>
-    <button type="button" class="vx-end" id="vxEndBtn" title="End the call (Esc)">End</button>
-  </div>
+    <div class="mgr-call hidden" id="vxDock" data-state="connecting" role="region" aria-label="Live call with Margyn">
+      <canvas class="vx-orb" id="vxOrb" width="44" height="44" aria-hidden="true"></canvas>
+      <div class="vx-mid">
+        <div class="vx-state"><span id="vxState">Connecting</span></div>
+        <div class="vx-act" id="vxAct"></div>
+      </div>
+      <button type="button" class="vx-btn" id="vxMuteBtn" title="Mute" aria-label="Mute microphone" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M18.9 13.2A7 7 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.3V5a3 3 0 0 0-5.7-1.3"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+      <button type="button" class="vx-end" id="vxEndBtn" title="End the call (Esc)">End</button>
+    </div>
+    <div class="mgr-feed" id="vxFeed" aria-live="polite"></div>
+    <div class="mgr-sugg" id="mgrSugg"></div>
+    <form class="mgr-compose" id="mgrForm" autocomplete="off">
+      <textarea id="mgrInput" rows="1" placeholder="Ask or tell Margyn anything…" aria-label="Message Margyn"></textarea>
+      <button type="submit" class="mgr-send" id="mgrSend" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
+      <button type="button" class="mgr-talk" id="mgrTalk" title="Talk to Margyn (⌥M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg><span>Talk</span></button>
+    </form>
+  </aside>
 </div>
-<section class="vx-desk hidden" id="vxDesk" aria-label="Margyn workspace">
-  <div class="vx-desk-h" id="vxDeskHandle" title="Drag to move"><div><b>Workspace</b><span>Live from your data</span></div>
-    <div class="vx-desk-acts"><button type="button" class="vx-link" id="vxDeskClear">Clear</button>
-    <button type="button" class="mg-icon-btn" id="vxDeskClose" aria-label="Hide workspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div></div>
-  <div class="vx-feed" id="vxFeed"></div>
-</section>
+</div>
+<!-- ---------- Margyn, when the panel is closed: a button and a speech bubble (app/js/25-margyn.js) ---------- -->
+<button type="button" class="mgr-launch hidden" id="mgrLaunch" aria-label="Open Margyn (⌘J)" title="Open Margyn (⌘J)"><img src="images/margyn-logo-mark.png" alt=""><span>Margyn</span></button>
+<div class="mgr-bubble hidden" id="mgrBubble" role="status" aria-live="polite"></div>
 <audio id="rtRemoteAudio" autoplay hidden></audio>
 <div class="detail-overlay hidden" id="detailOverlay">
   <div class="detail-modal">
@@ -1343,5 +1349,6 @@
 <script src="/app/js/22-realtime-voice.js"></script>
 <script src="/app/js/23-voice-tools.js"></script>
 <script src="/app/js/24-whats-new.js"></script>
+<script src="/app/js/25-margyn.js"></script>
 </body>
 </html>

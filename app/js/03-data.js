@@ -361,6 +361,9 @@ function renderProfile(){
   document.getElementById('pfRevenue').value = currentProfile.revenue_range || '';
   document.getElementById('pfIndustry').value = currentProfile.industry || '';
   document.getElementById('pfCity').value = currentProfile.city || '';
+  // What Margyn calls you: your own preference (a team member's is theirs alone).
+  const pfName = document.getElementById('pfName');
+  if(pfName && document.activeElement !== pfName) pfName.value = (typeof mgPrefGet === 'function' ? mgPrefGet('display_name', '') : '') || '';
   renderRazorpayStatus();
   renderCashfreeStatus();
   renderPeopleMounts(true);
@@ -373,6 +376,8 @@ document.getElementById('profileForm').addEventListener('submit', async (e) => {
     const row = { id: currentUser.id, company_name: document.getElementById('pfCompany').value.trim(),
       revenue_range: document.getElementById('pfRevenue').value, industry: document.getElementById('pfIndustry').value.trim() || null,
       city: document.getElementById('pfCity').value.trim() || null };
+    const nm = document.getElementById('pfName');
+    if(nm && typeof mgrSaveName === 'function' && nm.value.trim()) mgrSaveName(nm.value);
     const { error } = await withTimeout(sbClient.from('profiles').upsert(row), 20000, 'Saving profile');
     if(error) throw error;
     currentProfile = Object.assign({}, currentProfile, row); renderHeader();   // keep columns the form doesn't edit (preferences, whatsapp_phone)

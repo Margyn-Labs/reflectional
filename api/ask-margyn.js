@@ -16,7 +16,8 @@
 import { formatMargynContext } from './_lib/formatMargynContext.js';
 import { getUserFromRequest, selectRows } from './_lib/supabaseRest.js';
 import { isProposeAction, execReadTool, validateProposal } from './_lib/marginActions.js';
-import { getAgent, isHandoff } from './_lib/agentRegistry.js';
+import { getAgent } from './_lib/agentRegistry.js';
+import crypto from 'crypto';
 
 const MAX_TOOL_ITERATIONS = 5;
 
@@ -88,21 +89,29 @@ export default async function handler(req, res) {
   if (voiceAction === 'speak') return handleSpeak(req, res);
   if (voiceAction === 'realtime-session') return handleRealtimeSession(req, res, user);
 
-  const { message, history, context, depth, agentId } = req.body || {};
-  const agent = getAgent(agentId);
+  const { message, history, context, depth, surface, resume } = req.body || {};
+  const agent = getAgent();
+  // The Margyn panel (app/js/25-margyn.js) drives the app while it answers:
+  // it gets the same screen/workspace tools voice has. Those run in the
+  // browser, so a turn can pause here, hand the calls to the page, and carry
+  // on when the page posts the results back (`resume`).
+  const inPanel = surface === 'panel';
 
   if (await overDailyCap(user.id, user.auth_id)) {
     res.status(429).json({ error: `You've hit today's chat limit (${DAILY_MESSAGE_CAP} messages). Resets tomorrow.` });
     return;
   }
 
-  if (!message || typeof message !== 'string' || !message.trim()) {
-    res.status(400).json({ error: 'message is required' });
-    return;
-  }
-  if (message.length > 2000) {
-    res.status(400).json({ error: 'message too long' });
-    return;
+  const isResume = inPanel && resume && typeof resume === 'object';
+  if (!isResume) {
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    if (message.length > 2000) {
+      res.status(400).json({ error: 'message too long' });
+      return;
+    }
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -124,24 +133,47 @@ export default async function handler(req, res) {
   const depthKey = (typeof depth === 'string' && DEPTH_PRESETS[depth]) ? depth : 'balanced';
   const preset = DEPTH_PRESETS[depthKey];
   const model = preset.model;
-  console.log('[ask-margyn] depth:', depthKey, 'model:', model);
+  console.log('[ask-margyn] depth:', depthKey, 'model:', model, inPanel ? 'panel' : '', isResume ? 'resume ' + resume.round : '');
 
-  // Keep the thread bounded so cost and latency stay predictable. Deep carries
-  // more turns because follow-up questions are the point of that tier.
-  const trimmedHistory = Array.isArray(history) ? history.slice(-preset.history) : [];
-  const messages = [
-    ...trimmedHistory
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-      .map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
-    { role: 'user', content: message.trim().slice(0, 2000) }
-  ];
+  const tools = inPanel ? [...agent.tools, ...APP_TOOLS] : agent.tools;
+  const toolNames = new Set(tools.map(t => t.name));
 
-  const systemPrompt = buildSystemPrompt(context, agent);
+  let messages, round = 0;
+  if (isResume) {
+    // Picking a paused turn back up. The state went to the browser and came
+    // back, so it is checked: signed by us for this user, well-formed, and
+    // every result answers a tool call Margyn actually made.
+    const st = checkResumeState(resume, user.id, toolNames);
+    if (!st.ok) {
+      res.status(400).json({ error: st.error });
+      return;
+    }
+    messages = st.messages;
+    round = st.round;
+  } else {
+    // Keep the thread bounded so cost and latency stay predictable. Deep carries
+    // more turns because follow-up questions are the point of that tier.
+    const trimmedHistory = Array.isArray(history) ? history.slice(-preset.history) : [];
+    messages = [
+      ...trimmedHistory
+        .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+        .map(m => ({ role: m.role, content: m.content.slice(0, 2000) })),
+      { role: 'user', content: message.trim().slice(0, 2000) }
+    ];
+    // The API wants turns to alternate; a voice line and a typed line can land
+    // back to back from the same side.
+    messages = mergeSameRole(messages);
+  }
+
+  const system = buildSystemPrompt(context, agent, { inPanel });
+  // Cache the tool list and the fixed instructions: they're the same on every
+  // turn, and with the panel's screen tools they're most of the input.
+  const cachedTools = tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: 'ephemeral' } }) : t);
 
   try {
     let actionCard = null;
-    let handoff = null;
     let finalText = '';
+    const steps = [];
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -154,8 +186,8 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model,
           max_tokens: preset.max_tokens,
-          system: systemPrompt,
-          tools: agent.tools,
+          system,
+          tools: cachedTools,
           messages
         })
       });
@@ -171,19 +203,6 @@ export default async function handler(req, res) {
       const blocks = Array.isArray(data.content) ? data.content : [];
       const toolUses = blocks.filter(b => b.type === 'tool_use');
       const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-
-      const handoffCall = toolUses.find(t => isHandoff(t.name));
-      if (handoffCall) {
-        // Terminal, same shape as the propose_action break below: the agent
-        // decided this isn't its lane. Never looped back to Claude under the
-        // old agent — the frontend switches active agent and the user's next
-        // message carries the new agentId.
-        const h = handoffCall.input || {};
-        const target = getAgent(h.agent_id);
-        handoff = { agentId: target.id, agentName: target.name, reason: h.reason || '' };
-        finalText = textOut || h.reason || `Bringing in ${target.name}.`;
-        break;
-      }
 
       const proposal = toolUses.find(t => isProposeAction(t.name));
       if (proposal) {
@@ -212,12 +231,32 @@ export default async function handler(req, res) {
 
       if (data.stop_reason === 'tool_use' && toolUses.length) {
         messages.push({ role: 'assistant', content: blocks });
-        const results = [];
+        const clientCalls = inPanel ? toolUses.filter(t => APP_TOOL_NAMES.has(t.name)) : [];
+        const serverResults = [];
         for (const tu of toolUses) {
-          const out = await execReadTool(tu.name, tu.input, user.id);
-          results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
+          if (clientCalls.includes(tu)) continue;
+          const out = toolNames.has(tu.name) ? await execReadTool(tu.name, tu.input, user.id) : { error: 'Unknown tool ' + tu.name };
+          if (STEP_LABELS[tu.name]) steps.push(STEP_LABELS[tu.name]);
+          serverResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
         }
-        messages.push({ role: 'user', content: results });
+        if (clientCalls.length) {
+          // Pause: the page runs these and posts the results back.
+          if (round >= MAX_CLIENT_ROUNDS) {
+            finalText = textOut || "I've done what I can on screen for that. Tell me what you'd like next.";
+            break;
+          }
+          const state = { messages, serverResults, round: round + 1 };
+          res.status(200).json({
+            clientCalls: clientCalls.map(t => ({ id: t.id, name: t.name, input: t.input || {} })),
+            interim: textOut || '',
+            steps,
+            resume: Object.assign(state, { sig: signState(state, user.id) }),
+            depth: depthKey,
+            model
+          });
+          return;
+        }
+        messages.push({ role: 'user', content: serverResults });
         continue;
       }
 
@@ -228,7 +267,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       reply: finalText || "I couldn't generate a response there, try rephrasing that.",
       actionCard,
-      handoff,
+      steps,
       agentId: agent.id,
       agentName: agent.name,
       depth: depthKey,
@@ -238,6 +277,59 @@ export default async function handler(req, res) {
     console.error('ask-margyn error:', err);
     res.status(500).json({ error: 'Something went wrong' });
   }
+}
+
+// ---------- the Margyn panel's round trip ----------
+const MAX_CLIENT_ROUNDS = 4;
+// What the panel shows while Margyn works ("> Checked what's waiting on you").
+const STEP_LABELS = {
+  list_pending_import_suggestions: 'Checked forwarded documents',
+  list_pending_agent_actions: 'Checked reconciliation proposals',
+  list_open_ledger_items: 'Read open ledger items',
+  list_chase_targets: 'Checked who I\'m chasing',
+  get_chase_agent_config: 'Read the reminder settings'
+};
+function resumeSecret() {
+  return process.env.MARGYN_RESUME_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.ANTHROPIC_API_KEY || 'margyn';
+}
+function signState(state, userId) {
+  return crypto.createHmac('sha256', resumeSecret())
+    .update(userId + '|' + state.round + '|' + JSON.stringify(state.messages) + '|' + JSON.stringify(state.serverResults || []))
+    .digest('hex');
+}
+function mergeSameRole(msgs) {
+  const out = [];
+  for (const m of msgs) {
+    const last = out[out.length - 1];
+    if (last && last.role === m.role && typeof last.content === 'string' && typeof m.content === 'string') last.content += '\n' + m.content;
+    else out.push(Object.assign({}, m));
+  }
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out;
+}
+// A paused turn coming back from the page. Signed when it left, so the
+// thread can't be edited or replayed with a fresh round count; the page only
+// adds results, one per tool call Margyn made in its last message.
+function checkResumeState(resume, userId, toolNames) {
+  const st = resume || {};
+  if (!Array.isArray(st.messages) || !st.messages.length || st.messages.length > 60) return { ok: false, error: 'bad resume state' };
+  if (JSON.stringify(st.messages).length > 200000) return { ok: false, error: 'resume state too large' };
+  const round = Number(st.round) || 0;
+  if (round < 1 || round > MAX_CLIENT_ROUNDS) return { ok: false, error: 'bad resume round' };
+  const expect = signState({ messages: st.messages, serverResults: st.serverResults || [], round }, userId);
+  const sig = String(st.sig || '');
+  if (sig.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return { ok: false, error: 'resume state not recognised' };
+  const last = st.messages[st.messages.length - 1];
+  const calls = (last && last.role === 'assistant' && Array.isArray(last.content)) ? last.content.filter(b => b && b.type === 'tool_use') : [];
+  if (!calls.length) return { ok: false, error: 'nothing to resume' };
+  const byId = new Map();
+  (Array.isArray(st.serverResults) ? st.serverResults : []).forEach(r => { if (r && r.tool_use_id) byId.set(r.tool_use_id, r); });
+  (Array.isArray(resume.results) ? resume.results : []).slice(0, 12).forEach(r => {
+    if (!r || typeof r.id !== 'string' || byId.has(r.id)) return;
+    byId.set(r.id, { type: 'tool_result', tool_use_id: r.id, content: String(r.content == null ? '' : r.content).slice(0, 6000) });
+  });
+  const results = calls.map(c => byId.get(c.id) || { type: 'tool_result', tool_use_id: c.id, content: JSON.stringify({ error: toolNames.has(c.name) ? 'No result came back from the app.' : 'Unknown tool' }) });
+  return { ok: true, round, messages: [...st.messages, { role: 'user', content: results }] };
 }
 
 // Speech-to-text. Client sends a short recorded clip as base64 (matches the
@@ -463,7 +555,7 @@ const REALTIME_TOOLS = [
   {
     type: 'function',
     name: 'get_inbox',
-    description: 'Everything waiting on the user: reconciliation and agent proposals, documents forwarded on WhatsApp awaiting approval, payments needing review, and who the Chase Agent is currently chasing.',
+    description: 'Everything waiting on the user: reconciliation and agent proposals, documents forwarded on WhatsApp awaiting approval, payments needing review, and who Margyn is currently chasing with payment reminders.',
     parameters: NO_ARGS
   },
   {
@@ -591,7 +683,7 @@ const REALTIME_TOOLS = [
   {
     type: 'function',
     name: 'propose_change',
-    description: 'Call the moment the user asks to change something: log a payment or an invoice or bill, mark something paid or received, approve or reject an import or an agent proposal, pause or resume the Chase Agent, stop chasing someone, or chase someone now. This never writes. It puts a confirm/cancel card on screen and tells you whether the user may confirm it by voice. Then read the card\'s summary back in one short sentence and ask "Shall I go ahead?"',
+    description: 'Call the moment the user asks to change something: log a payment or an invoice or bill, mark something paid or received, approve or reject an import or an agent proposal, pause or resume payment reminders, stop chasing someone, or chase someone now. This never writes. It puts a confirm/cancel card on screen and tells you whether the user may confirm it by voice. Then read the card\'s summary back in one short sentence and ask "Shall I go ahead?"',
     parameters: {
       type: 'object',
       properties: { request: { type: 'string', description: 'The change, precisely, with amounts written as digits in rupees (say "50000", not "fifty thousand" or "pachaas hazaar"), the party name, and any date as YYYY-MM-DD.' } },
@@ -615,6 +707,17 @@ const REALTIME_TOOLS = [
     parameters: NO_ARGS
   }
 ];
+
+// The same screen and workspace tools, for typed conversation in the Margyn
+// panel. Voice-only tools stay out: think (Claude IS the deep thinker here),
+// propose_change / confirm_pending_change (typed chat has propose_action and a
+// tap-to-confirm card) and end_conversation. These run in the browser; see
+// the pause/resume in the handler above.
+const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst',
+  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command'];
+const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
+  .map(t => ({ name: t.name, description: t.description.replace(/floating workspace next to the conversation/g, 'conversation as a card'), input_schema: t.parameters }));
+const APP_TOOL_NAMES = new Set(APP_TOOLS.map(t => t.name));
 
 async function handleRealtimeSession(req, res, user) {
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -738,6 +841,8 @@ function buildRealtimeInstructions(context, screen, recent) {
     ? `They opened this call from the "${String(screen.label || screen.page || 'Home').slice(0, 60)}" page.` : '';
 
   return `You are Margyn, the finance operator for ${companyName || 'this business'}, a digital-native Indian business. You're on a live voice call with the founder or their finance lead, and you are also driving the Margyn app on their screen while you talk: you can move between pages, filter lists, open a customer or vendor, draw tables and charts, run app commands and prepare changes for them to approve. Think of a sharp chief of staff sitting next to them at the laptop. Today is ${weekday}, ${today} (IST). ${onScreen}
+You are one Margyn: the same you they type to in the Margyn panel. Collections (payment reminders), reconciliation and document import are your own work, so say "I", never "the Chase Agent" or any other bot.
+${personAndAppBlock(ctx)}
 
 HOW YOU TALK
 - This is speech. Short sentences, no lists, no markdown, nothing that only works written down. One idea at a time.
@@ -748,7 +853,7 @@ HOW YOU TALK
 - If they interrupt, stop and follow them. Don't restart what you were saying.
 
 SHOW, DON'T GO
-- There is a floating workspace next to the conversation. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.
+- What you show lands as a card in the Margyn panel, in the same conversation they can type into. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.
 - "Open", "go to" and "take me to" mean navigate: "open the inbox", "take me to my inbox", "open the ledger" change the page. Also navigate when they need to do something on that page itself. Never navigate just to answer a question.
 - "Open it" / "open that" right after you mentioned something means go to where it lives, now, without asking: a pending decision or proposal -> navigate to inbox; a customer or vendor -> open_party; an invoice -> open_party for its customer.
 - After show_view or show_note, say one short line about what matters in it. Don't then add another line saying it's in the workspace.
@@ -823,8 +928,30 @@ function buildMultipartBody(boundary, parts) {
   return Buffer.concat(chunks);
 }
 
-function buildSystemPrompt(context, agent) {
+// Who's on the other end and what the app can do today. The name comes from
+// the account (their own setting, their team login, or the People page); the
+// release notes are Margyn's own What's-new copy, sent by the app so Margyn
+// knows every feature the moment it ships instead of waiting on a prompt edit.
+function personAndAppBlock(ctx) {
+  const app = (ctx && typeof ctx.app === 'object' && ctx.app) || {};
+  const first = typeof app.firstName === 'string' ? (app.firstName.replace(/[^\p{L}\p{M} .'-]/gu, ' ').trim().split(/\s+/)[0] || '').slice(0, 30) : '';
+  const notes = (Array.isArray(app.whatsNew) ? app.whatsNew : []).slice(0, 6)
+    .map(r => r && typeof r === 'object' ? String(r.title || '').slice(0, 120) + (Array.isArray(r.items) ? ': ' + r.items.slice(0, 6).map(x => String(x || '').slice(0, 90)).join('; ') : '') : '')
+    .filter(Boolean);
+  return `
+WHO YOU'RE TALKING TO: ${first ? first + '. Use their first name now and then (a greeting, good news, a heads-up), never in every reply.' : 'their name isn\'t known yet; don\'t guess one.'}
+
+WHAT THE MARGYN APP HAS (pages you can open or show): Home (my desk: what I did, what needs them), Inbox (decisions waiting), Cash (balances by source + 13-week forecast), Payment gateways, Receivables, Payables, GST and tax, Ledger (every accounting source side by side), Invoicing, Import (any Excel/CSV/PDF/photo), Customers, Vendors (the customer/vendor master), CFO pack (monthly board-ready pack), Reports, Pulse Score, Conversations (every past chat and call), Automations (payment reminders on WhatsApp, reconciliation, the Opening/Closing Bell), Organisations and sources, People and roles, Settings (incl. team logins), Audit log (who changed what), Channel health (are Bells, reminders and emails delivering), Capital readiness.${notes.length ? `
+Recently added (release notes, for your knowledge; mention one only when it helps or they ask what's new):
+${notes.map(n => '- ' + n).join('\n')}` : ''}`;
+}
+
+// Typed conversation: the Ask Margyn page and the Margyn panel. Two system
+// blocks: the fixed instructions (cached, identical on every turn) and this
+// business's live data (changes every turn).
+function buildSystemPrompt(context, agent, opts) {
   const ctx = context || {};
+  const inPanel = !!(opts && opts.inPanel);
   const focusVital = ctx.focusVital || null;
   const focusFindingTier = ctx.focusFindingTier || null;
 
@@ -836,7 +963,7 @@ function buildSystemPrompt(context, agent) {
   } = formatMargynContext(ctx);
 
   const focusLine = focusVital
-    ? `\nThe user just tapped on "${focusVital}" on their dashboard and this chat opened focused on it — that tap is why this conversation started. Any vague or deictic phrase in their message ("what does this say", "what does this mean", "explain this", "why", "is that good") refers to "${focusVital}" and the numbers already given to you above. Answer directly from that data.`
+    ? `\nThe user opened this conversation from "${focusVital}" on their dashboard — that's why it started. Any vague or deictic phrase in their message ("what does this say", "what does this mean", "explain this", "why", "is that good") refers to "${focusVital}" and the numbers in this block. Answer directly from that data.`
     : '';
 
   const tierLine = focusFindingTier
@@ -845,11 +972,14 @@ function buildSystemPrompt(context, agent) {
         : `\nThis message is the user asking you to explain a SIGNAL finding — only one connected source supports this read, nothing else confirms it. Say plainly this is a single-source signal that could be noise, not a confirmed driver, and suggest what a second source would need to show to confirm it.`)
     : '';
 
-  return `${agent.identity} You're built into the Margyn app for ${companyName}, a digital-native Indian business.
+  const now = new Date(Date.now() + 5.5 * 3600000);   // IST
+  const today = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getUTCDay()] + ', ' + now.toISOString().slice(0, 10);
 
-This chat has no file, image, or document upload capability of any kind — the user can only type text. If a message reads like it could be asking you to read or describe an attachment ("what does this say", "read this", "what is this"), that is never actually what's happening here: it always means the dashboard number or finding described below. Never respond by asking for an image, screenshot, or document, and never say you don't see an attachment — there is never one to see. Answer from the data below instead.
+  const staticText = `${agent.identity} You're built into the Margyn app for a digital-native Indian business; the business's name and all of its figures are in the data block that follows these instructions.
 
-You are not a general-purpose chatbot bolted onto a dashboard. Margyn's whole product is that a claim only counts as verified when two independently operated data sources agree — that discipline applies to what you say too. You mostly get called to explain a specific pre-identified finding (a real move the app already detected and tiered as Verified or Signal, deterministically, before you were ever invoked), or to answer a short follow-up about one. Talk like a sharp, friendly finance-savvy colleague leaning over their shoulder — not a report generator. Short, direct, plain language. No headers, no markdown, no bullet walls unless they specifically ask you to break several things down.
+This chat has no file, image, or document upload capability of any kind — the user can only type text. If a message reads like it could be asking you to read or describe an attachment ("what does this say", "read this", "what is this"), that is never actually what's happening here: it always means the dashboard number or finding in the data block. Never respond by asking for an image, screenshot, or document, and never say you don't see an attachment — there is never one to see. Answer from the data instead.
+
+You are not a general-purpose chatbot bolted onto a dashboard. Margyn's whole product is that a claim only counts as verified when two independently operated data sources agree — that discipline applies to what you say too. Talk like a sharp, friendly finance-savvy colleague leaning over their shoulder — not a report generator. Short, direct, plain language. No headers, no markdown, no bullet walls unless they specifically ask you to break several things down.
 
 VOICE — this is one human talking to you in one chat, not a report request:
 - Address them as "you." Never "Dear user," never third-person about "the company" or "the business" unless they ask about it that way.
@@ -881,6 +1011,45 @@ Good: "Mismatch. Zoho 1042 is ₹50,000; Razorpay payment pay_abc is ₹49,100 o
 User: is my GST leakage number real
 Good: "That one's Signal, not Verified — it's from your typed P&L, nothing else confirms it yet. Connect Books and I can cross-check it."
 
+Rules you must always follow:
+0. Follow the VOICE section above on every reply — lead with the answer, address them as "you," sound like a person, name sources in plain English, no lecture endings.
+1. Only reason about the numbers in the data block or returned by your tools. Never invent a figure, percentage, or trend that wasn't provided to you.
+2. Every trend and delta figure is pre-computed in plain JS before it reaches you — never recompute or contradict them, and never do your own arithmetic to produce a different percentage.
+2b. There are up to THREE separate sources of receivables/payables: the self-entered Quick Ledger, Zoho Books, and Tally. Never add or blend any of them into one number. Reason across them using the CROSS-SOURCE LEDGER block:
+   - If the user asks a general "what are my receivables / who owes me" question, lead with the source they'd expect (their own ledger, or their books if connected), then note whether the other sources agree or differ.
+   - Where 2+ sources AGREE on a counterparty's figure, say so — that's the strongest read you can give short of a payments match ("Your ledger and Zoho both show Acme at ₹50k").
+   - Where sources CONFLICT on the same counterparty, give every source's number and the gap. Never pick one silently, never average.
+   - A counterparty only one source knows about is Signal — flag it as unconfirmed. Tally is always Signal on its own.
+   - Only the self-entered ledger feeds the Pulse Score; connector figures are shown for comparison and do not move the score.
+   Self-entered data never corroborates a connector or another self-entered figure.
+3. Respect the Verified vs Signal distinction (see the tier note if present). Never state a Signal-tier read with the same confidence as a Verified one — that distinction is the whole point of the product.
+4. If the user asks something none of this data can answer (a number not shown, a prediction, something outside their connected sources), say plainly you don't have that yet, and mention what connecting or logging would surface it.
+5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
+6. Keep replies under ~120 words unless the user explicitly asks for more detail.
+7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
+8. The "Past findings" list is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.
+
+TAKING ACTION — you have tools that look things up (list_pending_import_suggestions, list_pending_agent_actions, list_open_ledger_items, list_chase_targets, get_chase_agent_config) and one tool, propose_action, that hands the user a confirm/cancel card. You never write anything yourself — propose_action only shows a card; the write happens only if the user clicks Confirm in the app.
+- Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the reminders", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
+- If their message is vague about which row they mean ("approve that import", "the Acme one"), use the matching list_* tool first to find the specific row and its id before calling propose_action — never guess an id, and never propose an action against more than one row unless the user explicitly asked to review several at once (use type: "list_for_review" for that, with payload.items listing each candidate — the user still confirms individually or picks from the list, never a blind "do them all").
+- human_summary must say exactly what will happen in plain language, e.g. "Approve Acme's ₹50,000 invoice import" or "Stop chasing Ramesh for the ₹12,000 overdue invoice" — the user is deciding whether to click Confirm based on this sentence alone.
+- For create_ledger_item, resolve party/amount/due_date from what the user said and put them in payload — don't call a list tool first, there's nothing to look up. If the party isn't already one of their customers/vendors, confirming also adds them to that list (with source "margyn"); the card shows this, and you can say "they're new, so I'll add them as a customer too".
+- Never propose or imply any action outside this tool set (no payments, nothing that moves money out of a bank). Collections, reconciliation and imports are all yours: never say you'll "hand this to" or "bring in" anyone else.${inPanel ? `
+
+DRIVING THE APP — this conversation is in the Margyn panel beside the app, and you can work the screen while you answer:
+- Show, don't just tell: when they ask to see, show, compare or check something (P&L, who owes what, cash, GST, a customer, what's waiting), call show_view. It draws a live card right in this conversation from the app's own figures, so you never read numbers into it. Then say one short line about what matters in it. Don't add another line saying it's shown.
+- For anything show_view doesn't cover, use show_table or show_chart with figures from your tools only. show_note for a written summary or next steps.
+- "Open", "go to", "take me to" mean navigate (or open_party for one customer/vendor). Also navigate when they need to work on that page themselves. Never navigate just to answer a question.
+- Live figures: get_overview, get_cash, get_gst, get_inbox, query_parties, get_sources read exactly what's on their screen right now. Prefer them over the data block when they differ, and use them for anything the block doesn't carry (the cash forecast, per-customer lists, what's waiting).
+- "This", "here", "that one" means what's on screen: call get_screen first.
+- Adding a customer or vendor: run_command "add_party" with the name opens the form; fill_form puts in details they give; save_form only after they say save / yes. New amounts owed with party and amount: propose_action create_ledger_item.
+- sync_source pulls fresh data from Zoho, Odoo or Shopify; reconnecting is something only they can do on the sources page.
+- Never say you did or showed something unless a tool just returned it. If there's no tool for it, say so in a sentence.` : ''}`;
+
+  const dynamicText = `TODAY: ${today} (IST). BUSINESS: ${companyName}.
+${personAndAppBlock(ctx)}
+
+DATA BLOCK
 Current Pulse Score (0-100 operating/financial health score): ${pulseScore}${pulseTrend}
 
 Current financial vitals (each with trend vs the prior snapshot where available):
@@ -917,32 +1086,13 @@ ${connectorFreshnessBlock}
 If a connector shows NEEDS RE-AUTH, and the user asks about a figure that depends on it, say plainly the connector needs reconnecting and the number may be stale.
 
 Past findings, most recent first (up to the last 10, across all snapshots — use this if the user references "before," "last time," or asks to compare to an earlier period; cite the date; if nothing here is relevant to what they're asking, say plainly you don't have that in view rather than guessing):
-${historyBlock}
+${historyBlock}`;
 
-Rules you must always follow:
-0. Follow the VOICE section above on every reply — lead with the answer, address them as "you," sound like a person, name sources in plain English, no lecture endings.
-1. Only reason about the numbers given above. Never invent a figure, percentage, or trend that wasn't provided to you.
-2. Every trend and delta figure above is pre-computed in plain JS before it reaches you — never recompute or contradict them, and never do your own arithmetic to produce a different percentage.
-2b. There are up to THREE separate sources of receivables/payables: the self-entered Quick Ledger, Zoho Books, and Tally. Never add or blend any of them into one number. Reason across them using the CROSS-SOURCE LEDGER block:
-   - If the user asks a general "what are my receivables / who owes me" question, lead with the source they'd expect (their own ledger, or their books if connected), then note whether the other sources agree or differ.
-   - Where 2+ sources AGREE on a counterparty's figure, say so — that's the strongest read you can give short of a payments match ("Your ledger and Zoho both show Acme at ₹50k").
-   - Where sources CONFLICT on the same counterparty, give every source's number and the gap. Never pick one silently, never average.
-   - A counterparty only one source knows about is Signal — flag it as unconfirmed. Tally is always Signal on its own.
-   - Only the self-entered ledger feeds the Pulse Score; connector figures are shown for comparison and do not move the score.
-   Self-entered data never corroborates a connector or another self-entered figure.
-3. Respect the Verified vs Signal distinction above (see the tier note if present). Never state a Signal-tier read with the same confidence as a Verified one — that distinction is the whole point of the product.
-4. If the user asks something none of this data can answer (a number not shown, a prediction, something outside their connected sources), say plainly you don't have that yet, and mention what connecting or logging would surface it.
-5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
-6. Keep replies under ~120 words unless the user explicitly asks for more detail.
-7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
-8. The "Past findings" list above is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back than what's listed, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.
-
-TAKING ACTION — you now have tools that can look things up (list_pending_import_suggestions, list_pending_agent_actions, list_open_ledger_items, list_chase_targets, get_chase_agent_config) and one tool, propose_action, that hands the user a confirm/cancel card. You never write anything yourself — propose_action only shows a card; the write happens only if the user clicks Confirm in the app.
-- Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the chase agent", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
-- If their message is vague about which row they mean ("approve that import", "the Acme one"), use the matching list_* tool first to find the specific row and its id before calling propose_action — never guess an id, and never propose an action against more than one row unless the user explicitly asked to review several at once (use type: "list_for_review" for that, with payload.items listing each candidate — the user still confirms individually or picks from the list, never a blind "do them all").
-- human_summary must say exactly what will happen in plain language, e.g. "Approve Acme's ₹50,000 invoice import" or "Stop chasing Ramesh for the ₹12,000 overdue invoice" — the user is deciding whether to click Confirm based on this sentence alone.
-- For create_ledger_item, resolve party/amount/due_date from what the user said and put them in payload — don't call a list tool first, there's nothing to look up. If the party isn't already one of their customers/vendors, confirming also adds them to that list (with source "margyn"); the card shows this, and you can say "they're new, so I'll add them as a customer too".
-- Never propose or imply any action outside this tool set (no payments, no messaging a customer directly, nothing on WhatsApp from here) — this chat can only touch the six action types above.
-
-WORKING AS A TEAM — you're one of several agents (see your identity line above for which one). You also have handoff_to_agent: call it the moment a request is genuinely outside your own lane, rather than answering it yourself from general knowledge or guessing. Say one short plain sentence first naming who you're bringing in and why (e.g. "That's collections, let me bring in the Chase Agent"), then call the tool in the same turn — don't ask permission first, don't explain the mechanics of "handing off" to the user, just do it naturally like a colleague redirecting a question. Never call handoff_to_agent for a request that's actually answerable from the data already given to you above.`;
+  return [
+    { type: 'text', text: staticText, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: dynamicText }
+  ];
 }
+
+// For the tests in api/_lib/__tests__/askMargynPanel.test.js.
+export { checkResumeState, signState, mergeSameRole, buildSystemPrompt, APP_TOOLS, MAX_CLIENT_ROUNDS };
