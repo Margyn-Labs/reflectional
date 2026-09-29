@@ -64,6 +64,12 @@ function vxFindParty(dir, name){
   const scored = vxGroups(dir).map(g => ({ g, s:vxScoreName(name, g.party) })).filter(x => x.s >= 0.5).sort((a, b) => b.s - a.s || b.g.amount - a.g.amount);
   return { best:scored[0] ? scored[0].g : null, others:scored.slice(1, 4).map(x => x.g.party), confident:!!scored[0] && (scored[0].s >= 0.85 || !scored[1] || scored[0].s - scored[1].s >= 0.2) };
 }
+/* The customer/vendor master (19f-parties.js), for parties with nothing open. */
+function vxFindMaster(name){
+  const list = (typeof khataParties !== 'undefined' && khataParties) || [];
+  const best = list.map(p => ({ p, s:vxScoreName(name, p.name) })).filter(x => x.s >= 0.6).sort((a, b) => b.s - a.s)[0];
+  return best ? best.p : null;
+}
 function vxPartyRow(g){
   const od = g.oldestDays != null && g.oldestDays < 0 ? -g.oldestDays : 0;
   return {
@@ -226,12 +232,22 @@ const VX_TOOLS = {
   },
 
   open_party({ direction, name }){
-    const dir = VX_DIR[direction]; if(!dir) return { error:'direction must be receivables or payables' };
+    let dir = VX_DIR[direction] || 'recv';
     let f = vxFindParty(dir, name);
-    if(!f.best){   // they may have the direction wrong ("open Sharma" when Sharma is a vendor)
+    if(!f.best){   // they may have the direction wrong ("open Sharma" when Sharma is a vendor): just open the right one
       const other = dir === 'recv' ? 'pay' : 'recv', f2 = vxFindParty(other, name);
-      if(f2.best) return { found:false, note:f2.best.party + ' is a ' + (other === 'recv' ? 'customer (receivables)' : 'vendor (payables)') + ', not a ' + (dir === 'recv' ? 'customer' : 'vendor') + '. Call again with that direction.' };
-      return { found:false, note:'No ' + (dir === 'recv' ? 'customer' : 'vendor') + ' with an open item matches "' + name + '".' };
+      if(f2.best){ f = f2; dir = other; }
+    }
+    if(!f.best){
+      // Someone in the customer/vendor master with nothing open (a vendor just added, say): open their record.
+      const m = vxFindMaster(name);
+      if(m){
+        vxDrive(() => mgOpenMasterParty(m.id));
+        vxActivity('Opened ' + m.name);
+        return { found:true, shown_in_side_panel:true, name:m.name, type:m.type, open_items:0, gstin:m.gstin || null, phone:m.phone || null,
+          note:'They have no open invoices or bills; their record is open in the side panel.' };
+      }
+      return { found:false, note:'Nobody called "' + name + '" among customers, vendors or open items. The name may have been mis-heard: ask them to spell it.' };
     }
     if(!f.confident) return { found:false, did_you_mean:[f.best.party, ...f.others], note:'More than one close match; ask which one.' };
     const g = f.best;

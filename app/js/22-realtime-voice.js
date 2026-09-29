@@ -293,7 +293,12 @@ async function openRealtimeOverlay(){
       // A system note, not response.instructions: those would replace the
       // session prompt (and its snapshot) for this response.
       const who = (typeof mgrName !== 'undefined' && mgrName) ? ' Greet ' + mgrName + ' by first name.' : '';
-      if(vxRecent && vxRecent.continuing){
+      if(typeof mgrOpen === 'function'){
+        // From the Margyn panel: the panel already said hello and shows the
+        // conversation, so the call just says hi and listens. Past
+        // conversations stay in Margyn's memory for if they bring them up.
+        vxTellModel('Open the call: say hi' + (who ? ' to ' + mgrName : '') + ' and ask what they want to do, in under eight words, in English. Nothing else: no figures, no past conversations.', true);
+      } else if(vxRecent && vxRecent.continuing){
         vxTellModel('You are joining the conversation they were just having with you in the Margyn panel (the RECENT CONVERSATION). Say a very short hello' + (who ? ' using their first name' : '') + ', then pick up naturally: if their last request is still open, get on with it; otherwise ask what is next. Under 20 words. No figures yet.', true);
       } else if(vxRecent){
         vxResumeChoice(vxRecent);
@@ -402,7 +407,32 @@ async function vxAwaitUtteranceAfter(t, maxMs){
 }
 
 const VX_PROMPT_ECHO = /Roman \(Latin\) letters|Urdu, Arabic or Devanagari|mix of the two \(Hinglish\)/i;
-const VX_ODD_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u0A80-\u0AFF\u0400-\u04FF\u0590-\u05FF]/;
+/* Anything not in Roman letters: Devanagari, Urdu/Arabic, Gujarati, Bengali,
+   Gurmukhi, Cyrillic, Hebrew. Shown in Roman Hinglish instead (vxRomanize). */
+const VX_ODD_SCRIPT = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u0400-\u04FF\u0590-\u05FF]/;
+let vxSpokeSinceUser = false;
+/* Lines are batched (a reply and the question before it often land together)
+   and sent to a small, cheap model that rewrites them in Roman letters. */
+let vxRomanQueue = [], vxRomanTimer = null, vxRomanCount = 0;
+const VX_ROMAN_MAX = 80;   // per page load; beyond that the original script shows
+function vxRomanize(text){
+  if(!text || vxRomanCount >= VX_ROMAN_MAX) return Promise.resolve(null);
+  vxRomanCount++;
+  return new Promise(resolve => {
+    vxRomanQueue.push({ text, resolve });
+    clearTimeout(vxRomanTimer);
+    vxRomanTimer = setTimeout(vxRomanFlush, 250);
+  });
+}
+async function vxRomanFlush(){
+  const batch = vxRomanQueue.splice(0, 8); if(!batch.length) return;
+  try {
+    const res = await fetch('/api/ask-margyn?action=romanize', { method:'POST', headers:{ 'Content-Type':'application/json', ...(await voiceAuthHeaders()) }, body:JSON.stringify({ texts:batch.map(b => b.text) }) });
+    const d = await res.json();
+    batch.forEach((b, i) => { const t = d && !d.failed && d.texts && d.texts[i]; b.resolve(t && !VX_ODD_SCRIPT.test(t) ? t : null); });
+  } catch(e){ batch.forEach(b => b.resolve(null)); }
+  if(vxRomanQueue.length) vxRomanTimer = setTimeout(vxRomanFlush, 0);
+}
 /* "One sec, let me pull that up" with no tool call behind it. Asking
    permission ("Shall I open it?") is fine and doesn't count. */
 const VX_PROMISE = /\b(one (sec|second|moment)|just a (sec|second|moment)|give me a (sec|second|moment)|let me|i'?ll (now )?(pull|open|get|show|put|draw|create|make|set|check|sync|run|bring|summari[sz]e|write|go|add|log|draft)|i am (pulling|opening|setting|creating)|pulling (that |it |this )?up|opening (that|it|the)|setting (that |it )?up|ek (second|minute|pal)|abhi (dikhata|dikhati|kholta|kholti|karta|karti|laata|lati))/i;
@@ -433,7 +463,7 @@ function vxOnEvent(m){
     case 'input_audio_buffer.speech_started':
       vxTouch(); vxSetState('hearing', ''); break;
     case 'input_audio_buffer.committed':
-      vxNudges = 0; vxLastCommitAt = Date.now(); vxCallsSinceCommit = 0;
+      vxNudges = 0; vxLastCommitAt = Date.now(); vxCallsSinceCommit = 0; vxSpokeSinceUser = false;
       if(m.item_id) vxAddLine('user', '', m.item_id);   // placeholder keeps transcript order right
       vxSetState('thinking', ''); break;
     case 'conversation.item.input_audio_transcription.completed': {
@@ -447,8 +477,14 @@ function vxOnEvent(m){
       // instead of a script the user doesn't read, and keep it out of the
       // spoken-yes check (it can't be matched reliably).
       if(text && VX_ODD_SCRIPT.test(text)){
-        vxAddLine('user', '(spoken in Hindi; the written line came out in the wrong script)', m.item_id);
-        vxPersist('user', text); vxDropResume(); vxWatchReply(text);
+        // Written in Roman letters before it's shown or saved (see vxRomanize).
+        const id = m.item_id;
+        vxAddLine('user', '…', id); vxDropResume(); vxWatchReply(text);
+        vxRomanize(text).then(r => {
+          const roman = r || '(spoken in Hindi)';
+          vxAddLine('user', roman, id); vxPersist('user', r || text);
+          if(r){ vxUtterances.push({ at:Date.now(), text:r }); vxLastUserText = r; if(vxIsGoodbye(r)) vxGoodbye(); }
+        });
         break;
       }
       if(text){
@@ -465,11 +501,17 @@ function vxOnEvent(m){
       vxResponseActive = true; vxCallsThisResponse = []; vxCaption = ''; vxToolFailed = false; vxLastResponseAt = Date.now(); break;
     case 'response.output_audio_transcript.delta':
     case 'response.audio_transcript.delta':
-      if(m.delta){ vxSetState('speaking'); vxSetCaption(vxCaption + m.delta); vxAddLine('margyn', vxCaption, 'r' + m.response_id); }
+      if(m.delta){ vxSpokeSinceUser = true; vxSetState('speaking'); vxSetCaption(vxCaption + m.delta); vxAddLine('margyn', VX_ODD_SCRIPT.test(vxCaption) ? '…' : vxCaption, 'r' + m.response_id); }
       break;
     case 'response.output_audio_transcript.done':
     case 'response.audio_transcript.done':
-      if(m.transcript){ vxLastSaid = m.transcript; vxAddLine('margyn', m.transcript, 'r' + m.response_id); vxPersist('assistant', m.transcript); }
+      if(m.transcript){
+        vxLastSaid = m.transcript;
+        if(VX_ODD_SCRIPT.test(m.transcript)){
+          const id = 'r' + m.response_id, said = m.transcript;
+          vxRomanize(said).then(r => { vxAddLine('margyn', r || said, id); vxPersist('assistant', r || said); });
+        } else { vxAddLine('margyn', m.transcript, 'r' + m.response_id); vxPersist('assistant', m.transcript); }
+      }
       break;
     case 'output_audio_buffer.started':
       vxSetState('speaking'); break;
@@ -492,6 +534,12 @@ function vxOnEvent(m){
         // Finished with nothing said and nothing done.
         vxNudges++;
         vxTellModel('The user said "' + vxLastUserText.slice(0, 160) + '" and you did not answer. Answer now: if it asks you to open, show or do something, call the right tool; if it is unclear, ask one short question.', true);
+        break;
+      }
+      else if(vxActive && !vxEnding && vxNudges < 2 && status === 'completed' && !String(said).trim() && !vxSpokeSinceUser && vxCallsSinceCommit > 0){
+        // Did something ("Yes, open.") and then said nothing about it.
+        vxNudges++;
+        vxTellModel('You just did that but said nothing. Tell the user in one short sentence what you did or found' + (vxToolFailed ? ' (a tool reported a problem: say what, and what they can do)' : '') + '.', true);
         break;
       }
       else if(vxActive && !vxEnding && vxNudges < 1 && vxBrokenPromise(said)){

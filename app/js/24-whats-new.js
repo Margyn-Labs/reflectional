@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-smoother-calls', date:'30 Sept 2026', title:'Smoother calls with Margyn',
+    items:[
+      { t:'Everything in Roman letters', what:'What you say and what Margyn says now always shows in Roman letters, even when you speak Hindi. Margyn talks English by default, switches to easy Hinglish when you do, and switches back when you speak English.',
+        how:'Just talk. Say “English please” to keep it in English.', act:'talk' },
+      { t:'One hello, not three', what:'Starting a call from the Margyn panel gets a quick hi instead of a recap. Coming back within half an hour gets a short hello, not a “welcome back”.',
+        how:'Nothing to do.' },
+      { t:'Fewer silences', what:'Margyn waits for you to finish before answering, and always tells you what it just did. It can also open a customer or vendor who has nothing outstanding.',
+        how:'Say “open Sanjay Pandey”, then “close this”.' }
+    ]
+  },
+  {
     id:'2026-09-30-hindi-close', date:'30 Sept 2026', title:'Speak Hindi, and ask Margyn to close things',
     items:[
       { t:'Hindi and Hinglish, written the way you say them', what:'When you talk to Margyn in Hindi or Hinglish, what you said now shows in Roman letters, not Urdu or another script. Margyn always understood you; now the written line matches.',
