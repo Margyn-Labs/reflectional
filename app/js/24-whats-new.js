@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-open-items', date:'30 Sept 2026', title:'Receivables and payables count only what’s really open',
+    items:[
+      { t:'Drafts, voided and cancelled invoices no longer count', what:'A Zoho draft or voided invoice, or an Odoo draft or cancelled one, isn’t money anyone owes. They’re now left out of Receivables, Payables, the forecast, Ask Margyn and WhatsApp.',
+        how:'Nothing to do. If a total went down today, this is why. They still show in Zoho or Odoo themselves.' },
+      { t:'Deleted in Odoo, closed in Margyn', what:'An invoice or bill deleted in Odoo is now closed in Margyn on the next sync, the way Zoho and Tally already work. Its original amount stays on record.',
+        how:'Nothing to do. It happens with the nightly Odoo sync.' }
+    ]
+  },
+  {
     id:'2026-09-30-team-who', date:'30 Sept 2026', title:'See who did what, on every channel',
     items:[
       { t:'The Audit log names the person', what:'Every entry that’s added, settled or imported, and every change to your team, now shows who did it and whether it was in the app, by voice or on WhatsApp.',

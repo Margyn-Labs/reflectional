@@ -35,6 +35,8 @@ const {
   updateRows,
   setConnectorStatus
 } = require('../_lib/supabaseRest');
+// Only posted moves are open: a draft or cancelled move owes nothing (moneyModel.js).
+const { ODOO_OPEN } = require('../_lib/moneyModel');
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -216,6 +218,38 @@ const SETS = {
 };
 
 /**
+ * The deleted-at-source sweep (2026-09-30). `seen` = move ids this sync read.
+ * Any row still open here (balance != 0, not already closed) that isn't in
+ * `seen` is re-read by id. Returned rows come back mapped for the upsert;
+ * ids Odoo no longer has are closed (balance 0, state 'deleted_at_source').
+ * `amount_total` is kept so the original stays auditable.
+ * Fails safe: skips when it would close more than half of a book of 10+.
+ */
+async function sweepMissing({ baseUrl, db, uid, apiKey, fields, spec, ctx, seen }) {
+  const held = await selectRows(spec.table,
+    `select=odoo_move_id&user_id=eq.${ctx.userId}&cred_id=eq.${ctx.credId}&balance=neq.0&or=(state.is.null,state.neq.deleted_at_source)&limit=20000`);
+  const missing = held.map((r) => r.odoo_move_id).filter((id) => id != null && !seen.has(id));
+  if (!missing.length) return { refreshed: [], deleted: 0 };
+  const refreshed = [];
+  const found = new Set();
+  for (let i = 0; i < missing.length; i += 200) {
+    const ids = missing.slice(i, i + 200);
+    const rows = await execKw(baseUrl, db, uid, apiKey, 'account.move', 'search_read',
+      [[['id', 'in', ids]], fields], { limit: ids.length });
+    for (const r of rows || []) { found.add(r.id); refreshed.push(spec.map(r, ctx)); }
+  }
+  const gone = missing.filter((id) => !found.has(id));
+  if (gone.length && held.length >= 10 && gone.length > held.length * 0.5) {
+    throw new Error(`would close ${gone.length}/${held.length} open moves; skipped as a likely Odoo-side glitch`);
+  }
+  for (let i = 0; i < gone.length; i += 100) {
+    await updateRows(spec.table, `user_id=eq.${ctx.userId}&cred_id=eq.${ctx.credId}&odoo_move_id=in.(${gone.slice(i, i + 100).join(',')})`,
+      { balance: 0, state: 'deleted_at_source', synced_at: ctx.now });
+  }
+  return { refreshed, deleted: gone.length };
+}
+
+/**
  * Full sync for one connector_credentials row. Pulls all open moves plus any
  * move touched in the last 45 days (so a just-paid invoice flips to paid here
  * too). Bounded + paged so a large book can't blow the function budget.
@@ -305,18 +339,32 @@ async function runSync(cred, opts) {
     let offset = 0;
     const pageSize = 200;
     const mapped = [];
+    let complete = false;   // read to the end, not cut short by the deadline
 
     while (Date.now() < deadline) {
       const rows = await execKw(baseUrl, db, uid, apiKey, 'account.move', 'search_read',
         [domain, fields], { limit: pageSize, offset, order: 'id asc' });
-      if (!Array.isArray(rows) || rows.length === 0) break;
+      if (!Array.isArray(rows) || rows.length === 0) { complete = true; break; }
       summary[kind].received += rows.length;
       for (const r of rows) {
         if (!ctx.companyName) ctx.companyName = m2oName(r.company_id);
         mapped.push(spec.map(r, ctx));
       }
       offset += rows.length;
-      if (rows.length < pageSize) break;
+      if (rows.length < pageSize) { complete = true; break; }
+    }
+
+    // Moves we still hold as open that this sync didn't return were paid,
+    // cancelled or deleted in Odoo. Ask for them by id: the ones that come
+    // back get their real state; the ones that don't exist any more close.
+    if (complete) {
+      try {
+        const extra = await sweepMissing({ baseUrl, db, uid, apiKey, fields, spec, ctx, seen: new Set(mapped.map((m) => m.odoo_move_id)) });
+        mapped.push(...extra.refreshed);
+        summary[kind].deleted_at_source = extra.deleted;
+      } catch (e) {
+        console.error(`[odoo] sweep ${kind} skipped:`, e.message);
+      }
     }
 
     if (mapped.length) {
@@ -523,11 +571,11 @@ async function handleStatus(req, res) {
   try {
     invoices = await selectRows(
       'odoo_invoices',
-      `select=invoice_number,customer_name,balance,amount_total,due_date,invoice_date,payment_state,currency_code&cred_id=eq.${cred.id}&order=due_date.asc.nullslast&limit=500`
+      `select=invoice_number,customer_name,balance,amount_total,due_date,invoice_date,payment_state,currency_code&cred_id=eq.${cred.id}&${ODOO_OPEN}&order=due_date.asc.nullslast&limit=500`
     );
     bills = await selectRows(
       'odoo_bills',
-      `select=bill_number,vendor_name,balance,amount_total,due_date,bill_date,payment_state,currency_code&cred_id=eq.${cred.id}&order=due_date.asc.nullslast&limit=500`
+      `select=bill_number,vendor_name,balance,amount_total,due_date,bill_date,payment_state,currency_code&cred_id=eq.${cred.id}&${ODOO_OPEN}&order=due_date.asc.nullslast&limit=500`
     );
   } catch (e) {
     return json(res, 500, { error: 'lookup_failed' });
@@ -675,6 +723,7 @@ async function handleCron(req, res) {
 }
 
 module.exports = {
+  sweepMissing,
   handleConnect,
   handleSync,
   handleStatus,
