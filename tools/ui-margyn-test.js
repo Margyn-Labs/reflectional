@@ -173,6 +173,29 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.evaluate(() => window.__sent.some(o => o.type === 'conversation.item.create' && /said nothing/.test(JSON.stringify(o)))), 'a silent turn after an action gets a nudge to say what happened');
   await p.evaluate(() => { vxActive = false; });
 
+  // 7c-2. noise in other scripts and doubled lines
+  await p.evaluate(() => { vxActive = true;
+    vxOnEvent({ type:'input_audio_buffer.committed', item_id:'n1' });
+    vxOnEvent({ type:'conversation.item.input_audio_transcription.completed', item_id:'n1', transcript:'안녕.' });
+    vxOnEvent({ type:'input_audio_buffer.committed', item_id:'n2' });
+    vxOnEvent({ type:'conversation.item.input_audio_transcription.completed', item_id:'n2', transcript:'What does our cash health look like? What does our cash health look like?' });
+    vxActive = false; clearTimeout(vxReplyTimer); });
+  const noiseTxt = await p.$eval('#vxFeed', f => f.textContent);
+  ok(!/안녕/.test(noiseTxt), 'Korean noise is not shown as something they said');
+  ok((noiseTxt.match(/What does our cash health look like\?/g) || []).length === 1, 'a doubled line is shown once');
+  // scroll: the page, by direction and to a section
+  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
+  let sc = await p.evaluate(() => VX_TOOLS.scroll({ direction:'down' }));
+  await p.waitForTimeout(600);
+  ok(sc.ok && await p.evaluate(() => document.querySelector('.app-body .wrap').scrollTop > 100), 'scroll down moves the page: ' + sc.now);
+  sc = await p.evaluate(() => VX_TOOLS.scroll({ direction:'top' })); await p.waitForTimeout(600);
+  ok(await p.evaluate(() => document.querySelector('.app-body .wrap').scrollTop < 5), 'scroll top goes back up');
+  sc = await p.evaluate(() => VX_TOOLS.scroll({ to:'forecast' })); await p.waitForTimeout(600);
+  ok(sc.ok && /forecast/i.test(sc.scrolled_to), 'scroll to a section by name: ' + sc.scrolled_to);
+  sc = await p.evaluate(() => VX_TOOLS.scroll({ to:'zzz-nothing' }));
+  ok(!sc.ok && /Headings here/.test(sc.note), 'an unknown section says what is on the page');
+  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(300);
+
   // 7d. open a vendor from "customers" by mistake, and someone with nothing open
   let op = await p.evaluate(() => VX_TOOLS.open_party({ direction:'receivables', name:'Omkar Steel' }));
   ok(op.found === true && /Omkar/.test(op.party || op.name || ''), 'open_party switches to vendors by itself: ' + (op.party || op.name));

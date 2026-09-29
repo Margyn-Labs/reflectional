@@ -78,6 +78,10 @@ function check(name, cond, detail) {
   check('transcription steers to Roman script, Hindi/English/Hinglish', /Hinglish/.test(M.TRANSCRIBE_PROMPT) && /Roman/.test(M.TRANSCRIBE_PROMPT));
   check('transcription prompt has no yes/no words it could echo into the confirm gate', !/\b(yes|yeah|ok|okay|haan|han|ji|theek|thik|kar do|confirm|no|nahi|cancel)\b/i.test(M.TRANSCRIBE_PROMPT));
 
+  // scrolling, and one hello per call
+  check('voice and typed chat both have scroll', M.REALTIME_TOOLS.some(t => t.name === 'scroll') && M.APP_TOOLS.some(t => t.name === 'scroll'));
+  check('prompts map "scroll down" to the tool', /call scroll now/.test(vp) && /call scroll/.test(sys[0].text));
+  check('voice greets once and ignores fragments', /Greet once per call/.test(vp) && /Never answer the same thing twice/.test(vp));
   // language on calls, and romanizing
   check('voice: English by default, Hinglish only when they speak it, never shuddh Hindi', /English by default/.test(vp) && /never formal or shuddh Hindi/.test(vp) && /go back to English/.test(vp));
   const resOf = () => { const r = { code: 0, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } }; return r; };

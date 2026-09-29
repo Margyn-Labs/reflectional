@@ -23,7 +23,9 @@ const MG_RELEASES = [
       { t:'One hello, not three', what:'Starting a call from the Margyn panel gets a quick hi instead of a recap. Coming back within half an hour gets a short hello, not a “welcome back”.',
         how:'Nothing to do.' },
       { t:'Fewer silences', what:'Margyn waits for you to finish before answering, and always tells you what it just did. It can also open a customer or vendor who has nothing outstanding.',
-        how:'Say “open Sanjay Pandey”, then “close this”.' }
+        how:'Say “open Sanjay Pandey”, then “close this”.' },
+      { t:'“Scroll down”', what:'Margyn can scroll the page or the side panel for you, or jump to a section by name. Background noise no longer shows up as words, and Margyn says hello once.',
+        how:'Say “scroll down”, “go to the bottom” or “show me the forecast part”.' }
     ]
   },
   {

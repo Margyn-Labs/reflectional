@@ -70,6 +70,13 @@ function vxFindMaster(name){
   const best = list.map(p => ({ p, s:vxScoreName(name, p.name) })).filter(x => x.s >= 0.6).sort((a, b) => b.s - a.s)[0];
   return best ? best.p : null;
 }
+/* Section titles on the page, or the ones in view after a scroll. */
+function vxHeadings(page, box, top){
+  const r = box && box.getBoundingClientRect ? box.getBoundingClientRect() : null;
+  return [...page.querySelectorAll('h1, h2, h3, .mg-panel-h h2')].filter(x => x.offsetParent)
+    .filter(x => { if(!r || top == null) return true; const y = x.getBoundingClientRect().top - r.top + box.scrollTop; return y >= top - 20 && y <= top + (box.clientHeight || 800); })
+    .map(x => x.textContent.trim().slice(0, 40)).filter(Boolean).slice(0, 6);
+}
 function vxPartyRow(g){
   const od = g.oldestDays != null && g.oldestDays < 0 ? -g.oldestDays : 0;
   return {
@@ -575,6 +582,30 @@ const VX_TOOLS = {
       if(btn) btn.textContent = 'Confirm';
       return { applied:false, error:e.message || 'It failed.' };
     }
+  },
+
+  /* "Scroll down", "go to the bottom", "show me the forecast section". The
+     side panel scrolls when it's open, otherwise the page. */
+  scroll({ direction, to }){
+    const drawer = typeof mgDrawerEl !== 'undefined' && mgDrawerEl ? [...mgDrawerEl.querySelectorAll('*')].find(x => x.scrollHeight > x.clientHeight + 20 && /auto|scroll/.test(getComputedStyle(x).overflowY)) : null;
+    const wrap = document.querySelector('.app-body .wrap');
+    const box = drawer || (wrap && wrap.scrollHeight > wrap.clientHeight + 20 ? wrap : document.scrollingElement);
+    const page = drawer || document.getElementById('view-' + mgCurrentView) || document.body;
+    if(to){
+      const want = String(to).toLowerCase().trim();
+      const el = [...page.querySelectorAll('h1, h2, h3, h4, .mg-panel-h, .mgd-sec, th, .mg-tile-l, .rd-head, label')]
+        .find(x => x.offsetParent && x.textContent.toLowerCase().includes(want));
+      if(!el) return { ok:false, note:'Nothing called "' + to + '" on this page. Headings here: ' + vxHeadings(page).join(', ') };
+      el.scrollIntoView({ behavior:'smooth', block:'start' }); vxSpot(el.closest('.mg-panel') || el);
+      vxActivity('Scrolled to ' + el.textContent.trim().slice(0, 40));
+      return { ok:true, scrolled_to:el.textContent.trim().slice(0, 60) };
+    }
+    const d = direction || 'down', h = box.clientHeight || window.innerHeight;
+    const top = d === 'top' ? 0 : d === 'bottom' ? box.scrollHeight : box.scrollTop + (d === 'up' ? -0.8 : 0.8) * h;
+    box.scrollTo({ top, behavior:'smooth' });
+    vxActivity('Scrolled ' + d);
+    const end = top + h >= box.scrollHeight - 4 ? 'at the bottom' : top <= 0 ? 'at the top' : 'part way down';
+    return { ok:true, now:end, in_view:vxHeadings(page, box, top) };
   },
 
   /* "Close this", "close that window", "band kar do": whatever is on top,
