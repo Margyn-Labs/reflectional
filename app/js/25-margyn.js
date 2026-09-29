@@ -143,6 +143,8 @@ function mgrStepLabel(name, a){
     case 'fill_form': return 'Filling in the form';
     case 'save_form': return 'Saving';
     case 'clear_workspace': return 'Tidying up';
+    case 'scroll': return a.to ? 'Scrolling to ' + String(a.to).slice(0, 30) : 'Scrolling ' + (a.direction || 'down');
+    case 'close': return 'Closing ' + ({ side_panel:'the side panel', dialog:'the dialog', card:'the card', page:'the page', margyn:'Margyn' }[a.target] || 'it');
     case 'run_command': return ({ export_current_view:'Exporting the list', new_invoice:'Opening a new invoice', add_party:'Opening a new ' + (a.party_type === 'vendor' ? 'vendor' : 'customer'),
       add_receivable:'Opening the ledger form', add_payable:'Opening the ledger form', upload_file:'Opening Import', build_chart:'Opening Reports', print_cfo_pack:'Opening the CFO pack',
       refresh_data:'Refreshing your figures', close_side_panel:'Closing the side panel', open_command_palette:'Opening search' })[a.command] || 'Working';

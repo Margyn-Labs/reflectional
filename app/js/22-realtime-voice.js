@@ -409,7 +409,8 @@ async function vxAwaitUtteranceAfter(t, maxMs){
 const VX_PROMPT_ECHO = /Roman \(Latin\) letters|Urdu, Arabic or Devanagari|mix of the two \(Hinglish\)/i;
 /* Anything not in Roman letters: Devanagari, Urdu/Arabic, Gujarati, Bengali,
    Gurmukhi, Cyrillic, Hebrew. Shown in Roman Hinglish instead (vxRomanize). */
-const VX_ODD_SCRIPT = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u0400-\u04FF\u0590-\u05FF]/;
+const VX_ODD_SCRIPT = /[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const VX_NOISE_SCRIPT = /[\u1100-\u11FF\u3040-\u30FF\u3130-\u318F\u4E00-\u9FFF\uAC00-\uD7AF\u0E00-\u0E7F\u0370-\u03FF\u0400-\u04FF\u0590-\u05FF]/;
 let vxSpokeSinceUser = false;
 /* Lines are batched (a reply and the question before it often land together)
    and sent to a small, cheap model that rewrites them in Roman letters. */
@@ -446,9 +447,11 @@ let vxLastUserText = '', vxCallsSinceCommit = 0, vxLastCommitAt = 0, vxLastRespo
 function vxWatchReply(text){
   vxLastUserText = text;
   clearTimeout(vxReplyTimer);
+  // Long enough that the server's own reply has always started by then:
+  // at 3.5s the watchdog could race it and Margyn answered the same line twice.
   vxReplyTimer = setTimeout(() => {
-    if(vxActive && !vxEnding && !vxResponseActive && vxLastResponseAt < vxLastCommitAt) rtSend({ type:'response.create' });
-  }, 3500);
+    if(vxActive && !vxEnding && !vxResponseActive && vxState !== 'speaking' && vxLastResponseAt < vxLastCommitAt) rtSend({ type:'response.create' });
+  }, 7000);
 }
 /* Tools that only draw or move the screen. When Margyn already answered in
    full while calling them, a second reply is just "it's in the workspace now". */
@@ -471,6 +474,11 @@ function vxOnEvent(m){
       // On background noise a transcriber can read its own instruction back:
       // that isn't the user talking.
       if(VX_PROMPT_ECHO.test(text)) text = '';
+      // Noise that came back as Korean, Japanese, Chinese, Thai, Greek, Russian...:
+      // nobody here speaks those, so it isn't shown or kept.
+      if(VX_NOISE_SCRIPT.test(text)) text = '';
+      // "What does our cash look like? What does our cash look like?": the transcriber doubled it.
+      const twice = text.match(/^(.{6,}?[.?!]?)\s+\1$/i); if(twice) text = twice[1];
       // Hindi and Urdu sound the same, so a line can still come back in Urdu
       // (Arabic) script, or Gujarati, Cyrillic... Margyn heard the audio itself
       // and answers correctly; only the written line is off. Show that plainly

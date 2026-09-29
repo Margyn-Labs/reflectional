@@ -705,6 +705,18 @@ const REALTIME_TOOLS = [
   },
   {
     type: 'function',
+    name: 'scroll',
+    description: 'Scroll what the user is looking at: the page, or the side panel when one is open. "Scroll down / up", "go to the bottom / top", or "show me the forecast / the table / <section name>" (pass to). Returns what is now in view. You CAN scroll; never say you can\'t.',
+    parameters: {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'] },
+        to: { type: 'string', description: 'Optional: a section title or word on the page to bring into view, e.g. "forecast", "settlements".' }
+      }
+    }
+  },
+  {
+    type: 'function',
     name: 'close',
     description: 'Close something on screen. Use for "close this", "close that window / tab / panel", "hide it", "band karo / band kar dijiye", "hatao". target "top" (default) closes whatever is on top: a dialog or pop-up, then the customer/vendor side panel or an open form, then the newest card in the conversation. Name the target when they do: "side_panel", "dialog", "card", "page" (go back from the page you opened), or "margyn" (hide the Margyn panel itself; on a call this ends the call after a short goodbye). Closing never changes any data.',
     parameters: {
@@ -726,7 +738,7 @@ const REALTIME_TOOLS = [
 // tap-to-confirm card) and end_conversation. These run in the browser; see
 // the pause/resume in the handler above.
 const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst',
-  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close'];
+  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close', 'scroll'];
 const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
   .map(t => ({ name: t.name, description: t.description.replace(/floating workspace next to the conversation/g, 'conversation as a card'), input_schema: t.parameters }));
 const APP_TOOL_NAMES = new Set(APP_TOOLS.map(t => t.name));
@@ -904,10 +916,12 @@ HOW YOU TALK
 - Language: English by default. When their last message was mostly Hindi or Hinglish, answer in easy spoken Hinglish (Hindi with the English words a founder uses: cash, invoice, overdue, lakh, PDF), never formal or shuddh Hindi. The moment they speak English again, go back to English. If they ask for English, stay in English until they ask otherwise.
 - Contractions, warm and direct. Never "Certainly", "I'd be happy to", "As an AI", or any assistant-speak.
 - If they interrupt, stop and follow them. Don't restart what you were saying.
+- Greet once per call, at the start, never again. If what you heard is a fragment of a word or two that isn't a clear request ("Aap", "Hello", "Market", "OK"), don't greet, don't repeat your last answer: say nothing, or at most "Sorry, didn't catch that." Never answer the same thing twice.
 
 SHOW, DON'T GO
 - What you show lands as a card in the Margyn panel, in the same conversation they can type into. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.
 - "Open", "go to" and "take me to" mean navigate: "open the inbox", "take me to my inbox", "open the ledger" change the page. Also navigate when they need to do something on that page itself. Never navigate just to answer a question.
+- "Scroll down / up", "go to the bottom", "show me the forecast part" means call scroll now. Never say you'll scroll without calling it.
 - "Close this", "close that window/tab", "band karo", "hatao" means call close right away (target "top" unless they name the side panel, the page, a card or the Margyn panel). You CAN close things; never say you can't. "Close Margyn" / "close this panel" is target "margyn".
 - "Open it" / "open that" right after you mentioned something means go to where it lives, now, without asking: a pending decision or proposal -> navigate to inbox; a customer or vendor -> open_party; an invoice -> open_party for its customer.
 - After show_view or show_note, say one short line about what matters in it. Don't then add another line saying it's in the workspace.
@@ -1096,6 +1110,7 @@ DRIVING THE APP — this conversation is in the Margyn panel beside the app, and
 - "Open", "go to", "take me to" mean navigate (or open_party for one customer/vendor). Also navigate when they need to work on that page themselves. Never navigate just to answer a question.
 - Live figures: get_overview, get_cash, get_gst, get_inbox, query_parties, get_sources read exactly what's on their screen right now. Prefer them over the data block when they differ, and use them for anything the block doesn't carry (the cash forecast, per-customer lists, what's waiting).
 - "This", "here", "that one" means what's on screen: call get_screen first.
+- "Scroll down / up" or "go to <section>" means call scroll.
 - "Close this / that window / the side panel", "band karo", "hatao" means call close (target "top" unless they name one). You can close anything you or they opened.
 - Adding a customer or vendor: run_command "add_party" with the name opens the form; fill_form puts in details they give; save_form only after they say save / yes. New amounts owed with party and amount: propose_action create_ledger_item.
 - sync_source pulls fresh data from Zoho, Odoo or Shopify; reconnecting is something only they can do on the sources page.
