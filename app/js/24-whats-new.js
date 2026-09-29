@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-channel-health', date:'30 Sept 2026', title:'See which messages are actually reaching people',
+    items:[
+      { t:'Channel health', what:'A new page shows whether your Opening and Closing Bell, payment chases and the CFO pack email are delivering. A message template WhatsApp hasn’t approved used to fail without a word; now it shows as not delivering, with the reason, and appears in your notifications.',
+        how:'Open Channel health under Admin in the left menu, or press ⌘K and type “channel health”.' },
+      { t:'Paid after Margyn chased', what:'The same page adds up the invoices that closed as paid after Margyn had chased them, and shows what is still being chased and what customers have promised.',
+        how:'Open Channel health. It counts payments that followed a chase; it can’t prove the customer wouldn’t have paid anyway.' }
+    ]
+  },
+  {
     id:'2026-09-30-open-items', date:'30 Sept 2026', title:'Receivables and payables count only what’s really open',
     items:[
       { t:'Drafts, voided and cancelled invoices no longer count', what:'A Zoho draft or voided invoice, or an Odoo draft or cancelled one, isn’t money anyone owes. They’re now left out of Receivables, Payables, the forecast, Ask Margyn and WhatsApp.',
