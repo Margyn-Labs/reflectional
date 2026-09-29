@@ -16,6 +16,21 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-one-margyn', date:'30 Sept 2026', title:'One Margyn, in one place',
+    items:[
+      { t:'The Margyn panel', what:'Margyn now sits on the right of every page. Type or talk in the same conversation, and whatever Margyn shows you (your P&L, who owes you, cash, a customer) appears right there, without leaving your page.',
+        how:'Press <kbd>⌘</kbd> <kbd>J</kbd> (or <kbd>Ctrl</kbd> <kbd>J</kbd>), or choose <b>Margyn</b> in the top bar. Press <b>Talk</b> to speak instead of typing.', act:'panel' },
+      { t:'Margyn can do more when you type', what:'Typed questions now get everything a call could do: open a page, draw a view, filter a list, open a customer, fill in and save a form, sync a source. You see each step as Margyn does it.',
+        how:'Type “show me who owes us more than 60 days” or “add a vendor called Gupta Packaging”.' },
+      { t:'Margyn says hello, and speaks up', what:'When you come back, Margyn tells you what happened while you were away and what needs you. If something goes wrong (a source stops syncing, cash is heading below your floor, a customer passes 60 days), Margyn tells you, at most a few times a day.',
+        how:'Nothing to do. Choose <b>Later</b> on a note and Margyn won’t repeat it for a day. Set what Margyn calls you under <b>Profile</b>.' },
+      { t:'Home is Margyn’s desk', what:'Home opens with Margyn’s read of the business, what it runs on its own, what needs your OK and what it’s working on. Your figures follow below.',
+        how:'Open <b>Home</b>. Tap anything under “What I’m working on” to ask about it.' },
+      { t:'One Margyn, not several bots', what:'Payment reminders, reconciliation and reading forwarded documents are all Margyn’s work now, with one voice. The old agent threads are under <b>Conversations</b>, and the background work is under <b>Automations</b>.',
+        how:'Open <b>Conversations</b> to reread anything, then choose <b>Continue in Margyn</b>.' }
+    ]
+  },
+  {
     id:'2026-09-30-channel-health', date:'30 Sept 2026', title:'See which messages are actually reaching people',
     items:[
       { t:'Channel health', what:'A new page shows whether your Opening and Closing Bell, payment chases and the CFO pack email are delivering. A message template WhatsApp hasn’t approved used to fail without a word; now it shows as not delivering, with the reason, and appears in your notifications.',
@@ -77,6 +92,7 @@ const MG_RELEASES = [
 ];
 const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
 const MG_WN_ACTS = {
+  panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
   team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
 };
@@ -149,7 +165,9 @@ function mgWhatsNew(force){
     const out = await base.apply(this, arguments);
     if(!checked && typeof currentUser !== 'undefined' && currentUser){
       checked = true;
-      setTimeout(() => { if(!document.querySelector('.mg-dialog-scrim') && !(typeof vxActive !== 'undefined' && vxActive)) mgWhatsNew(false); }, 1200);
+      // Margyn's greeting (25-margyn.js) announces what's new in the panel
+      // now, with a button for this card; it only pops up on its own without it.
+      if(typeof mgrGreet !== 'function') setTimeout(() => { if(!document.querySelector('.mg-dialog-scrim') && !(typeof vxActive !== 'undefined' && vxActive)) mgWhatsNew(false); }, 1200);
     }
     return out;
   };

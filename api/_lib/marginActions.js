@@ -50,7 +50,7 @@ const READ_TOOLS = [
   {
     name: 'list_chase_targets',
     description:
-      "List WhatsApp Chase Agent targets (customers currently being chased for payment), optionally filtered by state or a party-name search. Read-only. Use to resolve 'stop chasing Acme', 'mark X's chase as paid', or 'chase Y right now'.",
+      "List the customers Margyn is chasing for payment on WhatsApp, optionally filtered by state or a party-name search. Read-only. Use to resolve 'stop chasing Acme', 'mark X's chase as paid', or 'chase Y right now'.",
     input_schema: {
       type: 'object',
       properties: {
@@ -62,7 +62,7 @@ const READ_TOOLS = [
   {
     name: 'get_chase_agent_config',
     description:
-      "Get the Chase Agent's current deployment status and config (cadence, tone). Read-only.",
+      "Get the payment-reminder (chasing) automation's status and config (cadence, tone). Read-only.",
     input_schema: { type: 'object', properties: {}, additionalProperties: false }
   }
 ];
@@ -179,7 +179,7 @@ async function toolGetChaseAgentConfig(userId) {
     'agent_deployments',
     `select=status,config,deployed_at&user_id=eq.${userId}&agent_id=eq.chase_agent&limit=1`
   );
-  if (!rows.length) return { deployed: false, note: 'Chase Agent has never been deployed for this business.' };
+  if (!rows.length) return { deployed: false, note: 'Payment reminders have never been switched on for this business.' };
   return { deployed: true, status: rows[0].status, config: rows[0].config || {} };
 }
 

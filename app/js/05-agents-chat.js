@@ -15,7 +15,7 @@ const AGENT_HOME_PREFIX = 'agent-home:';
 function agentHomeKey(agentId){ return AGENT_HOME_PREFIX + agentId; }
 function isAgentHomeThread(tk){ return typeof tk === 'string' && tk.indexOf(AGENT_HOME_PREFIX) === 0; }
 
-let askActiveTab = 'agents';
+let askActiveTab = 'chats';
 function askActivateTab(name){
   askActiveTab = name;
   const tabsEl = document.getElementById('askTabs');
@@ -235,6 +235,14 @@ function appendGoToChip(threadEl, hint){
    (the page), focused on the tapped topic — there is no separate floating
    conversation to fall out of sync with. */
 function openMargynFocused(topic, valueText){
+  // One place: a tapped figure opens the Margyn panel on that topic.
+  if(typeof mgrOpen === 'function'){
+    mgrOpen(true);
+    mgrNewThread(topic);
+    const i = document.getElementById('mgrInput');
+    if(i) i.placeholder = 'Ask about ' + topic + (valueText ? ' (' + String(valueText).slice(0, 40) + ')' : '') + '…';
+    return;
+  }
   showView('history');
   setTimeout(() => {
     askNewConversation(topic);
@@ -287,7 +295,7 @@ function appendChatBubble(threadEl, role, text, agentId){
   const isAssistant = role.indexOf('assistant') === 0;
   const inStream = threadEl.classList.contains('ask-stream');
   if(isAssistant && inStream){
-    const id = agentId || 'margyn';
+    const id = 'margyn';   // one Margyn: older threads saved under chase/close/import read as Margyn too
     const meta = AGENT_META[id] || AGENT_META.margyn;
     b.dataset.agent = id;
     b.innerHTML =
@@ -551,6 +559,21 @@ async function renderVitalChatBlock(focusLabel){
   const host = document.getElementById('detailContent');
   if(!host) return;
   const existing = host.querySelector('.margyn-chat'); if(existing) existing.remove();
+  // One place: questions about a figure go to the Margyn panel, focused on it.
+  if(typeof mgrOpen === 'function'){
+    const match = findings.find(f => f.vital === focusLabel && snapshots[0] && f.snapshot_id === snapshots[0].id);
+    const block = document.createElement('div');
+    block.className = 'margyn-chat';
+    block.innerHTML = '<div class="margyn-chat-label">Margyn</div>' + (match ? findingCardHtml(match).replace('<button class="finding-explain">Explain why →</button>', '') : '') +
+      '<button type="button" class="mg-btn primary mg-btn-sm" data-vital-ask>Ask Margyn about ' + escapeHtml(focusLabel) + '</button>';
+    host.appendChild(block);
+    block.querySelector('[data-vital-ask]').addEventListener('click', () => {
+      const ov = document.getElementById('detailOverlay'); if(ov) ov.classList.add('hidden');
+      mgrOpen(true); mgrNewThread(focusLabel);
+      if(match) mgrAsk('Explain this: ' + match.summary, { focus:focusLabel });
+    });
+    return;
+  }
   const match = findings.find(f => f.vital === focusLabel && snapshots[0] && f.snapshot_id === snapshots[0].id);
   const threadKey = match ? ('finding:' + match.id) : sessionThreadKeyFor(focusLabel);
   const vitalChatHistory = [];
@@ -660,6 +683,7 @@ function initAskMargynGlobal(){
   fab.setAttribute('aria-expanded', 'false');
   fab.setAttribute('aria-controls', 'view-history');
   fab.addEventListener('click', () => {
+    if(typeof mgrOpen === 'function') return mgrOpen(true);
     showView('history');
     setTimeout(() => { const i = document.getElementById('historyThreadInput'); if(i) i.focus(); }, 80);
   });

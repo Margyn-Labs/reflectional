@@ -14,7 +14,7 @@
    `base` = the existing view showView() already knows. */
 const MG_PAGES = {
   home:{ slug:'home', own:true, group:'Overview', label:'Home' },
-  inbox:{ slug:'inbox', base:'agents', group:'Overview', label:'Inbox', sub:'Everything waiting on your decision: agent proposals, payments to confirm and forwarded documents. Nothing is applied until you approve it.' },
+  inbox:{ slug:'inbox', base:'agents', group:'Overview', label:'Inbox', sub:'Everything waiting on your decision: Margyn’s proposals, payments to confirm and forwarded documents. Nothing is applied until you approve it.' },
   cash:{ slug:'cash', own:true, group:'Money', label:'Cash' },
   payments:{ slug:'payment-gateways', base:'payments', group:'Money', label:'Payment gateways', parent:'cash', sub:'Settlements, fees and failed payments from your payment gateways. Part of Cash.' },
   receivables:{ slug:'receivables', own:true, group:'Money', label:'Receivables' },
@@ -28,8 +28,8 @@ const MG_PAGES = {
   cfopack:{ slug:'cfo-pack', own:true, group:'Insight', label:'CFO pack' },
   analytics:{ slug:'reports', base:'analytics', group:'Insight', label:'Reports', sub:'Charts you define, computed from connected data. Nothing here moves your Pulse Score.' },
   scores:{ slug:'pulse', base:'scores', group:'Insight', label:'Pulse Score', sub:'Every point is arithmetic on your own figures. The AI writes the briefing; it never touches the score.' },
-  history:{ slug:'ask', base:'history', group:'Insight', label:'Ask Margyn', sub:'Answers from your connected data. When Margyn doesn’t know, it says so.' },
-  agents:{ slug:'agents', base:'agents', group:'Automation', label:'Agents', sub:'Automations that work on your data. They propose; you approve.' },
+  history:{ slug:'ask', base:'history', group:'Insight', label:'Conversations', sub:'Every conversation with Margyn, typed or spoken. Carry any of them on in the Margyn panel.' },
+  agents:{ slug:'agents', base:'agents', group:'Automation', label:'Automations', sub:'What Margyn runs for you in the background. It proposes; you approve.' },
   connectors:{ slug:'sources', base:'connectors', group:'Admin', label:'Organisations and sources', sub:'The systems Margyn reads from. Connect, reconnect or disconnect each one here.' },
   people:{ slug:'people', base:'settings', group:'Admin', label:'People and roles', sub:'Who can message Margyn on WhatsApp, get the Bells, and act on your behalf.' },
   settings:{ slug:'settings', base:'settings', group:'Admin', label:'Settings', sub:'Notifications, scoring labels and account controls.' },
