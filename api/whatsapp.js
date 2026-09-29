@@ -27,7 +27,7 @@ const { track } = require('./_lib/track');
 const chase = require('./_lib/chaseEngine');
 const { runImportMapper } = require('./_lib/importMapper');
 const marginActions = require('./_lib/marginActions');
-const { memberPerms, describePerms } = require('./_lib/memberAccess');
+const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
 
 module.exports = async function handler(req, res) {
   const action = (req.query && req.query.action) || '';
@@ -147,10 +147,10 @@ async function handleWebhookEvent(req, res) {
     let pending = await marginActions.findPendingAction(matches[0].id, [event.contextMessageId, event.contextGsId]);
     if (!pending && decision) pending = await marginActions.findLatestPendingAction(matches[0].id, 30, event.from);
     if (pending) {
-      if (!sender.perms.act) {
+      if (!canDecide(sender, pending, decision)) {
         await sendNotAllowed(event.from, sender, 'confirm changes');
       } else {
-        await resolveActionReply(matches[0].id, event.from, pending, decision);
+        await resolveActionReply(matches[0].id, event.from, pending, decision, sender);
       }
       res.status(200).json({ received: true, action: true });
       return;
@@ -183,7 +183,7 @@ async function handleWebhookEvent(req, res) {
         await runConversation({
           profileId: matches[0].id,
           fromPhone: event.from,
-          sender: sender.member,
+          sender: senderForAgent(sender),
           canAct: sender.perms.act,
           text: event.buttonText,
           wamid: event.wamid,
@@ -420,8 +420,8 @@ async function handleConversationalInbound(res, textEvent) {
     let pending = await marginActions.findPendingAction(matches[0].id, [textEvent.contextMessageId, textEvent.contextGsId]);
     if (!pending) pending = await marginActions.findLatestPendingAction(matches[0].id, 30, textEvent.from);
     if (pending) {
-      if (!sender.perms.act) await sendNotAllowed(textEvent.from, sender, 'confirm changes');
-      else await resolveActionReply(matches[0].id, textEvent.from, pending, decision);
+      if (!canDecide(sender, pending, decision)) await sendNotAllowed(textEvent.from, sender, 'confirm changes');
+      else await resolveActionReply(matches[0].id, textEvent.from, pending, decision, sender);
       if (!res.headersSent) res.status(200).json({ received: true, action: true });
       return;
     }
@@ -438,7 +438,7 @@ async function handleConversationalInbound(res, textEvent) {
     await runConversation({
       profileId: matches[0].id,
       fromPhone: textEvent.from,
-      sender: sender.member,
+      sender: senderForAgent(sender),
       canAct: sender.perms.act,
       text: textEvent.text,
       wamid: textEvent.wamid,
@@ -472,12 +472,31 @@ function actionDecision(text) {
   return null;
 }
 
-async function resolveActionReply(userId, from, pending, decision) {
+/* Cancelling needs Act; confirming needs what that action needs (a number
+   linked to a login follows the person's role: approvals need Approve,
+   changes to the books need Edit). */
+function canDecide(sender, pending, decision) {
+  return decision === 'confirm' ? mayConfirm(sender.perms, pending.action_type) : !!sender.perms.act;
+}
+/* The person as the agent sees them: their People row plus, when the number
+   is linked to an app login, that login's role. */
+function senderForAgent(sender) {
+  if (!sender || !sender.member) return sender ? sender.member : null;
+  return sender.perms && sender.perms.login ? { ...sender.member, login: sender.perms.login } : sender.member;
+}
+
+async function resolveActionReply(userId, from, pending, decision, sender) {
   if (!decision) {
     await bsp.sendText({ to: from, text: "Didn't recognize that reply. Tap Confirm or Cancel on the message above." });
     return;
   }
-  const result = await marginActions.resolvePendingAction(pending, decision === 'confirm');
+  // Recorded on the audit log as who confirmed it (ledger_events.actor_*).
+  const actor = {
+    id: (sender && sender.perms && sender.perms.login && sender.perms.login.user_id) || null,
+    name: (sender && sender.member && sender.member.name) || ('+' + normalizePhone(from)),
+    channel: 'whatsapp'
+  };
+  const result = await marginActions.resolvePendingAction(pending, decision === 'confirm', actor);
   const replyText = result.executed
     ? 'Done ✅' + (pending.human_summary ? '\n' + pending.human_summary : '')
     : result.ok
@@ -515,7 +534,7 @@ async function resolveSender(from) {
   if (!phone) return null;
   const enc = encodeURIComponent(phone);
   const profiles = await selectRows('profiles', `select=id&whatsapp_phone=eq.${enc}&limit=1`);
-  const memberCols = 'select=id,business_id,name,role,is_primary,whatsapp_access,permissions,message_count';
+  const memberCols = 'select=id,business_id,name,role,is_primary,whatsapp_access,permissions,message_count,member_id';
   if (profiles.length) {
     const profileId = profiles[0].id;
     const rows = await selectRows(
@@ -527,9 +546,13 @@ async function resolveSender(from) {
   const linked = await selectRows(
     'business_stakeholders',
     `${memberCols}&phone=eq.${enc}&whatsapp_access=eq.true&limit=1`
-  ).catch(() => []);
+  ).catch(() => selectRows(   // before 2026-09-30-team-followups.sql: no member_id column
+    'business_stakeholders',
+    `${memberCols.replace(',member_id', '')}&phone=eq.${enc}&whatsapp_access=eq.true&limit=1`
+  ).catch(() => []));
   if (linked.length) {
-    return { profileId: linked[0].business_id, member: linked[0], perms: memberPerms(linked[0], false) };
+    const login = await linkedLogin(linked[0]);
+    return { profileId: linked[0].business_id, member: linked[0], perms: memberPerms(linked[0], false, login) };
   }
   const bellOnly = await selectRows(
     'business_stakeholders',
@@ -537,6 +560,14 @@ async function resolveSender(from) {
   ).catch(() => []);
   if (bellOnly.length !== 1) return null;
   return { profileId: bellOnly[0].business_id, member: bellOnly[0], perms: memberPerms(bellOnly[0], false) };
+}
+
+/** The app login a WhatsApp number is linked to (team logins), or null. */
+async function linkedLogin(member) {
+  if (!member || !member.member_id) return null;
+  const rows = await selectRows('account_members',
+    `select=id,user_id,name,role,permissions,status&id=eq.${member.member_id}&account_id=eq.${member.business_id}&limit=1`).catch(() => []);
+  return rows[0] || null;
 }
 
 /** Tell a linked person what their number can't do. Only ever sent to a

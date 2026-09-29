@@ -316,7 +316,7 @@ async function expireDuplicatePending(pending) {
  * (status: 'failed') rather than thrown, so the webhook can still 200 and
  * reply to the sender with what happened.
  */
-async function resolvePendingAction(pending, confirmed) {
+async function resolvePendingAction(pending, confirmed, actor) {
   if (!confirmed) {
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'cancelled', resolved_at: new Date().toISOString() });
     await expireDuplicatePending(pending);
@@ -328,7 +328,7 @@ async function resolvePendingAction(pending, confirmed) {
       targetId: pending.target_id,
       targetKind: pending.target_kind,
       payload: pending.payload
-    }, pending.user_id);
+    }, pending.user_id, actor);
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'confirmed', resolved_at: new Date().toISOString() });
     await expireDuplicatePending(pending);
     return { ok: true, executed: true };
@@ -352,7 +352,17 @@ async function resolvePendingAction(pending, confirmed) {
  * the app to finish, and this leaves those entries alone rather than
  * guessing at a snapshot write.
  */
-async function executeAction(action, userId) {
+/* An audit row, stamped with who confirmed it and on which channel
+   (2026-09-30). Best-effort: before those columns exist, or if the stamp is
+   refused, the row is written without it; a failed log never blocks the
+   action itself. */
+async function logEvent(actor, rows) {
+  const who = actor ? { actor_id: actor.id || null, actor_name: actor.name || null, channel: actor.channel || 'whatsapp' } : {};
+  try { return await insertRows('ledger_events', rows.map((r) => ({ ...r, ...who }))); }
+  catch (e) { return insertRows('ledger_events', rows).catch(() => {}); }
+}
+
+async function executeAction(action, userId, actor) {
   const { type, targetId, targetKind, payload } = action;
 
   if (type === 'approve_suggestion' || type === 'reject_suggestion') {
@@ -366,7 +376,7 @@ async function executeAction(action, userId) {
       if (recvRows.length) await insertRows('receivables', recvRows);
       if (payRows.length) await insertRows('payables', payRows);
       if (recvRows.length || payRows.length) {
-        await insertRows('ledger_events', [{ user_id: userId, entity_type: recvRows.length ? 'receivable' : 'payable', event: 'imported', source: 'upload', note: (recvRows.length + payRows.length) + ' item(s) imported via WhatsApp' }]).catch(() => {});
+        await logEvent(actor, [{ user_id: userId, entity_type: recvRows.length ? 'receivable' : 'payable', event: 'imported', source: 'upload', note: (recvRows.length + payRows.length) + ' item(s) imported via WhatsApp' }]);
       }
     }
     await updateRows('import_suggestions', `id=eq.${sug.id}`, { status: type === 'approve_suggestion' ? 'approved' : 'rejected', decided_at: new Date().toISOString() });
@@ -397,7 +407,7 @@ async function executeAction(action, userId) {
     const r = rows[0];
     const settledKind = table === 'payables' ? 'paid' : 'received';
     await updateRows(table, `id=eq.${r.id}`, { status: 'settled', settled_at: new Date().toISOString(), settled_amount: r.amount, settled_kind: settledKind });
-    await insertRows('ledger_events', [{ user_id: userId, entity_type: table === 'payables' ? 'payable' : 'receivable', entity_id: r.id, event: 'settled', party_name: r.party_name, amount: r.amount, source: r.source || 'manual', note: 'marked ' + settledKind + ' via WhatsApp' }]).catch(() => {});
+    await logEvent(actor, [{ user_id: userId, entity_type: table === 'payables' ? 'payable' : 'receivable', entity_id: r.id, event: 'settled', party_name: r.party_name, amount: r.amount, source: r.source || 'manual', note: 'marked ' + settledKind + ' via WhatsApp' }]);
     return;
   }
 
@@ -405,7 +415,7 @@ async function executeAction(action, userId) {
     const p = payload || {};
     const table = targetKind === 'payable' ? 'payables' : 'receivables';
     await insertRows(table, [{ user_id: userId, party_name: p.party || 'Unknown', amount: Number(p.amount) || 0, due_date: p.due_date || null, status: 'open', source: 'manual' }]);
-    await insertRows('ledger_events', [{ user_id: userId, entity_type: table === 'payables' ? 'payable' : 'receivable', event: 'created', party_name: p.party, amount: p.amount, source: 'manual', note: 'logged via WhatsApp' }]).catch(() => {});
+    await logEvent(actor, [{ user_id: userId, entity_type: table === 'payables' ? 'payable' : 'receivable', event: 'created', party_name: p.party, amount: p.amount, source: 'manual', note: 'logged via WhatsApp' }]);
     return;
   }
 

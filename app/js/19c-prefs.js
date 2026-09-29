@@ -52,18 +52,45 @@ function mgPrefOn(){
   }
   return true;
 }
+/* A team member (19g-team.js) keeps their own settings on their membership:
+   they start from the business's setting, and anything they change is theirs
+   alone. The owner's settings are the business's. Needs the 2026-09-30
+   column (whoami reports it); until then a member's changes stay in memory. */
+let mgMemberPrefTimer = null, mgMemberPrefDirty = {};
+function mgPrefMember(){ return typeof mgActor !== 'undefined' && !!mgActor && !mgActor.isOwner; }
 function mgPrefGet(key, fallback){
-  const v = mgPrefOn() ? currentProfile.preferences[key] : mgPrefLsRead(key);
+  let v;
+  if(mgPrefMember() && mgActor.prefs && key in mgActor.prefs) v = mgActor.prefs[key];
+  else v = mgPrefOn() ? currentProfile.preferences[key] : mgPrefLsRead(key);
   return v === undefined || v === null ? fallback : v;
 }
 function mgPrefSet(key, value){
   if(value === undefined) value = null;
+  if(mgPrefMember()){
+    mgActor.prefs = mgActor.prefs || {};
+    if(value === null) delete mgActor.prefs[key]; else mgActor.prefs[key] = value;
+    if(typeof mgMe !== 'undefined' && mgMe && mgMe.features && mgMe.features.member_prefs){
+      mgMemberPrefDirty[key] = value;
+      clearTimeout(mgMemberPrefTimer);
+      mgMemberPrefTimer = setTimeout(mgMemberPrefFlush, 600);
+    }
+    return;
+  }
   if(!mgPrefOn()){ mgPrefLsWrite(key, value); return; }
   currentProfile.preferences[key] = value;
   mgPrefDirty[key] = true;
   mgPrefSchedule();
 }
-function mgPrefWhere(){ return mgPrefOn() ? 'Saved to your account.' : 'Saved in this browser.'; }
+async function mgMemberPrefFlush(){
+  const patch = mgMemberPrefDirty; mgMemberPrefDirty = {};
+  if(!Object.keys(patch).length || typeof mgTeamApi !== 'function') return;
+  try { await mgTeamApi('team-prefs', { prefs:patch }); }
+  catch(e){ console.warn('[margyn] saving personal settings:', e.message); Object.assign(mgMemberPrefDirty, patch); }
+}
+function mgPrefWhere(){
+  if(mgPrefMember()) return 'Saved for you. The business’s own settings are unchanged.';
+  return mgPrefOn() ? 'Saved to your account.' : 'Saved in this browser.';
+}
 function mgPrefSchedule(){ clearTimeout(mgPrefTimer); mgPrefTimer = setTimeout(mgPrefFlush, 600); }
 function mgPrefMissingColumn(err){
   return !!err && (err.code === '42703' || err.code === 'PGRST204' || /preferences/.test(err.message || '') && /does not exist|could not find/i.test(err.message || ''));
@@ -98,4 +125,8 @@ async function mgPrefFlush(){
   }
 }
 /* Don't lose a change made just before the tab closes or the user signs out. */
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden' && mgPrefTimer) mgPrefFlush(); });
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState !== 'hidden') return;
+  if(mgPrefTimer) mgPrefFlush();
+  if(mgMemberPrefTimer){ clearTimeout(mgMemberPrefTimer); mgMemberPrefFlush(); }
+});

@@ -116,6 +116,8 @@ async function seedApp() {
 
   // ---------- activity log + chat ----------
   const ledgerEventsSeed = [
+    { id: 'le0', user_id: UID, entity_type: 'person', event: 'role_changed', party_name: 'Priya Mehta', amount: null, source: null, note: 'Viewer to Finance', actor_name: 'Arjun Kapoor', channel: 'app', created_at: minsAgo(60 * 2) },
+    { id: 'le00', user_id: UID, entity_type: 'receivable', entity_id: 'r8', event: 'settled', party_name: 'Casa Loma Trading', amount: 431000, source: 'manual', note: 'marked received via WhatsApp', actor_name: 'Priya Mehta', channel: 'whatsapp', created_at: minsAgo(60 * 5) },
     { id: 'le1', user_id: UID, entity_type: 'receivable', entity_id: 'r9', event: 'settled', party_name: 'Hearth & Co. (Bengaluru)', amount: 300000, source: 'manual', note: 'marked received', created_at: minsAgo(60 * 8 * 24) },
     { id: 'le2', user_id: UID, entity_type: 'payable', entity_id: 'p9', event: 'settled', party_name: 'Shree Ganesh Packaging', amount: 400000, source: 'manual', note: 'marked paid', created_at: minsAgo(60 * 12 * 24) },
     { id: 'le3', user_id: UID, entity_type: 'receivable', entity_id: 'r5', event: 'created', party_name: 'Sahyadri Distributors', amount: 2210000, source: 'manual', note: null, created_at: minsAgo(60 * 36 * 24) }
@@ -293,16 +295,18 @@ async function seedApp() {
   };
   // Team logins (19g-team.js): the owner, two people and an open invite.
   window.__teamCalls = [];
-  API['ops?action=team-whoami'] = { ready: true, me: { id: UID, email: 'owner@anvaya.in' }, own_account: { account_id: UID, company_name: 'Anvaya Home Goods Pvt Ltd' }, memberships: [] };
+  API['ops?action=team-whoami'] = { ready: true, features: { audit_actor: true, member_prefs: true, phone_link: true }, me: { id: UID, email: 'owner@anvaya.in' }, own_account: { account_id: UID, company_name: 'Anvaya Home Goods Pvt Ltd' }, memberships: [] };
   API['ops?action=team-list'] = {
     you: { user_id: UID, role: 'owner', can_manage: true, is_owner: true },
     owner: { user_id: UID, email: 'owner@anvaya.in', name: 'Arjun Kapoor', role: 'owner', role_label: 'Owner' },
     members: [
-      { id: 'tm1', user_id: 'u-priya', email: 'priya@anvaya.in', name: 'Priya Mehta', role: 'finance', role_label: 'Finance', overrides: {}, permissions: ['view_cash', 'view_receivables', 'view_payables', 'view_gst', 'edit', 'approve'], status: 'active', joined_at: iso(12 * DAY), last_seen_at: minsAgo(90) },
+      { id: 'tm1', user_id: 'u-priya', email: 'priya@anvaya.in', name: 'Priya Mehta', role: 'finance', role_label: 'Finance', overrides: {}, permissions: ['view_cash', 'view_receivables', 'view_payables', 'view_gst', 'edit', 'approve'], status: 'active', joined_at: iso(12 * DAY), last_seen_at: minsAgo(90), whatsapp: '919876543210' },
       { id: 'tm2', user_id: 'u-ca', email: 'rao@raoandco.in', name: 'S. Rao (CA)', role: 'advisor', role_label: 'Advisor (CA)', overrides: {}, permissions: ['view_cash', 'view_receivables', 'view_payables', 'view_gst'], status: 'active', joined_at: iso(5 * DAY), last_seen_at: null }
     ],
     invites: [{ id: 'ti1', email: 'ravi@anvaya.in', name: 'Ravi', role: 'approver', role_label: 'Approver', expires_at: iso(-5 * DAY) }]
   };
+  API['ops?action=team-update'] = () => { window.__teamCalls.push('update'); return { ok: true }; };
+  API['ops?action=team-prefs'] = () => { window.__teamCalls.push('prefs'); return { ok: true }; };
   API['ops?action=team-invite'] = () => { window.__teamCalls.push('invite'); return { invite_id: 'ti2', email: 'new@anvaya.in', role: 'viewer', role_label: 'Viewer', code: 'K7QM-4XPA-9TRW', link: 'https://www.margynlabs.com/app.html#/join?code=K7QM-4XPA-9TRW', expires_at: iso(-7 * DAY), emailed: false }; };
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
@@ -326,7 +330,10 @@ async function seedApp() {
   // The What's new card opens over the app after a release; the harness is
   // an account that has already seen it (it would block every click).
   try { if(typeof MG_RELEASES !== 'undefined' && MG_RELEASES.length) localStorage.setItem('margyn_whats_new_seen', MG_RELEASES[0].id); } catch (e) {}
+  // Who is signed in (19g-team.js), through the real whoami path: the owner.
+  if (typeof mgResolveAccount === 'function') { await mgResolveAccount({ id: UID, email: 'owner@anvaya.in' }); }
   await refreshAll();
+  if (typeof mgApplyActor === 'function') mgApplyActor();
   // refreshAll's resolve step may write a fresh snapshot (stubbed to no-op);
   // make sure the seeded history is what every view renders.
   snapshots = snaps;

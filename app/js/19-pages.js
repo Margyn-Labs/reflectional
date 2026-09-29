@@ -460,14 +460,20 @@ function mgRenderAudit(){
     loadLedgerEvents().then(r => { ledgerEvents = r || []; mgAuditLoading = false; if(mgCurrentView === 'audit') mgRenderAudit(); }).catch(() => { mgAuditLoading = false; });
   }
   const q = mgMoneyQ.trim().toLowerCase();
-  const rows = ev.filter(e => !q || [e.party_name, e.event, e.entity_type, e.note, e.source].join(' ').toLowerCase().includes(q));
-  const what = e => ({ settled:'Settled', deleted:'Deleted', created:'Added', imported:'Imported', updated:'Changed' }[e.event] || e.event || '—') + ' ' + (e.entity_type || '');
-  host.__csv = [['When', 'Event', 'Party', 'Amount (INR)', 'Source', 'Note'], rows.map(e => [e.created_at, what(e), e.party_name || '', e.amount != null ? Math.round(e.amount) : '', e.source || '', e.note || ''])];
-  host.innerHTML = mgPageHead({ group:'Admin', title:'Audit log', sub:'Every change to your ledger: what, when, and where it came from.', actions:mgExportBtn('mgExport-audit') }) +
+  // Who did it (ledger_events.actor_name + channel, 2026-09-30). Older rows
+  // were written before this was recorded.
+  const CH = { app:'in the app', voice:'by voice', whatsapp:'on WhatsApp', agent:'by an agent', import:'by import' };
+  const who = e => e.actor_name ? e.actor_name + (e.channel && CH[e.channel] ? ' · ' + CH[e.channel] : '') : '—';
+  const rows = ev.filter(e => !q || [e.party_name, e.event, e.entity_type, e.note, e.source, e.actor_name].join(' ').toLowerCase().includes(q));
+  const PERSON = { invited:'Invited', joined:'Joined', role_changed:'Changed the role of', access_changed:'Changed the access of', suspended:'Suspended', restored:'Restored', removed:'Removed', invite_cancelled:'Cancelled the invite for', whatsapp_linked:'Linked WhatsApp for' };
+  const what = e => e.entity_type === 'person' ? (PERSON[e.event] || e.event) :
+    ({ settled:'Settled', deleted:'Deleted', created:'Added', imported:'Imported', updated:'Changed' }[e.event] || e.event || '—') + ' ' + (e.entity_type || '');
+  host.__csv = [['When', 'Who', 'Event', 'Party', 'Amount (INR)', 'Source', 'Note'], rows.map(e => [e.created_at, who(e), what(e), e.party_name || '', e.amount != null ? Math.round(e.amount) : '', e.source || '', e.note || ''])];
+  host.innerHTML = mgPageHead({ group:'Admin', title:'Audit log', sub:'Every change to your ledger and your team: what, when, who, and where it came from.', actions:mgExportBtn('mgExport-audit') }) +
     '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find an entry" value="' + escapeHtml(mgMoneyQ) + '" data-money-q><span class="mg-count">' + rows.length + ' entries</span></div>' +
-    (rows.length ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>When</th><th>Event</th><th>Party</th><th class="r">Amount (₹)</th><th>Source</th><th>Note</th></tr></thead><tbody>' +
-      rows.map(e => '<tr><td class="mg-mono">' + escapeHtml(e.created_at ? fmtDate(e.created_at) : '') + '</td><td>' + escapeHtml(what(e)) + '</td><td>' + escapeHtml(e.party_name || '—') + '</td><td class="r">' + (e.amount != null ? mgNum(e.amount) : '') + '</td><td>' + escapeHtml(e.source || '') + '</td><td class="mg-muted">' + escapeHtml(e.note || '') + '</td></tr>').join('') +
-      '</tbody></table></div>' : '<div class="mg-panel mg-empty-panel"><h2>' + (mgAuditLoading ? 'Loading…' : 'No changes recorded yet') + '</h2><p>Adding, settling, deleting or importing an entry is recorded here.</p></div>');
+    (rows.length ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>When</th><th>Who</th><th>Event</th><th>Party</th><th class="r">Amount (₹)</th><th>Source</th><th>Note</th></tr></thead><tbody>' +
+      rows.map(e => '<tr><td class="mg-mono">' + escapeHtml(e.created_at ? fmtDate(e.created_at) : '') + '</td><td>' + escapeHtml(who(e)) + '</td><td>' + escapeHtml(what(e)) + '</td><td>' + escapeHtml(e.party_name || '—') + '</td><td class="r">' + (e.amount != null ? mgNum(e.amount) : '') + '</td><td>' + escapeHtml(e.source || '') + '</td><td class="mg-muted">' + escapeHtml(e.note || '') + '</td></tr>').join('') +
+      '</tbody></table></div>' : '<div class="mg-panel mg-empty-panel"><h2>' + (mgAuditLoading ? 'Loading…' : 'No changes recorded yet') + '</h2><p>Adding, settling, deleting or importing an entry, and every change to who can sign in, is recorded here.</p></div>');
 }
 
 /* ---------- notifications (source health + waiting items) ---------- */
