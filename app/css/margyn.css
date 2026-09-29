@@ -189,3 +189,7 @@ nav.mg-top .mg-status-wrap .top-sync:hover{ border-color:var(--g300); color:var(
 }
 /* With the panel open, its own Talk button is right there; the top bar gets its room back. */
 body.mgr-open #vxTopBtn{ display:none; }
+/* A run of Margyn lines reads as one message: one header, tighter spacing. */
+.mgr-msg.m + .mgr-msg.m .mgr-who{ display:none; }
+.mgr-feed > .mgr-msg.m + .mgr-msg.m{ margin-top:-6px; }
+.mgr-msg.me + .mgr-msg.me{ margin-top:-6px; }

@@ -307,25 +307,33 @@ function mgrSuggest(){
 /* ---------- who am I talking to ---------- */
 function mgrFirstWord(s){
   const w = String(s || '').trim().split(/[\s@._]+/)[0] || '';
-  return w ? w.charAt(0).toUpperCase() + w.slice(1) : '';
+  return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : '';
+}
+/* A person's name, not the product's or the business's ("Margyn Demo" as the
+   owner row on a demo account greeted the founder as "Hey Margyn"). */
+function mgrPersonName(s){
+  const w = mgrFirstWord(s);
+  if(!w || w.length < 2 || /\d/.test(w) || /^(margyn|admin|owner|test|demo|finance|accounts?|team|info|hello|support)$/i.test(w)) return '';
+  const co = mgrFirstWord((currentProfile && currentProfile.company_name) || '');
+  return co && co === w ? '' : w;
 }
 async function mgrResolveName(){
-  try { const p = typeof mgPrefGet === 'function' ? mgPrefGet('display_name', null) : null; if(p) return mgrFirstWord(p); } catch(e){}
-  try { if(typeof mgActor !== 'undefined' && mgActor && !mgActor.isOwner && mgActor.name) return mgrFirstWord(mgActor.name); } catch(e){}
-  try { const md = currentUser && currentUser.user_metadata; if(md && (md.full_name || md.name)) return mgrFirstWord(md.full_name || md.name); } catch(e){}
+  try { const p = typeof mgPrefGet === 'function' ? mgPrefGet('display_name', null) : null; if(p && mgrPersonName(p)) return mgrPersonName(p); } catch(e){}
+  try { if(typeof mgActor !== 'undefined' && mgActor && !mgActor.isOwner && mgActor.name && mgrPersonName(mgActor.name)) return mgrPersonName(mgActor.name); } catch(e){}
+  try { const md = currentUser && currentUser.user_metadata; if(md && mgrPersonName(md.full_name || md.name)) return mgrPersonName(md.full_name || md.name); } catch(e){}
   if(typeof mgActor !== 'undefined' && mgActor && !mgActor.isOwner) return '';
   try {
     // The People page: the owner's own named number.
     const { data } = await sbClient.from('business_stakeholders').select('name,role,is_primary').eq('business_id', currentUser.id);
     const me = (data || []).find(r => r.role === 'owner') || (data || []).find(r => r.is_primary);
-    if(me && me.name) return mgrFirstWord(me.name);
+    if(me && mgrPersonName(me.name)) return mgrPersonName(me.name);
   } catch(e){}
   return '';
 }
 function mgrSaveName(v){
   v = String(v || '').trim().slice(0, 60); if(!v) return;
   try { if(typeof mgPrefSet === 'function') mgPrefSet('display_name', v); } catch(e){}
-  mgrName = mgrFirstWord(v);
+  mgrName = mgrPersonName(v) || mgrFirstWord(v);
   const pf = mgrEl('pfName'); if(pf) pf.value = v;
 }
 
@@ -381,8 +389,11 @@ async function mgrGreet(){
   let dec = []; try { dec = mgDecisions(); } catch(e){}
   const fresh = (typeof mgWnUnseen === 'function' && since) ? mgWnUnseen() : [];
   const hi = mgrName ? 'Hey ' + escapeHtml(mgrName) : 'Hey there';
-  let html = '<h5>' + hi + (since ? ', welcome back.' : ', welcome to Margyn.') + '</h5>';
-  if(since){
+  // Back within half an hour (a reload, another tab): no "welcome back", no recap.
+  const quick = since && Date.now() - new Date(since).getTime() < 30 * 60000;
+  let html = '<h5>' + hi + (quick ? '.' : since ? ', welcome back.' : ', welcome to Margyn.') + '</h5>';
+  if(quick){ /* nothing to recap */ }
+  else if(since){
     html += '<p>' + (mgrAway.did.length
       ? 'Since you were last here (' + escapeHtml(mgrAgo(since)) + '): ' + escapeHtml(mgrAway.did.join(', ')) + '.'
       : 'Quiet since you were last here (' + escapeHtml(mgrAgo(since)) + '). Nothing new came in.') + '</p>';
@@ -390,7 +401,7 @@ async function mgrGreet(){
     html += '<p>I’m Margyn. I watch your numbers, chase who owes you, read what you forward me and tell you when something needs you. Ask me anything, or press Talk.</p>';
   }
   html += dec.length
-    ? '<p><b>' + dec.length + ' thing' + (dec.length === 1 ? ' needs' : 's need') + ' your OK.</b> The biggest: ' + escapeHtml(dec[0].t) + (dec[0].amt ? ' (' + escapeHtml(fmtINR(dec[0].amt, 'tile')) + ')' : '') + '.</p>'
+    ? '<p><b>' + dec.length + ' thing' + (dec.length === 1 ? ' needs' : 's need') + ' your OK.</b> The biggest: ' + escapeHtml(dec[0].t.replace(/[.\s]+$/, '')) + (dec[0].amt && !/₹/.test(dec[0].t) ? ' (' + escapeHtml(fmtINR(dec[0].amt, 'tile')) + ')' : '') + '.</p>'
     : '<p>Nothing is waiting on you right now.</p>';
   const acts = [];
   if(dec.length) acts.push('<button type="button" class="mgr-chip" data-mgr-ask="What needs my OK?">Go through them with me</button>');
@@ -402,11 +413,11 @@ async function mgrGreet(){
   if(acts.length) html += '<div class="mgr-acts">' + acts.join('') + '</div>';
   if(!mgrName) html += '<form class="mgr-name" data-mgr-name><label>What should I call you?</label><div><input type="text" maxlength="60" placeholder="Your first name" autocomplete="given-name"><button type="submit" class="mgr-chip on">Save</button></div></form>';
   const f = mgrFeed();
-  if(f && since){ const d = document.createElement('div'); d.className = 'mgr-divider'; d.textContent = 'New since you were here'; f.appendChild(d); }
+  if(f && since && !quick){ const d = document.createElement('div'); d.className = 'mgr-divider'; d.textContent = 'New since you were here'; f.appendChild(d); }
   const row = mgrHtmlLine('', 'greet');
   if(row) await mgrTypeHtml(row.querySelector('.mgr-b'), html);
   mgrSuggest();
-  if(mgrAway.did.length) mgStatus(mgrAway.did[0].replace(/^I /, 'Margyn ').replace(/^./, c => c.toUpperCase()), true);
+  if(!quick && mgrAway.did.length) mgStatus(mgrAway.did[0].replace(/^I /, 'Margyn ').replace(/^./, c => c.toUpperCase()), true);
   // Closed panel or a small screen: say hello in the bubble instead.
   if(!mgrIsOpen()) mgrBubble({ key:'greet', text:(mgrName ? 'Hey ' + mgrName : 'Hey') + (since ? ', welcome back.' : '.') + (dec.length ? ' ' + dec.length + ' thing' + (dec.length === 1 ? ' needs' : 's need') + ' your OK.' : ''), acts:[{ label:'Open Margyn', run:() => mgrOpen(true) }] }, true);
   if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home') mgRenderOwn('home');

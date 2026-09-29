@@ -88,6 +88,7 @@ export default async function handler(req, res) {
   if (voiceAction === 'transcribe') return handleTranscribe(req, res);
   if (voiceAction === 'speak') return handleSpeak(req, res);
   if (voiceAction === 'realtime-session') return handleRealtimeSession(req, res, user);
+  if (voiceAction === 'romanize') return handleRomanize(req, res);
 
   const { message, history, context, depth, surface, resume } = req.body || {};
   const agent = getAgent();
@@ -730,6 +731,36 @@ const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
   .map(t => ({ name: t.name, description: t.description.replace(/floating workspace next to the conversation/g, 'conversation as a card'), input_schema: t.parameters }));
 const APP_TOOL_NAMES = new Set(APP_TOOLS.map(t => t.name));
 
+// Lines of a call that came back in Devanagari, Urdu or another script:
+// rewritten in Roman letters the way the founder types Hinglish, so the panel
+// reads the same whichever script the transcriber picked. Haiku, a few
+// hundred tokens a call; transliteration only, never translation.
+async function handleRomanize(req, res) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const texts = (req.body && Array.isArray(req.body.texts) ? req.body.texts : []).slice(0, 8).map(t => String(t || '').slice(0, 400));
+  if (!apiKey || !texts.length) { res.status(200).json({ texts }); return; }
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: process.env.ASK_MARGYN_MODEL_ROMANIZE || 'claude-haiku-4-5-20251001',
+        max_tokens: 700,
+        system: 'You transliterate. Each input line is speech from a call between an Indian founder and their finance assistant, written in Devanagari, Urdu (Arabic script) or another script. Rewrite each line in Roman (Latin) letters exactly as a Mumbai founder would type Hinglish on WhatsApp: English words stay English (cash, invoice, overdue, PDF, lakh), Hindi words spelled simply (mera, kya, hai, kar do). Do not translate, summarise, fix or add anything; keep numbers and ₹ amounts as they are. A line already in Roman letters stays the same. Reply with only a JSON array of strings, one per input line, same order.',
+        messages: [{ role: 'user', content: JSON.stringify(texts) }]
+      })
+    });
+    if (!r.ok) throw new Error('status ' + r.status);
+    const data = await r.json();
+    const out = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    const arr = JSON.parse(out.slice(out.indexOf('['), out.lastIndexOf(']') + 1));
+    res.status(200).json({ texts: texts.map((t, i) => (typeof arr[i] === 'string' && arr[i].trim()) ? arr[i].trim().slice(0, 600) : t) });
+  } catch (e) {
+    console.error('romanize failed:', e.message);
+    res.status(200).json({ texts, failed: true });
+  }
+}
+
 const TRANSCRIBE_PROMPT = 'The speaker talks English, Hindi, or a mix of the two (Hinglish). Write every word in Roman (Latin) letters, including Hindi words. Never use Urdu, Arabic or Devanagari script.';
 
 async function handleRealtimeSession(req, res, user) {
@@ -752,7 +783,7 @@ async function handleRealtimeSession(req, res, user) {
     // Those fake lines reached the model and the saved thread.
     const turnDetection = process.env.OPENAI_TURN_DETECTION === 'server_vad'
       ? { type: 'server_vad', silence_duration_ms: 600 }
-      : { type: 'semantic_vad', eagerness: 'auto' };
+      : { type: 'semantic_vad', eagerness: process.env.OPENAI_VAD_EAGERNESS || 'low' };   // low: waits for them to finish, fewer half-heard fragments
     // GA shape (checked against OpenAI's API reference, 2026-09):
     // POST /v1/realtime/client_secrets, config nested under `session`,
     // `output_modalities`, voice/transcription/turn detection/noise reduction
@@ -870,7 +901,7 @@ HOW YOU TALK
 - This is speech. Short sentences, no lists, no markdown, nothing that only works written down. One idea at a time.
 - Lead with the answer in one or two short sentences, then stop and let them talk. Go longer only when they ask for detail. Offer a next step only when there's an obvious one.
 - Say money the Indian way, rounded: "twelve lakh", "about 1.2 crore", "eighty-five thousand". Never read out long digit strings, invoice numbers or GSTINs unless asked.
-- Reply in the language they use. If they speak Hindi or Hinglish, answer in natural Hinglish; if English, English.
+- Language: English by default. When their last message was mostly Hindi or Hinglish, answer in easy spoken Hinglish (Hindi with the English words a founder uses: cash, invoice, overdue, lakh, PDF), never formal or shuddh Hindi. The moment they speak English again, go back to English. If they ask for English, stay in English until they ask otherwise.
 - Contractions, warm and direct. Never "Certainly", "I'd be happy to", "As an AI", or any assistant-speak.
 - If they interrupt, stop and follow them. Don't restart what you were saying.
 
@@ -1119,4 +1150,4 @@ ${historyBlock}`;
 }
 
 // For the tests in api/_lib/__tests__/askMargynPanel.test.js.
-export { checkResumeState, signState, mergeSameRole, buildSystemPrompt, buildRealtimeInstructions, APP_TOOLS, REALTIME_TOOLS, TRANSCRIBE_PROMPT, MAX_CLIENT_ROUNDS };
+export { checkResumeState, signState, mergeSameRole, buildSystemPrompt, buildRealtimeInstructions, handleRomanize, APP_TOOLS, REALTIME_TOOLS, TRANSCRIBE_PROMPT, MAX_CLIENT_ROUNDS };

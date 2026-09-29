@@ -78,6 +78,21 @@ function check(name, cond, detail) {
   check('transcription steers to Roman script, Hindi/English/Hinglish', /Hinglish/.test(M.TRANSCRIBE_PROMPT) && /Roman/.test(M.TRANSCRIBE_PROMPT));
   check('transcription prompt has no yes/no words it could echo into the confirm gate', !/\b(yes|yeah|ok|okay|haan|han|ji|theek|thik|kar do|confirm|no|nahi|cancel)\b/i.test(M.TRANSCRIBE_PROMPT));
 
+  // language on calls, and romanizing
+  check('voice: English by default, Hinglish only when they speak it, never shuddh Hindi', /English by default/.test(vp) && /never formal or shuddh Hindi/.test(vp) && /go back to English/.test(vp));
+  const resOf = () => { const r = { code: 0, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } }; return r; };
+  process.env.ANTHROPIC_API_KEY = 'k';
+  let sentBody = null;
+  global.fetch = async (url, init) => { sentBody = JSON.parse(init.body); return { ok: true, json: async () => ({ content: [{ type: 'text', text: '["Mera profit zero kyun hai?","Haan, kar do"]' }] }) }; };
+  let r = resOf(); await M.handleRomanize({ body: { texts: ['میرا پروفٹ زیرو کیوں ہے؟', 'हाँ, कर दो'] } }, r);
+  check('romanize returns Roman lines in order', JSON.stringify(r.body.texts) === '["Mera profit zero kyun hai?","Haan, kar do"]', r.body);
+  check('romanize uses the small model and says transliterate, not translate', /haiku/.test(sentBody.model) && /Do not translate/.test(sentBody.system));
+  global.fetch = async () => ({ ok: false, status: 500 });
+  r = resOf(); await M.handleRomanize({ body: { texts: ['हाँ'] } }, r);
+  check('romanize failing returns the original, flagged', r.body.failed === true && r.body.texts[0] === 'हाँ');
+  r = resOf(); await M.handleRomanize({ body: { texts: Array(20).fill('x'.repeat(900)) } }, r);
+  check('romanize is capped (8 lines, 400 chars)', r.body.texts.length === 8 && r.body.texts[0].length === 400);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
