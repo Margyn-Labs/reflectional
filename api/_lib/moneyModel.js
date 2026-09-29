@@ -33,6 +33,13 @@ const SRC_NAME = { zoho: 'Zoho Books', tally: 'Tally', odoo: 'Odoo', manual: 'Ma
 const BUCKETS = [['b0', 'Current and 0–30 days'], ['b1', '31–60 days'], ['b2', '61–90 days'], ['b3', '90+ days']];
 const MAX_ROWS = 20000;
 
+/* What counts as OPEN, per source (2026-09-30). A balance alone isn't enough:
+   a Zoho draft hasn't been sent, a voided one is gone, an Odoo move that's
+   cancelled or still a draft owes nothing. Rows closed by a deleted-at-source
+   sweep are excluded too. Rows with no status (older syncs) still count. */
+const ZOHO_OPEN = 'or=(status.is.null,status.not.in.(draft,void,deleted_at_source))';
+const ODOO_OPEN = 'or=(state.is.null,state.eq.posted)';
+
 /* ---------- pure ---------- */
 
 // Same as normPartyName() in app/js/07-ledger.js.
@@ -172,7 +179,7 @@ async function loadZoho(orgRef, dir) {
     ? ['zoho_invoices', 'invoice_number', 'customer_name', 'invoice_id']
     : ['zoho_bills', 'bill_number', 'vendor_name', 'bill_id'];
   const { rows, truncated } = await selectAllRows(q[0],
-    `select=${q[1]},${q[2]},balance,due_date&org_ref=eq.${orgRef}&balance=gt.0&order=due_date.asc.nullslast,${q[3]}.asc`,
+    `select=${q[1]},${q[2]},balance,due_date&org_ref=eq.${orgRef}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast,${q[3]}.asc`,
     { max: MAX_ROWS });
   return {
     rows: rows.map((r) => ({ party: r[q[2]] || (dir === 'recv' ? 'Unnamed customer' : 'Unnamed vendor'), amount: num(r.balance), due: r.due_date || null, ref: r[q[1]] || null, src: 'zoho' })),
@@ -201,7 +208,7 @@ async function loadOdoo(accountId, dir) {
     ? ['odoo_invoices', 'invoice_number', 'customer_name']
     : ['odoo_bills', 'bill_number', 'vendor_name'];
   const { rows, truncated } = await selectAllRows(q[0],
-    `select=${q[1]},${q[2]},balance,due_date&user_id=eq.${accountId}&cred_id=eq.${creds[0].id}&order=due_date.asc.nullslast,id.asc`,
+    `select=${q[1]},${q[2]},balance,due_date&user_id=eq.${accountId}&cred_id=eq.${creds[0].id}&${ODOO_OPEN}&order=due_date.asc.nullslast,id.asc`,
     { max: MAX_ROWS });
   return {
     rows: rows.map((r) => ({ party: r[q[2]] || 'Unknown', amount: Math.round(Math.abs(num(r.balance)) * 100) / 100, due: r.due_date || null, ref: r[q[1]] || null, src: 'odoo' }))
@@ -254,7 +261,7 @@ async function positionForAccount(accountId, { dirs = ['recv', 'pay'], withRows 
 }
 
 module.exports = {
-  SRC_ORDER, SRC_NAME, BUCKETS, MAX_ROWS,
+  SRC_ORDER, SRC_NAME, BUCKETS, MAX_ROWS, ZOHO_OPEN, ODOO_OPEN,
   normPartyName, todayIST, daysBetween, bucketOf, groupRows, summarise, position,
   loadRows, positionForAccount
 };

@@ -33,6 +33,8 @@
  */
 
 const { getUserFromRequest, rpc, selectRows } = require('../_lib/supabaseRest');
+// Drafts and voided invoices aren't money anyone owes (see moneyModel.js).
+const { ZOHO_OPEN } = require('../_lib/moneyModel');
 
 function inr(n) {
   const v = Number(n) || 0;
@@ -166,7 +168,7 @@ async function handler(req, res) {
     try {
       const invs = await selectRows(
         'zoho_invoices',
-        `select=invoice_number,customer_name,balance,due_date,invoice_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&order=due_date.asc.nullslast&limit=250`
+        `select=invoice_number,customer_name,balance,due_date,invoice_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast&limit=250`
       );
       receivablesList = (invs || []).map((r) => ({
         party_name: r.customer_name || 'Unnamed customer',
@@ -183,7 +185,7 @@ async function handler(req, res) {
     try {
       const bills = await selectRows(
         'zoho_bills',
-        `select=bill_number,vendor_name,balance,due_date,bill_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&order=due_date.asc.nullslast&limit=250`
+        `select=bill_number,vendor_name,balance,due_date,bill_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast&limit=250`
       );
       payablesList = (bills || []).map((r) => ({
         party_name: r.vendor_name || 'Unnamed vendor',
