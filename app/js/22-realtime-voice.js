@@ -339,6 +339,8 @@ function closeRealtimeOverlay(){
   if(vxAudioCtx){ try { vxAudioCtx.close(); } catch(e){} vxAudioCtx = null; }
   if(vxPending){ try { vxResolveCard(vxPending, 'Call ended before this was confirmed. Nothing changed.'); } catch(e){} }
   vxPending = null;
+  // "Close Margyn" on a call: the panel goes too, once the goodbye has played.
+  if(window.__mgrCloseAfterCall){ window.__mgrCloseAfterCall = false; if(typeof mgrClose === 'function') mgrClose(); }
 }
 /* end_conversation: let the sign-off finish playing first. */
 function vxEndAfterSpeech(){
@@ -399,6 +401,8 @@ async function vxAwaitUtteranceAfter(t, maxMs){
   return null;
 }
 
+const VX_PROMPT_ECHO = /Roman \(Latin\) letters|Urdu, Arabic or Devanagari|mix of the two \(Hinglish\)/i;
+const VX_ODD_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u0A80-\u0AFF\u0400-\u04FF\u0590-\u05FF]/;
 /* "One sec, let me pull that up" with no tool call behind it. Asking
    permission ("Shall I open it?") is fine and doesn't count. */
 const VX_PROMISE = /\b(one (sec|second|moment)|just a (sec|second|moment)|give me a (sec|second|moment)|let me|i'?ll (now )?(pull|open|get|show|put|draw|create|make|set|check|sync|run|bring|summari[sz]e|write|go|add|log|draft)|i am (pulling|opening|setting|creating)|pulling (that |it |this )?up|opening (that|it|the)|setting (that |it )?up|ek (second|minute|pal)|abhi (dikhata|dikhati|kholta|kholti|karta|karti|laata|lati))/i;
@@ -433,7 +437,20 @@ function vxOnEvent(m){
       if(m.item_id) vxAddLine('user', '', m.item_id);   // placeholder keeps transcript order right
       vxSetState('thinking', ''); break;
     case 'conversation.item.input_audio_transcription.completed': {
-      const text = (m.transcript || '').trim();
+      let text = (m.transcript || '').trim();
+      // On background noise a transcriber can read its own instruction back:
+      // that isn't the user talking.
+      if(VX_PROMPT_ECHO.test(text)) text = '';
+      // Hindi and Urdu sound the same, so a line can still come back in Urdu
+      // (Arabic) script, or Gujarati, Cyrillic... Margyn heard the audio itself
+      // and answers correctly; only the written line is off. Show that plainly
+      // instead of a script the user doesn't read, and keep it out of the
+      // spoken-yes check (it can't be matched reliably).
+      if(text && VX_ODD_SCRIPT.test(text)){
+        vxAddLine('user', '(spoken in Hindi; the written line came out in the wrong script)', m.item_id);
+        vxPersist('user', text); vxDropResume(); vxWatchReply(text);
+        break;
+      }
       if(text){
         vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); vxDropResume();
         if(vxIsGoodbye(text)) vxGoodbye(); else vxWatchReply(text);

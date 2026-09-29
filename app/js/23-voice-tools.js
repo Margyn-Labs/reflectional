@@ -561,6 +561,54 @@ const VX_TOOLS = {
     }
   },
 
+  /* "Close this", "close that window", "band kar do": whatever is on top,
+     or the thing they named. Dialogs and pop-ups first, then the side panel,
+     then the newest card in the conversation. The page (go back) and the
+     Margyn panel only when they ask for those. */
+  close({ target }){
+    const t = target || 'top';
+    const hidden = el => !el || el.classList.contains('hidden');
+    const steps = {
+      dialog(){
+        const d = document.querySelector('.mg-dialog-scrim .mg-dlg-cancel'); if(d){ d.click(); return 'the dialog (nothing was confirmed)'; }
+        const w = document.querySelector('.mg-wn-scrim [data-wn-ok]'); if(w){ w.click(); return 'the What’s new card'; }
+        const o = [...document.querySelectorAll('.detail-overlay')].find(x => !hidden(x)); if(o){ o.classList.add('hidden'); return 'the detail window'; }
+        const a = document.getElementById('agentOverlay'); if(a && !hidden(a)){ a.classList.add('hidden'); return 'the settings window'; }
+        const k = document.querySelector('.cmdk:not(.hidden)'); if(k){ cmdkClose(); return 'search'; }
+        const pop = document.querySelector('.mg-pop.open'); if(pop){ mgCloseAllPops(); return 'the menu'; }
+        return null;
+      },
+      side_panel(){
+        if(typeof mgDrawerEl !== 'undefined' && mgDrawerEl){ const h = mgDrawerEl.querySelector('h3'); const what = h ? h.textContent : 'the side panel'; mgCloseDrawer(); return what + ' (side panel)'; }
+        if(typeof ledgerAddOpen !== 'undefined' && ledgerAddOpen){ ledgerAddOpen = false; if(typeof renderLedgerView === 'function') renderLedgerView(); return 'the add-entry form'; }
+        return null;
+      },
+      card(){
+        const cards = vxCards().filter(c => !c.classList.contains('vx-old') && !(vxPending && vxPending.card === c));
+        const c = cards[cards.length - 1]; if(!c) return null;
+        const h = c.querySelector('h4'); c.remove(); return (h ? h.textContent : 'the card') + ' (in the conversation)';
+      },
+      page(){
+        if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home') return null;
+        const from = vxLabel(mgCurrentView);
+        vxDrive(() => { if(history.length > 1) history.back(); else showView('home'); });
+        return 'the ' + from + ' page (went back)';
+      },
+      margyn(){
+        if(typeof vxActive !== 'undefined' && vxActive){ window.__mgrCloseAfterCall = true; vxEndAfterSpeech(); return 'the Margyn panel, after your goodbye'; }
+        if(typeof mgrClose === 'function'){ mgrClose(); return 'the Margyn panel'; }
+        return null;
+      }
+    };
+    let closed = null;
+    if(t === 'top'){ for(const k of ['dialog', 'side_panel', 'card']){ closed = steps[k](); if(closed) break; } }
+    else if(steps[t]) closed = steps[t]();
+    else return { closed:null, error:'Unknown target ' + t };
+    if(!closed) return { closed:null, note:t === 'top' ? 'Nothing is open on top of the page. Ask whether they mean the page they are on (target "page") or the Margyn panel (target "margyn").' : 'That isn’t open.' };
+    vxActivity('Closed ' + closed.replace(/ \(.*\)$/, ''));
+    return { closed, note:t === 'margyn' && vxActive ? 'Say a two-word goodbye; the call ends and the panel closes.' : 'Closed. Say so in a few words.' };
+  },
+
   end_conversation(){ vxEndAfterSpeech(); return { ok:true }; }
 };
 
