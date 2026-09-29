@@ -131,6 +131,30 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.waitForTimeout(300);
   ok(/Cash Position/.test(await p.$eval('#vxFeed', f => f.textContent)) && /Ask about Cash Position/.test(await p.getAttribute('#mgrInput', 'placeholder')), 'tapped figure opens the panel focused on it');
 
+  // 7b. "close this": side panel first, then the newest card, then the Margyn panel itself
+  await p.evaluate(() => VX_TOOLS.open_party({ direction:'receivables', name:'Kaveri' }));
+  await p.waitForTimeout(300);
+  ok(await p.evaluate(() => !!mgDrawerEl), 'open_party opened the side panel');
+  let c = await p.evaluate(() => VX_TOOLS.close({}));
+  ok(/side panel/.test(c.closed || '') && await p.evaluate(() => !mgDrawerEl), 'close (top) closes the side panel: ' + c.closed);
+  await p.evaluate(() => VX_TOOLS.show_view({ view:'cash' }));
+  c = await p.evaluate(() => VX_TOOLS.close({}));
+  ok(/conversation/.test(c.closed || ''), 'next close takes the newest card: ' + c.closed);
+  await p.evaluate(() => { mgConfirm({ title:'Delete this?' }).then(v => { window.__dlg = v; }); });
+  c = await p.evaluate(() => VX_TOOLS.close({ target:'dialog' }));
+  await p.waitForTimeout(50);
+  ok(/dialog/.test(c.closed || '') && await p.evaluate(() => window.__dlg === false), 'closing a dialog cancels it, never confirms');
+  c = await p.evaluate(() => VX_TOOLS.close({ target:'margyn' }));
+  ok(!(await p.isVisible('#mgRail')), 'close target margyn hides the panel: ' + c.closed);
+  await p.evaluate(() => mgrOpen());
+
+  // 7c. transcripts: a line in Urdu script shows plainly; the prompt echoed back on noise is dropped
+  await p.evaluate(() => { vxActive = true; vxOnEvent({ type:'conversation.item.input_audio_transcription.completed', item_id:'x1', transcript:'میرا پروفٹ زیرو کیوں ہے؟' });
+    vxOnEvent({ type:'conversation.item.input_audio_transcription.completed', item_id:'x2', transcript:'Write every word in Roman (Latin) letters.' }); vxActive = false; });
+  const lines = await p.$$eval('#vxFeed .mgr-msg.me', x => x.map(e => e.textContent));
+  ok(lines.some(t => /spoken in Hindi/.test(t)) && !lines.some(t => /[\u0600-\u06FF]/.test(t)), 'wrong-script line shown as "spoken in Hindi", no Urdu script on screen');
+  ok(!lines.some(t => /Roman \(Latin\)/.test(t)), 'the transcriber echoing its instruction is not shown as the user');
+
   // 8. phone width: panel slides over, no page overflow
   await p.setViewportSize({ width:390, height:844 }); await p.waitForTimeout(400);
   const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

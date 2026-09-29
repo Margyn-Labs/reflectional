@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-hindi-close', date:'30 Sept 2026', title:'Speak Hindi, and ask Margyn to close things',
+    items:[
+      { t:'Hindi and Hinglish, written the way you say them', what:'When you talk to Margyn in Hindi or Hinglish, what you said now shows in Roman letters, not Urdu or another script. Margyn always understood you; now the written line matches.',
+        how:'Just talk. Mix Hindi and English however you like.', act:'talk' },
+      { t:'“Close this”', what:'Margyn can close whatever is open: the customer or vendor side panel, a pop-up, a card in the conversation, the page it opened, or the Margyn panel itself.',
+        how:'Say or type “close this”, “close the side panel”, “go back”, or “band kar do”. “Close Margyn” hides the panel.' }
+    ]
+  },
+  {
     id:'2026-09-30-one-margyn', date:'30 Sept 2026', title:'One Margyn, in one place',
     items:[
       { t:'The Margyn panel', what:'Margyn now sits on the right of every page. Type or talk in the same conversation, and whatever Margyn shows you (your P&L, who owes you, cash, a customer) appears right there, without leaving your page.',

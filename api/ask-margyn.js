@@ -362,6 +362,8 @@ async function handleTranscribe(req, res) {
     const body = buildMultipartBody(boundary, [
       { name: 'model', value: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe' },
       { name: 'response_format', value: 'json' },
+      ...((process.env.OPENAI_TRANSCRIBE_LANGUAGE ?? 'en') ? [{ name: 'language', value: process.env.OPENAI_TRANSCRIBE_LANGUAGE ?? 'en' }] : []),
+      ...((process.env.OPENAI_TRANSCRIBE_PROMPT ?? TRANSCRIBE_PROMPT) ? [{ name: 'prompt', value: process.env.OPENAI_TRANSCRIBE_PROMPT ?? TRANSCRIBE_PROMPT }] : []),
       { name: 'file', filename: `clip.${ext}`, contentType: mimeType || 'audio/webm', data: audioBuffer }
     ]);
 
@@ -702,6 +704,15 @@ const REALTIME_TOOLS = [
   },
   {
     type: 'function',
+    name: 'close',
+    description: 'Close something on screen. Use for "close this", "close that window / tab / panel", "hide it", "band karo / band kar dijiye", "hatao". target "top" (default) closes whatever is on top: a dialog or pop-up, then the customer/vendor side panel or an open form, then the newest card in the conversation. Name the target when they do: "side_panel", "dialog", "card", "page" (go back from the page you opened), or "margyn" (hide the Margyn panel itself; on a call this ends the call after a short goodbye). Closing never changes any data.',
+    parameters: {
+      type: 'object',
+      properties: { target: { type: 'string', enum: ['top', 'side_panel', 'dialog', 'card', 'page', 'margyn'] } }
+    }
+  },
+  {
+    type: 'function',
     name: 'end_conversation',
     description: 'End the call when the user says goodbye or that they are done. Say a short sign-off first, then call this.',
     parameters: NO_ARGS
@@ -714,10 +725,12 @@ const REALTIME_TOOLS = [
 // tap-to-confirm card) and end_conversation. These run in the browser; see
 // the pause/resume in the handler above.
 const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst',
-  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command'];
+  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close'];
 const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
   .map(t => ({ name: t.name, description: t.description.replace(/floating workspace next to the conversation/g, 'conversation as a card'), input_schema: t.parameters }));
 const APP_TOOL_NAMES = new Set(APP_TOOLS.map(t => t.name));
+
+const TRANSCRIBE_PROMPT = 'The speaker talks English, Hindi, or a mix of the two (Hinglish). Write every word in Roman (Latin) letters, including Hindi words. Never use Urdu, Arabic or Devanagari script.';
 
 async function handleRealtimeSession(req, res, user) {
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -771,6 +784,13 @@ async function handleRealtimeSession(req, res, user) {
       max_output_tokens: Number(process.env.OPENAI_REALTIME_MAX_OUTPUT) || 700,
       truncation: { type: 'retention_ratio', retention_ratio: 0.8, token_limits: { post_instructions: Number(process.env.OPENAI_REALTIME_CONTEXT) || 8000 } }
     };
+    // Hindi, English or Hinglish, written in Roman letters. Without a pinned
+    // language the transcriber heard Hindi as Urdu (it sounds the same) and
+    // wrote Arabic script, sometimes Turkish or Gujarati. The prompt only
+    // steers the script; it names no words, since on noise a transcriber can
+    // echo its prompt back (see VX_PROMPT_ECHO in 22-realtime-voice.js).
+    const lang = process.env.OPENAI_TRANSCRIBE_LANGUAGE ?? 'en';
+    const prompt = process.env.OPENAI_TRANSCRIBE_PROMPT ?? TRANSCRIBE_PROMPT;
     let openaiRes = await mint(model, {
       // Pinned language: unpinned, short or noisy phrases came back in the
       // wrong script ("Две минуты", "January" for "answer me"). This only
@@ -778,7 +798,7 @@ async function handleRealtimeSession(req, res, user) {
       // audio itself, so Hindi still gets a Hindi answer. OPENAI_TRANSCRIBE_LANGUAGE=hi
       // (or empty for auto) if an account speaks mostly Hindi.
       transcription: Object.assign({ model: process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe' },
-        (process.env.OPENAI_TRANSCRIBE_LANGUAGE ?? 'en') ? { language: process.env.OPENAI_TRANSCRIBE_LANGUAGE ?? 'en' } : {}),
+        lang ? { language: lang } : {}, prompt ? { prompt } : {}),
       // Laptop and desk mics, not headsets, are the common case.
       noise_reduction: { type: process.env.OPENAI_NOISE_REDUCTION || 'far_field' },
       turn_detection: turnDetection
@@ -788,7 +808,9 @@ async function handleRealtimeSession(req, res, user) {
       // voice down: retry once with the minimal shape that shipped in PR #14,
       // keeping only the output cap.
       console.error('OpenAI realtime session rejected, retrying minimal config:', await openaiRes.text());
-      openaiRes = await mint('gpt-realtime', { transcription: { model: 'whisper-1' } }, 'alloy', { max_output_tokens: LIMITS.max_output_tokens });
+      // The language stays pinned here too: this bare fallback used to leave it
+      // to auto-detect, which is where Urdu script came from.
+      openaiRes = await mint('gpt-realtime', { transcription: Object.assign({ model: 'whisper-1' }, lang ? { language: lang } : {}) }, 'alloy', { max_output_tokens: LIMITS.max_output_tokens });
     }
     if (!openaiRes.ok) {
       const errText = await openaiRes.text();
@@ -855,6 +877,7 @@ HOW YOU TALK
 SHOW, DON'T GO
 - What you show lands as a card in the Margyn panel, in the same conversation they can type into. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.
 - "Open", "go to" and "take me to" mean navigate: "open the inbox", "take me to my inbox", "open the ledger" change the page. Also navigate when they need to do something on that page itself. Never navigate just to answer a question.
+- "Close this", "close that window/tab", "band karo", "hatao" means call close right away (target "top" unless they name the side panel, the page, a card or the Margyn panel). You CAN close things; never say you can't. "Close Margyn" / "close this panel" is target "margyn".
 - "Open it" / "open that" right after you mentioned something means go to where it lives, now, without asking: a pending decision or proposal -> navigate to inbox; a customer or vendor -> open_party; an invoice -> open_party for its customer.
 - After show_view or show_note, say one short line about what matters in it. Don't then add another line saying it's in the workspace.
 - When the topic moves on and the workspace no longer helps, call clear_workspace.
@@ -1042,6 +1065,7 @@ DRIVING THE APP — this conversation is in the Margyn panel beside the app, and
 - "Open", "go to", "take me to" mean navigate (or open_party for one customer/vendor). Also navigate when they need to work on that page themselves. Never navigate just to answer a question.
 - Live figures: get_overview, get_cash, get_gst, get_inbox, query_parties, get_sources read exactly what's on their screen right now. Prefer them over the data block when they differ, and use them for anything the block doesn't carry (the cash forecast, per-customer lists, what's waiting).
 - "This", "here", "that one" means what's on screen: call get_screen first.
+- "Close this / that window / the side panel", "band karo", "hatao" means call close (target "top" unless they name one). You can close anything you or they opened.
 - Adding a customer or vendor: run_command "add_party" with the name opens the form; fill_form puts in details they give; save_form only after they say save / yes. New amounts owed with party and amount: propose_action create_ledger_item.
 - sync_source pulls fresh data from Zoho, Odoo or Shopify; reconnecting is something only they can do on the sources page.
 - Never say you did or showed something unless a tool just returned it. If there's no tool for it, say so in a sentence.` : ''}`;
@@ -1095,4 +1119,4 @@ ${historyBlock}`;
 }
 
 // For the tests in api/_lib/__tests__/askMargynPanel.test.js.
-export { checkResumeState, signState, mergeSameRole, buildSystemPrompt, APP_TOOLS, MAX_CLIENT_ROUNDS };
+export { checkResumeState, signState, mergeSameRole, buildSystemPrompt, buildRealtimeInstructions, APP_TOOLS, REALTIME_TOOLS, TRANSCRIBE_PROMPT, MAX_CLIENT_ROUNDS };
