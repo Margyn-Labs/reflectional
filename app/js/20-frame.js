@@ -34,6 +34,7 @@ const MG_PAGES = {
   people:{ slug:'people', base:'settings', group:'Admin', label:'People and roles', sub:'Who can message Margyn on WhatsApp, get the Bells, and act on your behalf.' },
   settings:{ slug:'settings', base:'settings', group:'Admin', label:'Settings', sub:'Notifications, scoring labels and account controls.' },
   audit:{ slug:'audit', own:true, group:'Admin', label:'Audit log' },
+  channels:{ slug:'channel-health', own:true, group:'Admin', label:'Channel health' },
   financing:{ slug:'financing', base:'financing', group:'Insight', label:'Capital readiness', sub:'An indicative working-capital view built from your own figures. Margyn is not a lender.' },
   profile:{ slug:'profile', base:'profile', group:'Account', label:'Profile' }
 };

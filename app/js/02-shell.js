@@ -40,7 +40,7 @@ const MG_SEARCH_WORDS = {
   history:'ask chat questions ai conversation history threads', agents:'agents automation chase collections close bell whatsapp reminders',
   connectors:'sources connectors integrations connect zoho tally odoo razorpay cashfree shopify sync disconnect reconnect api keys organisations',
   people:'people team members roles whatsapp numbers access users permissions', settings:'settings notifications preferences account delete',
-  audit:'audit log history changes activity trail who changed', financing:'capital loan credit financing working capital lender readiness',
+  audit:'audit log history changes activity trail who changed', channels:'channel health delivery whatsapp bell chase email failing template approved recovered paid after chase', financing:'capital loan credit financing working capital lender readiness',
   profile:'profile company gst number details name city'
 };
 const MG_SEARCH_SOURCES = ['zoho', 'tally', 'odoo', 'razorpay', 'cashfree', 'shopify'];

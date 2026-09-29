@@ -5,6 +5,8 @@
  * GET  /api/reconcile?action=position      — the reconciled receivables / payables position, every open
  *                                            row from every source (JWT-authed; see _lib/moneyModel.js).
  *                                            ?dir=recv|pay (default both), ?rows=0 to omit invoice rows
+ * GET  /api/reconcile?action=channel-health — which Bells / chases / emails are delivering, and ₹ paid after
+ *                                            a chase (JWT-authed; see _lib/channelHealth.js)
  *
  * Wraps the pure matching logic in api/_lib/reconcileMatcher.js with real
  * Supabase reads/writes. Zero-npm: plain fetch() only, matching the rest
@@ -30,6 +32,7 @@ const { runAgent } = require('./_lib/closeCollectionsAgent');
 const { runLlmTier } = require('./_lib/closeCollectionsLlmTier');
 const { resolveActor, can } = require('./_lib/actor');
 const { positionForAccount } = require('./_lib/moneyModel');
+const { channelHealthForAccount } = require('./_lib/channelHealth');
 
 const LOOKBACK_DAYS = 30;
 
@@ -772,6 +775,22 @@ module.exports = async (req, res) => {
     } catch (err) {
       console.error('[reconcile] position failed:', err.message);
       res.status(500).json({ error: 'Could not build the position' });
+    }
+    return;
+  }
+
+  if (action === 'channel-health') {
+    if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
+    const actor = await resolveActor(req);
+    if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    // Names customers and amounts chased, so it needs the same access as Receivables.
+    if (!can(actor, 'view_receivables')) { res.status(403).json({ error: 'Not permitted' }); return; }
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(await channelHealthForAccount(actor.accountId));
+    } catch (err) {
+      console.error('[reconcile] channel-health failed:', err.message);
+      res.status(500).json({ error: 'Could not read channel health' });
     }
     return;
   }
