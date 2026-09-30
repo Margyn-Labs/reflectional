@@ -151,6 +151,17 @@ export function formatMargynContext(context) {
       lines.push(`Vouchers synced: ${tv.count}${typeStr ? ' (' + typeStr + ')' : ''}. Sales last 30d ${inr(tv.sales_30d || 0)}, receipts last 30d ${inr(tv.receipts_30d || 0)}.`);
     }
     if (tally.ledgers && tally.ledgers.count != null) lines.push(`${tally.ledgers.count} ledger balances synced.`);
+    // Margin analytics (api/_lib/tallyAnalytics.js). Figures and headlines are computed server-side; quote, never recompute.
+    const tm = ctx.tallyMargin || null;
+    if (tm) {
+      const pc = (n) => (n == null ? 'n/a' : `${Number(n).toFixed(1)}%`);
+      const p = tm.period || {};
+      lines.push(`Margin (from Tally books, single source, signal only): net sales ${inr(p.net_sales || 0)} for ${p.from || '?'} to ${p.to || '?'}; gross margin before stock movement ${pc(p.gross_margin_pct_pre_stock)}${p.gross_margin_pct_after_stock != null ? ', after stock movement ' + pc(p.gross_margin_pct_after_stock) + ' (indicative)' : ''}; returns ${pc(tm.returns_pct)} of gross sales${tm.dso_days != null ? '; customers take about ' + Math.round(tm.dso_days) + ' days to pay' : ''}.`);
+      (tm.headlines || []).forEach((h) => lines.push(`- ${h}`));
+      lines.push('Margin-page sales are before GST; the Tally tab\'s sales figures include GST, so they will differ. Say which one you mean.');
+      if (tm.confidence) lines.push(`Margin confidence: ${tm.confidence}.${(tm.caveats || []).length ? ' Caveats: ' + tm.caveats.join(' ') : ''}${tm.open_questions ? ' ' + tm.open_questions + ' ledger question(s) are waiting for the user on the Margin page.' : ''}`);
+      if (!tm.items_available) lines.push('Item-level margin is not available yet (Tally item lines not synced); do not guess per-product margins.');
+    }
     tallyBlock = lines.join('\n');
   }
 

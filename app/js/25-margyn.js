@@ -134,6 +134,7 @@ function mgrStepLabel(name, a){
     case 'filter_list': return 'Filtering ' + (a.direction || 'the list');
     case 'get_cash': return 'Reading cash and the forecast';
     case 'get_gst': return 'Checking GST';
+    case 'get_margin': return 'Reading your margin';
     case 'get_inbox': return 'Checking what’s waiting on you';
     case 'show_view': return 'Drawing ' + (a.view === 'party' && a.name ? String(a.name).slice(0, 40) : (MGR_VIEW_LABEL[a.view] || a.view));
     case 'show_note': return 'Writing it down';

@@ -519,6 +519,7 @@ function buildMargynContext(focusLabel){
     connectors: { razorpay: !!razorpayConnected, shopify: !!shopifyConnected, zoho: !!zohoConnected, tally: !!tallyConnected },
     connectorStatus,
     tally: tallyData,
+    tallyMargin: (typeof mgMarginForAsk === 'function') ? mgMarginForAsk() : null,
     crossLedger: buildCrossLedgerSummary()
   };
 }

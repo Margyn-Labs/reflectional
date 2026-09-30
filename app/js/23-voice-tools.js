@@ -415,6 +415,22 @@ const VX_TOOLS = {
   },
 
   /* "Is my Zoho connector working?" — instant, from what the app already has. */
+  get_margin(){
+    if(typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy) mgLoadMargin();
+    const d = typeof mgMar !== 'undefined' ? mgMar : null;
+    if(!d) return { loading:true, note:'Margin is still loading. Ask again in a few seconds.' };
+    if(!d.connected) return { connected:false, note:'Tally is not connected, so margin can\'t be worked out.' };
+    const base = (typeof mgMarginForAsk === 'function' && mgMarginForAsk()) || {};
+    return Object.assign(base, {
+      company:d.company_name,
+      slowest_payers:(d.customers || []).filter(c => c.outstanding > 0).sort((a, b) => b.overdue - a.overdue).slice(0, 5)
+        .map(c => ({ customer:c.party, owed:vxInr(c.outstanding), overdue:vxInr(c.overdue), days_to_pay:c.dso_days, cost_of_waiting_pct:c.credit_cost_pct_of_sales })),
+      top_items:(d.items || []).slice(0, 5).map(i => ({ item:i.item, sales:vxInr(i.sold_value), margin_pct:i.est_margin_pct, flags:i.flags })),
+      latest_months:(d.pnl || []).slice(-3).map(r => ({ month:r.month, net_sales:vxInr(r.net_sales), gross_margin_pct:r.gross_margin_pct_pre_stock, in_progress:r.provisional })),
+      note:'Single source (Tally): call these signals. Gross margin is before stock movement unless stated.'
+    });
+  },
+
   get_sources(){
     const keys = ['razorpay', 'cashfree', 'zoho', 'tally', 'odoo', 'shopify'];
     const rows = keys.map(k => { const h = mgSourceHealth(k); return { source:MG_SRC_LABEL[k], connected:!!h.on, status:h.text || null, needs_attention:!!h.warn }; });

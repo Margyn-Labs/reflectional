@@ -457,7 +457,7 @@ async function handleSpeak(req, res) {
 //     the card appeared must be an explicit yes. Anything that messages a
 //     customer, or touches several rows at once, needs a tap on the card.
 const PAGE_KEYS = ['home', 'inbox', 'cash', 'payments', 'receivables', 'payables', 'gst', 'books', 'invoicing', 'calculate',
-  'customers', 'vendors', 'cfopack', 'analytics', 'scores', 'history', 'agents', 'connectors', 'people', 'settings', 'audit', 'financing', 'profile'];
+  'customers', 'vendors', 'margin', 'cfopack', 'analytics', 'scores', 'history', 'agents', 'connectors', 'people', 'settings', 'audit', 'financing', 'profile'];
 const DIRECTION = { type: 'string', enum: ['receivables', 'payables'], description: 'receivables = money customers owe the business; payables = money the business owes vendors.' };
 const NO_ARGS = { type: 'object', properties: {}, additionalProperties: false };
 
@@ -553,6 +553,12 @@ const REALTIME_TOOLS = [
     type: 'function',
     name: 'get_gst',
     description: 'GST payable this month, input tax credit at risk, vendors who have not filed, and the vendors behind the risk.',
+    parameters: NO_ARGS
+  },
+  {
+    type: 'function',
+    name: 'get_margin',
+    description: 'How much the business keeps, from the Tally books: net sales, gross margin before and after stock movement, month-on-month change, returns, how long customers take to pay and what that waiting costs, the slowest payers, and how far to trust the numbers. Single source (Tally), so call figures signals. Quote the headlines; never work out margin yourself. Item-level margin is only present when items_available is true.',
     parameters: NO_ARGS
   },
   {
@@ -737,7 +743,7 @@ const REALTIME_TOOLS = [
 // propose_change / confirm_pending_change (typed chat has propose_action and a
 // tap-to-confirm card) and end_conversation. These run in the browser; see
 // the pause/resume in the handler above.
-const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst',
+const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst', 'get_margin',
   'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close', 'scroll'];
 const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
   .map(t => ({ name: t.name, description: t.description.replace(/floating workspace next to the conversation/g, 'conversation as a card'), input_schema: t.parameters }));
@@ -1108,7 +1114,7 @@ DRIVING THE APP — this conversation is in the Margyn panel beside the app, and
 - Show, don't just tell: when they ask to see, show, compare or check something (P&L, who owes what, cash, GST, a customer, what's waiting), call show_view. It draws a live card right in this conversation from the app's own figures, so you never read numbers into it. Then say one short line about what matters in it. Don't add another line saying it's shown.
 - For anything show_view doesn't cover, use show_table or show_chart with figures from your tools only. show_note for a written summary or next steps.
 - "Open", "go to", "take me to" mean navigate (or open_party for one customer/vendor). Also navigate when they need to work on that page themselves. Never navigate just to answer a question.
-- Live figures: get_overview, get_cash, get_gst, get_inbox, query_parties, get_sources read exactly what's on their screen right now. Prefer them over the data block when they differ, and use them for anything the block doesn't carry (the cash forecast, per-customer lists, what's waiting).
+- Live figures: get_overview, get_cash, get_gst, get_margin, get_inbox, query_parties, get_sources read exactly what's on their screen right now. Prefer them over the data block when they differ, and use them for anything the block doesn't carry (the cash forecast, per-customer lists, what's waiting).
 - "This", "here", "that one" means what's on screen: call get_screen first.
 - "Scroll down / up" or "go to <section>" means call scroll.
 - "Close this / that window / the side panel", "band karo", "hatao" means call close (target "top" unless they name one). You can close anything you or they opened.
