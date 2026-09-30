@@ -16,6 +16,37 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   } catch(err){ showAuthError(err.message || 'Could not log in.'); }
   finally { btn.disabled = false; btn.textContent = 'Log in'; }
 });
+document.getElementById('forgotLink').addEventListener('click', () => {
+  document.getElementById('forgotEmail').value = document.getElementById('loginEmail').value.trim();
+  showAuthForm('forgotForm');
+});
+document.getElementById('forgotBack').addEventListener('click', () => showAuthForm('loginForm'));
+document.getElementById('forgotForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('forgotSubmit'); clearAuthErrors(); btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const { error } = await sbClient.auth.resetPasswordForEmail(document.getElementById('forgotEmail').value.trim(), { redirectTo: window.location.origin + window.location.pathname });
+    if(error) throw error;
+    showAuthInfo('If that email has an account, a reset link is on its way. Check your inbox (and spam).');
+  } catch(err){ showAuthError(err.message || 'Could not send the reset email.'); }
+  finally { btn.disabled = false; btn.textContent = 'Send reset link'; }
+});
+document.getElementById('resetForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('resetSubmit'); clearAuthErrors();
+  const pw = document.getElementById('resetPassword').value;
+  if(pw !== document.getElementById('resetPassword2').value){ showAuthError('The two passwords don’t match.'); return; }
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const { error } = await sbClient.auth.updateUser({ password: pw });
+    if(error) throw error;
+    // Password set; the recovery session is a valid login, so drop the gate and route in.
+    mgRecovery = false;
+    history.replaceState(null, '', location.pathname);
+    const { data:{ session } } = await sbClient.auth.getSession();
+    location.reload();
+  } catch(err){ showAuthError(err.message || 'Could not update the password.'); btn.disabled = false; btn.textContent = 'Set new password'; }
+});
 document.getElementById('signupForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('signupSubmit'); clearAuthErrors(); btn.disabled = true; btn.textContent = 'Creating account…';

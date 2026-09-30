@@ -132,6 +132,9 @@
   .auth-submit:disabled{ opacity:0.5; cursor:not-allowed; }
   .auth-error{ font-size:12px; color:#B3432E; margin-top:12px; display:none; }
   .auth-error.show{ display:block; }
+  .auth-link{ display:block; margin:14px auto 0; background:none; border:none; padding:0; font:600 12px 'Manrope',sans-serif; color:var(--text-2); cursor:pointer; }
+  .auth-link:hover{ color:var(--emerald-bright); text-decoration:underline; }
+  .auth-hint{ font-size:13px; color:var(--text-2); margin:0 0 16px; line-height:1.5; }
   header.app-head{ margin-bottom:26px; }
   /* redesigned views carry their own page header, suppress the shared one there */
   .wrap:has(#view-summary:not(.hidden)) .app-head,

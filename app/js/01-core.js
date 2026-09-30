@@ -97,6 +97,31 @@ function showAuthError(msg){
   if(!el) return;
   el.style.color = ''; el.textContent = msg; el.classList.add('show');
 }
+function showAuthInfo(msg){
+  const f = document.querySelector('.auth-form.active');
+  const el = f && f.querySelector('.auth-error');
+  if(!el) return;
+  el.style.color = 'var(--emerald-bright)'; el.textContent = msg; el.classList.add('show');
+}
+/* Password recovery: the email link lands here with a recovery session.
+   Until a new password is set we must NOT route into the app. */
+let mgRecovery = /[#&?]type=recovery\b/.test(location.hash + location.search);
+function showAuthForm(id){
+  document.querySelectorAll('.auth-form').forEach(f => f.classList.toggle('active', f.id === id));
+  const bar = document.querySelector('.auth-tab-bar'); if(bar) bar.style.display = (id === 'loginForm' || id === 'signupForm') ? '' : 'none';
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', (t.dataset.form + 'Form') === id));
+  clearAuthErrors();
+}
+function showRecoveryGate(){
+  document.getElementById('appShell').classList.add('hidden');
+  document.getElementById('onboardGate').classList.add('hidden');
+  document.getElementById('authGate').classList.remove('hidden');
+  const t = document.getElementById('authTitle'); if(t) t.textContent = 'Set a new password.';
+  const sub = document.querySelector('#authGate .sub'); if(sub) sub.style.display = 'none';
+  const g = document.getElementById('googleAuthBtn'); if(g) g.style.display = 'none';
+  const d = document.querySelector('.oauth-divider'); if(d) d.style.display = 'none';
+  showAuthForm('resetForm');
+}
 function clearAuthErrors(){ document.querySelectorAll('.auth-error').forEach(e => e.classList.remove('show')); }
 /* Ops-console usage ping — writes an allowlisted row to product_events via
    /api/ops?action=track. Founder-only surface; this call is pure telemetry.
@@ -126,8 +151,20 @@ async function initSupabase(){
   const { createClient } = window.supabase;
   sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const { data:{ session } } = await sbClient.auth.getSession();
-  await routeFor(session);
-  sbClient.auth.onAuthStateChange((_e, s) => routeFor(s));
+  if(mgRecovery && session){ showRecoveryGate(); }
+  else {
+    mgRecovery = false;
+    if(/error_code=otp_expired|error_description=/.test(location.hash)){
+      showAuthForm('forgotForm');
+      showAuthError('That reset link has expired or was already used. Request a new one.');
+      history.replaceState(null, '', location.pathname);
+    } else await routeFor(session);
+  }
+  sbClient.auth.onAuthStateChange((e, s) => {
+    if(e === 'PASSWORD_RECOVERY'){ mgRecovery = true; showRecoveryGate(); return; }
+    if(mgRecovery) return;
+    routeFor(s);
+  });
 }
 async function routeFor(session){
   if(!session){

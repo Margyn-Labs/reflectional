@@ -43,6 +43,24 @@
         <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••"></div>
       <button type="submit" class="auth-submit" id="loginSubmit">Log in</button>
       <div class="auth-error" id="loginError"></div>
+      <button type="button" class="auth-link" id="forgotLink">Forgot password?</button>
+    </form>
+    <form class="auth-form" id="forgotForm">
+      <p class="auth-hint">Enter your email and we’ll send you a link to set a new password.</p>
+      <div class="auth-field"><label for="forgotEmail">Email</label>
+        <input type="email" id="forgotEmail" required autocomplete="email" placeholder="you@company.com"></div>
+      <button type="submit" class="auth-submit" id="forgotSubmit">Send reset link</button>
+      <div class="auth-error" id="forgotError"></div>
+      <button type="button" class="auth-link" id="forgotBack">&larr; Back to log in</button>
+    </form>
+    <form class="auth-form" id="resetForm">
+      <p class="auth-hint">Choose a new password for your account.</p>
+      <div class="auth-field"><label for="resetPassword">New password (min 6 characters)</label>
+        <input type="password" id="resetPassword" required autocomplete="new-password" placeholder="••••••••" minlength="6"></div>
+      <div class="auth-field"><label for="resetPassword2">Confirm new password</label>
+        <input type="password" id="resetPassword2" required autocomplete="new-password" placeholder="••••••••" minlength="6"></div>
+      <button type="submit" class="auth-submit" id="resetSubmit">Set new password</button>
+      <div class="auth-error" id="resetError"></div>
     </form>
     <form class="auth-form" id="signupForm">
       <div class="auth-field"><label for="signupEmail">Email</label>
