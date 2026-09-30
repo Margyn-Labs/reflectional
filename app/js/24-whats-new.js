@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-01-password-reset', date:'1 Oct 2026', title:'Forgot your password?',
+    items:[
+      { t:'Reset it yourself', what:'If you can’t remember your password, you can now set a new one without asking us. We email you a link; it opens a screen where you choose the new password.',
+        how:'On the log-in screen click “Forgot password?”, enter your email, then open the link we send you.' }
+    ]
+  },
+  {
     id:'2026-09-30-margin-page', date:'30 Sept 2026', title:'See how much you really keep',
     items:[
       { t:'A Margin page, built from your Tally books', what:'Sales, purchases, running costs and profit month by month, plus returns, freight, who is slow to pay and what that waiting costs you. It uses only what your Tally agent already sends, so nothing new to install.',
