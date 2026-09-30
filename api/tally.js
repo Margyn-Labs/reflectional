@@ -13,6 +13,8 @@
  *   POST /api/tally?action=pair-complete  (pair code)  exchange code -> long-lived install key
  *   POST /api/tally?action=ingest         (install key) receive a batch of rows, upsert w/ provenance
  *   GET  /api/tally?action=status         (user JWT)   list this user's paired installs + counts
+ *   GET  /api/tally?action=analytics      (user JWT)   P&L, margin, customers, working capital, GST est., data quality
+ *   POST /api/tally?action=classify       (user JWT)   confirm which P&L bucket a ledger belongs to
  *   POST /api/tally?action=revoke         (user JWT)   revoke an install key
  *
  * AUTH MODEL
@@ -40,6 +42,7 @@ const {
   selectRows
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
+const { computeAnalytics, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -111,6 +114,8 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST' && action === 'ingest')         return await handleIngest(req, res);
     if (req.method === 'GET'  && action === 'status')         return await handleStatus(req, res);
     if (req.method === 'GET'  && action === 'summary')        return await handleSummary(req, res);
+    if (req.method === 'GET'  && action === 'analytics')      return await handleAnalytics(req, res);
+    if (req.method === 'POST' && action === 'classify')       return await handleClassify(req, res);
     if (req.method === 'POST' && action === 'revoke')         return await handleRevoke(req, res);
   } catch (err) {
     console.error('tally.js unhandled error:', err && err.message);
@@ -119,7 +124,7 @@ module.exports = async function handler(req, res) {
 
   return json(res, 400, {
     error: 'unknown_action',
-    message: 'Expected ?action= one of pair-init, pair-complete, ingest, status, summary, revoke.'
+    message: 'Expected ?action= one of pair-init, pair-complete, ingest, status, summary, analytics, classify, revoke.'
   });
 };
 
@@ -247,6 +252,136 @@ async function handleSummary(req, res) {
     ledgers: { count: ledgerItems.length, items: ledgerItems.slice(0, 120) },
     provenance: 'signal'
   });
+}
+
+
+/* ------------------------------------------------------------------ */
+/* analytics — GET ?action=analytics[&company=NAME&credit_rate=0.12]   */
+/* Everything the agent already syncs, turned into margin analytics.   */
+/* All maths lives in api/_lib/tallyAnalytics.js (pure, unit-tested).  */
+/* ------------------------------------------------------------------ */
+// PostgREST caps a page at 1,000 rows. Fetch pages four at a time instead of one after
+// another so a year of vouchers fits comfortably inside the function's time limit.
+async function pagedAll(table, query, max) {
+  const pageSize = 1000, rows = [];
+  for (let offset = 0; offset < max; offset += pageSize * 4) {
+    const pages = await Promise.all([0, 1, 2, 3].map((i) =>
+      offset + i * pageSize < max ? selectRows(table, `${query}&limit=${pageSize}&offset=${offset + i * pageSize}`) : []));
+    let short = false;
+    for (const p of pages) { rows.push(...p); if (p.length < pageSize) short = true; }
+    if (short) return { rows, truncated: false };
+  }
+  return { rows, truncated: true };
+}
+
+async function handleAnalytics(req, res) {
+  let user;
+  try { user = await getUserFromRequest(req); }
+  catch { return json(res, 500, { error: 'auth_check_failed' }); }
+  if (!user) return json(res, 401, { error: 'unauthorized' });
+
+  let installs;
+  try {
+    installs = await selectRows(
+      'tally_installs',
+      `select=id,company_name,last_sync_at,tally_edition&user_id=eq.${user.id}&status=eq.active&order=last_sync_at.desc.nullslast`
+    );
+  } catch (e) { return json(res, 500, { error: 'lookup_failed' }); }
+  if (!installs.length) return json(res, 200, { connected: false });
+
+  const companies = [...new Set(installs.map((i) => i.company_name).filter(Boolean))];
+  const want = String((req.query && req.query.company) || '').trim();
+  const company = want && companies.includes(want) ? want : (installs[0].company_name || null);
+  const chosen = installs.filter((i) => (company ? i.company_name === company : true));
+  const inList = `(${chosen.map((i) => i.id).join(',')})`;
+  const lastSync = chosen.map((i) => i.last_sync_at).filter(Boolean).sort().pop() || null;
+
+  let ledgers, bills, vouchers, truncated = false, overrides = {}, syncRuns = [];
+  try {
+    // The three reads are independent; run them together. Vouchers are the big one,
+    // so they page four requests at a time (see pagedAll).
+    const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries';
+    const voucherQ = async () => {
+      try { return await pagedAll('tally_vouchers', `select=${base},items&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000); }
+      catch (e) {
+        // `items` column arrives with the inventory migration; work without it until then.
+        return await pagedAll('tally_vouchers', `select=${base}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000);
+      }
+    };
+    const [L, B, V] = await Promise.all([
+      pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000),
+      pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, 10000),
+      voucherQ()
+    ]);
+    ledgers = L.rows; bills = B.rows; vouchers = V.rows; truncated = V.truncated;
+  } catch (e) { return json(res, 500, { error: 'lookup_failed' }); }
+
+  try {
+    const O = await selectRows('tally_ledger_classes', `select=ledger_name,bucket&user_id=eq.${user.id}${company ? '&company_name=eq.' + encodeURIComponent(company) : ''}`);
+    overrides = Object.fromEntries(O.map((o) => [o.ledger_name, o.bucket]));
+  } catch (e) { /* table not created yet: no overrides */ }
+  try {
+    // The agent soft-fails vouchers and bills, so the last outcome per kind is part of how far to trust this.
+    syncRuns = await selectRows('tally_sync_runs', `select=kind,status,error_message,rows_received,started_at&user_id=eq.${user.id}&install_id=in.${inList}&order=started_at.desc&limit=40`);
+  } catch (e) { /* older deployments */ }
+
+  const rate = parseFloat(req.query && req.query.credit_rate);
+  const out = computeAnalytics({ ledgers, vouchers, bills, overrides, syncRuns, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  const staleH = lastSync ? Math.round((Date.now() - Date.parse(lastSync)) / 3600000) : null;
+  if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind Tally.`);
+  if (truncated) out.quality.reasons.unshift('Voucher history was capped at 20,000 rows, so older months may be incomplete.');
+  return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out });
+}
+
+/* ------------------------------------------------------------------ */
+/* classify — POST ?action=classify  body { ledger, bucket, company? }  */
+/* The user confirms which P&L bucket a ledger belongs to. Stored once  */
+/* and reused on every later sync. bucket '' clears the override.       */
+/* ------------------------------------------------------------------ */
+const CLASSIFY_BUCKETS = PL_BUCKETS.concat(['tax', 'debtor', 'creditor', 'bank', 'cash', 'stock', 'balance_sheet']);
+
+// Changing how a ledger is treated changes the margin, so it goes in the Audit log with who did it.
+async function auditClassify(user, company, ledger, bucket) {
+  const row = {
+    user_id: user.id, entity_type: 'margin mapping', event: 'updated', party_name: ledger, source: 'tally',
+    note: (bucket ? 'Counted as ' + bucket.replace(/_/g, ' ') : 'Mapping cleared') + (company ? ' (' + company + ')' : '')
+  };
+  try {
+    const who = user.member ? (user.member.name || user.email) : user.email;
+    await insertRows('ledger_events', [{ ...row, actor_id: user.auth_id || user.id, actor_name: who || null, channel: 'app' }]);
+  } catch (e) {
+    await insertRows('ledger_events', [row]).catch(() => {});   // before the 09-30 actor columns
+  }
+}
+
+async function handleClassify(req, res) {
+  let user;
+  try { user = await getUserFromRequest(req); }
+  catch { return json(res, 500, { error: 'auth_check_failed' }); }
+  if (!user) return json(res, 401, { error: 'unauthorized' });
+
+  const body = parseBody(req);
+  const ledger = str(body.ledger);
+  const bucket = body.bucket == null ? '' : String(body.bucket);
+  const company = str(body.company) || '';
+  if (company.length > 200) return json(res, 400, { error: 'bad_company' });
+  if (!ledger || ledger.length > 200) return json(res, 400, { error: 'bad_ledger' });
+  if (bucket && !CLASSIFY_BUCKETS.includes(bucket)) return json(res, 400, { error: 'bad_bucket', message: 'bucket must be one of ' + CLASSIFY_BUCKETS.join(', ') });
+
+  try {
+    if (!bucket) {
+      const del = await restRequest(`tally_ledger_classes?user_id=eq.${user.id}&company_name=eq.${encodeURIComponent(company)}&ledger_name=eq.${encodeURIComponent(ledger)}`, { method: 'DELETE' });
+      if (!del.ok) return json(res, 500, { error: 'save_failed' });
+      await auditClassify(user, company, ledger, null);
+      return json(res, 200, { ok: true, cleared: true });
+    }
+    await insertRows('tally_ledger_classes', [{
+      user_id: user.id, company_name: company, ledger_name: ledger, bucket,
+      set_by: user.auth_id || user.id, updated_at: new Date().toISOString()
+    }], { onConflict: 'user_id,company_name,ledger_name', merge: true });
+  } catch (e) { return json(res, 500, { error: 'save_failed' }); }
+  await auditClassify(user, company, ledger, bucket);
+  return json(res, 200, { ok: true, ledger, bucket });
 }
 
 /* ------------------------------------------------------------------ */
@@ -430,6 +565,7 @@ const INGEST = {
       amount: num(r.amount),
       is_cancelled: r.is_cancelled === true,
       entries: Array.isArray(r.entries) ? r.entries : null,
+      items: Array.isArray(r.items) ? r.items : null,
       source: 'tally',
       verification_status: 'signal',
       synced_at: ctx.now

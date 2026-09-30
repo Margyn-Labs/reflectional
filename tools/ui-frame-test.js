@@ -364,7 +364,30 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(!/Cash|Runway|GST payable/.test(tiles) && /Receivables overdue/.test(tiles), 'Approver: Home shows no cash, runway or GST tiles');
   const homeHeads = await p.$$eval('#view-home .mg-panel-h h2', x => x.map(e => e.textContent).join('|'));
   ok(!(await p.$('#view-home [data-fc-adjust]')) && !/Cash position|forecast/i.test(homeHeads), 'Approver: no cash chart or forecast panel (' + homeHeads + ')');
+  ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="margin"]').classList.contains('mg-hide-perm')), 'Approver: Margin hidden (needs cash access)');
   ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="cash"]').classList.contains('mg-hide-perm') && !document.querySelector('.pagenav button[data-view="payables"]').classList.contains('mg-hide-perm')), 'Approver: Cash hidden, Payables shown');
+  await p.evaluate(() => { mgMe = null; mgActor = null; mgApplyActor(); showView('home'); });
+
+  // 10e. Margin (Tally analytics): rail, page, tiles, honest item state, confirming a ledger, permission
+  ok(await p.evaluate(() => { const b = document.querySelector('.pagenav button[data-view="margin"]'); return !!b && b.closest('.pagenav').textContent.indexOf('Insight') < b.closest('.pagenav').textContent.indexOf('Margin'); }), 'Margin sits under Insight in the rail');
+  await p.click('.pagenav button[data-view="margin"]'); await p.waitForTimeout(700);
+  ok(p.url().endsWith('#/margin') && JSON.stringify(await vis()) === '["view-margin"]', 'rail click Margin -> #/margin (' + p.url().split('#')[1] + ')');
+  ok(/Margin/.test(await p.textContent('#view-margin .mg-title')), 'Margin page has its title');
+  const marTiles = await p.$$eval('#view-margin .mg-tile-l', x => x.map(e => e.textContent));
+  ok(marTiles.slice(0, 4).join('|') === 'Net sales, before GST|Gross margin, before stock movement|Returns and credit notes|Days to get paid', 'Margin headline tiles: ' + marTiles.slice(0, 4).join(' | '));
+  ok(/^₹[\d.]+ (Cr|L)$/.test(await p.textContent('#view-margin .mg-tile:nth-child(1) .mg-tile-v')) && /^₹[\d,]+$/.test(await p.getAttribute('#view-margin .mg-tile:nth-child(1) .mg-tile-v', 'title')), 'tile shows Cr/L and the full figure on hover');
+  ok(/one source/i.test(await p.textContent('#view-margin')) && /corroborated by bank or GST/.test(await p.textContent('#view-margin')), 'page says it is one source, not yet corroborated');
+  ok(await p.evaluate(() => { const h = [...document.querySelectorAll('#view-margin .mg-panel-h h2')].find(x => x.textContent === 'What stands out'); return !!h && h.closest('.mg-panel').querySelectorAll('li').length >= 3; }), 'What stands out lists computed headlines');
+  ok((await p.$$('#view-margin table.mg-grid')).length >= 4 && (await p.$$eval('#view-margin table.mg-grid', t => t.every(x => x.tBodies[0] && x.tBodies[0].rows.length > 0))), 'Margin tables all have rows');
+  ok(/Not available yet/.test(await p.textContent('#view-margin')) && /next Margyn Tally agent update/.test(await p.textContent('#view-margin')), 'item margin is honestly "not available yet"');
+  ok(await p.evaluate(() => { const h = [...document.querySelectorAll('#view-margin .mg-panel-h h2')].find(x => x.textContent === 'Month by month'); const t = h.closest('.mg-panel').textContent; return /month in progress/.test(t) && /Orders and delivery notes are left out/.test(t); }), 'monthly table marks the month in progress and says orders are left out');
+  const marBefore = await p.evaluate(() => (window.__tallyCalls || []).length);
+  await p.selectOption('#view-margin [data-mar-bucket="Digital Marketing"]', 'opex');
+  await p.click('#view-margin [data-mar-confirm="Digital Marketing"]'); await p.waitForTimeout(500);
+  ok(await p.evaluate(n => (window.__tallyCalls || []).length === n + 1 && window.__tallyCalls[window.__tallyCalls.length - 1] === 'classify', marBefore), 'confirming a ledger calls classify once');
+  await p.click('#view-margin [data-mar-refresh]'); await p.waitForTimeout(400);
+  ok(await p.evaluate(() => { const d = mgMarginForAsk(); return d && d.headlines.length > 0 && d.items_available === false && d.confidence; }), 'Margyn gets headlines and an honest items flag');
+  ok(await p.evaluate(() => typeof VX_TOOLS.get_margin === 'function' && VX_TOOLS.get_margin().slowest_payers.length > 0), 'voice tool get_margin returns slowest payers');
   await p.evaluate(() => { mgMe = null; mgActor = null; mgApplyActor(); showView('home'); });
 
   // 10d. An invite link is kept through sign-in and the URL is cleaned

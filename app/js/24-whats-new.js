@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-09-30-margin-page', date:'30 Sept 2026', title:'See how much you really keep',
+    items:[
+      { t:'A Margin page, built from your Tally books', what:'Sales, purchases, running costs and profit month by month, plus returns, freight, who is slow to pay and what that waiting costs you. It uses only what your Tally agent already sends, so nothing new to install.',
+        how:'Open Margin under Insight.', act:'go:margin' },
+      { t:'It tells you how far to trust it', what:'Everything comes from one source, so each figure is labelled as a signal until bank and GST agree. If a ledger can’t be placed in the profit and loss, Margyn asks you once and remembers.',
+        how:'Scroll to “Margyn needs your help” and confirm the ledgers it lists.' }
+    ]
+  },
+  {
     id:'2026-09-30-smoother-calls', date:'30 Sept 2026', title:'Smoother calls with Margyn',
     items:[
       { t:'Everything in Roman letters', what:'What you say and what Margyn says now always shows in Roman letters, even when you speak Hindi. Margyn talks English by default, switches to easy Hinglish when you do, and switches back when you speak English.',
@@ -115,6 +124,7 @@ const MG_RELEASES = [
 const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
 const MG_WN_ACTS = {
   panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
+  margin:{ label:'Open Margin', run:() => { if(typeof showView === 'function') showView('margin'); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
   team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
 };

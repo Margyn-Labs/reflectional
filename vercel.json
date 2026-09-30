@@ -65,6 +65,7 @@
     "api/sync-razorpay.js": { "maxDuration": 300 },
     "api/shopify.js": { "maxDuration": 300 },
     "api/whatsapp.js": { "maxDuration": 300 },
-    "api/reconcile.js": { "maxDuration": 300 }
+    "api/reconcile.js": { "maxDuration": 300 },
+    "api/tally.js": { "maxDuration": 60 }
   }
 }
