@@ -150,25 +150,32 @@ function buildLedgerRequest({ company }) {
 
 /**
  * Voucher types and the base type each one rolls up to. Companies rename them ("KANDIVALI SALE",
- * "VASAI SALES"); the base type ($Parent: Sales, Purchase, Receipt, Payment, Journal, Credit Note...) is
- * what Tally itself treats them as.
+ * "VASAI SALES"); the base type ($Parent: Sales, Purchase, Receipt, ...) is what Tally treats them as.
+ *
+ * Shape copied from tally-database-loader's "vouchertype" collection (TYPE VoucherType + FETCH).
+ * NOT <SOURCECOLLECTION>Voucher Types</SOURCECOLLECTION>: that name doesn't exist, and on real
+ * TallyPrime an unknown name raises an "Error in TDL" box that CLOSES Tally when OK is clicked
+ * (VP's test machine, 2026-10-01). Every request must be a shape proven elsewhere; see SAFETY below.
  */
 function buildVoucherTypesRequest({ company }) {
   return [
     '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>MargynVoucherTypes</ID></HEADER>',
     '<BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>',
     `<SVCURRENTCOMPANY>${xmlEscape(company)}</SVCURRENTCOMPANY></STATICVARIABLES>`,
-    '<TDL><TDLMESSAGE><COLLECTION NAME="MargynVoucherTypes"><SOURCECOLLECTION>Voucher Types</SOURCECOLLECTION>',
-    '<COMPUTE>MARGYNNAME:$Name</COMPUTE><COMPUTE>MARGYNPARENT:$Parent</COMPUTE>',
-    '</COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+    '<TDL><TDLMESSAGE><COLLECTION NAME="MargynVoucherTypes"><TYPE>VoucherType</TYPE><FETCH>Guid,Name,Parent</FETCH></COLLECTION>',
+    '</TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
   ].join('');
 }
 
-/** { 'KANDIVALI SALE': 'Sales', ... } */
+/** { 'KANDIVALI SALE': 'Sales', ... } — name from the NAME attribute (or <NAME>), base from <PARENT>. */
 function parseVoucherTypes(xml) {
   const out = {};
-  for (const b of extractBlocks(xml, 'VOUCHERTYPE')) {
-    const name = tagText(b, 'MARGYNNAME'), parent = tagText(b, 'MARGYNPARENT');
+  const re = /<VOUCHERTYPE\b([^>]*)>([\s\S]*?)<\/VOUCHERTYPE>/gi;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    const attr = (/\bNAME="([^"]*)"/i.exec(m[1]) || [])[1];
+    const name = attr ? decodeEntities(attr).trim() : (tagText(m[2], 'NAME') || tagText(m[2], 'MARGYNNAME'));
+    const parent = tagText(m[2], 'PARENT') || tagText(m[2], 'MARGYNPARENT');
     if (name && parent) out[name] = parent;
   }
   return out;
@@ -244,62 +251,70 @@ function buildVoucherRequest({ company, fromDate, toDate }) {
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** '20260401' | '2026-04-01' -> '1-Apr-2026' (the form every Tally build parses unambiguously). */
+/** '20260401' | '2026-04-01' -> '1-Apr-2026' (static variables). */
 function toTallyDate(d) {
   const s = String(d).replace(/-/g, '');
   if (!/^\d{8}$/.test(s)) throw new Error(`bad date ${d}`);
   return `${parseInt(s.slice(6, 8), 10)}-${MONTH_ABBR[parseInt(s.slice(4, 6), 10) - 1]}-${s.slice(0, 4)}`;
 }
+const compactDate = (d) => { const s = String(d).replace(/-/g, ''); if (!/^\d{8}$/.test(s)) throw new Error(`bad date ${d}`); return s; };
 
 function periodVars(company, from, to) {
   return [
     '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>',
     company ? `<SVCURRENTCOMPANY>${xmlEscape(company)}</SVCURRENTCOMPANY>` : '',
-    from ? `<SVFROMDATE TYPE="Date">${toTallyDate(from)}</SVFROMDATE>` : '',
-    to ? `<SVTODATE TYPE="Date">${toTallyDate(to)}</SVTODATE>` : ''
+    from ? `<SVFROMDATE>${toTallyDate(from)}</SVFROMDATE>` : '',
+    to ? `<SVTODATE>${toTallyDate(to)}</SVTODATE>` : ''
   ].join('');
 }
 
-const VOUCHER_FETCH = 'Date,VoucherTypeName,VoucherNumber,PartyLedgerName,Narration,Guid,MasterId,AlterId,' +
-  'IsCancelled,IsOptional,IsInvoice,AllLedgerEntries.*,AllInventoryEntries.*,AllInventoryEntries.AccountingAllocations.*';
+/*
+ * SAFETY: an "Error in TDL" on the client's Tally opens a box, and clicking OK CLOSES TALLY.
+ * So there is no trial and error here. Every request below copies a shape that
+ * tally-database-loader (github.com/dhananjay1405/tally-database-loader, run on thousands of
+ * TallyPrime installs) sends: the same collection TYPEs, the same FETCH method names, the same
+ * built-in filter IsNonOptionalCancelledVchs, the same period formula. Nothing is added that the
+ * loader doesn't already use. voucherSync.js also blocks, per machine, any request that was in
+ * flight when Tally went away.
+ */
+const VOUCHER_FETCH = [
+  'guid', 'date', 'vouchertypename', 'vouchernumber', 'narration', 'partyledgername', 'isinvoice',
+  'allledgerentries.ledgername', 'allledgerentries.amount',
+  'allinventoryentries.itemname', 'allinventoryentries.billedqty', 'allinventoryentries.rate',
+  'allinventoryentries.amount', 'allinventoryentries.godownname'
+].join(',');
 
 /**
- * Voucher collection for [from, to] (YYYYMMDD). `alterIdAfter` narrows to vouchers created or
- * edited since a known AlterID (incremental sync). `dateFn` is the TDL date constructor; builds
- * differ on which they accept, so the ladder tries both.
+ * Vouchers in [from, to] (YYYYMMDD), not optional, not cancelled. `alterIdAfter` narrows to vouchers
+ * created/edited since a known AlterID (the loader's incremental filter, `$AlterID > n`).
  */
-const VOUCHER_FETCH_LITE = 'Date,VoucherTypeName,VoucherNumber,PartyLedgerName,Narration,Guid,AlterId,IsCancelled,IsOptional,' +
-  'AllLedgerEntries.*,AllInventoryEntries.*';
-
-function buildVoucherCollectionRequest({ company, from, to, alterIdAfter, dateFn = '$$Date', fetch = VOUCHER_FETCH }) {
+function buildVoucherCollectionRequest({ company, from, to, alterIdAfter }) {
   const conds = [];
-  if (from) conds.push(`$Date &gt;= ${dateFn}:"${toTallyDate(from)}"`);
-  if (to) conds.push(`$Date &lt;= ${dateFn}:"${toTallyDate(to)}"`);
-  if (alterIdAfter != null) conds.push(`$AlterId &gt; ${parseInt(alterIdAfter, 10) || 0}`);
-  const filter = conds.length ? '<FILTER>MargynVchWindow</FILTER>' : '';
-  const formula = conds.length ? `<SYSTEM TYPE="Formulae" NAME="MargynVchWindow">${conds.join(' AND ')}</SYSTEM>` : '';
+  if (from && to) conds.push(`$Date &gt;= $$Date:"${compactDate(from)}" and $Date &lt;= $$Date:"${compactDate(to)}"`);
+  if (alterIdAfter != null) conds.push(`$AlterID &gt; ${parseInt(alterIdAfter, 10) || 0}`);
+  const names = ['IsNonOptionalCancelledVchs'].concat(conds.map((_, i) => `MargynFltr${i + 1}`));
   return [
     '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>MargynVouchers</ID></HEADER>',
     `<BODY><DESC><STATICVARIABLES>${periodVars(company, from, to)}</STATICVARIABLES>`,
-    '<TDL><TDLMESSAGE><COLLECTION NAME="MargynVouchers" ISMODIFY="No"><TYPE>Voucher</TYPE>',
-    `<FETCH>${fetch}</FETCH>${filter}</COLLECTION>${formula}`,
+    '<TDL><TDLMESSAGE><COLLECTION NAME="MargynVouchers"><TYPE>Voucher</TYPE>',
+    `<FETCH>${VOUCHER_FETCH}</FETCH><FILTER>${names.join(',')}</FILTER></COLLECTION>`,
+    conds.map((c, i) => `<SYSTEM TYPE="Formulae" NAME="MargynFltr${i + 1}">${c}</SYSTEM>`).join(''),
     '</TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
   ].join('');
 }
 
-/** Built-in report export (Voucher Register / Day Book) with the period typed as Date. Last-resort rungs. */
+/** Built-in report with the period typed as Date (no TDL definitions at all). Fallback only. */
 function buildReportPeriodRequest({ company, from, to, report }) {
   return [
     `<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>${xmlEscape(report)}</ID></HEADER>`,
-    `<BODY><DESC><STATICVARIABLES>${periodVars(company, from, to)}<EXPLODEFLAG>Yes</EXPLODEFLAG></STATICVARIABLES></DESC></BODY></ENVELOPE>`
+    `<BODY><DESC><STATICVARIABLES>${periodVars(company, from, to)}</STATICVARIABLES></DESC></BODY></ENVELOPE>`
   ].join('');
 }
 
+// 'collection' is the real path. 'day-book' (what agent 0.1 used, proven not to crash anything but
+// it returns only the current day) is kept only as the fallback if the collection can't be used.
 const VOUCHER_STRATEGIES = {
-  'collection-date': (a) => buildVoucherCollectionRequest(Object.assign({}, a, { dateFn: '$$Date' })),
-  'collection-lite': (a) => buildVoucherCollectionRequest(Object.assign({}, a, { dateFn: '$$Date', fetch: VOUCHER_FETCH_LITE })),
-  'collection-datevalue': (a) => buildVoucherCollectionRequest(Object.assign({}, a, { dateFn: '$$DateValue' })),
-  'voucher-register': (a) => buildReportPeriodRequest(Object.assign({}, a, { report: 'Voucher Register' })),
+  collection: (a) => buildVoucherCollectionRequest(a),
   'day-book': (a) => buildReportPeriodRequest(Object.assign({}, a, { report: 'Day Book' }))
 };
 const VOUCHER_STRATEGY_ORDER = Object.keys(VOUCHER_STRATEGIES);
@@ -310,12 +325,13 @@ const VOUCHER_STRATEGY_ORDER = Object.keys(VOUCHER_STRATEGIES);
  * Same request shape tally-database-loader uses to list companies on every sync.
  */
 function buildCompanyFactsRequest() {
+  // tally-database-loader's fetchTallyCompanyList, verbatim apart from the collection name, plus
+  // LastVoucherDate (a Company method the loader reads in its company report).
   return [
     '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>MargynCompanies</ID></HEADER>',
-    '<BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES>',
-    '<TDL><TDLMESSAGE><COLLECTION NAME="MargynCompanies" ISMODIFY="No"><TYPE>Company</TYPE>',
-    '<FETCH>Name,BooksFrom,StartingFrom,LastVoucherDate,AltMstId,AltVchId</FETCH>',
-    '<COMPUTE>MARGYNACTIVE:$$IsEqual:$Name:##SVCurrentCompany</COMPUTE>',
+    '<BODY><DESC><TDL><TDLMESSAGE><COLLECTION NAME="MargynCompanies"><TYPE>Company</TYPE>',
+    '<COMPUTE>IsActiveCompany : $$IsEqual:$Name:##SVCurrentCompany</COMPUTE>',
+    '<FETCH>BooksFrom,LastVoucherDate,AltMstId,AltVchId</FETCH>',
     '</COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
   ].join('');
 }
@@ -337,18 +353,17 @@ function parseCompanyFacts(xml) {
     out.push({
       name: decodeEntities(name).trim(),
       books_from: normaliseDate(tagText(b, 'BOOKSFROM')),
-      starting_from: normaliseDate(tagText(b, 'STARTINGFROM')),
       last_voucher_date: normaliseDate(tagText(b, 'LASTVOUCHERDATE')),
       alt_vch_id: int('ALTVCHID'),
       alt_mst_id: int('ALTMSTID'),
-      active: /^(yes|true|1)$/i.test(tagText(b, 'MARGYNACTIVE') || '')
+      active: /^(yes|true|1)$/i.test(tagText(b, 'ISACTIVECOMPANY') || '')
     });
   }
   // A self-closing / attribute-only company (<COMPANY NAME="X" .../>) has no block body.
   if (!out.length) {
     const re = /<COMPANY\b[^>]*NAME="([^"]+)"/gi;
     let m;
-    while ((m = re.exec(xml)) !== null) out.push({ name: decodeEntities(m[1]).trim(), books_from: null, starting_from: null, last_voucher_date: null, alt_vch_id: null, alt_mst_id: null, active: false });
+    while ((m = re.exec(xml)) !== null) out.push({ name: decodeEntities(m[1]).trim(), books_from: null, last_voucher_date: null, alt_vch_id: null, alt_mst_id: null, active: false });
   }
   return out;
 }
@@ -358,15 +373,15 @@ function parseCompanyFacts(xml) {
  * for a month equals Tally's, nothing was dropped. Aggregate collection (BY + AGGRCOMPUTE), the
  * same request tally-database-loader uses to plan its batches.
  */
-function buildVoucherCountRequest({ company, from, to }) {
+function buildVoucherCountRequest({ company }) {
+  // tally-database-loader's generateVoucherDatewiseCount, verbatim apart from names: whole company,
+  // counted per date by Tally itself.
   return [
     '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>MargynVchCount</ID></HEADER>',
-    `<BODY><DESC><STATICVARIABLES>${periodVars(company, from, to)}</STATICVARIABLES>`,
-    '<TDL><TDLMESSAGE><COLLECTION NAME="MargynVchCount" ISMODIFY="No"><TYPE>Voucher</TYPE>',
-    '<FILTER>MargynCntWindow,MargynCntLive</FILTER>',
-    '<BY>MargynDay:$Date</BY><AGGRCOMPUTE>MargynCount:SUM:$$Number:1</AGGRCOMPUTE></COLLECTION>',
-    `<SYSTEM TYPE="Formulae" NAME="MargynCntWindow">$Date &gt;= $$Date:"${toTallyDate(from)}" AND $Date &lt;= $$Date:"${toTallyDate(to)}"</SYSTEM>`,
-    '<SYSTEM TYPE="Formulae" NAME="MargynCntLive">NOT $IsCancelled AND NOT $IsOptional</SYSTEM>',
+    `<BODY><DESC><STATICVARIABLES>${periodVars(company)}</STATICVARIABLES><TDL><TDLMESSAGE>`,
+    '<COLLECTION NAME="MargynVchCountEx"><TYPE>Voucher</TYPE><FILTER>IsNonOptionalCancelledVchs</FILTER></COLLECTION>',
+    '<COLLECTION NAME="MargynVchCount"><SOURCECOLLECTION>MargynVchCountEx</SOURCECOLLECTION>',
+    '<BY>Date : $Date</BY><AGGRCOMPUTE>Count : SUM : $$Number:1</AGGRCOMPUTE></COLLECTION>',
     '</TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
   ].join('');
 }
@@ -376,7 +391,7 @@ function parseVoucherCounts(xml) {
   const err = responseError(xml);
   if (err) throw new Error(`Tally: ${err}`);
   const out = {};
-  const re = /<MARGYNDAY\b[^>]*>([\s\S]*?)<\/MARGYNDAY>[\s\S]*?<MARGYNCOUNT\b[^>]*>([\s\S]*?)<\/MARGYNCOUNT>/gi;
+  const re = /<DATE\b[^>]*>([\s\S]*?)<\/DATE>[\s\S]*?<COUNT\b[^>]*>([\s\S]*?)<\/COUNT>/gi;
   let m, seen = 0;
   while ((m = re.exec(xml)) !== null) {
     const d = normaliseDate(decodeEntities(m[1]).trim());
@@ -418,7 +433,7 @@ function parseVoucherCounts(xml) {
 function buildBillsRequest({ company, toDate, direction, legacy = false }) {
   // legacy = the exact request that has run in production since 2026-09 (compact, untyped date).
   const d = legacy || !/^\d{8}$/.test(String(toDate)) ? xmlEscape(toDate) : toTallyDate(toDate);
-  const typed = legacy ? '' : ' TYPE="Date"';
+  const typed = '';
   const reportId = direction === 'payable' ? 'Bills Payable' : 'Bills Receivable';
   return [
     '<ENVELOPE>',
@@ -740,7 +755,7 @@ function parseInventoryEntries(voucherBlock) {
   ];
   const items = [];
   for (const e of blocks) {
-    const item = tagText(e, 'STOCKITEMNAME');
+    const item = tagText(e, 'STOCKITEMNAME') || tagText(e, 'ITEMNAME');
     if (!item) continue;
     const billed = parseQtyUnit(tagText(e, 'BILLEDQTY'));
     const actual = parseQtyUnit(tagText(e, 'ACTUALQTY'));
@@ -798,6 +813,7 @@ function parseVouchers(xml) {
     // allocations; the Voucher collection puts them in ALLLEDGERENTRIES, and on some builds
     // repeats lines across lists. A voucher's lines always sum to zero, so take the first
     // combination that balances rather than assuming a shape (summing everything double-counts).
+    const partyName = tagText(b, 'PARTYLEDGERNAME') || tagText(b, 'PARTYNAME') || null;
     const toEntries = (blocks) => {
       const out = [];
       for (const e of blocks) {
@@ -808,7 +824,9 @@ function parseVouchers(xml) {
         out.push({
           ledger,
           amount: Number.isFinite(amount) ? amount : null,
-          is_party: /^(yes|true|1)$/i.test(tagText(e, 'ISPARTYLEDGER') || ''),
+          // The collection read doesn't fetch ISPARTYLEDGER (the loader doesn't); the voucher's party
+          // ledger name identifies the party line just as well.
+          is_party: /^(yes|true|1)$/i.test(tagText(e, 'ISPARTYLEDGER') || '') || (!!partyName && ledger === partyName),
           is_deemed_positive: /^(yes|true|1)$/i.test(tagText(e, 'ISDEEMEDPOSITIVE') || '')
         });
       }

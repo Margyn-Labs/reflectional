@@ -1,6 +1,6 @@
 {
   "name": "margyn-tally-agent-gui",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Syncs your TallyPrime data into Margyn.",
   "author": "Margyn Labs <hello@margynlabs.com>",

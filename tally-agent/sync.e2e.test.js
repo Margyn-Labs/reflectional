@@ -19,7 +19,12 @@ function startMock(port, env) {
   return new Promise((resolve) => {
     const p = spawn(process.execPath, [path.join(__dirname, 'mock-tally.js')], { env: Object.assign({}, process.env, { PORT: String(port) }, env || {}), stdio: ['ignore', 'pipe', 'inherit'] });
     p.stdout.once('data', () => resolve(p));
+    p.once('exit', (code) => { if (code) { console.error('mock failed to start'); process.exit(1); } });
   });
+}
+
+function stopMock(p) {
+  return new Promise((r) => { if (p.exitCode !== null) return r(); p.once('exit', () => r()); p.kill(); });
 }
 
 function startCloud(port) {
@@ -74,7 +79,7 @@ function startCloud(port) {
   assert.strictEqual(r1.vouchers.mode, 'full');
   await new Promise((r) => setTimeout(r, 100));
   const h = store.health;
-  assert.ok(h && h.vouchers && h.vouchers.strategy === 'collection-date', 'health report names the strategy');
+  assert.ok(h && h.vouchers && h.vouchers.strategy === 'collection', 'health report names the strategy');
   assert.ok(Object.values(h.vouchers.months).every((m) => m.complete === true), 'every month matches Tally\'s own count');
   assert.ok(store.maxBody < 4.5e6, 'no request over Vercel\'s 4.5MB cap');
   // item invoices carry the sales ledger and balance
@@ -106,23 +111,26 @@ function startCloud(port) {
   assert.ok(!store.vouchers.has('ghost-1'), 'voucher deleted in Tally is removed');
   assert.strictEqual(store.vouchers.size, 732);
 
-  // 4) A Tally build that rejects $$Date: the ladder settles on $$DateValue, still complete.
-  mock.kill();
-  mock = await startMock(TALLY, { DATEVALUE_ONLY: '1' });
-  store.vouchers.clear();
+  // 4) A request that would close this client's Tally: it happens once, then never again on this PC.
+  await stopMock(mock);
+  mock = await startMock(TALLY, { CRASH_ON: 'MargynVchCount' });
   config.save({ syncState: {} });
+  store.vouchers.clear();
+  await agent.runFullSync(config.load()).catch(() => {});
+  assert.ok((config.load().syncState.blockedRequests || []).includes('voucher-count'), 'the request that closed Tally is switched off');
+  await new Promise((r) => setTimeout(r, 300));
+  mock = await startMock(TALLY, { CRASH_ON: 'MargynVchCount' });   // client reopens Tally
   await agent.runFullSync(config.load());
-  assert.strictEqual(store.vouchers.size, 732, 'complete via the second rung');
-  assert.strictEqual(config.load().syncState.strategy, 'collection-datevalue');
+  assert.strictEqual(store.vouchers.size, 732, 'next sync completes without the blocked request');
+  assert.ok(mock.exitCode === null, 'Tally was not closed a second time');
 
-  // 4b) A Tally that rejects the nested allocations field: the lighter collection rung, still complete.
-  mock.kill();
-  mock = await startMock(TALLY, { REJECT_ALLOC: '1' });
-  store.vouchers.clear();
-  config.save({ syncState: {} });
+  // 4b) Agent killed mid-request (note left on disk): that request is switched off on restart.
+  const st = config.load().syncState; st.inflight = 'voucher-types'; config.save({ syncState: st });
   await agent.runFullSync(config.load());
-  assert.strictEqual(store.vouchers.size, 732, 'complete via the lite rung');
-  assert.strictEqual(config.load().syncState.strategy, 'collection-lite');
+  assert.ok(config.load().syncState.blockedRequests.includes('voucher-types'));
+  await stopMock(mock);
+  mock = await startMock(TALLY);
+  config.save({ syncState: {} });
 
   // 5) FY rollover: configured "(2025-26)" isn't open, the "(2026-27)" company is -> switch.
   config.save({ company: 'CARE HYGIENE PVT LTD (2025-26)', syncState: {} });
@@ -133,7 +141,7 @@ function startCloud(port) {
   config.save({ company: 'SOMEONE ELSE LTD' });
   await assert.rejects(() => agent.runFullSync(config.load()), /not open in Tally.*CARE HYGIENE/);
 
-  mock.kill(); srv.close();
+  await stopMock(mock); srv.close();
   console.log('sync e2e: all checks pass');
   console.log(lines.filter((l) => /Using|matches|switching|Finding/.test(l)).slice(0, 12).map((l) => '  ' + l).join('\n'));
 })().catch((e) => { console.error(e); process.exit(1); });

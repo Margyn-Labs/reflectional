@@ -275,16 +275,6 @@ function todayYmd() {
   return `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}`;
 }
 
-/** Tally product/version for diagnostics; cached per run of the app. */
-let infoCache = null;
-async function readTallyInfo(cfg) {
-  if (infoCache) return infoCache;
-  try {
-    infoCache = tally.parseInfo(await tally.postXml({ host: cfg.tallyHost, port: cfg.tallyPort, xml: tally.buildInfoRequest(), timeoutMs: 15000 }));
-  } catch (e) { infoCache = { error: String(e.message).slice(0, 200) }; }
-  return infoCache;
-}
-
 /**
  * Full sync — company check, ledgers, vouchers (whole financial year, see voucherSync.js),
  * bills. Each kind is independent: a voucher or bill failure is logged and reported to Margyn,
@@ -302,7 +292,9 @@ async function runFullSync(cfg, { dryRun = false } = {}) {
     health.open_companies = resolved.open;
     if (resolved.switchedFrom) health.switched_from = resolved.switchedFrom;
     if (resolved.fact) health.company_facts = resolved.fact;
-    health.tally = await readTallyInfo(cfg);
+    // Product/version come from pairing (saved in config); no extra request to Tally every sync.
+    health.tally = { product: cfg.tallyProduct || null, version: cfg.tallyVersion || null };
+    health.request_guard = { proven: (config.load().syncState || {}).provenRequests || [], blocked: (config.load().syncState || {}).blockedRequests || [] };
 
     // Ledgers — hard fail: if this breaks, Tally/pairing/network is down, not a request shape.
     results.ledgers = await runLedgerSync(cfg, { dryRun, company });
@@ -320,7 +312,11 @@ async function runFullSync(cfg, { dryRun = false } = {}) {
       if (e.diag) health.vouchers = e.diag;
     }
 
-    results.bills = await syncBills(Object.assign({}, cfg, { company }), { dryRun, health });
+    if (results.vouchers && /not running or not reachable|switched off on this PC so Tally/.test(results.vouchers.error || '')) {
+      log('Stopping this sync: Tally closed or stopped answering. Open Tally again; the next sync carries on.');
+    } else {
+      results.bills = await syncBills(Object.assign({}, cfg, { company }), { dryRun, health });
+    }
   } catch (e) {
     health.errors.sync = String(e.message).slice(0, 300);
     throw e;

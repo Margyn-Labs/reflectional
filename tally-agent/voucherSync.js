@@ -28,7 +28,57 @@ const UPLOAD_BATCH = 250;                 // vouchers per cloud request (entries
 const MONTH_SPLIT_AT = 2500;              // split a month into smaller windows above this many vouchers
 const REQUEST_TIMEOUT_MS = 180000;        // a big month on a slow PC legitimately takes minutes
 const FULL_PASS_EVERY_MS = 20 * 3600 * 1000;
-const COLLECTION_STRATEGIES = new Set(['collection-date', 'collection-lite', 'collection-datevalue']);
+const COLLECTION_STRATEGIES = new Set(['collection']);
+
+/* ---------------------------- crash guard ----------------------------
+ * On real TallyPrime a request it can't parse opens an "Error in TDL" box, and clicking OK closes
+ * Tally. Requests here are copied from proven integrations, but a client's build could still
+ * differ. So the first time each request shape is sent on a machine, the agent writes a note to
+ * disk first. If that request kills or stalls Tally (connection lost, timeout) — or the agent itself
+ * dies mid-request and finds the note on restart — the shape is blocked on that machine for good.
+ * Tally can be upset by a given request at most once per PC. Shapes 0.1 already ran everywhere
+ * (ledgers, Day Book, bills) are trusted from the start.
+ */
+const TRUSTED = new Set(['day-book']);
+function guard(cfg) {
+  const st = () => Object.assign({}, config.load().syncState || {}, cfg.__stateOverride || {});
+  const write = (patch) => { if (!cfg.__dryRun) config.save({ syncState: Object.assign(st(), patch) }); };
+  return {
+    blocked: (key) => (st().blockedRequests || []).includes(key),
+    /** Called once at start: a note left over from last run means that request took Tally (or us) down. */
+    settle(log) {
+      const s0 = st();
+      if (s0.inflight) {
+        log(`Last time, Tally stopped responding during "${s0.inflight}". That request is now switched off on this PC.`);
+        write({ inflight: null, blockedRequests: [...new Set((s0.blockedRequests || []).concat([s0.inflight]))] });
+      }
+    },
+    async run(key, fn) {
+      const s0 = st();
+      if ((s0.blockedRequests || []).includes(key)) { const e = new Error(`"${key}" is switched off on this PC`); e.code = 'blocked'; throw e; }
+      const fresh = !TRUSTED.has(key) && !(s0.provenRequests || []).includes(key);
+      if (fresh) {
+        // Only blame a request for Tally going away if Tally was there when we sent it.
+        const up = await tally.testConnection({ host: cfg.tallyHost, port: cfg.tallyPort, timeoutMs: 3000 });
+        if (!up.reachable) { const e = new Error('Tally is not running or not reachable right now.'); e.code = 'tally_down'; throw e; }
+        write({ inflight: key });
+      }
+      try {
+        const out = await fn();
+        if (fresh) write({ inflight: null, provenRequests: [...new Set((st().provenRequests || []).concat([key]))] });
+        return out;
+      } catch (e) {
+        const lost = e && (e.code === 'TALLY_TIMEOUT' || /Could not reach|ECONNRESET|socket hang up|failed \(/i.test(e.message || ''));
+        if (fresh && lost) {
+          write({ inflight: null, blockedRequests: [...new Set((st().blockedRequests || []).concat([key]))] });
+          e.message = `${e.message} — "${key}" is now switched off on this PC so Tally is never upset by it again.`;
+          e.code = 'tally_down'; // stop this sync: send nothing more until Tally is reopened
+        } else if (fresh) write({ inflight: null });
+        throw e;
+      }
+    }
+  };
+}
 
 /* ---------------------------- dates ---------------------------- */
 const pad = (n) => String(n).padStart(2, '0');
@@ -90,8 +140,10 @@ function baseCompanyName(n) {
  */
 async function resolveCompany(cfg, log) {
   let facts;
+  const g = guard(cfg);
+  g.settle(log);
   try {
-    const xml = await tally.postXml({ host: cfg.tallyHost, port: cfg.tallyPort, xml: tally.buildCompanyFactsRequest(), timeoutMs: 30000 });
+    const xml = await g.run('company-facts', () => tally.postXml({ host: cfg.tallyHost, port: cfg.tallyPort, xml: tally.buildCompanyFactsRequest(), timeoutMs: 30000 }));
     facts = tally.parseCompanyFacts(xml);
   } catch (e) {
     log(`Could not list Tally's open companies (${e.message}). Using "${cfg.company}".`);
@@ -135,7 +187,7 @@ function choosePeriod(cfg, fact, today) {
 /* ---------------------------- Tally calls ---------------------------- */
 function makeCtx(cfg, company, log) {
   return {
-    cfg, company, log,
+    cfg, company, log, guard: guard(cfg),
     post: (xml, timeoutMs = REQUEST_TIMEOUT_MS) => tally.postXml({
       host: cfg.tallyHost, port: cfg.tallyPort, xml, timeoutMs,
       onSlow: () => log('Tally is still working on a large request. The agent waits; nothing is wrong.')
@@ -148,21 +200,21 @@ async function waitForTally(ctx, maxMs = 5 * 60 * 1000) {
   const until = Date.now() + maxMs;
   while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 15000));
-    try {
-      await ctx.post(tally.buildInfoRequest(), 10000);
-      return true;
-    } catch (e) { /* still busy */ }
+    // A bare TCP connect: never send Tally another request while it may be showing a dialog.
+    const r = await tally.testConnection({ host: ctx.cfg.tallyHost, port: ctx.cfg.tallyPort, timeoutMs: 3000 });
+    if (r.reachable) return true;
   }
   const err = new Error('Tally stayed busy for 5 minutes after a large request. The agent will resume from where it stopped on the next sync.');
   err.code = 'tally_busy';
   throw err;
 }
 
-async function fetchCounts(ctx, period) {
+async function fetchCounts(ctx) {
   try {
-    const xml = await ctx.post(tally.buildVoucherCountRequest({ company: ctx.company, from: period.from, to: period.to }), 120000);
+    const xml = await ctx.guard.run('voucher-count', () => ctx.post(tally.buildVoucherCountRequest({ company: ctx.company }), 120000));
     return tally.parseVoucherCounts(xml);
   } catch (e) {
+    if (e.code === 'tally_down') throw e;
     ctx.log(`Tally's voucher count was not available (${e.message}); syncing without the completeness check.`);
     if (isTimeout(e)) await waitForTally(ctx);
     return null;
@@ -171,7 +223,7 @@ async function fetchCounts(ctx, period) {
 
 async function fetchRaw(ctx, strategy, w, extra, timeoutMs) {
   const xml = tally.VOUCHER_STRATEGIES[strategy](Object.assign({ company: ctx.company, from: w.from, to: w.to }, extra || {}));
-  return tally.parseVouchers(await ctx.post(xml, timeoutMs));
+  return tally.parseVouchers(await ctx.guard.run(strategy === 'collection' ? 'vouchers' : strategy, () => ctx.post(xml, timeoutMs)));
 }
 
 /** Fetch one window; on a timeout, wait for Tally and retry in halves down to single days. */
@@ -213,7 +265,11 @@ async function calibrate(ctx, window, expected) {
       if (inW.length && (!best || inW.length > best.n)) best = { strategy: name, verified: false, n: inW.length, degraded: true };
     } catch (e) {
       trials.push({ strategy: name, error: String(e.message).slice(0, 160) });
-      if (isTimeout(e)) await waitForTally(ctx);
+      if (e.code === 'blocked') continue;
+      if (e.code === 'tally_down') throw e;
+      // Tally went away (closed after an error box, or busy): wait for it; if it doesn't come back,
+      // stop here instead of sending anything else at it.
+      if (isTimeout(e) || /Could not reach/i.test(e.message || '')) await waitForTally(ctx);
     }
   }
   return { choice: best, trials };
@@ -252,7 +308,8 @@ async function uploadWindow(ctx, rows, w, { final, voucherTypes, dryRun }) {
 async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}, now = new Date() } = {}) {
   const ctx = makeCtx(cfg, company || cfg.company, log);
   const state = Object.assign({}, cfg.syncState || {});
-  const save = (patch) => { Object.assign(state, patch); if (!dryRun) config.save({ syncState: state }); };
+  // Merge with what's on disk: the crash guard writes its notes there between our saves.
+  const save = (patch) => { Object.assign(state, patch); if (!dryRun) config.save({ syncState: Object.assign({}, config.load().syncState || {}, state, { blockedRequests: (config.load().syncState || {}).blockedRequests || state.blockedRequests, provenRequests: (config.load().syncState || {}).provenRequests || state.provenRequests, inflight: (config.load().syncState || {}).inflight || null }) }); };
 
   const period = choosePeriod(cfg, fact, now);
   const periodKey = `${ctx.company}|${period.from}|${period.to}`;
@@ -260,7 +317,7 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
 
   // Voucher types (renamed types roll up to a base: "KANDIVALI SALE" -> Sales). Small, every time.
   let voucherTypes = {};
-  try { voucherTypes = tally.parseVoucherTypes(await ctx.post(tally.buildVoucherTypesRequest({ company: ctx.company }), 30000)); }
+  try { voucherTypes = tally.parseVoucherTypes(await ctx.guard.run('voucher-types', () => ctx.post(tally.buildVoucherTypesRequest({ company: ctx.company }), 30000))); }
   catch (e) { log(`Voucher types not read (${e.message}).`); }
 
   const nowMs = now.getTime();
@@ -273,7 +330,7 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
     return { upserted: 0, received: 0, mode: 'unchanged', diag: Object.assign(diag, { strategy: state.strategy, months: state.months || {} }) };
   }
 
-  const counts = fullDue ? await fetchCounts(ctx, period) : null;
+  const counts = fullDue ? await fetchCounts(ctx) : null;
   if (counts) diag.tally_counts = counts;
 
   // 1) Which request shape does this Tally answer? (once per company/period, or after a degraded pick)

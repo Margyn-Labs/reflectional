@@ -216,6 +216,7 @@ function book() {
 const lastVoucherDate = () => book().reduce((a, v) => (v.date > a ? v.date : a), '00000000');
 const MONTHS3 = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 function tallyDateToCompact(s) {
+  if (/^\d{8}$/.test(s)) return s;
   const m = /(\d{1,2})-([A-Za-z]{3})-(\d{4})/.exec(s);
   return m ? `${m[3]}${String(MONTHS3[m[2].toLowerCase()]).padStart(2, '0')}${m[1].padStart(2, '0')}` : null;
 }
@@ -259,12 +260,9 @@ function voucherCollectionXml(reqBody) {
   if (process.env.REJECT_ALLOC === '1' && /AccountingAllocations/.test(reqBody)) {
     return '<ENVELOPE><HEADER><VERSION>1</VERSION></HEADER><BODY><DESC><LINEERROR>Error in TDL: Could not find method AccountingAllocations</LINEERROR></DESC></BODY></ENVELOPE>';
   }
-  if (COLLECTION_DATEVALUE_ONLY && (/\$\$Date:/.test(reqBody) || /AccountingAllocations/.test(reqBody) === false)) {
-    return '<ENVELOPE><HEADER><VERSION>1</VERSION></HEADER><BODY><DESC><LINEERROR>Error in TDL: Function $$Date could not be evaluated</LINEERROR></DESC></BODY></ENVELOPE>';
-  }
-  const ge = /\$Date &gt;= \$\$Date(?:Value)?:"([^"]+)"/.exec(reqBody);
-  const le = /\$Date &lt;= \$\$Date(?:Value)?:"([^"]+)"/.exec(reqBody);
-  const alt = /\$AlterId &gt; (\d+)/.exec(reqBody);
+  const ge = /\$Date &gt;= \$\$Date:"([^"]+)"/.exec(reqBody);
+  const le = /\$Date &lt;= \$\$Date:"([^"]+)"/.exec(reqBody);
+  const alt = /\$AlterID &gt; (\d+)/.exec(reqBody);
   const from = ge ? tallyDateToCompact(ge[1]) : '00000000';
   const to = le ? tallyDateToCompact(le[1]) : '99999999';
   const list = book().filter((v) => v.date >= from && v.date <= to && (!alt || v.alterId > +alt[1]));
@@ -279,15 +277,12 @@ function dayBookXml() {
   </TALLYMESSAGE></DATA></BODY></ENVELOPE>`;
 }
 
-function countXml(reqBody) {
-  const ge = /\$Date &gt;= \$\$Date:"([^"]+)"/.exec(reqBody);
-  const le = /\$Date &lt;= \$\$Date:"([^"]+)"/.exec(reqBody);
-  const from = ge ? tallyDateToCompact(ge[1]) : '00000000', to = le ? tallyDateToCompact(le[1]) : '99999999';
+function countXml() {
   const per = {};
-  for (const v of book()) if (v.date >= from && v.date <= to) per[v.date] = (per[v.date] || 0) + 1;
+  for (const v of book()) per[v.date] = (per[v.date] || 0) + 1;
   const body = Object.entries(per).map(([d, n]) => {
     const dt = `${+d.slice(6)}-${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+d.slice(4, 6) - 1]}-${d.slice(2, 4)}`;
-    return `<VOUCHER><MARGYNDAY TYPE="Date">${dt}</MARGYNDAY><MARGYNCOUNT TYPE="Number"> ${n}</MARGYNCOUNT></VOUCHER>`;
+    return `<OBJECT><DATE TYPE="Date">${dt}</DATE><COUNT TYPE="Number"> ${n}</COUNT></OBJECT>`;
   }).join('');
   return `<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>${body}</COLLECTION></DATA></BODY></ENVELOPE>`;
 }
@@ -299,13 +294,13 @@ function companyXml() {
     <BOOKSFROM TYPE="Date">20260401</BOOKSFROM><STARTINGFROM TYPE="Date">20260401</STARTINGFROM>
     <LASTVOUCHERDATE TYPE="Date">${lastVoucherDate()}</LASTVOUCHERDATE>
     <ALTMSTID TYPE="Number"> 3400</ALTMSTID><ALTVCHID TYPE="Number"> ${maxAlt}</ALTVCHID>
-    <MARGYNACTIVE TYPE="Logical">Yes</MARGYNACTIVE>
+    <ISACTIVECOMPANY TYPE="Logical">Yes</ISACTIVECOMPANY>
    </COMPANY></COLLECTION></DATA></BODY></ENVELOPE>`;
 }
 
 function voucherTypesXml() {
   const t = [['KANDIVALI SALE', 'Sales'], ['VASAI SALES', 'Sales'], ['Sales', ''], ['Receipt', ''], ['Payment', ''], ['Purchase', ''], ['Journal', '']];
-  return `<ENVELOPE><BODY><DATA><COLLECTION>${t.map(([n, p]) => `<VOUCHERTYPE><MARGYNNAME>${n}</MARGYNNAME><MARGYNPARENT>${p || n}</MARGYNPARENT></VOUCHERTYPE>`).join('')}</COLLECTION></DATA></BODY></ENVELOPE>`;
+  return `<ENVELOPE><BODY><DATA><COLLECTION>${t.map(([n, p]) => `<VOUCHERTYPE NAME="${n}" RESERVEDNAME=""><GUID>vt-${n}</GUID><PARENT TYPE="String">${p || n}</PARENT></VOUCHERTYPE>`).join('')}</COLLECTION></DATA></BODY></ENVELOPE>`;
 }
 
 function billsXml(direction) {
@@ -336,6 +331,11 @@ const server = http.createServer((req, res) => {
   req.on('end', () => {
     const isInfo = /MargynTallyInfo|\$\$ProductName/i.test(body);
     let xml, kind;
+    if (/SOURCECOLLECTION>Voucher Types</.test(body) || (process.env.CRASH_ON && new RegExp(process.env.CRASH_ON).test(body))) {
+      console.log('simulating real Tally: Error in TDL -> OK -> Tally closes');
+      req.socket.destroy();
+      process.exit(0);
+    }
     if (req.url === '/__edit') {
       // test hook: edit one voucher in "Tally" (new amount, AlterID moves on)
       const v = book()[10];
