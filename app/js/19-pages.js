@@ -161,6 +161,28 @@ function mgBucketOf(days){
   const od = -days; return od <= 30 ? 'b0' : od <= 60 ? 'b1' : od <= 90 ? 'b2' : 'b3';
 }
 const MG_BUCKETS = [['b0', 'Current and 0–30 days'], ['b1', '31–60 days'], ['b2', '61–90 days'], ['b3', '90+ days']];
+/* Where a snapshot's GST figure came from. A self-reported zero with no GST source is
+   "not measured", not ₹0. Tally gives an estimate from its duty ledgers (last month). */
+function mgGstFig(s, field){
+  if(!s) return { known:false, src:'No figures yet' };
+  const prov = (s.input_provenance || {})[field] || null, v = Number(s[field]) || 0;
+  if(prov && prov.source === 'tally') return { known:true, v, src:'Estimate from Tally books, last month' };
+  if(prov && prov.source && prov.source !== 'self') return { known:true, v, src:'From ' + (MG_SRC_NAME[prov.source] || prov.source) };
+  if(v === 0) return { known:false, src:field === 'gst_leak' ? 'Needs GSTR-2B (Zoho Books)' : 'No GST source connected' };
+  return { known:true, v, src:'Entered by you' };
+}
+/* Ageing per invoice, from each party's most trusted source. Bucketing a party's whole
+   balance by its oldest invoice put ₹33 L in 90+ for a customer with one old bill. */
+function mgInvoiceAgeing(groups){
+  const b = { b0:0, b1:0, b2:0, b3:0 };
+  groups.forEach(g => {
+    const rows = (g.by && g.by[g.primary] && g.by[g.primary].rows) || [];
+    const sum = rows.reduce((t, r) => t + (Number(r.amount) || 0), 0);
+    if(rows.length && Math.abs(sum - g.amount) <= Math.max(1, Math.abs(g.amount) * 0.001)) rows.forEach(r => { b[mgBucketOf(r.days)] += Number(r.amount) || 0; });
+    else b[mgBucketOf(g.oldestDays)] += g.amount;   // invoice rows not loaded: fall back to the party's oldest
+  });
+  return b;
+}
 
 /* ---------- shared bits ---------- */
 function mgStatusBadge(days, dir){
@@ -281,7 +303,8 @@ function mgRenderHome(){
       delta:(rNow != null && rPrev != null) ? rNow - rPrev : null, deltaText:(rNow != null && rPrev != null) ? Math.abs(rNow - rPrev).toFixed(1) + ' months' : '', goodUp:true, src:srcLine, go:'pulse' }) +
     mgTile({ need:'view_receivables', label:'Receivables overdue', value:fmtINR(overdue, 'tile'), full:fmtINR(overdue), delta:null, note:nOver + ' customer' + (nOver === 1 ? '' : 's') + ' overdue', goodUp:false, src:srcLine, go:'receivables' }) +
     mgTile({ need:'view_payables', label:'Payables due in 7 days', value:fmtINR(due7, 'tile'), full:fmtINR(due7) + ', including anything already overdue', delta:null, note:nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay', goodUp:false, src:srcLine, go:'payables' }) +
-    mgTile({ need:'view_gst', label:'GST payable this month', value:fmtINR(s.gst_payable, 'tile'), full:fmtINR(s.gst_payable), delta:p ? mgPct(Number(s.gst_payable), Number(p.gst_payable)) : null, goodUp:false, src:srcLine, go:'gst' }) +
+    (() => { const G = mgGstFig(s, 'gst_payable');
+      return mgTile({ need:'view_gst', label:'GST payable this month', value:G.known ? fmtINR(G.v, 'tile') : 'n/a', full:G.known ? fmtINR(G.v) : '', delta:G.known && p && mgGstFig(p, 'gst_payable').known ? mgPct(G.v, Number(p.gst_payable)) : null, goodUp:false, src:G.src, go:'gst' }); })() +
     '</div>';
 
   // Pulse: the three vitals moving the score most, in points vs a neutral 50.
@@ -373,8 +396,9 @@ function mgRenderMoney(dir){
     } else {
       rows = mgMoneyRows(dir).filter(r => r.src === mode).map(r => ({ party:r.party, amount:r.amount, days:r.days, ref:r.ref || '—', r, src:r.src }));
     }
-    const buckets = { b0:0, b1:0, b2:0, b3:0 };
-    rows.forEach(r => { buckets[mgBucketOf(r.days)] += r.amount; });
+    let buckets = { b0:0, b1:0, b2:0, b3:0 };
+    if(mode === 'reconciled') buckets = mgInvoiceAgeing(rows.map(r => r.g));
+    else rows.forEach(r => { buckets[mgBucketOf(r.days)] += r.amount; });
     const btot = Object.values(buckets).reduce((a, b) => a + b, 0) || 1;
     rows = rows.filter(r => (!q || r.party.toLowerCase().includes(q)) && (!mgMoneyAge || mgBucketOf(r.days) === mgMoneyAge));
     count = rows.length;
@@ -443,8 +467,10 @@ function mgRenderGst(){
   const vendors = (z && z.gst_top_at_risk_vendors) || [];
   let acts = []; try { acts = ((agentActions && agentActions.actions) || []).filter(a => a.kind === 'itc_risk'); } catch(e){}
   const tiles = '<div class="mg-tiles four">' +
-    mgTile({ label:'GST payable this month', value:s ? fmtINR(s.gst_payable, 'tile') : 'n/a', full:s ? fmtINR(s.gst_payable) : '', delta:(s && p0) ? mgPct(Number(s.gst_payable), Number(p0.gst_payable)) : null, goodUp:false, src:'From your latest snapshot', go:'gst' }) +
-    mgTile({ label:'Input credit at risk', value:g ? fmtINR(g.total_leakage, 'tile') : (s ? fmtINR(s.gst_leak, 'tile') : 'n/a'), full:g ? fmtINR(g.total_leakage) : '', note:vendors.length ? vendors.length + ' vendor' + (vendors.length === 1 ? '' : 's') + ' behind it' : '', src:g ? 'GSTR-2B against Zoho Books' : 'From your latest snapshot', go:'gst' }) +
+    (() => { const G = mgGstFig(s, 'gst_payable');
+      return mgTile({ label:'GST payable this month', value:G.known ? fmtINR(G.v, 'tile') : 'n/a', full:G.known ? fmtINR(G.v) : '', delta:G.known && p0 && mgGstFig(p0, 'gst_payable').known ? mgPct(G.v, Number(p0.gst_payable)) : null, goodUp:false, src:G.src, go:'gst' }); })() +
+    (() => { const L = mgGstFig(s, 'gst_leak');
+      return mgTile({ label:'Input credit at risk', value:g ? fmtINR(g.total_leakage, 'tile') : (L.known ? fmtINR(L.v, 'tile') : 'n/a'), full:g ? fmtINR(g.total_leakage) : '', note:vendors.length ? vendors.length + ' vendor' + (vendors.length === 1 ? '' : 's') + ' behind it' : '', src:g ? 'GSTR-2B against Zoho Books' : L.src, go:'gst' }); })() +
     mgTile({ label:'Vendors not filed', value:g ? String(g.vendors_not_filed || 0) : 'n/a', note:g ? 'GSTR-1 for ' + (g.filing_period || 'this period') : '', src:g ? 'GSTR-2B against Zoho Books' : 'Needs Zoho Books', go:'gst' }) +
     mgTile({ label:'Share of ITC at risk', value:g && g.leakage_pct != null ? Number(g.leakage_pct).toFixed(1) + '%' : 'n/a', note:g ? 'of input credit claimed' : '', src:g ? 'GSTR-2B against Zoho Books' : 'Needs Zoho Books', go:'gst' }) + '</div>';
   host.innerHTML = mgPageHead({ group:'Money', title:'GST and tax', scope:mgScopeText(g ? 'Zoho Books' : 'Reconciled'), sub:'GSTR-2B against your books, and the input credit at risk vendor by vendor.' }) + tiles +

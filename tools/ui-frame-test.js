@@ -77,7 +77,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok((await p.$$('#view-cfopack .pk-sec')).length === 10, 'cover + 9 sections');
   const scopes = await p.$$eval('#view-cfopack .pk-scope', x => x.map(e => e.textContent));
   ok(scopes.length === 9 && scopes.every(t => /Anvaya Home Goods · Reconciled/.test(t)) && scopes.slice(0, 8).every(t => /August 2026 · closing reading/.test(t)), 'every section carries its scope line and reading date');
-  ok(/2,41,00,000/.test(await p.textContent('#pkPl')) && (await p.$$('#pkPl tbody tr')).length === 4, 'P&L: August revenue, 4 rows vs July');
+  // With Tally connected the P&L lines are the selected month's own figures from Tally, not the reading's average.
+  ok(await p.evaluate(() => { const k = mgPackCurrent(), t = mgPackTallyPnl(k), pl = document.getElementById('pkPl').textContent;
+    return !!t && pl.includes(mgPackN(t.revenue)) && document.querySelectorAll('#pkPl tbody tr').length === 4; }), 'P&L: the month’s revenue comes from Tally, 4 rows')
   ok(/Written by Margyn/.test(await p.textContent('#view-cfopack [data-pk-sec="commentary"]')) && /steadier month/.test(await p.textContent('#view-cfopack [data-pk-sec="commentary"]')), 'commentary is August’s briefing, labelled Written by Margyn');
   ok((await p.$$('#pkFc tbody tr')).length === 13 && !/Total/i.test(await p.textContent('#pkCash')), 'cash: sources not summed, 13-week table');
   ok(/HDFC Bank CA 0021/.test(await p.textContent('#pkCash')) && (await p.$$('#pkOverdue tbody tr')).length >= 3, 'cash by account and top overdue customers listed');

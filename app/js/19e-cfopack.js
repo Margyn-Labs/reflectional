@@ -38,6 +38,14 @@ function mgPackDefaultMonth(){
 }
 function mgPackCurrent(){ const m = mgPackMonths(); return mgPackMonth && m.includes(mgPackMonth) ? mgPackMonth : mgPackDefaultMonth(); }
 function mgPackSnap(k){ return (snapshots || []).find(s => mgMonthKey(s.created_at) === k) || null; }   // snapshots are newest first
+/* Revenue, spend and profit for a month straight from Tally's monthly P&L, when Tally is
+   connected. A reading's own figures are an average across months, not that month's. */
+function mgPackTallyPnl(k){
+  const r = (typeof mgMar !== 'undefined' && mgMar && Array.isArray(mgMar.pnl)) ? mgMar.pnl.find(x => x.month === k) : null;
+  if(!r) return null;
+  return { revenue:Number(r.net_sales) || 0, burn:(Number(r.cogs_pre_stock) || 0) + (Number(r.opex) || 0),
+    net_profit:Number(r.net_profit_pre_stock) || 0, pl_in_progress:!!r.provisional };
+}
 function mgPackCfg(){
   const c = mgPrefGet('cfo_pack', {}) || {};
   return {
@@ -115,6 +123,9 @@ function mgPackTable(head, rows, id){
 function mgPackDoc(k){
   const s = mgPackSnap(k), p = mgPackSnap(mgMonthShift(k, -1));
   if(!s) return '';
+  // P&L lines (revenue, spend, profit) for this month and the prior one, from Tally when connected.
+  const tk = mgPackTallyPnl(k), tp = mgPackTallyPnl(mgMonthShift(k, -1));
+  const plS = tk ? Object.assign({}, s, tk) : s, plP = tp ? Object.assign({}, p || {}, tp) : p;
   const cfg = mgPackCfg(), on = new Set(cfg.sections);
   const org = mgOrgName(), month = mgMonthLabel(k);
   const today = fmtDay(new Date().toISOString());
@@ -129,26 +140,26 @@ function mgPackDoc(k){
     n++;
     return '<tbody class="pk-sec' + (MG_PACK_BREAK[key] ? ' pk-break' : '') + '" data-pk-sec="' + key + '"><tr><td><h2>' + n + '. ' + escapeHtml(title) + '</h2><div class="pk-scope">' + escapeHtml(scope) + '</div>' + body + '</td></tr></tbody>';
   };
-  const margin = Number(s.revenue) ? Number(s.net_profit) / Number(s.revenue) * 100 : null;
-  const marginP = p && Number(p.revenue) ? Number(p.net_profit) / Number(p.revenue) * 100 : null;
+  const margin = Number(plS.revenue) ? Number(plS.net_profit) / Number(plS.revenue) * 100 : null;
+  const marginP = plP && Number(plP.revenue) ? Number(plP.net_profit) / Number(plP.revenue) * 100 : null;
   const band = s.pulse_score != null ? scoreBand(s.pulse_score) : null;
 
   // 1. headline
   const tile = (l, v, note) => '<div class="pk-tile"><div class="pk-tile-l">' + escapeHtml(l) + '</div><div class="pk-tile-v">' + escapeHtml(v) + '</div><div class="pk-tile-n">' + note + '</div></div>';
   const headline = '<div class="pk-tiles">' +
     tile('Cash at month end', fmtINR(s.cash, 'tile'), p ? mgPackChg(s.cash, p.cash, true) + ' vs prior month' : 'First month') +
-    tile('Revenue', fmtINR(s.revenue, 'tile'), p ? mgPackChg(s.revenue, p.revenue, true) + ' vs prior month' : '') +
-    tile('Net profit', fmtINR(s.net_profit, 'tile'), margin != null ? escapeHtml(margin.toFixed(1) + '% margin') : '') +
+    tile('Revenue', fmtINR(plS.revenue, 'tile'), (tk && tk.pl_in_progress ? 'Month in progress · ' : '') + (plP ? mgPackChg(plS.revenue, plP.revenue, true) + ' vs prior month' : '')) +
+    tile('Net profit', fmtINR(plS.net_profit, 'tile'), margin != null ? escapeHtml(margin.toFixed(1) + '% margin') : '') +
     tile('Pulse Score', s.pulse_score != null ? String(s.pulse_score) : 'n/a', band ? escapeHtml(band.label + ' · operating health') : '') + '</div>';
 
   // 2. P&L
-  const plRow = (l, a, b, goodUp) => '<tr><td>' + escapeHtml(l) + '</td><td class="r">' + mgPackN(a) + '</td><td class="r">' + (p ? mgPackN(b) : '—') + '</td><td class="r">' + (p ? mgPackN(Number(a) - Number(b)) : '—') + '</td><td class="r">' + (p ? mgPackChg(a, b, goodUp) : '—') + '</td></tr>';
-  const pl = mgPackTable(['', month + ' (₹)', (p ? mgMonthLabel(mgMonthShift(k, -1)) : 'Prior month') + ' (₹)', 'Change (₹)', 'Change %'], [
-    plRow('Revenue', s.revenue, p && p.revenue, true),
-    plRow('Total spend', s.burn, p && p.burn, false),
-    plRow('Net profit', s.net_profit, p && p.net_profit, true),
+  const plRow = (l, a, b, goodUp) => '<tr><td>' + escapeHtml(l) + '</td><td class="r">' + mgPackN(a) + '</td><td class="r">' + (plP ? mgPackN(b) : '—') + '</td><td class="r">' + (plP ? mgPackN(Number(a) - Number(b)) : '—') + '</td><td class="r">' + (plP ? mgPackChg(a, b, goodUp) : '—') + '</td></tr>';
+  const pl = mgPackTable(['', month + (tk && tk.pl_in_progress ? ', so far' : '') + ' (₹)', (plP ? mgMonthLabel(mgMonthShift(k, -1)) : 'Prior month') + ' (₹)', 'Change (₹)', 'Change %'], [
+    plRow('Revenue', plS.revenue, plP && plP.revenue, true),
+    plRow('Total spend', plS.burn, plP && plP.burn, false),
+    plRow('Net profit', plS.net_profit, plP && plP.net_profit, true),
     '<tr><td>Net margin</td><td class="r">' + (margin != null ? margin.toFixed(1) + '%' : '—') + '</td><td class="r">' + (marginP != null ? marginP.toFixed(1) + '%' : '—') + '</td><td class="r">' + (margin != null && marginP != null ? (margin - marginP >= 0 ? '+' : '−') + Math.abs(margin - marginP).toFixed(1) + ' pts' : '—') + '</td><td class="r"></td></tr>'
-  ], 'pkPl') + '<div class="pk-note">Monthly revenue and spend as recorded in each month’s closing reading. Spend is total monthly outgoings, so net profit = revenue − spend.</div>';
+  ], 'pkPl') + '<div class="pk-note">' + (tk || tp ? 'Revenue, spend and profit are each month’s own figures from Tally’s books (sales before GST; spend is purchases, direct costs and running costs, before stock movement).' + (tk && tk.pl_in_progress ? ' ' + escapeHtml(month) + ' is still in progress.' : '') : 'Monthly revenue and spend as recorded in each month’s closing reading.') + ' Net profit = revenue − spend.</div>';
 
   // 3. cash
   const srcs = mgCashSources(), reconNow = (snapshots[0] && Number(snapshots[0].cash)) || 0;

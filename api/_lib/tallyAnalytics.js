@@ -377,6 +377,17 @@ function computeAnalytics(input) {
       vouchers: m.vouchers
     };
   });
+  // A closed month whose running costs are far below the other months usually has salaries,
+  // rent and the like not booked yet. Flag it so its profit isn't read as final.
+  {
+    const closedRows = pnl.filter((r) => !r.provisional && !r.partial_start && r.net_sales > 0);
+    for (const r of closedRows) {
+      const others = closedRows.filter((o) => o !== r).map((o) => o.opex).sort((a, b) => a - b);
+      if (others.length < 2) continue;
+      const median = others[Math.floor(others.length / 2)];
+      if (median > 0 && r.opex < 0.4 * median) { r.costs_incomplete = true; r.typical_opex = r2(median); }
+    }
+  }
 
   // ----- balance sign convention (inferred, never assumed silently) -----
   // Voucher amounts: negative = debit. Ledger balances: Tally's own flat value,
@@ -684,6 +695,9 @@ function computeAnalytics(input) {
   if (balance_sign.assumed && ledgers.length) reasons.push('The sign convention of Tally balances could not be confirmed from your data, so cash and stock use the documented default.');
   if (bsLedgers.length && bsMissing) reasons.push(`Tally returned no balance for ${bsMissing} of ${bsLedgers.length} balance-sheet ledgers.`);
   if (!vouchers.length) { level = 'low'; reasons.push('No vouchers synced yet.'); }
+  for (const r of pnl.filter((x) => x.costs_incomplete)) {
+    reasons.push(`Running costs in ${r.month} (₹${Math.round(r.opex).toLocaleString('en-IN')}) are far below a usual month (about ₹${Math.round(r.typical_opex).toLocaleString('en-IN')}), so some expenses may not be booked yet. That month's profit will drop when they are.`);
+  }
   if (calibrated.inverted) reasons.push('Tally\'s bill signs ran the other way round for this company, so receivables and payables were swapped to match how your customers and vendors appear on vouchers.');
   // Completeness against Tally's OWN voucher count per month (agent 0.2.0+ reports it). This is the
   // proof the figures are whole: if every month matches, nothing was dropped between Tally and Margyn.
@@ -696,7 +710,8 @@ function computeAnalytics(input) {
     const syncedTotal = ks.reduce((a, k) => a + (+dm[k].synced || 0), 0);
     completeness = { months: ks.length, tally_vouchers: tallyTotal, synced_vouchers: syncedTotal, short_months: short, strategy: diagnostics.vouchers.strategy || null };
     if (short.length) { level = 'low'; reasons.push(`Tally holds more vouchers than arrived in ${short.join(', ')} (${syncedTotal} of ${tallyTotal}). Margyn kept everything it has and will retry on the next sync.`); }
-    else if (ks.length) reasons.push(`Every month from ${ks[0]} to ${ks[ks.length - 1]} matches Tally's own voucher count (${tallyTotal.toLocaleString('en-IN')} vouchers).`);
+    const shown = ks.filter((k) => k <= currentMonth);
+    if (!short.length && shown.length) reasons.push(`Every month from ${shown[0]} to ${shown[shown.length - 1]} matches Tally's own voucher count (${tallyTotal.toLocaleString('en-IN')} vouchers).`);
   }
   const agentOld = !diagnostics || !diagnostics.agent_version;
   if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. ` +

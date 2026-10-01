@@ -216,8 +216,18 @@ async function loadProfile(){
   if(error){ console.error('[margyn] loadProfile:', error); return null; }
   return data;
 }
+/* profiles.preferences.history_from: readings before this ISO time are left out everywhere
+   (app, findings, CFO pack email). Used when early readings were built from wrong data;
+   the rows stay in the table, so clearing the preference brings them back. */
+function mgHistoryFrom(){
+  const v = currentProfile && currentProfile.preferences && currentProfile.preferences.history_from;
+  return v && !isNaN(Date.parse(v)) ? new Date(v).toISOString() : null;
+}
 async function loadSnapshots(){
-  const { data, error } = await sbClient.from('snapshots').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false }).limit(50);
+  let q = sbClient.from('snapshots').select('*').eq('user_id', currentUser.id);
+  const from = mgHistoryFrom();
+  if(from) q = q.gte('created_at', from);
+  const { data, error } = await q.order('created_at', { ascending:false }).limit(50);
   if(error){ console.error('[margyn] loadSnapshots:', error); return []; }
   return data || [];
 }
