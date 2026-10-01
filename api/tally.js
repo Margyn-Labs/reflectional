@@ -167,18 +167,14 @@ async function handleSummary(req, res) {
 
   let bills = [], vouchers = [], ledgers = [];
   try {
-    bills = await selectRows(
-      'tally_bills',
-      `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=overdue_days.desc.nullslast&limit=500`
-    );
-    vouchers = await selectRows(
-      'tally_vouchers',
-      `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`
-    );
-    ledgers = await selectRows(
-      'tally_ledgers',
-      `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc&limit=500`
-    );
+    // Totals must cover every open bill and ledger, not the first 500 (the old cap made
+    // receivables look tiny and payables huge, and dropped most bank/GST ledgers).
+    const [B, V, L] = await Promise.all([
+      pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=overdue_days.desc.nullslast,party_name.asc,bill_ref.asc`, 20000),
+      selectRows('tally_vouchers', `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`),
+      pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
+    ]);
+    bills = B.rows; vouchers = V; ledgers = L.rows;
   } catch (e) {
     return json(res, 500, { error: 'lookup_failed' });
   }
@@ -192,11 +188,16 @@ async function handleSummary(req, res) {
     return new Date(iso).getTime();
   };
 
-  let receivableTotal = 0, payableTotal = 0, overdueTotal = 0;
+  let receivableTotal = 0, payableTotal = 0, overdueTotal = 0, recvOver90 = 0, payDue30 = 0;
   const billItems = bills.map((b) => {
     const bal = Math.abs(Number(b.closing_balance) || 0);
     if (b.direction === 'payable') payableTotal += bal; else receivableTotal += bal;
     if ((b.overdue_days || 0) > 0) overdueTotal += bal;
+    if (b.direction !== 'payable' && (b.overdue_days || 0) > 90) recvOver90 += bal;
+    if (b.direction === 'payable') {
+      const dueMs = dateMs(b.due_date);
+      if (Number.isNaN(dueMs) || dueMs <= Date.now() + 30 * 86400000) payDue30 += bal;
+    }
     return {
       direction: b.direction === 'payable' ? 'payable' : 'receivable',
       party_name: b.party_name || 'Unknown',
@@ -224,6 +225,12 @@ async function handleSummary(req, res) {
   const ledgerItems = ledgers
     .map((l) => ({ name: l.name, parent: l.parent || null, closing_balance: l.closing_balance != null ? Number(l.closing_balance) : null }))
     .filter((l) => l.name);
+  // The browser only needs a bounded list: every bank, cash, loan and duties/tax ledger first
+  // (Cash and GST pages read these), then the biggest remaining balances.
+  const KEEP = /(bank|cash|overdraft|\bo\/?d\b|loan|duties|tax|gst|tds|tcs)/i;
+  const keep = ledgerItems.filter((l) => KEEP.test(String(l.parent || '')) || KEEP.test(String(l.name || '')));
+  const rest = ledgerItems.filter((l) => !keep.includes(l)).sort((a, b) => Math.abs(b.closing_balance || 0) - Math.abs(a.closing_balance || 0));
+  const ledgerOut = keep.concat(rest).slice(0, 400);
 
   return json(res, 200, {
     connected: true,
@@ -233,6 +240,8 @@ async function handleSummary(req, res) {
       receivable_total: round2(receivableTotal),
       payable_total: round2(payableTotal),
       overdue_total: round2(overdueTotal),
+      receivable_over_90: round2(recvOver90),
+      payable_due_30d: round2(payDue30),
       count: billItems.length,
       items: billItems.slice(0, 100)
     },
@@ -249,7 +258,7 @@ async function handleSummary(req, res) {
         amount: Math.abs(Number(v.amount) || 0)
       }))
     },
-    ledgers: { count: ledgerItems.length, items: ledgerItems.slice(0, 120) },
+    ledgers: { count: ledgerItems.length, items: ledgerOut },
     provenance: 'signal'
   });
 }
@@ -640,7 +649,18 @@ async function handleIngest(req, res) {
   let upserted = 0;
   try {
     // PostgREST upsert with merge-duplicates on the natural key.
-    const result = await insertRows(spec.table, mapped, { onConflict: spec.onConflict, merge: true });
+    let result;
+    try {
+      result = await insertRows(spec.table, mapped, { onConflict: spec.onConflict, merge: true });
+    } catch (e) {
+      // The stock-lines column ships with 2026-10-01-tally-voucher-items.sql. An agent that already
+      // sends `items` must not lose every voucher just because that migration hasn't run yet
+      // (PGRST204: Could not find the 'items' column). Retry once without it.
+      if (kind === 'vouchers' && /PGRST204|'items'|column.*items/i.test(String(e && e.message))) {
+        console.warn('[tally] tally_vouchers.items missing; storing vouchers without stock lines. Run 2026-10-01-tally-voucher-items.sql.');
+        result = await insertRows(spec.table, mapped.map((r) => { const { items, ...rest } = r; return rest; }), { onConflict: spec.onConflict, merge: true });
+      } else throw e;
+    }
     upserted = Array.isArray(result) ? result.length : mapped.length;
   } catch (e) {
     await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted: 0, status: 'error', error: e.message });

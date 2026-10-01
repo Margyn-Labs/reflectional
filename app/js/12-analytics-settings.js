@@ -29,7 +29,18 @@ function analyticsRows(){
   const days = { '1m':31, '1q':93, '1y':372, 'max':1e7 }[analyticsRange] || 93;
   const cut = Date.now() - days * 86400000;
   const within = chron.filter(s => s.created_at && new Date(s.created_at).getTime() >= cut);
-  return within.length >= 2 ? within : chron;
+  const rows = within.length >= 2 ? within : chron;
+  if(rows.length >= 2) return rows;
+  // One source is enough: with Tally connected, draw the months it already has instead of waiting for uploads.
+  const pnl = (typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || [];
+  if(pnl.length >= 2){
+    return pnl.map(r => ({
+      created_at: r.month + '-15T00:00:00Z',
+      revenue: r.net_sales, net_profit: r.net_profit_pre_stock, burn: (Number(r.cogs_pre_stock) || 0) + (Number(r.opex) || 0),
+      cash: 0, pulse_score: 0, gst_leak: 0, _fromTally: true
+    }));
+  }
+  return rows;
 }
 function renderAnalyticsView(){
   const mount = document.getElementById('analyticsMount'); if(!mount) return;
@@ -42,8 +53,11 @@ function renderAnalyticsView(){
   }
   const rows = analyticsRows();
   const charts = loadAnalyticsCharts();
+  if(rows.length < 2 && typeof tallyConnected !== 'undefined' && tallyConnected && typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy){
+    mgLoadMargin().then(() => { if(mgMar && typeof renderAnalyticsView === 'function') renderAnalyticsView(); });
+  }
   if(rows.length < 2){
-    mount.innerHTML = '<div class="ch-tile wide"><div class="ledger-empty">Charts appear once you have at least two snapshots in this range. Add another under Upload &amp; calculate, or widen the range.</div></div>';
+    mount.innerHTML = '<div class="ch-tile wide"><div class="ledger-empty">Charts appear once Margyn has two readings. Connected sources add one automatically as your books change; you can also widen the range.</div></div>';
     return;
   }
   mount.innerHTML = charts.map(c => {

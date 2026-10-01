@@ -427,11 +427,18 @@ function computeAnalytics(input) {
     recvBy.set(k, r);
   }
 
+  // A margin of 175,000% means the sales side is missing (vouchers failed to sync), not that the business is
+  // brilliant. Show nothing rather than nonsense, and say why.
+  let implausible = false;
+  for (const k of ['gross_margin_pct_pre_stock', 'gross_margin_pct_after_stock', 'net_margin_pct_after_stock']) {
+    if (period[k] != null && Math.abs(period[k]) > 500) { period[k] = null; implausible = true; }
+  }
   // ----- working capital -----
   const sales90 = win.sales - win.returns;
   const cogs90 = win.purchases + win.direct_expense;
   const stockVal = stock.available ? stock.closing : null;
-  const dso = sales90 > 0 ? r2((recv / sales90) * 90) : null;
+  let dso = sales90 > 0 ? r2((recv / sales90) * 90) : null;
+  if (dso != null && dso > 1825) { dso = null; implausible = true; }
   const dpo = win.purchases > 0 ? r2((pay / win.purchases) * 90) : null;
   const dio = stockVal != null && cogs90 > 0 ? r2((stockVal / cogs90) * 90) : null;
   const working_capital = {
@@ -606,6 +613,7 @@ function computeAnalytics(input) {
   if (balance_sign.assumed && ledgers.length) reasons.push('The sign convention of Tally balances could not be confirmed from your data, so cash and stock use the documented default.');
   if (bsLedgers.length && bsMissing) reasons.push(`Tally returned no balance for ${bsMissing} of ${bsLedgers.length} balance-sheet ledgers.`);
   if (!vouchers.length) { level = 'low'; reasons.push('No vouchers synced yet.'); }
+  if (implausible) { level = 'low'; reasons.push('Sales look far too small next to costs and receivables, so margin and days-to-pay are hidden. The voucher sync is probably incomplete.'); }
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
