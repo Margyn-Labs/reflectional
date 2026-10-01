@@ -126,6 +126,8 @@ function mgPackDoc(k){
   // P&L lines (revenue, spend, profit) for this month and the prior one, from Tally when connected.
   const tk = mgPackTallyPnl(k), tp = mgPackTallyPnl(mgMonthShift(k, -1));
   const plS = tk ? Object.assign({}, s, tk) : s, plP = tp ? Object.assign({}, p || {}, tp) : p;
+  // A month still in progress isn't comparable with a whole month: show both, no change.
+  const plCmp = !!plP && !(tk && tk.pl_in_progress);
   const cfg = mgPackCfg(), on = new Set(cfg.sections);
   const org = mgOrgName(), month = mgMonthLabel(k);
   const today = fmtDay(new Date().toISOString());
@@ -148,17 +150,17 @@ function mgPackDoc(k){
   const tile = (l, v, note) => '<div class="pk-tile"><div class="pk-tile-l">' + escapeHtml(l) + '</div><div class="pk-tile-v">' + escapeHtml(v) + '</div><div class="pk-tile-n">' + note + '</div></div>';
   const headline = '<div class="pk-tiles">' +
     tile('Cash at month end', fmtINR(s.cash, 'tile'), p ? mgPackChg(s.cash, p.cash, true) + ' vs prior month' : 'First month') +
-    tile('Revenue', fmtINR(plS.revenue, 'tile'), (tk && tk.pl_in_progress ? 'Month in progress · ' : '') + (plP ? mgPackChg(plS.revenue, plP.revenue, true) + ' vs prior month' : '')) +
+    tile('Revenue', fmtINR(plS.revenue, 'tile'), (tk && tk.pl_in_progress ? 'Month in progress' : plCmp ? mgPackChg(plS.revenue, plP.revenue, true) + ' vs prior month' : '')) +
     tile('Net profit', fmtINR(plS.net_profit, 'tile'), margin != null ? escapeHtml(margin.toFixed(1) + '% margin') : '') +
     tile('Pulse Score', s.pulse_score != null ? String(s.pulse_score) : 'n/a', band ? escapeHtml(band.label + ' · operating health') : '') + '</div>';
 
   // 2. P&L
-  const plRow = (l, a, b, goodUp) => '<tr><td>' + escapeHtml(l) + '</td><td class="r">' + mgPackN(a) + '</td><td class="r">' + (plP ? mgPackN(b) : '—') + '</td><td class="r">' + (plP ? mgPackN(Number(a) - Number(b)) : '—') + '</td><td class="r">' + (plP ? mgPackChg(a, b, goodUp) : '—') + '</td></tr>';
+  const plRow = (l, a, b, goodUp) => '<tr><td>' + escapeHtml(l) + '</td><td class="r">' + mgPackN(a) + '</td><td class="r">' + (plP ? mgPackN(b) : '—') + '</td><td class="r">' + (plCmp ? mgPackN(Number(a) - Number(b)) : '—') + '</td><td class="r">' + (plCmp ? mgPackChg(a, b, goodUp) : '—') + '</td></tr>';
   const pl = mgPackTable(['', month + (tk && tk.pl_in_progress ? ', so far' : '') + ' (₹)', (plP ? mgMonthLabel(mgMonthShift(k, -1)) : 'Prior month') + ' (₹)', 'Change (₹)', 'Change %'], [
     plRow('Revenue', plS.revenue, plP && plP.revenue, true),
     plRow('Total spend', plS.burn, plP && plP.burn, false),
     plRow('Net profit', plS.net_profit, plP && plP.net_profit, true),
-    '<tr><td>Net margin</td><td class="r">' + (margin != null ? margin.toFixed(1) + '%' : '—') + '</td><td class="r">' + (marginP != null ? marginP.toFixed(1) + '%' : '—') + '</td><td class="r">' + (margin != null && marginP != null ? (margin - marginP >= 0 ? '+' : '−') + Math.abs(margin - marginP).toFixed(1) + ' pts' : '—') + '</td><td class="r"></td></tr>'
+    '<tr><td>Net margin</td><td class="r">' + (margin != null ? margin.toFixed(1) + '%' : '—') + '</td><td class="r">' + (marginP != null ? marginP.toFixed(1) + '%' : '—') + '</td><td class="r">' + (plCmp && margin != null && marginP != null ? (margin - marginP >= 0 ? '+' : '−') + Math.abs(margin - marginP).toFixed(1) + ' pts' : '—') + '</td><td class="r"></td></tr>'
   ], 'pkPl') + '<div class="pk-note">' + (tk || tp ? 'Revenue, spend and profit are each month’s own figures from Tally’s books (sales before GST; spend is purchases, direct costs and running costs, before stock movement).' + (tk && tk.pl_in_progress ? ' ' + escapeHtml(month) + ' is still in progress.' : '') : 'Monthly revenue and spend as recorded in each month’s closing reading.') + ' Net profit = revenue − spend.</div>';
 
   // 3. cash
