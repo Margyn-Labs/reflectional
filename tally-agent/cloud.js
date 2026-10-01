@@ -4,6 +4,11 @@
  * Uses the global fetch() available in Node 18+. Zero dependencies.
  */
 
+// Margyn's replies carry `agent` directives (minimum version, one-off commands). Whoever runs the
+// agent (the desktop app) subscribes here; the CLI ignores them.
+let directiveListener = null;
+function onDirective(fn) { directiveListener = typeof fn === 'function' ? fn : null; }
+
 async function apiFetch(base, action, { method = 'POST', body, bearer } = {}) {
   const url = `${base}/api/tally?action=${encodeURIComponent(action)}`;
   const headers = { 'Content-Type': 'application/json' };
@@ -30,6 +35,7 @@ async function apiFetch(base, action, { method = 'POST', body, bearer } = {}) {
     err.code = data.error;
     throw err;
   }
+  if (data && data.agent && directiveListener) { try { directiveListener(data.agent); } catch (e) { /* never break a sync */ } }
   return data;
 }
 
@@ -45,6 +51,7 @@ async function withRetry(fn, tries = 3) {
 }
 
 module.exports = {
+  onDirective,
   pairComplete: (base, payload) => apiFetch(base, 'pair-complete', { body: payload }),
   ingest: (base, bearer, payload) => withRetry(() => apiFetch(base, 'ingest', { bearer, body: payload })),
   health: (base, bearer, payload) => apiFetch(base, 'health', { bearer, body: payload })
