@@ -174,11 +174,13 @@ async function handleSummary(req, res) {
     // receivables look tiny and payables huge, and dropped most bank/GST ledgers).
     const [B, V, L] = await Promise.all([
       pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=overdue_days.desc.nullslast,party_name.asc,bill_ref.asc`, 20000),
-      selectRows('tally_vouchers', `select=voucher_type,voucher_base,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`)
-        .catch(() => selectRows('tally_vouchers', `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`)),
+      // PostgREST returns at most 1,000 rows per request, so page: a busy book has more than
+      // 1,000 vouchers in 30 days and sales_30d was undercounting.
+      pagedAll('tally_vouchers', `select=voucher_type,voucher_base,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc,tally_guid.asc`, 4000)
+        .catch(() => pagedAll('tally_vouchers', `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc,tally_guid.asc`, 4000)),
       pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
     ]);
-    bills = B.rows; vouchers = V; ledgers = L.rows;
+    bills = B.rows; vouchers = V.rows; ledgers = L.rows;
     try { bills = calibrateBills(bills, vouchers).bills; } catch (e) { /* keep stored labels */ }
   } catch (e) {
     return json(res, 500, { error: 'lookup_failed' });
