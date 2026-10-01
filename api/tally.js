@@ -44,6 +44,7 @@ const {
 const { track } = require('./_lib/track');
 const { computeAnalytics, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
+const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -172,7 +173,8 @@ async function handleSummary(req, res) {
     // receivables look tiny and payables huge, and dropped most bank/GST ledgers).
     const [B, V, L] = await Promise.all([
       pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=overdue_days.desc.nullslast,party_name.asc,bill_ref.asc`, 20000),
-      selectRows('tally_vouchers', `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`),
+      selectRows('tally_vouchers', `select=voucher_type,voucher_base,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`)
+        .catch(() => selectRows('tally_vouchers', `select=voucher_type,voucher_number,date,party_name,amount&install_id=in.${inList}&order=date.desc&limit=2000`)),
       pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
     ]);
     bills = B.rows; vouchers = V; ledgers = L.rows;
@@ -219,7 +221,8 @@ async function handleSummary(req, res) {
     const ms = dateMs(v.date);
     if (!Number.isNaN(ms) && ms >= cutoff) {
       const amt = Math.abs(Number(v.amount) || 0);
-      if (/\bsales?\b/i.test(t) && !/credit|return|order/i.test(t)) sales30 += amt;
+      const bt = v.voucher_base || t;
+      if (/\bsales?\b/i.test(bt) && !/credit|return|order/i.test(bt)) sales30 += amt;
       if (/receipt/i.test(t)) receipts30 += amt;
     }
   }
@@ -308,19 +311,26 @@ async function handleAnalytics(req, res) {
   const lastSync = chosen.map((i) => i.last_sync_at).filter(Boolean).sort().pop() || null;
 
   let ledgers, bills, vouchers, truncated = false, overrides = {}, syncRuns = [];
+  const aiPlaced = new Set();
   try {
     // The three reads are independent; run them together. Vouchers are the big one,
     // so they page four requests at a time (see pagedAll).
     const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries';
+    // Newer columns arrive with migrations; try the richest select first and fall back column by column.
     const voucherQ = async () => {
-      try { return await pagedAll('tally_vouchers', `select=${base},items&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000); }
-      catch (e) {
-        // `items` column arrives with the inventory migration; work without it until then.
-        return await pagedAll('tally_vouchers', `select=${base}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000);
+      let last;
+      for (const extra of [',items,voucher_base', ',items', ',voucher_base', '']) {
+        try { return await pagedAll('tally_vouchers', `select=${base}${extra}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000); }
+        catch (e) { last = e; }
       }
+      throw last;
+    };
+    const ledgerQ = async () => {
+      try { return await pagedAll('tally_ledgers', `select=name,parent,primary_group,opening_balance,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
+      catch (e) { return await pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
     };
     const [L, B, V] = await Promise.all([
-      pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000),
+      ledgerQ(),
       pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, 10000),
       voucherQ()
     ]);
@@ -328,8 +338,9 @@ async function handleAnalytics(req, res) {
   } catch (e) { return json(res, 500, { error: 'lookup_failed' }); }
 
   try {
-    const O = await selectRows('tally_ledger_classes', `select=ledger_name,bucket&user_id=eq.${user.id}${company ? '&company_name=eq.' + encodeURIComponent(company) : ''}`);
+    const O = await selectRows('tally_ledger_classes', `select=ledger_name,bucket,set_by&user_id=eq.${user.id}${company ? '&company_name=eq.' + encodeURIComponent(company) : ''}`);
     overrides = Object.fromEntries(O.map((o) => [o.ledger_name, o.bucket]));
+    for (const o of O) if (!o.set_by) aiPlaced.add(o.ledger_name);   // set_by null = placed by the model
   } catch (e) { /* table not created yet: no overrides */ }
   try {
     // The agent soft-fails vouchers and bills, so the last outcome per kind is part of how far to trust this.
@@ -337,7 +348,31 @@ async function handleAnalytics(req, res) {
   } catch (e) { /* older deployments */ }
 
   const rate = parseFloat(req.query && req.query.credit_rate);
-  const out = computeAnalytics({ ledgers, vouchers, bills, overrides, syncRuns, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  let out = run(overrides);
+
+  // Whatever Tally's own groups could not place, the model places once and we remember it. Never overrides
+  // a person's answer (those are in `overrides` already), and the arithmetic stays deterministic.
+  const pending = (out.quality.unclassified_ledgers || []).concat(out.quality.guessed_ledgers || [])
+    .filter((x) => !(x.ledger in overrides)).slice(0, 40);
+  if (pending.length && process.env.ANTHROPIC_API_KEY) {
+    const groupOf = new Map(ledgers.map((l) => [l.name, l.primary_group || null]));
+    const placed = await classifyLedgersWithAI(pending.map((x) => ({ ledger: x.ledger, parent: x.parent, primary_group: groupOf.get(x.ledger) || null, vouchers: x.vouchers, volume: x.volume })),
+      { apiKey: process.env.ANTHROPIC_API_KEY });
+    if (placed.length) {
+      try {
+        await insertRows('tally_ledger_classes', placed.map((x) => ({
+          user_id: user.id, company_name: company || '', ledger_name: x.ledger, bucket: x.bucket, set_by: null, updated_at: new Date().toISOString()
+        })), { onConflict: 'user_id,company_name,ledger_name', merge: true });
+      } catch (e) { /* table missing: still use the answers for this response */ }
+      for (const x of placed) { overrides[x.ledger] = x.bucket; aiPlaced.add(x.ledger); }
+      out = run(overrides);
+    }
+  }
+  if (aiPlaced.size) {
+    out.quality.ai_classified = [...aiPlaced].slice(0, 30).map((l) => ({ ledger: l, bucket: overrides[l] }));
+    out.quality.reasons.unshift(`Margyn placed ${aiPlaced.size} ledger(s) in the profit and loss for you (e.g. ${[...aiPlaced].slice(0, 3).join(', ')}). Change any of them under “Margyn needs your help”.`);
+  }
   const staleH = lastSync ? Math.round((Date.now() - Date.parse(lastSync)) / 3600000) : null;
   if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind Tally.`);
   if (truncated) out.quality.reasons.unshift('Voucher history was capped at 20,000 rows, so older months may be incomplete.');
@@ -549,6 +584,7 @@ const INGEST = {
       tally_master_id: str(r.master_id),
       name: str(r.name),
       parent: str(r.parent),
+      primary_group: str(r.primary_group),
       opening_balance: num(r.opening_balance),
       closing_balance: num(r.closing_balance),
       closing_balance_raw: str(r.closing_balance_raw != null ? r.closing_balance_raw : r.closing_balance),
@@ -569,6 +605,7 @@ const INGEST = {
       company_name: ctx.companyName,
       tally_guid: str(r.guid) || synthGuid(ctx.installId, 'voucher', (r.voucher_type || '') + '|' + (r.voucher_number || '') + '|' + (r.date || '')),
       voucher_type: str(r.voucher_type),
+      voucher_base: ctx.voucherTypes ? (ctx.voucherTypes[str(r.voucher_type)] || null) : null,
       voucher_number: str(r.voucher_number),
       date: str(r.date),
       narration: str(r.narration),
@@ -634,7 +671,8 @@ async function handleIngest(req, res) {
   const companyName = str(body.company_name) || inst.company_name;
   const asOfDate = str(body.as_of_date);
 
-  const ctx = { userId: inst.user_id, installId: inst.id, companyName, asOfDate, now };
+  const vt = body.voucher_types && typeof body.voucher_types === 'object' && !Array.isArray(body.voucher_types) ? body.voucher_types : null;
+  const ctx = { userId: inst.user_id, installId: inst.id, companyName, asOfDate, now, voucherTypes: vt };
 
   const mapped = [];
   let skipped = 0;
@@ -651,17 +689,19 @@ async function handleIngest(req, res) {
   let upserted = 0;
   try {
     // PostgREST upsert with merge-duplicates on the natural key.
-    let result;
-    try {
-      result = await insertRows(spec.table, mapped, { onConflict: spec.onConflict, merge: true });
-    } catch (e) {
-      // The stock-lines column ships with 2026-10-01-tally-voucher-items.sql. An agent that already
-      // sends `items` must not lose every voucher just because that migration hasn't run yet
-      // (PGRST204: Could not find the 'items' column). Retry once without it.
-      if (kind === 'vouchers' && /PGRST204|'items'|column.*items/i.test(String(e && e.message))) {
-        console.warn('[tally] tally_vouchers.items missing; storing vouchers without stock lines. Run 2026-10-01-tally-voucher-items.sql.');
-        result = await insertRows(spec.table, mapped.map((r) => { const { items, ...rest } = r; return rest; }), { onConflict: spec.onConflict, merge: true });
-      } else throw e;
+    // Columns added by later migrations (items, voucher_base, primary_group) may not exist yet. A missing
+    // column must never cost a whole batch: drop just that column and retry (PGRST204 names it).
+    let result, rows = mapped;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        result = await insertRows(spec.table, rows, { onConflict: spec.onConflict, merge: true });
+        break;
+      } catch (e) {
+        const col = /Could not find the '([a-z_]+)' column/i.exec(String(e && e.message));
+        if (!col || attempt >= 4 || !['items', 'voucher_base', 'primary_group'].includes(col[1])) throw e;
+        console.warn(`[tally] ${spec.table}.${col[1]} missing; storing without it. Run the SQL migration.`);
+        rows = rows.map((r) => { const o = Object.assign({}, r); delete o[col[1]]; return o; });
+      }
     }
     upserted = Array.isArray(result) ? result.length : mapped.length;
   } catch (e) {
