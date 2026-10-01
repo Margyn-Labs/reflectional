@@ -1,6 +1,6 @@
 {
   "name": "margyn-tally-agent",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Local desktop agent — syncs TallyPrime (HTTP/XML server, port 9000) into Margyn's cloud. PROTOTYPE.",
   "bin": { "margyn-tally-agent": "agent.js" },

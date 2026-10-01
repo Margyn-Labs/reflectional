@@ -104,6 +104,14 @@ function startCloud(port) {
   const ed = store.vouchers.get(editedGuid);
   assert.ok(Math.abs(ed.entries.reduce((s2, e) => s2 + e.amount, 0)) < 0.01 && Math.abs(ed.amount) > 0, 'edited voucher stored, balanced');
 
+  // 2c) VP's laptop on 2026-10-01: an older build had settled on the Day Book, and nothing changed in
+  //     Tally since. The upgrade must still re-test and move to the full-year read.
+  const sDB = config.load().syncState;
+  config.save({ syncState: Object.assign({}, sDB, { strategy: 'day-book', strategyDegraded: false, calibration: 1, strategyAt: Date.now() }) });
+  const r2c = await agent.runFullSync(config.load());
+  assert.notStrictEqual(r2c.vouchers.mode, 'unchanged', 're-tests despite no Tally changes');
+  assert.strictEqual(config.load().syncState.strategy, 'collection-period');
+
   // 3) A deleted voucher disappears on the next full pass; months verified against Tally.
   store.vouchers.set('ghost-1', { guid: 'ghost-1', date: '2026-05-10', voucher_type: 'Sales', synced_at: '2000-01-01T00:00:00Z' });
   const s = config.load().syncState; s.lastFullAt = 0; config.save({ syncState: s });

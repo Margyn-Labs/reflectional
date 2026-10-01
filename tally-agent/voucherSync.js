@@ -339,7 +339,13 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
   const nowMs = now.getTime();
   const altVch = fact && fact.alt_vch_id != null ? fact.alt_vch_id : null;
   const companyChanged = state.periodKey !== periodKey;
-  const fullDue = companyChanged || !state.strategy || !state.lastFullAt || nowMs - state.lastFullAt > FULL_PASS_EVERY_MS || !!state.fullRun;
+  // Day Book never honours dates, so it is only ever a stopgap: re-test daily. A new way of reading
+  // (CALIBRATION) re-tests once on upgrade, so a fix reaches PCs that settled on a fallback. Checked
+  // BEFORE the "nothing changed in Tally" shortcut, or a PC on a fallback would never re-test.
+  const degraded = state.strategyDegraded || state.strategy === 'day-book';
+  const recheckDegraded = degraded && (!state.strategyAt || nowMs - state.strategyAt > 24 * 3600 * 1000);
+  const needCalibrate = !state.strategy || companyChanged || recheckDegraded || state.calibration !== CALIBRATION;
+  const fullDue = needCalibrate || !state.lastFullAt || nowMs - state.lastFullAt > FULL_PASS_EVERY_MS || !!state.fullRun;
 
   if (!fullDue && altVch != null && state.altVchId === altVch) {
     log('No voucher changes in Tally since the last sync.');
@@ -350,11 +356,7 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
   if (counts) diag.tally_counts = counts;
 
   // 1) Which request shape does this Tally answer? (once per company/period, or after a degraded pick)
-  // Day Book never honours dates, so it is only ever a stopgap: re-test daily. A new way of reading
-  // (CALIBRATION) re-tests once on upgrade, so a fix reaches PCs that settled on a fallback.
-  const degraded = state.strategyDegraded || state.strategy === 'day-book';
-  const recheckDegraded = degraded && (!state.strategyAt || nowMs - state.strategyAt > 24 * 3600 * 1000);
-  if (!state.strategy || companyChanged || recheckDegraded || state.calibration !== CALIBRATION) {
+  if (needCalibrate) {
     const windows = monthWindows(period.from, period.to);
     let probe = windows.find((w) => w.key === (fact && fact.last_voucher_date ? String(fact.last_voucher_date).slice(0, 7) : null));
     if (counts) {
