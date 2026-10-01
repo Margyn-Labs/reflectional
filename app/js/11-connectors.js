@@ -189,8 +189,8 @@ async function disconnectShopify(){
    ============================================================ */
 // Stable name, always the newest build. Agents from 0.2.0 on also update themselves from the same folder.
 const MARGYN_TALLY_AGENT_DOWNLOAD = 'https://pub-432244bb0d9047989ffc94163a2fea75.r2.dev/tally-agent/Margyn-Tally-Agent-Setup.exe';
-const MARGYN_TALLY_AGENT_MIN = [0, 2, 1];
-/* Agents before 0.2.1 read only the current day's vouchers from Tally and cannot update themselves. */
+const MARGYN_TALLY_AGENT_MIN = [0, 2, 3];
+/* Agents before 0.2.3 read only the current day's vouchers from Tally and cannot update themselves. */
 function tallyAgentOutdated(v){
   const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
   if(!m) return true;
