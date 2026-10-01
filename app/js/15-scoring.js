@@ -148,6 +148,9 @@ function zohoInputCandidates(){
    Aggregator bank feed replaces it. */
 const TALLY_LIQUID_GROUP = /(bank account|cash-?in-?hand|cash in hand)/i;
 const TALLY_BORROW_GROUP = /(\bo\/?d\b|overdraft|occ|cash credit|loan)/i;
+// A sweep account parks idle current-account money in a deposit that the bank pulls
+// back automatically, so it is cash even though Tally files it under Deposits (Asset).
+const TALLY_SWEEP = (x) => /sweep/i.test(String(x.name || '')) && /deposit/i.test(String(x.parent || ''));
 function tallyCashBalance(){
   const t = tallyLiquidLedgers();
   if(!t.liquid.length) return null;
@@ -161,7 +164,7 @@ function tallyLiquidLedgers(){
   const items = (tallyData && tallyData.ledgers && tallyData.ledgers.items) || [];
   const liquid = items.filter(x =>
     x.closing_balance != null &&
-    TALLY_LIQUID_GROUP.test(String(x.parent || '')) &&
+    (TALLY_LIQUID_GROUP.test(String(x.parent || '')) || TALLY_SWEEP(x)) &&
     !TALLY_BORROW_GROUP.test(String(x.parent || '')) &&
     !TALLY_BORROW_GROUP.test(String(x.name || ''))
   );
@@ -207,6 +210,18 @@ function tallyInputCandidates(){
     put('paySoon', b.payable_total);
   }
   put('revenue', v.sales_30d);
+  // Revenue, burn and profit from Tally's own monthly P&L, averaged over up to six
+  // closed months: the latest month is often missing late-booked expenses (salaries, rent).
+  // Without this, burn and profit stayed frozen at whatever the first snapshot saw.
+  const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || [])
+    .filter(r => !r.provisional && !r.partial_start && Number(r.net_sales) > 0).slice(-6);
+  if(pnl.length){
+    const avg = (f) => pnl.reduce((sum, r) => sum + (Number(f(r)) || 0), 0) / pnl.length;
+    put('revenue', avg(r => r.net_sales));
+    const burn = avg(r => (Number(r.cogs_pre_stock) || 0) + (Number(r.opex) || 0));
+    if(burn > 0) put('burn', burn);
+    put('netProfit', avg(r => r.net_profit_pre_stock));
+  }
   return out;
 }
 
@@ -402,6 +417,10 @@ function inputsMateriallyDiffer(inputs, latest){
 async function resolveAndSaveSnapshot(){
   if(!currentUser) return false;
   let latest = snapshots[0];
+  // Tally's monthly P&L feeds revenue, burn and profit (tallyInputCandidates); load it first.
+  if(typeof mgLoadMargin === 'function' && typeof tallyConnected !== 'undefined' && tallyConnected){
+    try { await mgLoadMargin(); } catch(e){}
+  }
 
   const { inputs, provenance, conflicts, hasConnectorInput } = resolveSnapshotInputs();
   if(!hasConnectorInput) return false;          // nothing connected: manual flow is unchanged

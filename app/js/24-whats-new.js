@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-02-tally-pulse-figures', date:'2 Oct 2026', title:'Pulse Score now runs on your real Tally figures',
+    items:[
+      { t:'Burn, profit and runway from Tally’s monthly P&L', what:'Revenue, monthly spend and profit on Home and in the Pulse Score now come from Tally’s own month-by-month P&L (average of the last six closed months), and update after every sync. Before, they could stay stuck at an early figure.',
+        how:'Nothing to do. Open Home after the next Tally sync.', act:'home' },
+      { t:'Sweep deposits count as cash', what:'Money your bank sweeps into a linked deposit (a “sweep” ledger under Deposits in Tally) is now counted in Cash, because the bank moves it back to your current account on its own.',
+        how:'See each account on the Cash page.', act:'cash' }
+    ]
+  },
+  {
     id:'2026-10-02-tally-agent-full-year', date:'2 Oct 2026', title:'Your whole financial year from Tally, checked against Tally',
     items:[
       { t:'Every voucher of the year, not just today’s', what:'The Tally agent now reads the full financial year month by month, and checks each month against Tally’s own voucher count. Margin shows “matches Tally’s own voucher count” when everything arrived.',
@@ -154,6 +163,8 @@ const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
 const MG_WN_ACTS = {
   panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
   margin:{ label:'Open Margin', run:() => { if(typeof showView === 'function') showView('margin'); } },
+  home:{ label:'Open Home', run:() => { if(typeof showView === 'function') showView('home'); } },
+  cash:{ label:'Open Cash', run:() => { if(typeof showView === 'function') showView('cash'); } },
   connectors:{ label:'Open Connectors', run:() => { if(typeof showView === 'function') showView('connectors'); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
   team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }

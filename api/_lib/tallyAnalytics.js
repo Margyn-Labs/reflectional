@@ -419,7 +419,9 @@ function computeAnalytics(input) {
   }
 
   // ----- cash: Tally's balance when it gave one, otherwise derived from vouchers -----
-  const cashLedgers = ledgers.filter((l) => ['bank', 'cash'].includes(cls(l.name).bucket));
+  // Sweep deposits count: the bank moves that money back into the current account on its own.
+  const isSweep = (l) => /sweep/i.test(String(l.name || '')) && /deposit/i.test(String(l.parent || ''));
+  const cashLedgers = ledgers.filter((l) => ['bank', 'cash'].includes(cls(l.name).bucket) || isSweep(l));
   // A derived balance needs a known opening balance. With neither a closing nor an
   // opening balance from Tally there is nothing honest to show, so cash is unavailable.
   let cashTotal = 0, cashDerived = 0, cashUnresolved = 0;
