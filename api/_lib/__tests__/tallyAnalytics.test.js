@@ -195,4 +195,16 @@ check('empty input does not throw, says so', e.pnl.length === 0 && e.quality.con
   check('creditor group with "expenses" in the name is not guessed as opex', !o.quality.guessed_ledgers.some((u) => u.ledger === 'VEER PACKAGING'), o.quality.guessed_ledgers);
   check('inverted bill signs flipped to receivables', o.working_capital.receivables > 100000 && o.working_capital.payables === 0, o.working_capital);
 }
+
+// ---- renamed sales voucher types, short history ----
+{
+  const o = computeAnalytics({
+    ledgers: [{ name: 'Sales', parent: 'Sales Accounts', opening_balance: 0, closing_balance: 100 }, { name: 'Cust', parent: 'Sundry Debtors', opening_balance: 0, closing_balance: -100 }],
+    vouchers: [{ tally_guid: 's1', voucher_type: 'KANDIVALI SALE', voucher_number: '1', date: '2026-09-10', party_name: 'Cust', is_cancelled: false,
+      entries: [{ ledger: 'Cust', amount: -100, is_party: true }, { ledger: 'Sales', amount: 100 }] }],
+    bills: [{ direction: 'receivable', party_name: 'Cust', bill_ref: '1', closing_balance: 5000, overdue_days: 9 }], now: '2026-09-30'
+  });
+  check('KANDIVALI SALE counts as sales', o.period.net_sales === 100, o.period);
+  check('days-to-pay hidden on under 80 days of vouchers', o.working_capital.dso_days === null && o.quality.reasons.some((r) => /days of vouchers/.test(r)), o.working_capital);
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
