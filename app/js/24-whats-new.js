@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-02-margyn-brain', date:'2 Oct 2026', title:'A sharper Margyn',
+    items:[
+      { t:'Margyn runs on Claude’s newest models', what:'Chat, WhatsApp, the daily briefing, findings and file import now use Claude Sonnet 5.5, and Deep answers use Claude Opus 5.5. Answers are sharper and less likely to be cut off.',
+        how:'Ask Margyn anything, as before.', act:'home' },
+      { t:'Margyn knows Margin and Channel health', what:'Ask “are my reminders actually going out?”, “how much did you recover after chasing?” or “what’s my gross margin?” and Margyn reads those pages for you, or opens them.',
+        how:'Ask in the Margyn panel, typed or by voice.', act:'channels' }
+    ]
+  },
+  {
     id:'2026-10-02-figures-check', date:'2 Oct 2026', title:'Every screen checked against your books',
     items:[
       { t:'Receivables ageing by invoice', what:'Receivables and Payables now age each invoice on its own. Before, a customer’s whole balance went into the bucket of their oldest invoice, so one old bill could make a big balance look 90+ days late. Home’s “past 60 days” uses the same rule.',

@@ -14,6 +14,8 @@
  * Zero-npm: plain Date math + fetch() only. CommonJS to match _lib/supabaseRest.js.
  */
 
+const { callClaude, textOf } = require('./claude');
+
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -381,7 +383,11 @@ async function classifyWithClaude(text, recentContext) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
-  const model = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5';
+  // A "classify" job: one label from a fixed list, checked against `allowed`
+  // below. Haiku does this well and doesn't spend tokens thinking — on
+  // Sonnet 5 the default reasoning could use up all 120 tokens and return
+  // no JSON at all.
+  const model = process.env.CHASE_CLASSIFIER_MODEL || 'claude-haiku-4-5-20251001';
   const system =
     'You classify a single inbound WhatsApp reply from a customer who was sent a payment reminder. ' +
     'Reply with ONLY a compact JSON object, no prose: ' +
@@ -391,14 +397,11 @@ async function classifyWithClaude(text, recentContext) {
   const user = (recentContext ? 'Earlier: ' + recentContext + '\n\n' : '') + 'Reply: ' + String(text || '').slice(0, 600);
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 120, system, messages: [{ role: 'user', content: user }] })
+    const data = await callClaude({
+      label: 'chase-classifier', job: 'classify', apiKey,
+      model, max_tokens: 120, system, messages: [{ role: 'user', content: user }]
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const txt = (Array.isArray(data.content) ? data.content : []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    const txt = textOf(data);
     const jm = txt.match(/\{[\s\S]*\}/);
     if (!jm) return null;
     const parsed = JSON.parse(jm[0]);

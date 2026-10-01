@@ -24,6 +24,9 @@
 // Zero-npm: plain fetch() to both Supabase's REST API and Anthropic's.
 
 import { splitValue, numericFromVitalValue, numDelta, computePaymentsMetrics } from './_lib/vitals-utils.js';
+import { createHash } from 'crypto';
+import claudePkg from './_lib/claude.js';
+const { callClaude, effortFor, escalate, textOf } = claudePkg;
 
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
@@ -36,7 +39,7 @@ const INDEPENDENT_SOURCES = ['razorpay', 'shopify', 'razorpay_live']; // razorpa
 // producing valid structured JSON), so it's worth being able to keep
 // this one on a stronger model even if the chat narration is switched
 // to something cheaper. Set FINDINGS_MODEL in Vercel to override.
-const FINDINGS_MODEL = process.env.FINDINGS_MODEL || 'claude-sonnet-5';
+const FINDINGS_MODEL = process.env.FINDINGS_MODEL || 'claude-sonnet-5-5';
 
 // These are the only three `snapshots.source` values that exist in the
 // schema today — every one of them is a human typing or uploading a
@@ -110,8 +113,20 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Every save fires this (ledger edits, imports, snapshot saves). If the
+    // exact same evidence was already turned into findings for this
+    // snapshot, return those rather than paying to regenerate them. The
+    // fingerprint lives in findings.evidence (jsonb) — no schema change.
+    const inputHash = evidenceHash(evidence);
+    const already = await sbGet(
+      `/rest/v1/findings?select=*&snapshot_id=eq.${snapshots[0].id}&evidence->>inputHash=eq.${inputHash}&order=generated_at.desc&limit=3`,
+      accessToken
+    ).catch(() => []);
+    if (already.length) { res.status(200).json({ findings: already, cached: true }); return; }
+
     const claims = await askClaudeForFindings(evidence, apiKey);
     const validated = claims.map(c => validateFinding(c, evidence)).filter(Boolean).slice(0, 3);
+    validated.forEach(f => { f.evidenceUsed.inputHash = inputHash; });
     const rows = await insertFindings(userId, snapshots[0].id, accessToken, validated);
     res.status(200).json({ findings: rows });
   } catch (err) {
@@ -339,22 +354,41 @@ If there is truly nothing worth flagging, output {"findings":[]}.`;
 
   const user = `Metric menu (window: last ${evidence.windowSize} snapshots):\n${menu}\n\nLargest open receivables: ${evidence.topReceivables.join('; ') || 'none'}\nLargest open payables: ${evidence.topPayables.join('; ') || 'none'}`;
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: FINDINGS_MODEL, max_tokens: 900, system, messages: [{ role: 'user', content: user }] })
-  });
-  if (!r.ok) { console.error('Anthropic error:', r.status, await r.text()); return []; }
-  const data = await r.json();
-  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-  try {
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-    const parsed = JSON.parse(cleaned);
-    return Array.isArray(parsed.findings) ? parsed.findings : [];
-  } catch (e) {
-    console.error('Could not parse findings JSON:', text);
-    return [];
+  // An "extract" job: medium reasoning, and one retry a level up only if
+  // the JSON doesn't parse (the check that proves the cheap try failed).
+  // max_tokens leaves room for reasoning so the JSON isn't cut off.
+  let effort = effortFor('extract');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let data;
+    try {
+      data = await callClaude({
+        label: 'findings', job: 'extract', effort, apiKey,
+        model: FINDINGS_MODEL, max_tokens: 1800, system, messages: [{ role: 'user', content: user }]
+      });
+    } catch (e) {
+      console.error('Anthropic error:', e.status, e.body || e.message);
+      return [];
+    }
+    const text = textOf(data);
+    try {
+      const cleaned = text.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+      const parsed = JSON.parse(cleaned);
+      return Array.isArray(parsed.findings) ? parsed.findings : [];
+    } catch (e) {
+      console.error('Could not parse findings JSON (effort ' + effort + '):', text.slice(0, 500));
+      const up = escalate(effort);
+      if (!up || up === effort) return [];
+      effort = up;
+    }
   }
+  return [];
+}
+
+function evidenceHash(evidence) {
+  const menu = evidence.metrics.map(m => [m.key, m.valueText, !!m.material, !!m.selfReported].join('|')).join('\n');
+  return createHash('sha1')
+    .update(menu + '\n' + evidence.topReceivables.join(';') + '\n' + evidence.topPayables.join(';') + '\n' + FINDINGS_MODEL)
+    .digest('hex').slice(0, 16);
 }
 
 /* ---------- deterministic validation: the model's tier claim is never trusted on its own ---------- */
