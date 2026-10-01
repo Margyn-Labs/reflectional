@@ -27,7 +27,7 @@ function partyRoles(vouchers) {
   const tally = new Map();
   for (const v of vouchers || []) {
     if (!v || !v.party_name) continue;
-    const role = roleOf(v.voucher_type);
+    const role = roleOf(v.voucher_base || v.voucher_type);
     if (!role) continue;
     const k = nameKey(v.party_name);
     const r = tally.get(k) || { debtor: 0, creditor: 0 };

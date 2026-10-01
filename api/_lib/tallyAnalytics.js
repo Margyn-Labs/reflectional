@@ -116,7 +116,8 @@ function classifyLedgers(ledgers, overrides, partyRoles) {
     let c;
     if (ov[key]) c = { bucket: ov[key], confidence: 'confirmed' };
     else {
-      const direct = bucketFromParent(l.parent);
+      // Tally's own answer first: the immediate group, then the primary group it rolls up to.
+      const direct = bucketFromParent(l.parent) || bucketFromParent(l.primary_group);
       if (direct) c = { bucket: direct, confidence: 'group' };
       else {
         // Tally gives only the immediate parent, so a customer under a custom group ("PHARMA GIFTING")
@@ -221,7 +222,9 @@ function impliedEntry(v, entries) {
 function computeAnalytics(input) {
   const ledgers = dedupe(input.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
-  const allVouchers = dedupe(input.vouchers || [], (v) => (v && v.tally_guid ? 'g:' + v.tally_guid : null));
+  // A renamed voucher type ("KANDIVALI SALE") is judged by the base type Tally rolls it up to, when we have it.
+  const allVouchers = dedupe(input.vouchers || [], (v) => (v && v.tally_guid ? 'g:' + v.tally_guid : null))
+    .map((v) => (v && v.voucher_base ? Object.assign({}, v, { voucher_type_name: v.voucher_type, voucher_type: v.voucher_base }) : v));
   const calibrated = calibrateBills(input.bills || [], allVouchers);
   const bills = dedupe(calibrated.bills, (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
   const syncRuns = input.syncRuns || [];

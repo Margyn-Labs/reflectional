@@ -202,7 +202,8 @@ async function loadTallyBills(accountId) {
       selectAllRows('tally_bills',
         `select=direction,party_name,bill_ref,due_date,closing_balance&user_id=eq.${accountId}&install_id=in.${inList}&order=overdue_days.desc.nullslast,id.asc`,
         { max: MAX_ROWS }),
-      selectAllRows('tally_vouchers', `select=voucher_type,party_name&install_id=in.${inList}&party_name=not.is.null&order=date.desc,tally_guid.asc`, { max: 20000 })
+      selectAllRows('tally_vouchers', `select=voucher_type,voucher_base,party_name&install_id=in.${inList}&party_name=not.is.null&order=date.desc,tally_guid.asc`, { max: 20000 })
+        .catch(() => selectAllRows('tally_vouchers', `select=voucher_type,party_name&install_id=in.${inList}&party_name=not.is.null&order=date.desc,tally_guid.asc`, { max: 20000 }))
         .catch(() => ({ rows: [] }))
     ]);
     return { bills: calibrateBills(B.rows, V.rows).bills, truncated: B.truncated };
