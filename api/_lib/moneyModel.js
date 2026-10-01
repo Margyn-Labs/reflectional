@@ -27,6 +27,7 @@
  */
 
 const { selectRows, selectAllRows, rpc } = require('./supabaseRest');
+const { calibrateBills } = require('./tallyBills');
 
 const SRC_ORDER = ['zoho', 'tally', 'odoo', 'manual'];
 const SRC_NAME = { zoho: 'Zoho Books', tally: 'Tally', odoo: 'Odoo', manual: 'Manual entries' };
@@ -187,14 +188,36 @@ async function loadZoho(orgRef, dir) {
   };
 }
 
+// Both directions are needed to check the bill signs against how parties appear on vouchers (tallyBills.js),
+// and a position asks for each direction in turn, so keep the result for a few seconds.
+const tallyBillCache = new Map();
+async function loadTallyBills(accountId) {
+  const hit = tallyBillCache.get(accountId);
+  if (hit && Date.now() - hit.at < 5000) return hit.p;
+  const p = (async () => {
+    const installs = await selectRows('tally_installs', `select=id&user_id=eq.${accountId}&status=eq.active`);
+    if (!installs.length) return { bills: [], truncated: false };
+    const inList = `(${installs.map((i) => i.id).join(',')})`;
+    const [B, V] = await Promise.all([
+      selectAllRows('tally_bills',
+        `select=direction,party_name,bill_ref,due_date,closing_balance&user_id=eq.${accountId}&install_id=in.${inList}&order=overdue_days.desc.nullslast,id.asc`,
+        { max: MAX_ROWS }),
+      selectAllRows('tally_vouchers', `select=voucher_type,party_name&install_id=in.${inList}&party_name=not.is.null&order=date.desc,tally_guid.asc`, { max: 20000 })
+        .catch(() => ({ rows: [] }))
+    ]);
+    return { bills: calibrateBills(B.rows, V.rows).bills, truncated: B.truncated };
+  })();
+  tallyBillCache.set(accountId, { at: Date.now(), p });
+  p.catch(() => tallyBillCache.delete(accountId));
+  return p;
+}
+
 async function loadTally(accountId, dir) {
-  const installs = await selectRows('tally_installs', `select=id&user_id=eq.${accountId}&status=eq.active`);
-  if (!installs.length) return { rows: [], truncated: false };
-  const { rows, truncated } = await selectAllRows('tally_bills',
-    `select=party_name,bill_ref,due_date,closing_balance&user_id=eq.${accountId}&install_id=in.(${installs.map((i) => i.id).join(',')})&direction=eq.${dir === 'recv' ? 'receivable' : 'payable'}&order=overdue_days.desc.nullslast,id.asc`,
-    { max: MAX_ROWS });
+  const { bills, truncated } = await loadTallyBills(accountId);
+  const want = dir === 'recv' ? 'receivable' : 'payable';
   return {
-    rows: rows.map((b) => ({ party: b.party_name || 'Unknown', amount: Math.abs(num(b.closing_balance)), due: b.due_date || null, ref: b.bill_ref || null, src: 'tally' }))
+    rows: bills.filter((b) => b.direction === want)
+      .map((b) => ({ party: b.party_name || 'Unknown', amount: Math.abs(num(b.closing_balance)), due: b.due_date || null, ref: b.bill_ref || null, src: 'tally' }))
       .filter((r) => r.amount > 0),
     truncated
   };
@@ -250,6 +273,7 @@ async function loadRows(accountId, dir, ctx = {}) {
  * see (see actor.js); a direction left out is simply not returned.
  */
 async function positionForAccount(accountId, { dirs = ['recv', 'pay'], withRows = true, now = new Date() } = {}) {
+  tallyBillCache.delete(accountId);   // one fresh read per position; the two directions then share it
   const today = todayIST(now);
   const zohoOrg = await zohoOrgRef(accountId).catch(() => null);
   const out = { as_of: today, rules: 'Zoho > Tally > Odoo > manual; agree within 2% or Rs 1; source totals never added' };

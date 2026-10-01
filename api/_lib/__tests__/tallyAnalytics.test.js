@@ -168,4 +168,31 @@ check('party-only ledgers missing from the list are not asked about', !a.questio
 const e = computeAnalytics({ ledgers: [], vouchers: [], bills: [], now });
 check('empty input does not throw, says so', e.pnl.length === 0 && e.quality.confidence === 'low' && e.headlines.length === 0);
 
+
+// ---- item invoices without Sales line, custom customer groups, inverted bills (Care Hygiene, 2026-10-01) ----
+{
+  const L = [
+    { name: 'SUN PHARMA', parent: 'PHARMA GIFTING', opening_balance: 0, closing_balance: -118000 },
+    { name: 'IGST', parent: 'Duties & Taxes', opening_balance: 0, closing_balance: 18000 },
+    { name: 'VEER PACKAGING', parent: 'SUNDRY CREDITORS FOR EXPENSES', opening_balance: 0, closing_balance: 5000 },
+    { name: 'Bank', parent: 'Bank Accounts', opening_balance: 0, closing_balance: 100 }
+  ];
+  const V = [
+    { tally_guid: 'a', voucher_type: 'VASAI SALES', voucher_number: '1', date: '2026-09-10', party_name: 'SUN PHARMA', is_cancelled: false,
+      entries: [{ ledger: 'SUN PHARMA', amount: -118000, is_party: true }, { ledger: 'IGST', amount: 18000, is_party: false }] },
+    { tally_guid: 'b', voucher_type: 'Payment', voucher_number: '2', date: '2026-09-12', party_name: 'VEER PACKAGING', is_cancelled: false,
+      entries: [{ ledger: 'VEER PACKAGING', amount: -5000, is_party: true }, { ledger: 'Bank', amount: 5000, is_party: false }] }
+  ];
+  const B = [
+    { direction: 'payable', party_name: 'SUN PHARMA', bill_ref: 'x', closing_balance: -118000, overdue_days: 5 },
+    { direction: 'payable', party_name: 'SUN PHARMA', bill_ref: 'y', closing_balance: -10, overdue_days: 5 },
+    { direction: 'payable', party_name: 'SUN PHARMA', bill_ref: 'z', closing_balance: -10, overdue_days: 5 }
+  ];
+  const o = computeAnalytics({ ledgers: L, vouchers: V, bills: B, now: '2026-09-30' });
+  check('item invoice: sales = total less tax', o.period.net_sales === 100000, o.period);
+  check('payment to a creditor is not running cost', o.period.opex === 0, o.period);
+  check('custom customer group is placed, not asked about', !o.quality.unclassified_ledgers.some((u) => u.ledger === 'SUN PHARMA'), o.quality.unclassified_ledgers);
+  check('creditor group with "expenses" in the name is not guessed as opex', !o.quality.guessed_ledgers.some((u) => u.ledger === 'VEER PACKAGING'), o.quality.guessed_ledgers);
+  check('inverted bill signs flipped to receivables', o.working_capital.receivables > 100000 && o.working_capital.payables === 0, o.working_capital);
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
