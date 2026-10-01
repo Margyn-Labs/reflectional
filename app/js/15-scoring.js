@@ -411,7 +411,7 @@ async function resolveAndSaveSnapshot(){
     // supplies start at zero; revenue/burn/profit come from Tally's last closed month when we can.
     if(typeof mgLoadMargin === 'function' && typeof tallyConnected !== 'undefined' && tallyConnected){
       try { await mgLoadMargin(true); } catch(e){}
-      const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || []).filter(r => !r.provisional && r.net_sales > 0);
+      const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || []).filter(r => !r.provisional && !r.partial_start && r.net_sales > 0);
       const m = pnl[pnl.length - 1];
       if(m){
         if(!(inputs.revenue > 0)) inputs.revenue = m.net_sales;

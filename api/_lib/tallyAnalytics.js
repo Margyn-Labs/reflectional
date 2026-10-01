@@ -157,9 +157,10 @@ const DAY = 86400000;
 // Day Book also lists vouchers with no accounting effect. Never count these.
 const NON_ACCOUNTING = /\b(sales|purchase)\s*orders?\b|delivery\s*note|receipt\s*note|rejections?\s*(in|out)|memorandum|stock\s*journal|physical\s*stock|job\s*work|material\s*(in|out)|reversing\s*journal|manufacturing\s*journal|stock\s*transfer|payroll|attendance/i;
 const isNonAccounting = (t) => NON_ACCOUNTING.test(t || '');
-const isCreditNote = (t) => /credit\s*note/i.test(t || '');
-const isDebitNote = (t) => /debit\s*note/i.test(t || '');
-const isSalesType = (t) => /sales/i.test(t || '') && !isCreditNote(t);
+const isCreditNote = (t) => /credit\s*note|sales?\s*returns?/i.test(t || '');
+const isDebitNote = (t) => /debit\s*note|purchases?\s*returns?/i.test(t || '');
+// Voucher types are often renamed ("KANDIVALI SALE", "VASAI SALES"), so match sale or sales.
+const isSalesType = (t) => /\bsales?\b/i.test(t || '') && !isCreditNote(t);
 const isPurchaseType = (t) => /purchase/i.test(t || '') && !isDebitNote(t);
 const normParty = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
@@ -362,6 +363,7 @@ function computeAnalytics(input) {
     return {
       month: k,
       provisional: k >= currentMonth,
+      partial_start: k === monthKeys[0] && !!minD && minD.getUTCDate() > 7,
       gross_sales: r2(m.sales), sales_returns: r2(m.sales_returns), net_sales: r2(net_sales),
       purchases: r2(m.purchases), direct_expense: r2(m.direct_expense), direct_income: r2(m.direct_income),
       cogs_pre_stock: r2(cogs_pre_stock),
@@ -496,10 +498,14 @@ function computeAnalytics(input) {
   const sales90 = win.sales - win.returns;
   const cogs90 = win.purchases + win.direct_expense;
   const stockVal = stock.available ? stock.closing : null;
-  let dso = sales90 > 0 ? r2((recv / sales90) * 90) : null;
+  // Receivables and payables carry the whole history; sales and purchases only what was synced. With less than
+  // about three months of vouchers the ratios compare unlike things, so say nothing rather than 768 days.
+  const spanDays = minD && maxD ? Math.round((maxD - minD) / DAY) + 1 : 0;
+  const shortHistory = spanDays < 80;
+  let dso = sales90 > 0 && !shortHistory ? r2((recv / sales90) * 90) : null;
   if (dso != null && dso > 1825) { dso = null; implausible = true; }
-  const dpo = win.purchases > 0 ? r2((pay / win.purchases) * 90) : null;
-  const dio = stockVal != null && cogs90 > 0 ? r2((stockVal / cogs90) * 90) : null;
+  const dpo = win.purchases > 0 && !shortHistory ? r2((pay / win.purchases) * 90) : null;
+  const dio = stockVal != null && cogs90 > 0 && !shortHistory ? r2((stockVal / cogs90) * 90) : null;
   const working_capital = {
     receivables: r2(recv), receivables_overdue: r2(recvOverdue), payables: r2(pay),
     stock_value: stockVal,
@@ -673,6 +679,7 @@ function computeAnalytics(input) {
   if (bsLedgers.length && bsMissing) reasons.push(`Tally returned no balance for ${bsMissing} of ${bsLedgers.length} balance-sheet ledgers.`);
   if (!vouchers.length) { level = 'low'; reasons.push('No vouchers synced yet.'); }
   if (calibrated.inverted) reasons.push('Tally\'s bill signs ran the other way round for this company, so receivables and payables were swapped to match how your customers and vendors appear on vouchers.');
+  if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. Margyn needs the financial year's vouchers; check the agent's from-date.`);
   if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
   if (implausible) { level = 'low'; reasons.push('Sales look far too small next to costs and receivables, so margin and days-to-pay are hidden. The voucher sync is probably incomplete.'); }
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
@@ -703,7 +710,7 @@ function computeAnalytics(input) {
 
   // ----- deterministic headlines (the model only narrates these) -----
   const headlines = [];
-  const closed = pnl.filter((r) => !r.provisional && r.net_sales > 0);
+  const closed = pnl.filter((r) => !r.provisional && !r.partial_start && r.net_sales > 0);
   if (closed.length >= 2) {
     const a = closed[closed.length - 2], b = closed[closed.length - 1];
     if (a.gross_margin_pct_pre_stock != null && b.gross_margin_pct_pre_stock != null) {

@@ -10,12 +10,12 @@
  * bank-balance sign in the app, and never silent: callers get `inverted` back.
  */
 const nameKey = (s) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-const isCredit = (t) => /credit\s*note/i.test(t || '');
-const isDebit = (t) => /debit\s*note/i.test(t || '');
+const isCredit = (t) => /credit\s*note|sales?\s*returns?/i.test(t || '');
+const isDebit = (t) => /debit\s*note|purchases?\s*returns?/i.test(t || '');
 
 function roleOf(type) {
   const t = type || '';
-  if (/sales/i.test(t) && !isCredit(t)) return 'debtor';
+  if (/\bsales?\b/i.test(t) && !isCredit(t)) return 'debtor';
   if (isCredit(t) || /receipt/i.test(t)) return 'debtor';
   if (/purchase/i.test(t) && !isDebit(t)) return 'creditor';
   if (isDebit(t) || /payment/i.test(t)) return 'creditor';

@@ -219,7 +219,7 @@ async function handleSummary(req, res) {
     const ms = dateMs(v.date);
     if (!Number.isNaN(ms) && ms >= cutoff) {
       const amt = Math.abs(Number(v.amount) || 0);
-      if (/sales/i.test(t)) sales30 += amt;
+      if (/\bsales?\b/i.test(t) && !/credit|return|order/i.test(t)) sales30 += amt;
       if (/receipt/i.test(t)) receipts30 += amt;
     }
   }
