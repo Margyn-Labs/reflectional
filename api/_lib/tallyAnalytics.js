@@ -39,6 +39,8 @@
  *    part of the confidence story.
  */
 
+const { calibrateBills } = require('./tallyBills');
+
 /* ---------------- classification ---------------- */
 
 // Ledger names arrive with control characters / stray spaces and Tally treats
@@ -77,6 +79,11 @@ function bucketFromParent(parent) {
 function guessBucket(name, parent) {
   const p = String(parent || '').toLowerCase();
   const n = String(name || '').toLowerCase();
+  // People we owe or are owed by come first: "Sundry Creditors for Expenses" is a creditor group,
+  // not an expense, and counting payments to them as running cost inflates opex.
+  if (/creditor|\bpayables?\b/.test(p)) return 'creditor';
+  if (/debtor|receivable/.test(p)) return 'debtor';
+  if (/remuneration|salary|salaries|wages/.test(p)) return 'opex';
   if (/direct\s*exp|expenses?\s*\(?direct/.test(p)) return 'direct_expense';
   if (/direct\s*inc|income\s*\(?direct/.test(p)) return 'direct_income';
   if (/expense|overhead|admin|\bcosts?\b/.test(p)) return 'opex';
@@ -99,7 +106,7 @@ function guessBucket(name, parent) {
  * ledgers: [{name,parent}], overrides: { ledgerName: bucket }.
  * Returns Map name -> { bucket, confidence: 'confirmed'|'group'|'guessed'|'unknown' }.
  */
-function classifyLedgers(ledgers, overrides) {
+function classifyLedgers(ledgers, overrides, partyRoles) {
   const out = new Map();
   const ov = {};
   for (const k of Object.keys(overrides || {})) ov[nameKey(k)] = overrides[k];
@@ -112,8 +119,14 @@ function classifyLedgers(ledgers, overrides) {
       const direct = bucketFromParent(l.parent);
       if (direct) c = { bucket: direct, confidence: 'group' };
       else {
-        const g = guessBucket(l.name, l.parent);
-        c = g ? { bucket: g, confidence: 'guessed' } : { bucket: 'unknown', confidence: 'unknown' };
+        // Tally gives only the immediate parent, so a customer under a custom group ("PHARMA GIFTING")
+        // looks unplaced. How the ledger is USED settles it: a party on a sale is a customer, on a purchase a vendor.
+        const role = partyRoles && partyRoles.get(key);
+        if (role) c = { bucket: role, confidence: 'inferred' };
+        else {
+          const g = guessBucket(l.name, l.parent);
+          c = g ? { bucket: g, confidence: 'guessed' } : { bucket: 'unknown', confidence: 'unknown' };
+        }
       }
     }
     out.set(key, c);
@@ -166,20 +179,60 @@ function dedupe(rows, keyOf, prefer) {
   return [...seen.values()];
 }
 
+/* Which ledgers are customers and which are vendors, judged from how vouchers use them. */
+function partyRolesFromVouchers(vouchers) {
+  const tally = new Map();
+  for (const v of vouchers || []) {
+    if (!v || isNonAccounting(v.voucher_type)) continue;
+    const t = v.voucher_type || '';
+    const role = isSalesType(t) || isCreditNote(t) || /receipt/i.test(t) ? 'debtor'
+      : isPurchaseType(t) || isDebitNote(t) || /payment/i.test(t) ? 'creditor' : null;
+    if (!role) continue;
+    const names = new Set();
+    if (v.party_name) names.add(nameKey(v.party_name));
+    for (const e of Array.isArray(v.entries) ? v.entries : []) if (e && e.is_party && e.ledger) names.add(nameKey(e.ledger));
+    for (const k of names) {
+      const r = tally.get(k) || { debtor: 0, creditor: 0 };
+      r[role]++; tally.set(k, r);
+    }
+  }
+  const out = new Map();
+  for (const [k, r] of tally) if (r.debtor !== r.creditor) out.set(k, r.debtor > r.creditor ? 'debtor' : 'creditor');
+  return out;
+}
+
+/* Item invoices hold the Sales / Purchase ledger line inside the stock lines, which older agents never sent.
+   Every voucher balances to zero, so the missing line is exactly what is needed to balance it. */
+const IMPLIED_SALES = '(Sales from item lines)';
+const IMPLIED_PURCHASES = '(Purchases from item lines)';
+function impliedEntry(v, entries) {
+  const t = v.voucher_type || '';
+  const sales = isSalesType(t) || isCreditNote(t), purch = isPurchaseType(t) || isDebitNote(t);
+  if (!sales && !purch) return null;
+  const sum = entries.reduce((a, e) => a + num(e.amount), 0);
+  // Only a missing line (most of the invoice), never a rounding or stray few rupees.
+  if (Math.abs(sum) <= Math.max(1, 0.05 * Math.abs(num(v.amount)))) return null;
+  return { ledger: sales ? IMPLIED_SALES : IMPLIED_PURCHASES, amount: -sum, is_party: false, implied: true };
+}
+
 /* ---------------- the engine ---------------- */
 
 function computeAnalytics(input) {
   const ledgers = dedupe(input.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
   const allVouchers = dedupe(input.vouchers || [], (v) => (v && v.tally_guid ? 'g:' + v.tally_guid : null));
-  const bills = dedupe(input.bills || [], (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
+  const calibrated = calibrateBills(input.bills || [], allVouchers);
+  const bills = dedupe(calibrated.bills, (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
   const syncRuns = input.syncRuns || [];
   const edition = input.edition || null;
   const overrides = input.overrides || {};
   const now = input.now ? new Date(input.now) : new Date();
   const creditRate = input.creditRate != null ? input.creditRate : 0.12;
 
-  const classes = classifyLedgers(ledgers, overrides);
+  const classes = classifyLedgers(ledgers, overrides, partyRolesFromVouchers(allVouchers));
+  classes.set(nameKey(IMPLIED_SALES), { bucket: 'sales', confidence: 'group' });
+  classes.set(nameKey(IMPLIED_PURCHASES), { bucket: 'purchases', confidence: 'group' });
+  let impliedVouchers = 0;
   const cls = (name) => classes.get(name) || classes.get(nameKey(name)) || { bucket: 'unknown', confidence: 'unknown' };
   const display = new Map();   // nameKey -> first spelling seen, for output
   const nonParty = new Set();  // ledgers that appear as something other than a voucher's party
@@ -228,15 +281,21 @@ function computeAnalytics(input) {
     const partyName = v.party_name || (entries.find((e) => e.is_party) || {}).ledger || null;
     let voucherSales = 0, voucherReturns = 0;
 
-    for (const e of entries) {
+    const imp = impliedEntry(v, entries);
+    if (imp) impliedVouchers++;
+    for (const e of imp ? entries.concat([imp]) : entries) {
       const a = num(e.amount);
       const lk = nameKey(e.ledger);
-      if (!display.has(lk)) display.set(lk, e.ledger);
-      if (!e.is_party) nonParty.add(lk);
-      ledgerMove.set(lk, (ledgerMove.get(lk) || 0) + a);
-      const act = ledgerActivity.get(lk) || { n: 0, abs: 0 };
-      act.n++; act.abs += Math.abs(a); ledgerActivity.set(lk, act);
-      const { bucket } = cls(e.ledger);
+      if (!e.implied) {
+        if (!display.has(lk)) display.set(lk, e.ledger);
+        if (!e.is_party) nonParty.add(lk);
+        ledgerMove.set(lk, (ledgerMove.get(lk) || 0) + a);
+        const act = ledgerActivity.get(lk) || { n: 0, abs: 0 };
+        act.n++; act.abs += Math.abs(a); ledgerActivity.set(lk, act);
+      }
+      let { bucket } = cls(e.ledger);
+      // A customer or vendor is never a P&L line, whatever its group name suggests.
+      if (e.is_party && PL_BUCKETS.includes(bucket)) bucket = 'balance_sheet';
       const lname = String(e.ledger || '');
       switch (bucket) {
         case 'sales':
@@ -613,6 +672,8 @@ function computeAnalytics(input) {
   if (balance_sign.assumed && ledgers.length) reasons.push('The sign convention of Tally balances could not be confirmed from your data, so cash and stock use the documented default.');
   if (bsLedgers.length && bsMissing) reasons.push(`Tally returned no balance for ${bsMissing} of ${bsLedgers.length} balance-sheet ledgers.`);
   if (!vouchers.length) { level = 'low'; reasons.push('No vouchers synced yet.'); }
+  if (calibrated.inverted) reasons.push('Tally\'s bill signs ran the other way round for this company, so receivables and payables were swapped to match how your customers and vendors appear on vouchers.');
+  if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
   if (implausible) { level = 'low'; reasons.push('Sales look far too small next to costs and receivables, so margin and days-to-pay are hidden. The voucher sync is probably incomplete.'); }
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);

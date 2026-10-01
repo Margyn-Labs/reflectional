@@ -43,6 +43,7 @@ const {
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
 const { computeAnalytics, PL_BUCKETS } = require('./_lib/tallyAnalytics');
+const { calibrateBills } = require('./_lib/tallyBills');
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -175,6 +176,7 @@ async function handleSummary(req, res) {
       pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
     ]);
     bills = B.rows; vouchers = V; ledgers = L.rows;
+    try { bills = calibrateBills(bills, vouchers).bills; } catch (e) { /* keep stored labels */ }
   } catch (e) {
     return json(res, 500, { error: 'lookup_failed' });
   }
