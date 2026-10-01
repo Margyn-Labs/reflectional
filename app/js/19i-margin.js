@@ -85,7 +85,7 @@ function mgRenderMargin(){
     : '<div class="mg-panel-b"><p class="mg-muted">Not enough closed months yet to compare. Once two full months are in Tally, the changes show here.</p></div>';
 
   const pnlRows = (d.pnl || []).slice().reverse().map(r =>
-    '<tr><td>' + escapeHtml(mgMarMonth(r.month)) + (r.provisional ? ' <span class="mg-muted">(month in progress)</span>' : r.partial_start ? ' <span class="mg-muted">(partial month, synced from mid-month)</span>' : '') + '</td>' +
+    '<tr><td>' + escapeHtml(mgMarMonth(r.month)) + (r.provisional ? ' <span class="mg-muted">(month in progress)</span>' : r.partial_start ? ' <span class="mg-muted">(partial month, synced from mid-month)</span>' : r.costs_incomplete ? ' <span class="mg-muted">(running costs look incomplete)</span>' : '') + '</td>' +
     '<td class="r">' + mgNum(r.net_sales) + '</td><td class="r">' + mgNum(r.cogs_pre_stock) + '</td>' +
     '<td class="r">' + mgNum(r.gross_profit_pre_stock) + '</td><td class="r">' + mgMarPct(r.gross_margin_pct_pre_stock) + '</td>' +
     '<td class="r">' + mgNum(r.opex) + '</td><td class="r">' + mgNum(r.net_profit_pre_stock) + '</td><td class="r">' + mgMarPct(r.net_margin_pct_pre_stock) + '</td></tr>').join('');

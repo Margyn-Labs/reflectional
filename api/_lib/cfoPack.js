@@ -153,8 +153,15 @@ function packLink(period) {
 
 /* ---------- data ---------- */
 const SNAP_COLS = 'created_at,cash,revenue,net_profit,burn,gst_payable,gst_leak,recv_total,recv_90,pay_soon,pulse_score,confidence,briefing,briefing_generated_at';
-async function closingSnapshot(selectRows, userId, period) {
-  const { start, end } = periodBounds(period);
+// historyFrom = profiles.preferences.history_from: readings before it are left out.
+function historyFromOf(prefs) {
+  const v = prefs && prefs.history_from;
+  return v && !isNaN(Date.parse(v)) ? new Date(v).toISOString() : null;
+}
+async function closingSnapshot(selectRows, userId, period, historyFrom) {
+  const b = periodBounds(period), end = b.end;
+  const start = historyFrom && historyFrom > b.start ? historyFrom : b.start;
+  if (start >= end) return null;
   const rows = await selectRows('snapshots', 'select=' + SNAP_COLS + '&user_id=eq.' + encodeURIComponent(userId) +
     '&created_at=gte.' + encodeURIComponent(start) + '&created_at=lt.' + encodeURIComponent(end) + '&order=created_at.desc&limit=1');
   return rows[0] || null;
@@ -209,9 +216,9 @@ async function runCron(deps, opts = {}) {
     } catch (e) { out.skipped.push({ user_id: p.id, reason: 'could not read past deliveries' }); continue; }
     const todo = cfg.recipients.filter((r) => !done.has(r.email));
     if (!todo.length) continue;
-    const snap = await closingSnapshot(deps.selectRows, p.id, period);
+    const snap = await closingSnapshot(deps.selectRows, p.id, period, historyFromOf(p.preferences));
     if (!snap) { out.skipped.push({ user_id: p.id, reason: 'no reading in ' + period }); continue; }
-    const prev = await closingSnapshot(deps.selectRows, p.id, shiftPeriod(period, -1));
+    const prev = await closingSnapshot(deps.selectRows, p.id, shiftPeriod(period, -1), historyFromOf(p.preferences));
     const company = p.company_name || 'Your business';
     for (const r of todo) {
       const mail = buildEmail({ company, period, snap, prev, link: packLink(period), recipientName: r.name });
@@ -241,10 +248,11 @@ async function sendTest(deps, { user, period }) {
       encodeURIComponent(new Date(now.getTime() - 86400000).toISOString()));
   } catch (e) { return { status: 503, body: { error: 'Delivery log is not set up yet.' } }; }
   if (recent.length >= 5) return { status: 429, body: { error: 'That’s five test emails today. Try again tomorrow.' } };
-  const [prof] = await deps.selectRows('profiles', 'select=company_name&id=eq.' + encodeURIComponent(user.id));
-  const snap = await closingSnapshot(deps.selectRows, user.id, per);
+  const [prof] = await deps.selectRows('profiles', 'select=company_name,preferences&id=eq.' + encodeURIComponent(user.id));
+  const from = historyFromOf(prof && prof.preferences);
+  const snap = await closingSnapshot(deps.selectRows, user.id, per, from);
   if (!snap) return { status: 404, body: { error: 'There’s no reading for ' + periodLabel(per) + ' yet.' } };
-  const prev = await closingSnapshot(deps.selectRows, user.id, shiftPeriod(per, -1));
+  const prev = await closingSnapshot(deps.selectRows, user.id, shiftPeriod(per, -1), from);
   const mail = buildEmail({ company: (prof && prof.company_name) || 'Your business', period: per, snap, prev, link: packLink(per) });
   mail.subject = '[Test] ' + mail.subject;
   const row = { user_id: user.id, report: 'cfo_pack', period: per, kind: 'test', recipient_email: String(user.email).toLowerCase(), provider: 'resend' };

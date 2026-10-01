@@ -75,7 +75,14 @@ export default async function handler(req, res) {
     if (!user || !user.id) { res.status(401).json({ error: 'Invalid session' }); return; }
     const userId = user.id;
 
-    const snapshots = await sbGet(`/rest/v1/snapshots?select=*&order=created_at.desc&limit=${SNAPSHOT_WINDOW}`, accessToken);
+    // profiles.preferences.history_from: readings before it were built from wrong data; skip them.
+    let historyFrom = null;
+    try {
+      const [prof] = await sbGet(`/rest/v1/profiles?select=preferences&id=eq.${userId}`, accessToken);
+      const v = prof && prof.preferences && prof.preferences.history_from;
+      if (v && !isNaN(Date.parse(v))) historyFrom = new Date(v).toISOString();
+    } catch (e) { /* no profile row: use every reading */ }
+    const snapshots = await sbGet(`/rest/v1/snapshots?select=*${historyFrom ? '&created_at=gte.' + encodeURIComponent(historyFrom) : ''}&order=created_at.desc&limit=${SNAPSHOT_WINDOW}`, accessToken);
     if (!snapshots.length) { res.status(200).json({ findings: [] }); return; }
 
     const [receivables, payables] = await Promise.all([

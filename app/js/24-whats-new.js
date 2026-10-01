@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-02-figures-check', date:'2 Oct 2026', title:'Every screen checked against your books',
+    items:[
+      { t:'Receivables ageing by invoice', what:'Receivables and Payables now age each invoice on its own. Before, a customer’s whole balance went into the bucket of their oldest invoice, so one old bill could make a big balance look 90+ days late. Home’s “past 60 days” uses the same rule.',
+        how:'Open Receivables and look at the four age buckets.', act:'receivables' },
+      { t:'CFO pack shows each month’s real P&L', what:'With Tally connected, revenue, spend and profit in the CFO pack are that month’s own figures from your books, compared with the month before.',
+        how:'Open the CFO pack and pick a month.', act:'cfopack' },
+      { t:'GST due, estimated from your books', what:'GST payable now shows last month’s output tax less input credit from your Tally duty ledgers, marked as an estimate. Where nothing measures a GST figure it says n/a instead of ₹0.',
+        how:'See it on Home and on GST and tax.', act:'gst' },
+      { t:'Months with costs not yet booked are flagged', what:'If a month’s running costs are far below a usual month (salaries or rent not entered yet), Margin marks it and its profit is left out of your averages.',
+        how:'Open Margin, Month by month.', act:'margin' }
+    ]
+  },
+  {
     id:'2026-10-02-tally-pulse-figures', date:'2 Oct 2026', title:'Pulse Score now runs on your real Tally figures',
     items:[
       { t:'Burn, profit and runway from Tally’s monthly P&L', what:'Revenue, monthly spend and profit on Home and in the Pulse Score now come from Tally’s own month-by-month P&L (average of the last six closed months), and update after every sync. Before, they could stay stuck at an early figure.',
@@ -164,6 +177,9 @@ const MG_WN_ACTS = {
   panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
   margin:{ label:'Open Margin', run:() => { if(typeof showView === 'function') showView('margin'); } },
   home:{ label:'Open Home', run:() => { if(typeof showView === 'function') showView('home'); } },
+  receivables:{ label:'Open Receivables', run:() => { if(typeof showView === 'function') showView('receivables'); } },
+  cfopack:{ label:'Open CFO pack', run:() => { if(typeof showView === 'function') showView('cfopack'); } },
+  gst:{ label:'Open GST and tax', run:() => { if(typeof showView === 'function') showView('gst'); } },
   cash:{ label:'Open Cash', run:() => { if(typeof showView === 'function') showView('cash'); } },
   connectors:{ label:'Open Connectors', run:() => { if(typeof showView === 'function') showView('connectors'); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },

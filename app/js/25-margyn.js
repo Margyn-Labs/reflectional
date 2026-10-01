@@ -565,7 +565,8 @@ function mgrMood(){
   let f = null; try { f = mgForecast(); } catch(e){}
   const recv = (() => { try { return mgMoneyGroups('recv'); } catch(e){ return []; } })();
   const overdue = recv.reduce((t, g) => t + (g.overdue || 0), 0);
-  const over60 = recv.filter(g => g.oldestDays != null && g.oldestDays <= -60).reduce((t, g) => t + (g.overdue || 0), 0);
+  const age = (() => { try { return mgInvoiceAgeing(recv); } catch(e){ return null; } })();
+  const over60 = age ? age.b2 + age.b3 : 0;
   const nOver = recv.filter(g => g.overdue > 0).length;
   let dec = []; try { dec = mgDecisions(); } catch(e){}
   const warnSrc = ['razorpay', 'cashfree', 'zoho', 'tally', 'odoo', 'shopify'].filter(k => { const h = mgSourceHealth(k); return h.on && h.warn; });

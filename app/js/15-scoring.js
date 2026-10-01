@@ -215,12 +215,20 @@ function tallyInputCandidates(){
   // Without this, burn and profit stayed frozen at whatever the first snapshot saw.
   const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || [])
     .filter(r => !r.provisional && !r.partial_start && Number(r.net_sales) > 0).slice(-6);
+  // Leave out months whose running costs aren't booked yet (analytics flags them).
+  const whole = pnl.filter(r => !r.costs_incomplete);
+  const use = whole.length ? whole : pnl;
   if(pnl.length){
-    const avg = (f) => pnl.reduce((sum, r) => sum + (Number(f(r)) || 0), 0) / pnl.length;
+    const avg = (f) => use.reduce((sum, r) => sum + (Number(f(r)) || 0), 0) / use.length;
     put('revenue', avg(r => r.net_sales));
     const burn = avg(r => (Number(r.cogs_pre_stock) || 0) + (Number(r.opex) || 0));
     if(burn > 0) put('burn', burn);
     put('netProfit', avg(r => r.net_profit_pre_stock));
+    // GST due this month is last month's output tax less input credit, from Tally's duty
+    // ledgers. An estimate until the GSTN channel lands; never below zero (a credit carries).
+    const last = pnl[pnl.length - 1].month;
+    const g = ((mgMar && mgMar.gst_estimate) || []).find(x => x.month === last);
+    if(g && isFinite(Number(g.net_payable_estimate))) put('gstPayable', Math.max(0, Number(g.net_payable_estimate)));
   }
   return out;
 }
