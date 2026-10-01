@@ -9,9 +9,10 @@ download a newer build, and install it silently between syncs. Nobody touches th
 2. Test: `cd tally-agent && node sync.e2e.test.js && node inventory.test.js`
 3. Build (works on macOS; electron-builder brings its own Wine):
    `cd tally-agent-gui && npm install && npx electron-builder --win nsis --x64 --publish never`
-4. Upload from `tally-agent-gui/dist/` to R2 bucket `margyn-downloads`, folder `tally-agent/`:
-   - `Margyn-Tally-Agent-Setup-<version>.exe` and its `.blockmap`
-   - a copy of the exe named `Margyn-Tally-Agent-Setup.exe` (the stable link in the app)
-   - `latest.yml` LAST (uploading it is what tells installed agents to update)
+4. In `dist/`: rename the exe to `Margyn-Tally-Agent-Setup.exe`, and in `latest.yml` replace
+   `Margyn-Tally-Agent-Setup-<version>.exe` with `Margyn-Tally-Agent-Setup.exe` (same file, so the
+   sha512 stays valid). Upload to R2 bucket `margyn-downloads`, folder `tally-agent/`, replacing the old ones:
+   - `Margyn-Tally-Agent-Setup.exe` (the app's download link; new users)
+   - `latest.yml` LAST (installed agents read it and update themselves)
 
 Never upload a `latest.yml` whose exe isn't already in the folder.
