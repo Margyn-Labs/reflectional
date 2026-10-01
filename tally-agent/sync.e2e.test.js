@@ -79,9 +79,10 @@ function startCloud(port) {
   assert.strictEqual(r1.vouchers.mode, 'full');
   await new Promise((r) => setTimeout(r, 100));
   const h = store.health;
-  assert.ok(h && h.vouchers && h.vouchers.strategy === 'collection', 'health report names the strategy');
+  assert.ok(h && h.vouchers && h.vouchers.strategy === 'collection-period', 'health report names the strategy');
   assert.ok(Object.values(h.vouchers.months).every((m) => m.complete === true), 'every month matches Tally\'s own count');
   assert.ok(store.maxBody < 4.5e6, 'no request over Vercel\'s 4.5MB cap');
+  assert.ok(lines.some((l) => /reading it once and splitting by month/.test(l)), 'a Tally that ignores the period is read once, not twelve times');
   // item invoices carry the sales ledger and balance
   const inv = [...store.vouchers.values()].find((v) => v.voucher_type === 'KANDIVALI SALE');
   assert.ok(inv.entries.some((e) => e.ledger === 'SALES @18%'), 'sales line from the stock allocation');

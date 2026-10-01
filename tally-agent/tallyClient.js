@@ -288,9 +288,9 @@ const VOUCHER_FETCH = [
  * Vouchers in [from, to] (YYYYMMDD), not optional, not cancelled. `alterIdAfter` narrows to vouchers
  * created/edited since a known AlterID (the loader's incremental filter, `$AlterID > n`).
  */
-function buildVoucherCollectionRequest({ company, from, to, alterIdAfter }) {
+function buildVoucherCollectionRequest({ company, from, to, alterIdAfter, dateFormula = true }) {
   const conds = [];
-  if (from && to) conds.push(`$Date &gt;= $$Date:"${compactDate(from)}" and $Date &lt;= $$Date:"${compactDate(to)}"`);
+  if (from && to && dateFormula) conds.push(`$Date &gt;= $$Date:"${compactDate(from)}" and $Date &lt;= $$Date:"${compactDate(to)}"`);
   if (alterIdAfter != null) conds.push(`$AlterID &gt; ${parseInt(alterIdAfter, 10) || 0}`);
   const names = ['IsNonOptionalCancelledVchs'].concat(conds.map((_, i) => `MargynFltr${i + 1}`));
   return [
@@ -313,7 +313,11 @@ function buildReportPeriodRequest({ company, from, to, report }) {
 
 // 'collection' is the real path. 'day-book' (what agent 0.1 used, proven not to crash anything but
 // it returns only the current day) is kept only as the fallback if the collection can't be used.
+// 'collection-period' = tally-database-loader's default (YAML) mode: the period is given only as
+// SVFROMDATE/SVTODATE, which the Voucher collection honours (the Day Book report doesn't). The agent
+// re-checks every date anyway. 'collection' adds the loader's JSON-mode date formula on top.
 const VOUCHER_STRATEGIES = {
+  'collection-period': (a) => buildVoucherCollectionRequest(Object.assign({}, a, { dateFormula: false })),
   collection: (a) => buildVoucherCollectionRequest(a),
   'day-book': (a) => buildReportPeriodRequest(Object.assign({}, a, { report: 'Day Book' }))
 };

@@ -28,7 +28,8 @@ const UPLOAD_BATCH = 250;                 // vouchers per cloud request (entries
 const MONTH_SPLIT_AT = 2500;              // split a month into smaller windows above this many vouchers
 const REQUEST_TIMEOUT_MS = 180000;        // a big month on a slow PC legitimately takes minutes
 const FULL_PASS_EVERY_MS = 20 * 3600 * 1000;
-const COLLECTION_STRATEGIES = new Set(['collection']);
+const COLLECTION_STRATEGIES = new Set(['collection-period', 'collection']);
+const CALIBRATION = 2; // bump when the ladder changes
 
 /* ---------------------------- crash guard ----------------------------
  * On real TallyPrime a request it can't parse opens an "Error in TDL" box, and clicking OK closes
@@ -223,7 +224,16 @@ async function fetchCounts(ctx) {
 
 async function fetchRaw(ctx, strategy, w, extra, timeoutMs) {
   const xml = tally.VOUCHER_STRATEGIES[strategy](Object.assign({ company: ctx.company, from: w.from, to: w.to }, extra || {}));
-  return tally.parseVouchers(await ctx.guard.run(strategy === 'collection' ? 'vouchers' : strategy, () => ctx.post(xml, timeoutMs)));
+  const raw = await ctx.guard.run(strategy === 'collection' ? 'vouchers' : strategy, () => ctx.post(xml, timeoutMs));
+  ctx.lastRaw = raw;
+  return tally.parseVouchers(raw);
+}
+
+/** What Tally actually answered, compact, for the activity log when a method comes back short. */
+function rawSnippet(raw) {
+  const body = String(raw || '').replace(/\s+/g, ' ');
+  const i = body.search(/<(DATA|COLLECTION|TALLYMESSAGE|LINEERROR)\b/i);
+  return body.slice(i >= 0 ? i : 0, (i >= 0 ? i : 0) + 160) + (body.length > 160 ? '…' : '') + ` [${body.length} chars]`;
 }
 
 /** Fetch one window; on a timeout, wait for Tally and retry in halves down to single days. */
@@ -257,14 +267,20 @@ async function calibrate(ctx, window, expected) {
       const inW = all.filter((r) => inWindow(r, window));
       const live = inW.filter((r) => !r.is_cancelled).length;
       trials.push({ strategy: name, returned: all.length, in_window: inW.length });
+      ctx.log(`Test "${name}": ${all.length} vouchers back, ${live} in ${window.key}${expected != null ? ` (Tally has ${expected})` : ''}.` +
+        (live < (expected || 1) ? ` Tally answered: ${rawSnippet(ctx.lastRaw)}` : ''));
       const complete = expected != null ? live >= expected : inW.length > 0;
       if (complete && (expected == null || expected > 0 || COLLECTION_STRATEGIES.has(name))) {
-        best = { strategy: name, verified: expected != null };
+        // Answered with far more than the month asked for: this Tally ignores the period on this
+        // request. Then one request for the whole year beats twelve that each return the year.
+        const ignoresPeriod = all.length - inW.length > 50 && all.length > 1.5 * inW.length;
+        best = { strategy: name, verified: expected != null, ignoresPeriod };
         break;
       }
       if (inW.length && (!best || inW.length > best.n)) best = { strategy: name, verified: false, n: inW.length, degraded: true };
     } catch (e) {
       trials.push({ strategy: name, error: String(e.message).slice(0, 160) });
+      ctx.log(`Test "${name}": ${String(e.message).slice(0, 160)}`);
       if (e.code === 'blocked') continue;
       if (e.code === 'tally_down') throw e;
       // Tally went away (closed after an error box, or busy): wait for it; if it doesn't come back,
@@ -334,8 +350,11 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
   if (counts) diag.tally_counts = counts;
 
   // 1) Which request shape does this Tally answer? (once per company/period, or after a degraded pick)
-  const recheckDegraded = state.strategyDegraded && (!state.strategyAt || nowMs - state.strategyAt > 24 * 3600 * 1000);
-  if (!state.strategy || companyChanged || recheckDegraded) {
+  // Day Book never honours dates, so it is only ever a stopgap: re-test daily. A new way of reading
+  // (CALIBRATION) re-tests once on upgrade, so a fix reaches PCs that settled on a fallback.
+  const degraded = state.strategyDegraded || state.strategy === 'day-book';
+  const recheckDegraded = degraded && (!state.strategyAt || nowMs - state.strategyAt > 24 * 3600 * 1000);
+  if (!state.strategy || companyChanged || recheckDegraded || state.calibration !== CALIBRATION) {
     const windows = monthWindows(period.from, period.to);
     let probe = windows.find((w) => w.key === (fact && fact.last_voucher_date ? String(fact.last_voucher_date).slice(0, 7) : null));
     if (counts) {
@@ -356,7 +375,7 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
       throw err;
     }
     log(`Using "${choice.strategy}"${choice.degraded ? ' (partial: this Tally ignores date ranges on the better requests)' : ''}.`);
-    save({ strategy: choice.strategy, strategyDegraded: !!choice.degraded, strategyAt: nowMs, periodKey, fullRun: null, lastFullAt: null });
+    save({ ignoresPeriod: !!choice.ignoresPeriod, strategy: choice.strategy, strategyDegraded: !!choice.degraded || choice.strategy === 'day-book', strategyAt: nowMs, calibration: CALIBRATION, periodKey, fullRun: null, lastFullAt: null });
   }
   diag.strategy = state.strategy;
   const canVerifyDeletes = COLLECTION_STRATEGIES.has(state.strategy) && !state.strategyDegraded;
@@ -399,12 +418,20 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
   save({ fullRun: run });
   const monthStats = Object.assign({}, run.done.length ? state.months || {} : {});
 
+  // One read for the whole period when this Tally ignores per-month periods anyway.
+  let wholePeriod = null;
+  if (state.ignoresPeriod && months.some((m) => !run.done.includes(m.key))) {
+    log('This Tally sends the whole year for any period, so reading it once and splitting by month.');
+    wholePeriod = await fetchWindow(ctx, state.strategy, { from: period.from, to: horizon < period.to ? horizon : period.to, key: 'period' });
+  }
+
   for (const m of months) {
     if (run.done.includes(m.key)) continue;
     const expected = counts ? (counts[m.key] || 0) : null;
     const parts = expected && expected > MONTH_SPLIT_AT ? Math.ceil(expected / 2000) : 1;
     const rows = [];
-    for (const w of splitWindow(m, parts)) rows.push(...await fetchWindow(ctx, state.strategy, w));
+    if (wholePeriod) rows.push(...wholePeriod.filter((r) => inWindow(r, m)));
+    else for (const w of splitWindow(m, parts)) rows.push(...await fetchWindow(ctx, state.strategy, w));
     const seen = new Set();
     const uniq = rows.filter((r) => { const k = r.guid || `${r.voucher_type}|${r.voucher_number}|${r.date}`; if (seen.has(k)) return false; seen.add(k); return true; });
     const live = uniq.filter((r) => !r.is_cancelled).length;
