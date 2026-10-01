@@ -190,7 +190,11 @@ function tallyInputCandidates(){
   if(cash && cash.total > 0) put('cash', cash.total);
   put('recvTotal', b.receivable_total);
   // 90+ has to be derived — Tally gives per-bill overdue_days, not buckets.
-  if(Array.isArray(b.items)){
+  // Server-side totals cover every bill; b.items is only the first 100 rows.
+  if(b.receivable_over_90 != null){
+    put('recv90', b.receivable_over_90);
+    put('paySoon', b.payable_due_30d);
+  } else if(Array.isArray(b.items)){
     const over90 = b.items
       .filter(x => x.direction === 'receivable' && Number(x.overdue_days) > 90)
       .reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
@@ -397,14 +401,27 @@ function inputsMateriallyDiffer(inputs, latest){
    when it wrote a new snapshot, so the caller can reload. */
 async function resolveAndSaveSnapshot(){
   if(!currentUser) return false;
-  const latest = snapshots[0];
-  // A resolved snapshot still needs a baseline for the fields no connector
-  // supplies (GST payable, and cash/P&L when only Tally or Odoo is on).
-  if(!latest) return false;
+  let latest = snapshots[0];
 
   const { inputs, provenance, conflicts, hasConnectorInput } = resolveSnapshotInputs();
   if(!hasConnectorInput) return false;          // nothing connected: manual flow is unchanged
-  if(!inputsMateriallyDiffer(inputs, latest)) return false;
+
+  if(!latest){
+    // First snapshot straight from a connected source: no upload needed. Fields no connector
+    // supplies start at zero; revenue/burn/profit come from Tally's last closed month when we can.
+    if(typeof mgLoadMargin === 'function' && typeof tallyConnected !== 'undefined' && tallyConnected){
+      try { await mgLoadMargin(true); } catch(e){}
+      const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || []).filter(r => !r.provisional && r.net_sales > 0);
+      const m = pnl[pnl.length - 1];
+      if(m){
+        if(!(inputs.revenue > 0)) inputs.revenue = m.net_sales;
+        if(!(inputs.burn > 0)) inputs.burn = (Number(m.cogs_pre_stock) || 0) + (Number(m.opex) || 0);
+        if(inputs.netProfit === undefined) inputs.netProfit = Number(m.net_profit_pre_stock) || 0;
+      }
+    }
+    SNAPSHOT_INPUT_FIELDS.forEach(f => { if(inputs[f] === undefined || !isFinite(inputs[f])) inputs[f] = 0; });
+    latest = { burn: inputs.burn };
+  } else if(!inputsMateriallyDiffer(inputs, latest)) return false;
 
   // Burn drives three divisions in computeVitals; never let a connector hand
   // it a zero and turn runway into 0 months.

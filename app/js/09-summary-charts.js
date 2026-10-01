@@ -246,8 +246,8 @@ function renderRevenueTrendChart(hist){
   const host = document.getElementById('revenueTrendChart'); if(!host) return;
   const sub = document.getElementById('revTrendSub'); if(!sub) return;
   if(hist.length < 2){
-    sub.textContent = 'Add a second snapshot to see a trend line';
-    host.innerHTML = '<div class="trend-empty">Revenue trend appears once you have at least two snapshots.</div>';
+    sub.textContent = 'Needs a second reading to draw a trend';
+    host.innerHTML = '<div class="trend-empty">Revenue trend appears once Margyn has two readings from your connected books.</div>';
     return;
   }
   const vals = hist.map(r => Number(r.revenue)||0);
@@ -443,7 +443,7 @@ function renderSummary(){
   const trajSub = document.getElementById('revTrendSub');
   if(traj){
     if(hist.length < 2){
-      traj.innerHTML = '<div class="ledger-empty">Appears once you have two snapshots.</div>';
+      traj.innerHTML = '<div class="ledger-empty">Appears once Margyn has two readings.</div>';
       if(trajSub) trajSub.textContent = '';
     } else {
       const cashVals = hist.map(r => Number(r.cash)||0);

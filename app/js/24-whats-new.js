@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-01-tally-first', date:'1 Oct 2026', title:'Your Tally books now drive everything',
+    items:[
+      { t:'No upload needed for scores and charts', what:'If Tally is connected, Margyn now builds your first Pulse Score straight from it, and Reports draws your months from Tally instead of waiting for two uploads.',
+        how:'Open Reports or Pulse Score after your first Tally sync.' },
+      { t:'Receivables, payables, Cash and GST read your whole book', what:'Totals used to be worked out from only the first few hundred entries. They now cover every open bill and every bank, cash and GST ledger.',
+        how:'Open Receivables, Payables, Cash or GST and tax.' },
+      { t:'No more absurd percentages', what:'When the sales side is incomplete, Margin hides the margin and days-to-pay and tells you why, instead of showing nonsense.',
+        how:'Open Margin under Insight.', act:'go:margin' }
+    ]
+  },
+  {
     id:'2026-10-01-password-reset', date:'1 Oct 2026', title:'Forgot your password?',
     items:[
       { t:'Reset it yourself', what:'If you can’t remember your password, you can now set a new one without asking us. We email you a link; it opens a screen where you choose the new password.',
