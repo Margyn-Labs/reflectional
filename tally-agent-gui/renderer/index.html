@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Margyn Tally Agent</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="titlebar">
+    <span class="titlebar-dot"></span>
+    <span class="titlebar-title">Margyn Tally Agent</span>
+  </div>
+
+  <!-- ============ NOT PAIRED VIEW ============ -->
+  <section id="view-pair" class="view hidden">
+    <p class="intro">Connect this computer to your Margyn account. Get a pairing
+      code from <strong>Margyn → Connectors → Connect Tally</strong>.</p>
+
+    <label class="field">
+      <span>Pairing code</span>
+      <input id="input-code" type="text" placeholder="AB12-CD34" autocomplete="off" />
+    </label>
+
+    <label class="field">
+      <span>Tally company name</span>
+      <input id="input-company" type="text" placeholder="Exactly as shown in Tally" autocomplete="off" />
+    </label>
+
+    <button id="btn-connect" class="btn-primary">Connect</button>
+    <p id="pair-error" class="error hidden"></p>
+
+    <button id="btn-show-settings-1" class="btn-link">Advanced settings</button>
+  </section>
+
+  <!-- ============ PAIRED VIEW ============ -->
+  <section id="view-paired" class="view hidden">
+    <div class="status-row">
+      <span id="status-dot" class="dot dot-ok"></span>
+      <span id="status-text">Connected</span>
+    </div>
+
+    <div class="kv"><span>Company</span><strong id="kv-company">—</strong></div>
+    <div class="kv"><span>Last sync</span><strong id="kv-last-sync">Never</strong></div>
+    <div class="kv"><span>Ledgers synced</span><strong id="kv-ledger-count">—</strong></div>
+
+    <button id="btn-sync-now" class="btn-primary">Sync now</button>
+    <p id="sync-error" class="error hidden"></p>
+
+    <div class="log-label">Recent activity</div>
+    <div id="log-area" class="log-area"></div>
+
+    <button id="btn-show-settings-2" class="btn-link">Settings</button>
+  </section>
+
+  <!-- ============ SETTINGS VIEW ============ -->
+  <section id="view-settings" class="view hidden">
+    <p class="intro">Advanced settings. Defaults match the CLI agent's
+      defaults — only change these if you know why.</p>
+
+    <label class="field">
+      <span>Margyn API base URL</span>
+      <input id="input-apibase" type="text" placeholder="https://www.margynlabs.com" />
+    </label>
+    <label class="field">
+      <span>Tally host</span>
+      <input id="input-tallyhost" type="text" placeholder="127.0.0.1" />
+    </label>
+    <label class="field">
+      <span>Tally port</span>
+      <input id="input-tallyport" type="text" placeholder="9000" />
+    </label>
+    <label class="field">
+      <span>Sync interval (minutes)</span>
+      <input id="input-interval" type="text" placeholder="15" />
+    </label>
+
+    <button id="btn-test-connection" class="btn-link">Test connection</button>
+    <p id="test-connection-result" class="error hidden"></p>
+
+    <button id="btn-save-settings" class="btn-primary">Save</button>
+    <button id="btn-back" class="btn-link">Back</button>
+  </section>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

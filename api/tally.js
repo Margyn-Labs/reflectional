@@ -114,6 +114,7 @@ module.exports = async function handler(req, res) {
     if (req.method === 'POST' && action === 'pair-init')      return await handlePairInit(req, res);
     if (req.method === 'POST' && action === 'pair-complete')  return await handlePairComplete(req, res);
     if (req.method === 'POST' && action === 'ingest')         return await handleIngest(req, res);
+    if (req.method === 'POST' && action === 'health')         return await handleHealth(req, res);
     if (req.method === 'GET'  && action === 'status')         return await handleStatus(req, res);
     if (req.method === 'GET'  && action === 'summary')        return await handleSummary(req, res);
     if (req.method === 'GET'  && action === 'analytics')      return await handleAnalytics(req, res);
@@ -301,6 +302,12 @@ async function handleAnalytics(req, res) {
       `select=id,company_name,last_sync_at,tally_edition&user_id=eq.${user.id}&status=eq.active&order=last_sync_at.desc.nullslast`
     );
   } catch (e) { return json(res, 500, { error: 'lookup_failed' }); }
+  let diagnostics = null;
+  try {
+    const D = await selectRows('tally_installs', `select=id,diagnostics&user_id=eq.${user.id}&status=eq.active&order=last_sync_at.desc.nullslast`);
+    const byId = Object.fromEntries(D.map((d) => [d.id, d.diagnostics]));
+    installs.forEach((i) => { i.diagnostics = byId[i.id] || null; });
+  } catch (e) { /* diagnostics column not migrated yet */ }
   if (!installs.length) return json(res, 200, { connected: false });
 
   const companies = [...new Set(installs.map((i) => i.company_name).filter(Boolean))];
@@ -309,6 +316,7 @@ async function handleAnalytics(req, res) {
   const chosen = installs.filter((i) => (company ? i.company_name === company : true));
   const inList = `(${chosen.map((i) => i.id).join(',')})`;
   const lastSync = chosen.map((i) => i.last_sync_at).filter(Boolean).sort().pop() || null;
+  diagnostics = (chosen.find((i) => i.diagnostics) || {}).diagnostics || null;
 
   let ledgers, bills, vouchers, truncated = false, overrides = {}, syncRuns = [];
   const aiPlaced = new Set();
@@ -348,7 +356,7 @@ async function handleAnalytics(req, res) {
   } catch (e) { /* older deployments */ }
 
   const rate = parseFloat(req.query && req.query.credit_rate);
-  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, diagnostics, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
   let out = run(overrides);
 
   // Whatever Tally's own groups could not place, the model places once and we remember it. Never overrides
@@ -682,8 +690,10 @@ async function handleIngest(req, res) {
   }
 
   if (mapped.length === 0) {
+    // An empty, verified voucher window still matters: everything we hold in it was deleted in Tally.
+    const swept0 = kind === 'vouchers' ? await sweepVoucherWindow(inst, body, now) : { removed: 0 };
     await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted: 0, status: 'ok' });
-    return json(res, 200, { upserted: 0, received: rawRows.length, skipped });
+    return json(res, 200, { upserted: 0, received: rawRows.length, skipped, removed: swept0.removed, server_time: now });
   }
 
   let upserted = 0;
@@ -709,14 +719,85 @@ async function handleIngest(req, res) {
     return json(res, 500, { error: 'ingest_failed', message: 'Could not store the synced data. Check the SQL migration ran.' });
   }
 
-  const swept = await sweepStale(kind, inst, mapped, now, body.partial === true);
+  const swept = kind === 'vouchers'
+    ? await sweepVoucherWindow(inst, body, now)
+    : await sweepStale(kind, inst, mapped, snapshotCutoff(body, now), body.partial === true);
 
   await updateRows('tally_installs', `id=eq.${inst.id}`, { last_sync_at: now }).catch(() => {});
   await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted, status: 'ok',
     error: swept.skipped ? 'stale_sweep_skipped: ' + swept.skipped : null });
   track(inst.user_id, 'tally_agent_sync', { kind, rows: upserted }); // ops console — fire-and-forget
 
-  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed });
+  // server_time: agents chunk big snapshots/windows and use THIS clock (never their PC's) as the cutoff.
+  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed, server_time: now });
+}
+
+// A chunked ledger snapshot sweeps on its last batch with the server time of its first batch as the
+// cutoff. Accept only a sane time: in the past, within the last six hours.
+function snapshotCutoff(body, now) {
+  const t = Date.parse(body && body.snapshot_started_at);
+  const n = Date.parse(now);
+  return Number.isFinite(t) && t <= n && n - t < 6 * 3600 * 1000 ? new Date(t).toISOString() : now;
+}
+
+/* ------------------------------------------------------------------ */
+/* voucher window replace (agent 0.2.0+)                              */
+/* ------------------------------------------------------------------ */
+// The agent sends a month of vouchers it has verified complete against Tally's own count, ending
+// with window_final. Vouchers we hold in that month that were not re-sent since the window started
+// were deleted (or re-dated) in Tally, so they go. Same safety valve as sweepStale: a batch that
+// would wipe most of a month is treated as a Tally-side glitch and kept.
+async function sweepVoucherWindow(inst, body, now) {
+  if (!body || body.window_final !== true || !body.window) return { removed: 0 };
+  const from = str(body.window.from), to = str(body.window.to);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(to || '') || from > to) return { removed: 0, skipped: 'bad_window' };
+  const cutoff = snapshotCutoff({ snapshot_started_at: body.window_started_at }, now);
+  const scope = `install_id=eq.${inst.id}&date=gte.${from}&date=lte.${to}`;
+  const stale = `${scope}&synced_at=lt.${encodeURIComponent(cutoff)}`;
+  try {
+    const [total, toRemove] = await Promise.all([countRows('tally_vouchers', scope), countRows('tally_vouchers', stale)]);
+    if (!toRemove) return { removed: 0 };
+    if (total >= 20 && toRemove > total * 0.6) {
+      console.warn(`[tally] voucher window sweep skipped: would remove ${toRemove}/${total} (${from}..${to}) for install ${inst.id}`);
+      return { removed: 0, skipped: `would_remove_${toRemove}_of_${total}` };
+    }
+    const r = await restRequest(`tally_vouchers?${stale}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+    return r.ok ? { removed: toRemove } : { removed: 0, skipped: 'delete_failed' };
+  } catch (e) {
+    console.error('[tally] voucher window sweep error:', e.message);
+    return { removed: 0, skipped: 'error' };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* health — POST ?action=health   (install key)                       */
+/* What the agent saw in the client's Tally and what it sent: product, */
+/* open companies, books period, which voucher request works there,    */
+/* and per-month voucher counts vs Tally's own. Lets Margyn diagnose a */
+/* client's sync without access to their machine.                      */
+/* ------------------------------------------------------------------ */
+async function handleHealth(req, res) {
+  const inst = await resolveInstall(req);
+  if (!inst) return json(res, 401, { error: 'unauthorized' });
+  const body = parseBody(req);
+  let text = '';
+  try { text = JSON.stringify(body || {}); } catch (e) { return json(res, 400, { error: 'bad_body' }); }
+  if (text.length > 60000) return json(res, 413, { error: 'too_large' });
+  const t = body && body.tally && typeof body.tally === 'object' ? body.tally : {};
+  const patch = { last_seen_at: new Date().toISOString() };
+  if (typeof body.agent_version === 'string') patch.agent_version = body.agent_version.slice(0, 40);
+  if (t.product) patch.tally_product = String(t.product).slice(0, 20);
+  if (t.product_name) patch.tally_product_name = String(t.product_name).slice(0, 60);
+  if (t.version) patch.tally_version = String(t.version).slice(0, 40);
+  if (t.edition) patch.tally_edition = String(t.edition).slice(0, 20);
+  if (typeof body.company === 'string' && body.company.trim()) patch.company_name = body.company.trim().slice(0, 120);
+  try {
+    await updateRows('tally_installs', `id=eq.${inst.id}`, Object.assign({}, patch, { diagnostics: body }));
+  } catch (e) {
+    // diagnostics column not migrated yet: keep the product facts at least
+    await updateRows('tally_installs', `id=eq.${inst.id}`, patch).catch(() => {});
+  }
+  return json(res, 200, { ok: true });
 }
 
 /* ------------------------------------------------------------------ */

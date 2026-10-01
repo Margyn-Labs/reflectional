@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-02-tally-agent-full-year', date:'2 Oct 2026', title:'Your whole financial year from Tally, checked against Tally',
+    items:[
+      { t:'Every voucher of the year, not just today’s', what:'The Tally agent now reads the full financial year month by month, and checks each month against Tally’s own voucher count. Margin shows “matches Tally’s own voucher count” when everything arrived.',
+        how:'Install the new agent once on the PC that runs Tally (Connectors, Tally card, “download the new agent”). Pairing is kept. It updates itself from then on.', act:'connectors' },
+      { t:'Deleted or edited vouchers stay in step', what:'If a voucher is changed or deleted in Tally, Margyn changes or removes it on the next sync, so ledgers keep tying out to Tally.',
+        how:'Nothing to do. It happens on every sync.' },
+      { t:'New financial year, no re-pairing', what:'When you open next year’s company in Tally (for example “… (2027-28)”), the agent moves to it by itself.',
+        how:'Nothing to do.' }
+    ]
+  },
+  {
     id:'2026-10-01-tally-first', date:'1 Oct 2026', title:'Your Tally books now drive everything',
     items:[
       { t:'No upload needed for scores and charts', what:'If Tally is connected, Margyn now builds your first Pulse Score straight from it, and Reports draws your months from Tally instead of waiting for two uploads.',
@@ -23,7 +34,7 @@ const MG_RELEASES = [
       { t:'Receivables, payables, Cash and GST read your whole book', what:'Totals used to be worked out from only the first few hundred entries. They now cover every open bill and every bank, cash and GST ledger.',
         how:'Open Receivables, Payables, Cash or GST and tax.' },
       { t:'No more absurd percentages', what:'When the sales side is incomplete, Margin hides the margin and days-to-pay and tells you why, instead of showing nonsense.',
-        how:'Open Margin under Insight.', act:'go:margin' }
+        how:'Open Margin under Insight.', act:'margin' }
     ]
   },
   {
@@ -37,7 +48,7 @@ const MG_RELEASES = [
     id:'2026-09-30-margin-page', date:'30 Sept 2026', title:'See how much you really keep',
     items:[
       { t:'A Margin page, built from your Tally books', what:'Sales, purchases, running costs and profit month by month, plus returns, freight, who is slow to pay and what that waiting costs you. It uses only what your Tally agent already sends, so nothing new to install.',
-        how:'Open Margin under Insight.', act:'go:margin' },
+        how:'Open Margin under Insight.', act:'margin' },
       { t:'It tells you how far to trust it', what:'Everything comes from one source, so each figure is labelled as a signal until bank and GST agree. If a ledger can’t be placed in the profit and loss, Margyn asks you once and remembers.',
         how:'Scroll to “Margyn needs your help” and confirm the ledgers it lists.' }
     ]
@@ -143,6 +154,7 @@ const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
 const MG_WN_ACTS = {
   panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
   margin:{ label:'Open Margin', run:() => { if(typeof showView === 'function') showView('margin'); } },
+  connectors:{ label:'Open Connectors', run:() => { if(typeof showView === 'function') showView('connectors'); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
   team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
 };

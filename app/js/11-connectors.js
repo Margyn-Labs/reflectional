@@ -187,7 +187,16 @@ async function disconnectShopify(){
    provenance-tagged "Signal" and is never auto-trusted
    — see api/tally.js.
    ============================================================ */
-const MARGYN_TALLY_AGENT_DOWNLOAD = 'https://pub-432244bb0d9047989ffc94163a2fea75.r2.dev/Margyn-Tally-Agent-Setup-0.1.0.exe';
+// Stable name, always the newest build. Agents from 0.2.0 on also update themselves from the same folder.
+const MARGYN_TALLY_AGENT_DOWNLOAD = 'https://pub-432244bb0d9047989ffc94163a2fea75.r2.dev/tally-agent/Margyn-Tally-Agent-Setup.exe';
+const MARGYN_TALLY_AGENT_MIN = [0, 2, 0];
+/* Agents before 0.2.0 read only the current day's vouchers from Tally and cannot update themselves. */
+function tallyAgentOutdated(v){
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+  if(!m) return true;
+  for(let k = 0; k < 3; k++){ const a = +m[k + 1], b = MARGYN_TALLY_AGENT_MIN[k]; if(a !== b) return a < b; }
+  return false;
+}
 async function tallyApi(path, opts){
   opts = opts || {};
   const { data:{ session } } = await sbClient.auth.getSession();
@@ -248,9 +257,13 @@ function renderTallyStatus(){
         'agent checked in ' + tallyFmtAgo(i.last_seen_at),
         'last sync ' + tallyFmtAgo(i.last_sync_at)
       ];
+      const outdated = tallyAgentOutdated(i.agent_version);
       return '<div class="tally-pc-row"><div class="lr-party">' + escapeHtml(prod) +
         ' <span class="lr-meta" style="font-weight:400">(' + escapeHtml(i.machine_hint || 'desktop agent') + ')</span></div>' +
         '<div class="lr-meta">' + parts.join(' · ') + '</div>' +
+        (outdated ? '<div class="lr-meta" style="margin-top:6px;color:var(--warn, #B3432E)"><b>Update this agent.</b> This version reads only one day of vouchers from Tally at a time. ' +
+          'On that PC, right-click the Margyn icon near the clock and choose Quit, then <a href="' + MARGYN_TALLY_AGENT_DOWNLOAD + '" target="_blank" rel="noopener">download the new agent</a> and run it. ' +
+          'Pairing is kept and the full financial year syncs in a few minutes. Later versions update themselves.</div>' : '') +
         '<button class="lr-btn danger" data-tally-revoke="' + i.id + '" style="margin-top:8px;">Disconnect</button></div>';
     }).join('');
     host.innerHTML = '<div class="ledger-row"><div class="lr-main">' + rows + '</div>' +
