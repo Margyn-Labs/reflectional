@@ -693,7 +693,7 @@ async function handleIngest(req, res) {
     // An empty, verified voucher window still matters: everything we hold in it was deleted in Tally.
     const swept0 = kind === 'vouchers' ? await sweepVoucherWindow(inst, body, now) : { removed: 0 };
     await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted: 0, status: 'ok' });
-    return json(res, 200, { upserted: 0, received: rawRows.length, skipped, removed: swept0.removed, server_time: now });
+    return json(res, 200, { upserted: 0, received: rawRows.length, skipped, removed: swept0.removed, server_time: now, agent: agentDirective() });
   }
 
   let upserted = 0;
@@ -729,7 +729,7 @@ async function handleIngest(req, res) {
   track(inst.user_id, 'tally_agent_sync', { kind, rows: upserted }); // ops console — fire-and-forget
 
   // server_time: agents chunk big snapshots/windows and use THIS clock (never their PC's) as the cutoff.
-  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed, server_time: now });
+  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed, server_time: now, agent: agentDirective() });
 }
 
 // A chunked ledger snapshot sweeps on its last batch with the server time of its first batch as the
@@ -797,7 +797,29 @@ async function handleHealth(req, res) {
     // diagnostics column not migrated yet: keep the product facts at least
     await updateRows('tally_installs', `id=eq.${inst.id}`, patch).catch(() => {});
   }
-  return json(res, 200, { ok: true });
+  // One-off command for this PC (set by us in tally_installs.agent_command), delivered once.
+  let command = null;
+  try {
+    const rows = await selectRows('tally_installs', `select=agent_command&id=eq.${inst.id}&limit=1`);
+    command = rows && rows[0] && rows[0].agent_command && typeof rows[0].agent_command === 'object' ? rows[0].agent_command : null;
+    if (command) await updateRows('tally_installs', `id=eq.${inst.id}`, { agent_command: null });
+  } catch (e) { command = null; /* column not migrated yet */ }
+  return json(res, 200, { ok: true, agent: agentDirective(command) });
+}
+
+/* ------------------------------------------------------------------ */
+/* Agent directives — how Margyn steers agents it can't otherwise reach */
+/* ------------------------------------------------------------------ */
+// min_version: agents older than this update themselves immediately (agent 0.2.4+). Raise it with
+// every agent release that must reach clients now: set TALLY_AGENT_MIN_VERSION in Vercel, or bump
+// the default here. command: one-off per-install action, e.g. {"action":"resync"} — see
+// 2026-10-02-tally-agent-commands.sql.
+const TALLY_AGENT_MIN_VERSION_DEFAULT = '0.2.4';
+function agentDirective(command) {
+  const min = String(process.env.TALLY_AGENT_MIN_VERSION || TALLY_AGENT_MIN_VERSION_DEFAULT).trim();
+  const out = { min_version: /^\d+\.\d+\.\d+$/.test(min) ? min : TALLY_AGENT_MIN_VERSION_DEFAULT };
+  if (command && typeof command.action === 'string') out.command = { action: command.action.slice(0, 40) };
+  return out;
 }
 
 /* ------------------------------------------------------------------ */

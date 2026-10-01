@@ -36,6 +36,30 @@ function log(...a) {
   console.log(`[${new Date().toISOString()}]`, line);
 }
 function setLogger(fn) { logSink = typeof fn === 'function' ? fn : null; }
+
+/** Semver-ish compare: -1 / 0 / 1. '0.1.0-prototype' counts as 0.1.0. */
+function compareVersions(a, b) {
+  const p = (v) => (String(v || '0').match(/\d+/g) || ['0']).slice(0, 3).map(Number).concat([0, 0, 0]).slice(0, 3);
+  const x = p(a), y = p(b);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Apply a one-off command Margyn sent for this PC. Returns true if the next sync should run now.
+ *   resync       forget sync progress; re-read the whole financial year from Tally
+ *   recalibrate  re-test how to read vouchers on this Tally (after an agent fix)
+ * The per-PC crash guard (which requests upset this Tally) is always kept.
+ */
+function applyCommand(cmd) {
+  const action = cmd && cmd.action;
+  const st = config.load().syncState || {};
+  const keep = { blockedRequests: st.blockedRequests || [], provenRequests: st.provenRequests || [] };
+  if (action === 'resync') { config.save({ syncState: keep }); log('Margyn asked for a full re-sync from Tally. Starting now.'); return true; }
+  if (action === 'recalibrate') { config.save({ syncState: Object.assign({}, st, { strategy: null, calibration: 0, fullRun: null, lastFullAt: null }) }); log('Margyn asked to re-test how to read this Tally. Starting now.'); return true; }
+  if (action) log(`Ignoring unknown instruction from Margyn: ${action}`);
+  return false;
+}
 function die(msg) { console.error('\n✖ ' + msg + '\n'); process.exit(1); }
 
 function ask(question, { mask = false } = {}) {
@@ -739,6 +763,8 @@ Config file: ${config.CONFIG_PATH}
 module.exports = {
   AGENT_VERSION,
   setLogger,
+  compareVersions,
+  applyCommand,
   syncBills,
   performPair,
   fetchLedgers,

@@ -153,6 +153,21 @@ const v = (guid, date, amt) => ({ guid, voucher_type: 'Sales', voucher_number: g
   const bad = await (async () => { let status; const rr = { setHeader() {}, status(s) { status = s; return this; }, json() { return this; }, end() {} }; await handler({ method: 'POST', query: { action: 'health' }, headers: {}, body: health }, rr); return status; })();
   check('health needs the install key', bad === 401, bad);
 
+  // Directives: every reply carries the minimum agent version; a one-off command is delivered once.
+  diagnosticsColumn = true;
+  r = await call('POST', { action: 'ingest' }, { kind: 'vouchers', partial: true, rows: [v('d1', '2026-04-03', 9)] });
+  check('ingest reply carries min_version', r.payload.agent && /^\d+\.\d+\.\d+$/.test(r.payload.agent.min_version), r.payload);
+  DB.tally_installs[0].agent_command = { action: 'resync' };
+  r = await call('POST', { action: 'health' }, health);
+  check('command delivered on health', r.payload.agent && r.payload.agent.command && r.payload.agent.command.action === 'resync', r.payload);
+  check('command cleared after delivery', DB.tally_installs[0].agent_command === null, DB.tally_installs[0]);
+  r = await call('POST', { action: 'health' }, health);
+  check('command not repeated', !r.payload.agent.command, r.payload);
+  process.env.TALLY_AGENT_MIN_VERSION = '0.3.0';
+  r = await call('POST', { action: 'health' }, health);
+  check('min_version follows the env var', r.payload.agent.min_version === '0.3.0', r.payload);
+  delete process.env.TALLY_AGENT_MIN_VERSION;
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

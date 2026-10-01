@@ -12,7 +12,7 @@
 
 const path = require('path');
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen } = require('electron');
-const { agent, config, tally } = require('./agent-lib');
+const { agent, config, tally, cloud } = require('./agent-lib');
 
 // Self-update: installed agents fetch newer builds from Margyn's download bucket (see build.publish
 // in package.json) and install them silently between syncs, so a fix never needs a visit to the
@@ -303,6 +303,7 @@ app.whenReady().then(() => {
   createTray();
   configureAutoStart();
   if (agent.setLogger) agent.setLogger(addLog); // agent's step-by-step lines land in Recent Activity
+  if (cloud.onDirective) cloud.onDirective(onMargynDirective);
   addLog(`Margyn Tally Agent ${app.getVersion()} started.`);
   setupAutoUpdate();
 
@@ -334,7 +335,26 @@ function setupAutoUpdate() {
   autoUpdater.on('error', (e) => addLog(`Update check skipped (${String(e && e.message || e).slice(0, 120)}).`));
   const check = () => autoUpdater.checkForUpdates().catch(() => {});
   setTimeout(check, 60 * 1000);
-  setInterval(check, 6 * 3600 * 1000);
+  setInterval(check, 3600 * 1000);
+  updaterReady = true;
+}
+
+/* Margyn steers agents it can't otherwise reach. Every reply from Margyn carries:
+ *   min_version  older than this -> check for the update now and install it as soon as it's down
+ *   command      one-off instruction for this PC (resync / recalibrate), applied then synced */
+let updaterReady = false;
+let lastForcedCheck = 0;
+function onMargynDirective(d) {
+  if (!d) return;
+  if (d.min_version && updaterReady && autoUpdater && agent.compareVersions &&
+      agent.compareVersions(app.getVersion(), d.min_version) < 0 && Date.now() - lastForcedCheck > 30 * 60 * 1000) {
+    lastForcedCheck = Date.now();
+    addLog(`Margyn needs version ${d.min_version} or newer. Updating now.`);
+    autoUpdater.checkForUpdates().catch(() => {});
+  }
+  if (d.command && agent.applyCommand && agent.applyCommand(d.command)) {
+    setTimeout(() => doSync(), 5000);
+  }
 }
 
 app.on('window-all-closed', () => {

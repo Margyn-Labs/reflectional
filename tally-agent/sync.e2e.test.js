@@ -38,7 +38,12 @@ function startCloud(port) {
       const action = new URL(req.url, 'http://x').searchParams.get('action');
       const body = JSON.parse(b || '{}');
       const now = new Date().toISOString();
-      if (action === 'health') { store.health = body; res.end('{"ok":true}'); return; }
+      if (action === 'health') {
+        store.health = body;
+        const cmd = store.pendingCommand; store.pendingCommand = null;
+        res.end(JSON.stringify({ ok: true, agent: Object.assign({ min_version: '0.2.4' }, cmd ? { command: cmd } : {}) }));
+        return;
+      }
       if (body.kind === 'vouchers') {
         for (const r of body.rows) store.vouchers.set(r.guid, Object.assign({}, r, { synced_at: now }));
         let removed = 0;
@@ -145,6 +150,21 @@ function startCloud(port) {
   config.save({ company: 'CARE HYGIENE PVT LTD (2025-26)', syncState: {} });
   await agent.runFullSync(config.load());
   assert.strictEqual(config.load().company, 'CARE HYGIENE PVT LTD (2026-27)', 'switched to the open company');
+
+  // 5b) Remote command from Margyn: "resync" clears progress (keeps the crash guard) and re-reads the year.
+  const directives = [];
+  require('./cloud').onDirective((d) => { directives.push(d); if (d.command) agent.applyCommand(d.command); });
+  config.save({ syncState: Object.assign({}, config.load().syncState, { blockedRequests: ['some-bad-shape'] }) });
+  store.pendingCommand = { action: 'resync' };
+  await agent.runFullSync(config.load());
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(directives.some((d) => d.min_version === '0.2.4'), 'every reply carries the minimum version');
+  assert.ok(!config.load().syncState.lastFullAt, 'resync cleared progress');
+  assert.deepStrictEqual(config.load().syncState.blockedRequests, ['some-bad-shape'], 'crash guard kept');
+  const r5b = await agent.runFullSync(config.load());
+  assert.strictEqual(r5b.vouchers.mode, 'full', 'next sync re-reads the whole year');
+  assert.strictEqual(agent.compareVersions('0.1.0-prototype', '0.2.4'), -1);
+  require('./cloud').onDirective(null);
 
   // 6) An unrelated company configured: clear error naming what IS open, nothing synced from the wrong books.
   config.save({ company: 'SOMEONE ELSE LTD' });
