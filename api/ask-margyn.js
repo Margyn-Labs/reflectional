@@ -17,7 +17,10 @@ import { formatMargynContext } from './_lib/formatMargynContext.js';
 import { getUserFromRequest, selectRows } from './_lib/supabaseRest.js';
 import { isProposeAction, execReadTool, validateProposal } from './_lib/marginActions.js';
 import { getAgent } from './_lib/agentRegistry.js';
+import claudePkg from './_lib/claude.js';
 import crypto from 'crypto';
+
+const { callClaude, effortFor, escalate, supportsEffort } = claudePkg;
 
 const MAX_TOOL_ITERATIONS = 5;
 
@@ -128,8 +131,8 @@ export default async function handler(req, res) {
   // Each tier's model can still be pinned per-environment without a code change.
   const DEPTH_PRESETS = {
     quick:    { model: process.env.ASK_MARGYN_MODEL_QUICK || 'claude-haiku-4-5-20251001', max_tokens: 350, history: 4 },
-    balanced: { model: process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5',                 max_tokens: 500, history: 8 },
-    deep:     { model: process.env.ASK_MARGYN_MODEL_DEEP || 'claude-opus-5',              max_tokens: 900, history: 12 }
+    balanced: { model: process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5-5',               max_tokens: 1200, history: 8 },
+    deep:     { model: process.env.ASK_MARGYN_MODEL_DEEP || 'claude-opus-5-5',                max_tokens: 2000, history: 12 }
   };
   const depthKey = (typeof depth === 'string' && DEPTH_PRESETS[depth]) ? depth : 'balanced';
   const preset = DEPTH_PRESETS[depthKey];
@@ -176,31 +179,43 @@ export default async function handler(req, res) {
     let finalText = '';
     const steps = [];
 
+    // Reasoning follows the job; an empty or cut-off cheap reply retries the
+    // turn once a level up (read tools only ran, so redoing them is safe).
+    const job = depthKey === 'deep' ? 'judge' : 'narrate';
+    let effort = effortFor(job);
+    const baseLength = messages.length;
+    for (let attempt = 0; attempt < 2 && !finalText && !actionCard; attempt++) {
+    if (attempt === 1) {
+      const up = supportsEffort(model) ? escalate(effort) : null;
+      if (!up || up === effort) break;
+      console.log('[ask-margyn] escalating reasoning', effort, '->', up);
+      effort = up;
+      messages.length = baseLength;
+      steps.length = 0;
+    }
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
+      // Through _lib/claude.js: reasoning set by the job (Quick/Balanced
+      // narrate at low, Deep is the user asking for a considered answer, so
+      // judge at medium), plus caching of the growing tail of the loop.
+      let data;
+      try {
+        data = await callClaude({
+          label: 'ask-margyn-' + depthKey, job, effort, cacheTail: true, apiKey,
           model,
           max_tokens: preset.max_tokens,
           system,
           tools: cachedTools,
           messages
-        })
-      });
-
-      if (!anthropicRes.ok) {
-        const errText = await anthropicRes.text();
-        console.error('Anthropic API error:', anthropicRes.status, errText);
+        });
+      } catch (e) {
+        console.error('Anthropic API error:', e.status, e.body || e.message);
         res.status(502).json({ error: 'AI service error' });
         return;
       }
-
-      const data = await anthropicRes.json();
+      if (data.stop_reason === 'refusal') {
+        finalText = "I can't help with that one. Ask me about your numbers, customers, vendors or anything on screen.";
+        break;
+      }
       const blocks = Array.isArray(data.content) ? data.content : [];
       const toolUses = blocks.filter(b => b.type === 'tool_use');
       const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
@@ -261,8 +276,9 @@ export default async function handler(req, res) {
         continue;
       }
 
-      finalText = textOut;
+      finalText = data.stop_reason === 'max_tokens' ? '' : textOut;
       break;
+    }
     }
 
     res.status(200).json({
@@ -457,7 +473,7 @@ async function handleSpeak(req, res) {
 //     the card appeared must be an explicit yes. Anything that messages a
 //     customer, or touches several rows at once, needs a tap on the card.
 const PAGE_KEYS = ['home', 'inbox', 'cash', 'payments', 'receivables', 'payables', 'gst', 'books', 'invoicing', 'calculate',
-  'customers', 'vendors', 'margin', 'cfopack', 'analytics', 'scores', 'history', 'agents', 'connectors', 'people', 'settings', 'audit', 'financing', 'profile'];
+  'customers', 'vendors', 'margin', 'cfopack', 'analytics', 'scores', 'history', 'agents', 'connectors', 'people', 'channels', 'settings', 'audit', 'financing', 'profile'];
 const DIRECTION = { type: 'string', enum: ['receivables', 'payables'], description: 'receivables = money customers owe the business; payables = money the business owes vendors.' };
 const NO_ARGS = { type: 'object', properties: {}, additionalProperties: false };
 
@@ -469,7 +485,7 @@ const REALTIME_TOOLS = [
     parameters: {
       type: 'object',
       properties: {
-        page: { type: 'string', enum: PAGE_KEYS, description: 'home, inbox (decisions waiting on the user), cash, payments (payment gateways), receivables, payables, gst, books (the ledger, every accounting source side by side), invoicing, calculate (file import), customers, vendors, cfopack (monthly CFO pack), analytics (reports and charts), scores (Pulse Score), history (Ask Margyn chat), agents, connectors (data sources), people, settings, audit (audit log), financing (capital readiness), profile.' },
+        page: { type: 'string', enum: PAGE_KEYS, description: 'home, inbox (decisions waiting on the user), cash, payments (payment gateways), receivables, payables, gst, books (the ledger, every accounting source side by side), invoicing, calculate (file import), customers, vendors, margin (gross margin and what slow payers cost, from Tally), cfopack (monthly CFO pack), analytics (reports and charts), scores (Pulse Score), history (Ask Margyn chat), agents, connectors (data sources), people (team members, their WhatsApp numbers and access), channels (channel health: whether WhatsApp and email reminders are actually being delivered, and money paid after a chase), settings, audit (audit log), financing (capital readiness), profile.' },
         view: { type: 'string', description: 'Optional. On receivables/payables/customers/vendors/cash: "reconciled", "compare", or a source key (zoho, tally, odoo, manual). On payments/books: a source key. Omit to keep the current view.' },
         period: { type: 'string', description: 'Optional. On analytics: 1m, 1q, 1y or max. On cfopack: a month as YYYY-MM.' }
       },
@@ -1015,7 +1031,7 @@ function personAndAppBlock(ctx) {
   return `
 WHO YOU'RE TALKING TO: ${first ? first + '. Use their first name now and then (a greeting, good news, a heads-up), never in every reply.' : 'their name isn\'t known yet; don\'t guess one.'}
 
-WHAT THE MARGYN APP HAS (pages you can open or show): Home (my desk: what I did, what needs them), Inbox (decisions waiting), Cash (balances by source + 13-week forecast), Payment gateways, Receivables, Payables, GST and tax, Ledger (every accounting source side by side), Invoicing, Import (any Excel/CSV/PDF/photo), Customers, Vendors (the customer/vendor master), CFO pack (monthly board-ready pack), Reports, Pulse Score, Conversations (every past chat and call), Automations (payment reminders on WhatsApp, reconciliation, the Opening/Closing Bell), Organisations and sources, People and roles, Settings (incl. team logins), Audit log (who changed what), Channel health (are Bells, reminders and emails delivering), Capital readiness.${notes.length ? `
+WHAT THE MARGYN APP HAS (pages you can open or show): Home (my desk: what I did, what needs them), Inbox (decisions waiting), Cash (balances by source + 13-week forecast), Payment gateways, Receivables, Payables, GST and tax, Ledger (every accounting source side by side), Invoicing, Import (any Excel/CSV/PDF/photo), Customers, Vendors (the customer/vendor master), Margin (gross margin, returns and what slow payers cost, from Tally), CFO pack (monthly board-ready pack), Reports, Pulse Score, Conversations (every past chat and call), Automations (payment reminders on WhatsApp, reconciliation, the Opening/Closing Bell), Organisations and sources, People and roles, Settings (incl. team logins), Audit log (who changed what), Channel health (are Bells, reminders and emails delivering), Capital readiness.${notes.length ? `
 Recently added (release notes, for your knowledge; mention one only when it helps or they ask what's new):
 ${notes.map(n => '- ' + n).join('\n')}` : ''}`;
 }

@@ -18,6 +18,8 @@
 // Zero-npm: plain fetch() only, matching the rest of /api.
 
 import { formatMargynContext } from './_lib/formatMargynContext.js';
+import { getUserFromRequest } from './_lib/supabaseRest.js';
+import { callClaude, textOf } from './_lib/claude.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -30,6 +32,21 @@ export default async function handler(req, res) {
     res.status(500).json({
       error: 'Server is missing ANTHROPIC_API_KEY. Add it in Vercel → Settings → Environment Variables, then redeploy.'
     });
+    return;
+  }
+
+  // Signed-in users only: this endpoint spends Claude credit on every call,
+  // and until now anyone with the URL could call it.
+  let user;
+  try {
+    user = await getUserFromRequest(req);
+  } catch (e) {
+    console.error('[generate-briefing] auth check failed:', e.message);
+    res.status(500).json({ error: 'Server not configured' });
+    return;
+  }
+  if (!user || !user.id) {
+    res.status(401).json({ error: 'Not signed in' });
     return;
   }
 
@@ -46,7 +63,7 @@ export default async function handler(req, res) {
 
   // Model is configurable via Vercel env var so it can be changed without
   // touching code — same pattern as ASK_MARGYN_MODEL in api/ask-margyn.js.
-  const model = process.env.BRIEFING_MODEL || 'claude-sonnet-5';
+  const model = process.env.BRIEFING_MODEL || 'claude-sonnet-5-5';
 
   const {
     companyName, pulseScore, pulseTrend, vitalsLines, pnlBlock,
@@ -107,34 +124,26 @@ Rules:
 8. No preamble like "Here is your briefing." Start directly with the content. Plain language, no markdown headers, no bullet walls unless the content genuinely calls for a short list.
 9. Keep total length under 220 words.`;
 
+  // A "judge" job (medium reasoning): once a day at most, and it has to pick
+  // the single most urgent thing out of every source — worth thinking about,
+  // cheap because it's rare. max_tokens leaves room for that reasoning on
+  // top of the ~220-word briefing; only tokens actually used are billed.
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 700,
-        messages: [{ role: 'user', content: prompt }]
-      })
+    const data = await callClaude({
+      label: 'briefing', job: 'judge', apiKey,
+      model,
+      max_tokens: 1200,
+      messages: [{ role: 'user', content: prompt }]
     });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Anthropic API error:', response.status, errText);
-      res.status(502).json({ error: 'AI service error' });
-      return;
-    }
-
-    const data = await response.json();
-    const textBlock = (data.content || []).find((b) => b.type === 'text');
-    const briefing = textBlock ? textBlock.text : 'No briefing text returned.';
+    const briefing = textOf(data) || 'No briefing text returned.';
 
     res.status(200).json({ briefing });
   } catch (err) {
+    if (err && err.status) {
+      console.error('Anthropic API error:', err.status, err.body);
+      res.status(502).json({ error: 'AI service error' });
+      return;
+    }
     console.error('generate-briefing error:', err);
     res.status(500).json({ error: `Failed to reach Anthropic API: ${err.message}` });
   }

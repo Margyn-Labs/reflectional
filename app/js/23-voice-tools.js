@@ -122,8 +122,26 @@ function vxPageSummary(page){
     if(page === 'inbox' || page === 'agents') return VX_TOOLS.get_inbox();
     if(page === 'cfopack') return vxPackSummary();
     if(page === 'home') return VX_TOOLS.get_overview();
+    if(page === 'margin') return VX_TOOLS.get_margin();
+    if(page === 'channels') return vxChannelSummary();
   } catch(e){ console.error('[voice] summary', page, e); }
   return { about:(MG_PAGES[page] && MG_PAGES[page].sub) || null };
+}
+/* Channel health: the same figures as the page (19h-channels.js), so "are my
+   reminders going out" and "how much did you recover" have an answer. */
+function vxChannelSummary(){
+  if(typeof mgLoadChannels === 'function' && !mgChan && !mgChanBusy) mgLoadChannels();
+  const d = typeof mgChan !== 'undefined' ? mgChan : null;
+  if(!d) return { loading:true, note:'Channel health is still loading. Ask again in a few seconds.' };
+  const r = d.recovered || {};
+  return {
+    window_days:d.window_days,
+    channels:(d.channels || []).map(c => ({ channel:c.label, via:c.via, status:c.status, headline:c.headline, sent:c.sent_30d, failed:c.failed_30d, last_delivered:c.last_success_at || null, detail:c.detail })),
+    paid_after_chase:{ amount:vxInr(r.amount || 0), invoices:r.invoices || 0, window_days:r.window_days || 30 },
+    still_being_chased:{ amount:vxInr((r.still_chasing || {}).amount || 0), invoices:(r.still_chasing || {}).invoices || 0 },
+    promised_to_pay:{ amount:vxInr((r.promised || {}).amount || 0), invoices:(r.promised || {}).invoices || 0 },
+    note:'Paid after a chase counts payments that followed a chase; it cannot prove the customer would not have paid anyway.'
+  };
 }
 /* The CFO pack is one month's figures (the month picked on the page), not
    today's. Summarising it from the live overview gave a different Pulse

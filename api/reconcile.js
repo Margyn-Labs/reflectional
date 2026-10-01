@@ -603,6 +603,14 @@ async function runAgentForUser(userId) {
   const runId = randomUUID();
   const asOf = new Date().toISOString().slice(0, 10);
 
+  // Clusters already sent to the Tier-2 LLM with identical rows — skipped so
+  // the same unresolved items aren't re-billed every night. null when the
+  // agent_llm_attempts table doesn't exist yet: then nothing is skipped or
+  // recorded, exactly as before the 2026-09-27 migration.
+  const priorAttempts = await selectRows('agent_llm_attempts', `select=cluster_key,ctx_hash&user_id=eq.${userId}&limit=5000`).catch(() => null);
+  const seenClusters = new Set((priorAttempts || []).map((a) => a.cluster_key + ':' + a.ctx_hash));
+  const newAttempts = [];
+
   let allProps = [];
   for (const src of booksSources) {
     if (reauth[src.source]) continue;
@@ -631,10 +639,12 @@ async function runAgentForUser(userId) {
     // in this app already uses). Capped at 12 Claude calls per books source
     // per run to bound latency and cost.
     if (exceptions.length) {
-      const llm = await runLlmTier(bundle, exceptions, { maxCalls: 12 }).catch((err) => {
+      const llm = await runLlmTier(bundle, exceptions, { maxCalls: 12, seen: seenClusters, keyPrefix: src.source + '|' }).catch((err) => {
         console.error('[closeCollectionsLlmTier] run failed:', err.message);
         return { proposals: [] };
       });
+      if (llm.skipped) console.log(`[closeCollectionsLlmTier] ${src.source}: skipped ${llm.skipped} unchanged cluster(s)`);
+      (llm.attempts || []).forEach((a) => newAttempts.push({ user_id: userId, ...a }));
       llm.proposals.forEach((p) => { p._orgRef = src.orgRef || null; });
       allProps = allProps.concat(llm.proposals);
     }
@@ -657,6 +667,11 @@ async function runAgentForUser(userId) {
   const fresh = rows.filter((r) => !locked.has(r.proposal_key));
   if (fresh.length) {
     await insertRows('agent_actions', fresh, { onConflict: 'user_id,agent,proposal_key', merge: true });
+  }
+
+  if (priorAttempts && newAttempts.length) {
+    await insertRows('agent_llm_attempts', newAttempts, { onConflict: 'user_id,cluster_key,ctx_hash' })
+      .catch((err) => console.error('[closeCollectionsLlmTier] could not record attempts:', err.message));
   }
 
   await logConnectorEvent({

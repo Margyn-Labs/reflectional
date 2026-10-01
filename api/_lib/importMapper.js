@@ -17,7 +17,9 @@
 // ESM loader can `import` a CJS module's module.exports as a default export
 // — see the destructure at the top of that file.
 
-const IMPORT_MODEL = process.env.IMPORT_MODEL || 'claude-sonnet-5';
+const { callClaude, systemBlocks, effortFor, escalate, textOf } = require('./claude');
+
+const IMPORT_MODEL = process.env.IMPORT_MODEL || 'claude-sonnet-5-5';
 const IMPORT_TARGETS = ['cash', 'revenue', 'net_profit', 'burn', 'gst_payable', 'gst_leak', 'receivable', 'payable', 'payments'];
 const MAX_BASE64_LEN = 3_200_000; // ~2.3 MB raw — keep both producers' size caps consistent with this
 
@@ -93,23 +95,38 @@ async function runImportMapper(input, apiKey) {
     content.push({ type: 'text', text: whoLine + 'This is a business document. Extract its financial figures per the schema, from this business\'s point of view.' });
   }
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: IMPORT_MODEL, max_tokens: 4096, system: IMPORT_SYSTEM, messages: [{ role: 'user', content }] })
-  });
-  if (!r.ok) {
-    const errBody = await r.text();
-    console.error('Anthropic import error:', r.status, errBody);
-    // Surface the real status/message (not the raw body — that can carry
-    // request internals) so a failure is diagnosable from the caller's UI
-    // alone, instead of needing to dig through Vercel's function logs.
-    let reason = 'HTTP ' + r.status;
-    try { const parsedErr = JSON.parse(errBody); if (parsedErr && parsedErr.error && parsedErr.error.message) reason = parsedErr.error.message.slice(0, 140); } catch (e) { /* keep the status-only reason */ }
-    throw new ImportMapperError(502, 'Could not read the file just now (' + reason + ').');
+  // An "extract" job (see _lib/claude.js): medium reasoning, the mapping
+  // instructions cached (a bulk upload re-sends them file after file), and
+  // one retry a level up only when the output can't be read as JSON or
+  // came back with nothing at all from a real document.
+  let effort = effortFor('extract');
+  let text = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let data;
+    try {
+      data = await callClaude({
+        label: 'import-mapper', job: 'extract', effort, apiKey,
+        model: IMPORT_MODEL, max_tokens: 6000, system: systemBlocks(IMPORT_SYSTEM), messages: [{ role: 'user', content }]
+      });
+    } catch (err) {
+      if (!err.status) throw err;
+      console.error('Anthropic import error:', err.status, err.body);
+      // Surface the real status/message (not the raw body — that can carry
+      // request internals) so a failure is diagnosable from the caller's UI
+      // alone, instead of needing to dig through Vercel's function logs.
+      let reason = 'HTTP ' + err.status;
+      try { const parsedErr = JSON.parse(err.body); if (parsedErr && parsedErr.error && parsedErr.error.message) reason = parsedErr.error.message.slice(0, 140); } catch (e) { /* keep the status-only reason */ }
+      throw new ImportMapperError(502, 'Could not read the file just now (' + reason + ').');
+    }
+    text = textOf(data);
+    const parsed = looseJsonParse(text);
+    const empty = !parsed || (!(parsed.entries || []).length && !(parsed.anomalies || []).length);
+    if (!empty) break;
+    const up = escalate(effort);
+    if (!up || up === effort) break;
+    console.log('[importMapper] nothing readable at effort', effort, '- retrying at', up);
+    effort = up;
   }
-  const data = await r.json();
-  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
   return { proposal: sanitizeProposal(text) };
 }
 

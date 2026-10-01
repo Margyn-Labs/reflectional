@@ -12,8 +12,10 @@ async function runBriefingGeneration(regenerate){
   text.innerHTML = '<span class="loading">Margyn is reading your latest snapshot…</span>';
   try {
     const context = buildMargynContext(null);
+    const { data: { session } } = await sbClient.auth.getSession();
     const res = await fetch('/api/generate-briefing', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', ...(session ? { 'Authorization':'Bearer ' + session.access_token } : {}) },
       body: JSON.stringify({ context })
     });
     if(!res.ok) throw new Error('Briefing request failed: ' + res.status);

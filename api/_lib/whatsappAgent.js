@@ -22,16 +22,16 @@
  *
  * Required env vars (set in Vercel dashboard):
  *   ANTHROPIC_API_KEY      shared with api/ask-margyn.js / api/generate-briefing.js
- *   WHATSAPP_AGENT_MODEL   optional, default 'claude-sonnet-5'
+ *   WHATSAPP_AGENT_MODEL   optional, default 'claude-sonnet-5-5'
  */
 
 const { selectRows, insertRows, rpc } = require('./supabaseRest');
 const bsp = require('./whatsappBsp');
 const marginActions = require('./marginActions');
+const { callClaude: claudeRequest, systemBlocks } = require('./claude');
 const moneyModel = require('./moneyModel');
 
-const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5';
-const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5-5';
 const MAX_TOOL_ITERATIONS = 5;
 const HISTORY_TURNS = 10;
 const MAX_INBOUND_CHARS = 1500;
@@ -222,7 +222,9 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   // Without the Act permission the propose tool isn't offered at all, and
   // the prompt says so, so Margyn explains instead of trying.
   const tools = canAct ? ALL_TOOLS : ALL_TOOLS.filter(t => !marginActions.isProposeAction(t.name));
-  const system = buildSystemPrompt(companyName, sender) + (canAct ? '' :
+  // Instructions (cached, the same for every business) + this account's half:
+  // who is texting, their access, and the cross-channel memory.
+  const accountPart = `ACCOUNT\n- The business is ${companyName}.\n${senderLine(companyName, sender)}` + (canAct ? '' :
     '\n\nThis person has read-only access: you cannot propose any action for them. If they ask for a change (mark paid, approve, log an entry, chase someone), say their number is set up to ask questions only and the account owner can allow actions under Settings > People. Routing a message to someone is still fine.');
   // Memory across channels: the owner's latest voice call / in-app chat, so
   // "like I said on the call" works here too. Owner's number only (member
@@ -231,7 +233,7 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   // A number linked to an app login gets that person's own app threads.
   const memory = (!sender || sender.is_primary) ? await appMemoryBlock(profileId)
     : sender.login ? await appMemoryBlock(profileId, sender.login.user_id) : '';
-  const systemWithMemory = system + memory;
+  const systemWithMemory = systemBlocks(STATIC_SYSTEM_PROMPT, accountPart + memory);
   const phoneLabel = fromPhone ? '+' + String(fromPhone).replace(/[^\d]/g, '') : 'a WhatsApp contact';
   const ctx = {
     profileId,
@@ -372,21 +374,14 @@ async function sendReply(to, text) {
 /* ------------------------------------------------------------------ */
 /* Claude call                                                         */
 /* ------------------------------------------------------------------ */
+// Through _lib/claude.js as a "narrate" job: low reasoning (every figure
+// comes from a tool; the model picks tools and phrases a short reply), with
+// the growing tool-loop tail cached so later iterations read it cheaply.
 async function callClaude(apiKey, system, messages, tools = ALL_TOOLS) {
-  const res = await fetch(ANTHROPIC_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({ model: MODEL, max_tokens: 800, system, tools, messages })
+  return claudeRequest({
+    label: 'whatsapp-agent', job: 'narrate', cacheTail: true, apiKey,
+    model: MODEL, max_tokens: 1200, system, tools, messages
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Anthropic ${res.status}: ${t.slice(0, 300)}`);
-  }
-  return res.json();
 }
 
 const LOGIN_ROLE_LABEL = { admin: 'an Admin', finance: 'Finance', approver: 'an Approver', viewer: 'a Viewer (read-only)', advisor: 'an outside Advisor (read-only)' };
@@ -404,8 +399,10 @@ function senderLine(companyName, sender) {
   return `- You know which business this is (${companyName}) but not which individual is texting — no name is saved for this number yet. If asked "do you know who I am", say you identify the business by its registered WhatsApp number, and that they can add their name under Settings > People in the Margyn app so you'll know them next time.`;
 }
 
-function buildSystemPrompt(companyName, sender) {
-  return `You are Margyn's WhatsApp assistant for ${companyName}, a digital-native Indian business. Someone from the business has messaged the Margyn WhatsApp line (the same line that sends the daily Opening Bell and Closing Bell briefings). Reply like a sharp finance teammate texting back — not a dashboard bot, not a consultant memo.
+// Byte-identical for every business and sender so it caches; the business
+// name, who is texting and their access go in the ACCOUNT block after it
+// (see runConversation).
+const STATIC_SYSTEM_PROMPT = `You are Margyn's WhatsApp assistant for a digital-native Indian business: the one named in the ACCOUNT section at the end of these instructions. Someone from the business has messaged the Margyn WhatsApp line (the same line that sends the daily Opening Bell and Closing Bell briefings). Reply like a sharp finance teammate texting back — not a dashboard bot, not a consultant memo.
 
 VOICE:
 - One human, one chat. Address them as "you." Never "Dear user," never third-person about "the business" unless they ask about it that way.
@@ -450,13 +447,12 @@ Everything else that changes Margyn's own data (approvals, marking paid, logging
 Relaying is different and allowed: "tell my AP person the Acme bill needs paying" is a routing request — use route_message to forward it to the right person; you are passing a message to a human, not actioning anything. But "chase Acme on the overdue payment" — the sender asking Margyn itself to chase — is now a propose_action (send_one_off_chase), not a route_message.
 
 Other rules:
-${senderLine(companyName, sender)}
+- Who is texting is in the ACCOUNT section: follow what it says about recognising them.
 - Only state numbers, statuses or names that a tool actually returned. Never invent a figure, an invoice status, or a contact.
 - get_vitals returns real figures even when nothing is connected — data entered manually in the app still counts. Give the actual numbers. When data_source is "manual" or "upload", add one short caveat that they're self-reported and not yet connector-verified — do not refuse, hedge the whole answer, or claim the data is missing/empty/wrong.
 - If a tool genuinely returns an error or no data at all, say so plainly and suggest opening the Margyn app.
 - Never call the Pulse Score a "credit score" — it is an operating/financial health score.
 - Keep every reply under 90 words.`;
-}
 
 /* ------------------------------------------------------------------ */
 /* Tool execution — profileId is always the authenticated sender's;    */

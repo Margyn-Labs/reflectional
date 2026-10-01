@@ -32,7 +32,20 @@
  * Cost control: `opts.maxCalls` (default 12) bounds how many Claude calls one
  * run makes — extra exceptions beyond that just aren't attempted this run
  * (Tier 1 will keep surfacing them next run; nothing is lost, only delayed).
+ * `opts.seen` (a Set of "clusterKey:ctxHash" from agent_llm_attempts) skips
+ * any cluster already sent to Claude with exactly the same rows: the same
+ * input gets the same answer, so re-asking every night only re-bills it.
+ * Anything new for that party (a payment, an invoice) changes the hash and
+ * it's tried again. The result lists this run's `attempts` for the caller
+ * to record.
+ *
+ * Reasoning: a "reconcile" job in _lib/claude.js — kept at high, the level
+ * this tier was validated at in tools/scenario-gen. The dedupe above is
+ * where the saving comes from, not thinking less about allocations.
  */
+
+const { createHash } = require('crypto');
+const { callClaude: claudeRequest, systemBlocks, effortFor } = require('./claude');
 
 const KNOWN_TDS_RATES = [
   { rate: 0.10, section: '194J' }, { rate: 0.05, section: '194H' },
@@ -40,8 +53,10 @@ const KNOWN_TDS_RATES = [
   { rate: 0.001, section: '194Q' }
 ];
 
+// Stays on Sonnet 5 on purpose: Tier 2 was validated there (tools/scenario-gen)
+// and relies on forcing the tool call, which Sonnet 5.5 no longer accepts.
+// Move it only together with a re-run of that validation.
 const MODEL = process.env.AGENT_LLM_MODEL || 'claude-sonnet-5';
-const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const DEFAULT_MAX_CALLS = 12;
 
 const money = (n) => Math.round(Number(n || 0) * 100) / 100;
@@ -233,17 +248,14 @@ function contextForCluster(bundle, idx, party, items, claimedBp, claimedG) {
 }
 
 async function callClaude(tool, toolName, system, userContent) {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: MODEL, max_tokens: 2048, system,
-      tools: [tool], tool_choice: { type: 'tool', name: toolName },
-      messages: [{ role: 'user', content: userContent }]
-    })
+  // Instructions + tool are the same for every call in a run, so they're
+  // cached; the per-party context JSON follows.
+  const data = await claudeRequest({
+    label: 'close-llm-tier', job: 'reconcile',
+    model: MODEL, max_tokens: 4096, system: systemBlocks(system),
+    tools: [tool], tool_choice: { type: 'tool', name: toolName },
+    messages: [{ role: 'user', content: userContent }]
   });
-  if (!res.ok) throw new Error(`anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const data = await res.json();
   const call = (data.content || []).find((c) => c.type === 'tool_use');
   if (!call) throw new Error('no tool_use in response');
   return call.input;
@@ -252,14 +264,18 @@ async function callClaude(tool, toolName, system, userContent) {
 /**
  * @param {object} bundle     same shape passed to runAgent()
  * @param {object[]} exceptions  runAgent(bundle, {includeExceptions:true}).exceptions
- * @param {object} [opts]     { maxCalls?: number }
+ * @param {object} [opts]     { maxCalls?: number, seen?: Set<string>, keyPrefix?: string }
  * @returns {Promise<{proposals: object[], usedLlm: boolean, attempted: number, improved: number, errors: string[]}>}
  */
 async function runLlmTier(bundle, exceptions, opts = {}) {
   if (!process.env.ANTHROPIC_API_KEY || !exceptions || !exceptions.length) {
-    return { proposals: [], usedLlm: false, attempted: 0, improved: 0, errors: [] };
+    return { proposals: [], usedLlm: false, attempted: 0, improved: 0, errors: [], attempts: [], skipped: 0 };
   }
   const maxCalls = opts.maxCalls || DEFAULT_MAX_CALLS;
+  const seen = opts.seen instanceof Set ? opts.seen : new Set();
+  const keyPrefix = opts.keyPrefix || '';
+  const attempts = [];
+  let skipped = 0;
 
   const invByRef = new Map(bundle.invoices.map((i) => [String(i.ref), i]));
   const bpByRef = new Map(bundle.booksPayments.map((b) => [String(b.ref), { ...b, _party: (invByRef.get(String(b.invoiceRef)) || {}).party }]));
@@ -286,14 +302,18 @@ async function runLlmTier(bundle, exceptions, opts = {}) {
     if (calls >= maxCalls) break;
     const { party, items } = groups.get(key);
 
+    const ctx = contextForCluster(bundleForCtx, idx, party, items, claimedBp, claimedG);
+    const ctxHash = clusterHash(ctx);
+    const clusterKey = keyPrefix + key;
+    if (seen.has(clusterKey + ':' + ctxHash)) { skipped++; continue; }
+
     if (items.length === 1) {
       calls++;
-      const f = items[0];
-      const ctx = contextForCluster(bundleForCtx, idx, party, items, claimedBp, claimedG);
       let raw;
       try {
         raw = await callClaude(PROPOSE_TOOL, 'propose', SYSTEM, 'Reconcile this exception. Context JSON:\n\n' + JSON.stringify({ exception: ctx.exceptions[0], ...ctx }));
       } catch (e) { errors.push(String(e).slice(0, 160)); continue; }
+      attempts.push({ cluster_key: clusterKey, ctx_hash: ctxHash });
       if (!raw || !raw.kind || raw.kind === 'needs_human') continue;
       const shaped = findingShape(raw, 'llm');
       if (!validateProposal(idx, shaped, { booksRefs: claimedBp, gatewayIds: claimedG }).ok) continue;
@@ -305,11 +325,11 @@ async function runLlmTier(bundle, exceptions, opts = {}) {
     }
 
     calls++;
-    const ctx = contextForCluster(bundleForCtx, idx, party, items, claimedBp, claimedG);
     let rawList;
     try {
       rawList = await callClaude(PROPOSE_CLUSTER_TOOL, 'proposeCluster', SYSTEM + CLUSTER_ADDENDUM, 'Reconcile as many as you can. Context JSON:\n\n' + JSON.stringify(ctx));
     } catch (e) { errors.push(String(e).slice(0, 160)); continue; }
+    attempts.push({ cluster_key: clusterKey, ctx_hash: ctxHash });
     for (const raw of (Array.isArray(rawList && rawList.proposals) ? rawList.proposals : [])) {
       if (!raw || !raw.kind || raw.kind === 'needs_human') continue;
       const shaped = findingShape(raw, 'llm');
@@ -321,22 +341,39 @@ async function runLlmTier(bundle, exceptions, opts = {}) {
     }
   }
 
-  return { proposals, usedLlm: true, attempted: exceptions.length, improved, errors };
+  return { proposals, usedLlm: true, attempted: exceptions.length, improved, errors, attempts, skipped };
 }
+
+// Fingerprint of exactly what Claude would be shown for a cluster, plus the
+// model and reasoning level (changing either is a reason to ask again).
+function clusterHash(ctx) {
+  return createHash('sha1')
+    .update(JSON.stringify(ctx) + '|' + MODEL + '|' + (effortFor('reconcile') || ''))
+    .digest('hex').slice(0, 16);
+}
+
+// agent_actions.kind only accepts the queue's own kinds (see
+// 2026-09-11-close-collections-agent.sql). The LLM's vocabulary is richer;
+// map it onto the card the human actually reviews. Without this, one LLM
+// proposal made the whole night's insert fail the check constraint.
+const QUEUE_KIND = {
+  match: 'reconcile_match', partial: 'reconcile_match', reallocate: 'reconcile_match',
+  split: 'split', on_account: 'split', duplicate: 'flag'
+};
 
 /** Shape a validated LLM finding into the same proposal shape runAgent() emits,
  * so api/reconcile.js can merge and persist it identically. */
 function toAgentProposal(f) {
   const primary = (f.booksRefs || [])[0] || (f.gatewayIds || [])[0] || '';
   return {
-    kind: f.kind, confidence: f.confidence,
+    kind: QUEUE_KIND[f.kind] || 'needs_human', confidence: f.confidence,
     proposalKey: `llm:${primary}`,
     sourceFindingKey: null,
     title: `${f.kind === 'on_account' ? 'Allocate' : 'Match'} — Tier-2 (AI-assisted)`,
     rationale: f.reason,
     amount: (f.allocations || []).reduce((s, a) => s + (Number(a.amount) || 0), 0) || null,
     currency: 'INR',
-    evidence: { booksRefs: f.booksRefs, gatewayIds: f.gatewayIds, tier: 'llm' },
+    evidence: { booksRefs: f.booksRefs, gatewayIds: f.gatewayIds, tier: 'llm', llmKind: f.kind },
     proposal: {
       match: { booksRef: (f.booksRefs || [])[0] || null, gatewayId: (f.gatewayIds || [])[0] || null, invoiceRef: (f.invoiceRefs || [])[0] || null },
       allocations: (f.allocations || []).map((a) => ({ invoiceRef: a.invoiceRef, amount: money(a.amount) })),
