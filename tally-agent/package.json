@@ -1,0 +1,14 @@
+{
+  "name": "margyn-tally-agent",
+  "version": "0.2.3",
+  "private": true,
+  "description": "Local desktop agent — syncs TallyPrime (HTTP/XML server, port 9000) into Margyn's cloud. PROTOTYPE.",
+  "bin": { "margyn-tally-agent": "agent.js" },
+  "scripts": {
+    "pair": "node agent.js pair",
+    "sync": "node agent.js sync",
+    "run": "node agent.js run"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {}
+}

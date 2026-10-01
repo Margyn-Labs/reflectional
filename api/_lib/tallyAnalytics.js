@@ -228,6 +228,7 @@ function computeAnalytics(input) {
   const calibrated = calibrateBills(input.bills || [], allVouchers);
   const bills = dedupe(calibrated.bills, (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
   const syncRuns = input.syncRuns || [];
+  const diagnostics = input.diagnostics && typeof input.diagnostics === 'object' ? input.diagnostics : null;
   const edition = input.edition || null;
   const overrides = input.overrides || {};
   const now = input.now ? new Date(input.now) : new Date();
@@ -682,23 +683,39 @@ function computeAnalytics(input) {
   if (bsLedgers.length && bsMissing) reasons.push(`Tally returned no balance for ${bsMissing} of ${bsLedgers.length} balance-sheet ledgers.`);
   if (!vouchers.length) { level = 'low'; reasons.push('No vouchers synced yet.'); }
   if (calibrated.inverted) reasons.push('Tally\'s bill signs ran the other way round for this company, so receivables and payables were swapped to match how your customers and vendors appear on vouchers.');
-  if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. Margyn needs the financial year's vouchers; check the agent's from-date.`);
+  // Completeness against Tally's OWN voucher count per month (agent 0.2.0+ reports it). This is the
+  // proof the figures are whole: if every month matches, nothing was dropped between Tally and Margyn.
+  const dm = diagnostics && diagnostics.vouchers && diagnostics.vouchers.months && typeof diagnostics.vouchers.months === 'object' ? diagnostics.vouchers.months : null;
+  let completeness = null;
+  if (dm) {
+    const ks = Object.keys(dm).filter((k) => dm[k] && dm[k].tally != null).sort();
+    const short = ks.filter((k) => dm[k].complete === false);
+    const tallyTotal = ks.reduce((a, k) => a + (+dm[k].tally || 0), 0);
+    const syncedTotal = ks.reduce((a, k) => a + (+dm[k].synced || 0), 0);
+    completeness = { months: ks.length, tally_vouchers: tallyTotal, synced_vouchers: syncedTotal, short_months: short, strategy: diagnostics.vouchers.strategy || null };
+    if (short.length) { level = 'low'; reasons.push(`Tally holds more vouchers than arrived in ${short.join(', ')} (${syncedTotal} of ${tallyTotal}). Margyn kept everything it has and will retry on the next sync.`); }
+    else if (ks.length) reasons.push(`Every month from ${ks[0]} to ${ks[ks.length - 1]} matches Tally's own voucher count (${tallyTotal.toLocaleString('en-IN')} vouchers).`);
+  }
+  const agentOld = !diagnostics || !diagnostics.agent_version;
+  if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. ` +
+    (agentOld ? 'The installed Margyn Tally agent reads only the current day from Tally; installing the latest agent sends the full financial year.' : 'The agent is fetching the rest of the year; this clears after the next sync.'));
   if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
   if (implausible) { level = 'low'; reasons.push('Sales look far too small next to costs and receivables, so margin and days-to-pay are hidden. The voucher sync is probably incomplete.'); }
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
   if (!stock.available) reasons.push('No stock balance: margin is before stock movement.');
-  if (tieBad.length) reasons.push('Vouchers deleted or edited in Tally stay in Margyn until the agent is reset, which is the usual reason ledgers stop tying out.');
+  if (tieBad.length && agentOld) reasons.push('Vouchers deleted or edited in Tally stay in Margyn until the latest Margyn Tally agent is installed (it removes them automatically), which is the usual reason ledgers stop tying out.');
   if (!itemsAvailable) reasons.push('Stock lines not synced yet, so item-level margin is unavailable (agent update pending).');
   reasons.push('Single source (Tally). Not yet corroborated by bank or GST.');
-  if (vouchers.length && !unclassified.length && !guessed.length && !tieBad.length && !failedKinds.length && stock.available && tie.length >= 3 && tieTop.every((t) => t.ok)) level = 'high-for-a-single-source';
+  if (vouchers.length && !unclassified.length && !guessed.length && !tieBad.length && !failedKinds.length && !(completeness && completeness.short_months.length) && stock.available && tie.length >= 3 && tieTop.every((t) => t.ok)) level = 'high-for-a-single-source';
   else if (unclassified.length > 3 || tieBad.length > 2 || !vouchers.length || failedKinds.some((f) => f.kind === 'vouchers')) level = 'low';
 
   const quality = {
     confidence: level,
     reasons,
     coverage: { from: period.from, to: period.to, vouchers: live.length, cancelled: cancelled.length, months: monthKeys.length },
+    tally_completeness: completeness,
     unclassified_ledgers: unclassified.slice(0, 20),
     guessed_ledgers: guessed.slice(0, 20),
     tie_out: tieTop,
