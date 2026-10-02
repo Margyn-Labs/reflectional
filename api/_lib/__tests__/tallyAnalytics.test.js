@@ -207,4 +207,14 @@ check('empty input does not throw, says so', e.pnl.length === 0 && e.quality.con
   check('KANDIVALI SALE counts as sales', o.period.net_sales === 100, o.period);
   check('days-to-pay hidden on under 80 days of vouchers', o.working_capital.dso_days === null && o.quality.reasons.some((r) => /days of vouchers/.test(r)), o.working_capital);
 }
+// Custom sub-groups of Indirect Expenses/Incomes are running costs/other income, not direct ones.
+{
+  const { guessBucket } = require('../tallyAnalytics');
+  check('guess: "Indirect Expenses - Admin" is opex', guessBucket('Office Rent', 'Indirect Expenses - Admin') === 'opex', guessBucket('Office Rent', 'Indirect Expenses - Admin'));
+  check('guess: "Indirect Exp (Office)" is opex', guessBucket('x', 'Indirect Exp (Office)') === 'opex', guessBucket('x', 'Indirect Exp (Office)'));
+  check('guess: "Indirect Incomes - Misc" is other_income', guessBucket('x', 'Indirect Incomes - Misc') === 'other_income', guessBucket('x', 'Indirect Incomes - Misc'));
+  check('guess: "Direct Expenses - Factory" still direct_expense', guessBucket('x', 'Direct Expenses - Factory') === 'direct_expense');
+  check('guess: "Direct Incomes - Scrap" still direct_income', guessBucket('x', 'Direct Incomes - Scrap') === 'direct_income');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

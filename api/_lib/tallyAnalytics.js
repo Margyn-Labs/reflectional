@@ -84,8 +84,11 @@ function guessBucket(name, parent) {
   if (/creditor|\bpayables?\b/.test(p)) return 'creditor';
   if (/debtor|receivable/.test(p)) return 'debtor';
   if (/remuneration|salary|salaries|wages/.test(p)) return 'opex';
-  if (/direct\s*exp|expenses?\s*\(?direct/.test(p)) return 'direct_expense';
-  if (/direct\s*inc|income\s*\(?direct/.test(p)) return 'direct_income';
+  if (/indirect\s*exp/.test(p)) return 'opex';
+  if (/indirect\s*inc/.test(p)) return 'other_income';
+  // (?<!in): "Indirect Expenses - Admin" contains "direct exp" but is a running cost, not a direct one.
+  if (/(?<!in)direct\s*exp|expenses?\s*\(?direct/.test(p)) return 'direct_expense';
+  if (/(?<!in)direct\s*inc|income\s*\(?direct/.test(p)) return 'direct_income';
   if (/expense|overhead|admin|\bcosts?\b/.test(p)) return 'opex';
   if (/income|revenue/.test(p)) return 'other_income';
   if (/sales/.test(p)) return 'sales';
