@@ -145,7 +145,7 @@ export function formatMargynContext(context) {
   if (!connectors.tally) {
     tallyBlock = 'Tally is not connected. No desktop-agent view of ledgers, vouchers or bill-wise outstanding.';
   } else if (!tally) {
-    tallyBlock = 'Tally is connected but the desktop agent has not synced any data yet.';
+    tallyBlock = 'Tally is connected. Its summary is not in this message (the app may still be loading it), so never say Tally has not synced: call the books tools, which read the synced entries directly and say so themselves if nothing has arrived.';
   } else {
     const tb = tally.bills || {}, tv = tally.vouchers || {};
     const lines = [];
