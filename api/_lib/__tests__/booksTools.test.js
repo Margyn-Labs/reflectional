@@ -84,6 +84,18 @@ const B = require('../booksTools');
   r = await call({ tool: 'nope' });
   check('?action=books refuses unknown tools', r.status === 400, r);
 
+  console.log('watch status is readable with GET');
+  {
+    let status, payload;
+    const res = { setHeader() {}, status(x) { status = x; return this; }, json(x) { payload = x; return this; }, end() {}, send() {} };
+    await handler({ method: 'GET', query: { action: 'watch' }, headers: { authorization: 'Bearer t' } }, res);
+    check('GET ?action=watch is not refused as a non-POST', status === 200 && payload && 'mode' in payload, { status, payload });
+    let s2;
+    const res2 = { setHeader() {}, status(x) { s2 = x; return this; }, json() { return this; }, end() {}, send() {} };
+    await handler({ method: 'GET', query: {}, headers: { authorization: 'Bearer t' } }, res2);
+    check('other GETs are still refused', s2 === 405, s2);
+  }
+
   console.log('prompts');
   const sys = M.buildSystemPrompt({ companyName: 'Acme' }, reg.getAgent(), { inPanel: true });
   check('chat prompt tells Margyn to use the books', /YOUR BOOKS \(TALLY\)/.test(sys[0].text) && /Never say you can only see the last 30 days/.test(sys[0].text));

@@ -60,7 +60,9 @@ async function overDailyCap(userId, authId) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  // Everything here is a POST, except reading Margyn Watch's status for the Conversations hub.
+  const isWatchRead = req.method === 'GET' && req.query && req.query.action === 'watch';
+  if (req.method !== 'POST' && !isWatchRead) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
