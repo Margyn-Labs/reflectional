@@ -41,7 +41,14 @@ export function formatMargynContext(context) {
   const pnl = ctx.pnl || null;
   const snapshotSource = (provenance && provenance.source) || null;
 
-  const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+  // Lakh and crore, written out: a model read "₹1,32,04,000" as ₹1.3 L. Same words as _lib/booksEngine.js.
+  const inr = (n) => {
+    const v = Math.round(Number(n) || 0), a = Math.abs(v), sg = v < 0 ? '-' : '';
+    const t = (x) => (x.includes('.') ? x.replace(/\.?0+$/, '') : x);
+    if (a >= 1e7) return sg + '₹' + t((a / 1e7).toFixed(2)) + ' Cr';
+    if (a >= 1e5) return sg + '₹' + t((a / 1e5).toFixed(a >= 1e6 ? 1 : 2)) + ' L';
+    return sg + '₹' + a.toLocaleString('en-IN');
+  };
 
   // Negative cash gives a negative runway, stored as e.g. "-0.0 months",
   // which a voice reads out as "minus zero months". Say what it means.
@@ -142,13 +149,13 @@ export function formatMargynContext(context) {
   } else {
     const tb = tally.bills || {}, tv = tally.vouchers || {};
     const lines = [];
-    lines.push(`Source: TallyPrime desktop agent${tally.company_name ? ' (company ' + tally.company_name + ')' : ''}${tally.as_of ? ', last sync ' + new Date(tally.as_of).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : ''}. SIGNAL-tier — one source, not verified.`);
+    lines.push(`Source: TallyPrime desktop agent${tally.company_name ? ' (company ' + tally.company_name + ')' : ''}${tally.as_of ? ', last sync ' + new Date(tally.as_of).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : ''}. One source (the business's own books). Every entry is readable with the books tools.`);
     if (tb.receivable_total != null) lines.push(`Bill-wise receivables outstanding (per Tally): ${inr(tb.receivable_total)}`);
     if (tb.payable_total != null) lines.push(`Bill-wise payables outstanding (per Tally): ${inr(tb.payable_total)}${tb.overdue_total ? ' (' + inr(tb.overdue_total) + ' overdue)' : ''}`);
     if (tv.count != null) {
       const byType = tv.by_type || {};
       const typeStr = Object.keys(byType).map((k) => `${byType[k]} ${k}`).join(', ');
-      lines.push(`Vouchers synced: ${tv.count}${typeStr ? ' (' + typeStr + ')' : ''}. Sales last 30d ${inr(tv.sales_30d || 0)}, receipts last 30d ${inr(tv.receipts_30d || 0)}.`);
+      lines.push(`Vouchers synced: ${tv.count}${typeStr ? ' (' + typeStr + ')' : ''}. In the LAST 30 DAYS ONLY (including GST): sales ${inr(tv.sales_30d || 0)}, receipts ${inr(tv.receipts_30d || 0)}. These are not year-to-date figures; for any other period call books_summary.`);
     }
     if (tally.ledgers && tally.ledgers.count != null) lines.push(`${tally.ledgers.count} ledger balances synced.`);
     // Margin analytics (api/_lib/tallyAnalytics.js). Figures and headlines are computed server-side; quote, never recompute.
@@ -156,11 +163,15 @@ export function formatMargynContext(context) {
     if (tm) {
       const pc = (n) => (n == null ? 'n/a' : `${Number(n).toFixed(1)}%`);
       const p = tm.period || {};
-      lines.push(`Margin (from Tally books, single source, signal only): net sales ${inr(p.net_sales || 0)} for ${p.from || '?'} to ${p.to || '?'}; gross margin before stock movement ${pc(p.gross_margin_pct_pre_stock)}${p.gross_margin_pct_after_stock != null ? ', after stock movement ' + pc(p.gross_margin_pct_after_stock) + ' (indicative)' : ''}; returns ${pc(tm.returns_pct)} of gross sales${tm.dso_days != null ? '; customers take about ' + Math.round(tm.dso_days) + ' days to pay' : ''}.`);
+      lines.push(`SALES THIS FINANCIAL YEAR SO FAR, before GST: ${inr(p.net_sales || 0)} (${p.from || '?'} to ${p.to || '?'}). Use books_summary for any other period.`);
+      lines.push(`Margin (from Tally books): net sales ${inr(p.net_sales || 0)} for ${p.from || '?'} to ${p.to || '?'}; gross margin before stock movement ${pc(p.gross_margin_pct_pre_stock)}${p.gross_margin_pct_after_stock != null ? ', after stock movement ' + pc(p.gross_margin_pct_after_stock) + ' (indicative)' : ''}; returns ${pc(tm.returns_pct)} of gross sales${tm.dso_days != null ? '; customers take about ' + Math.round(tm.dso_days) + ' days to pay' : ''}.`);
       (tm.headlines || []).forEach((h) => lines.push(`- ${h}`));
       lines.push('Margin-page sales are before GST; the Tally tab\'s sales figures include GST, so they will differ. Say which one you mean.');
       if (tm.confidence) lines.push(`Margin confidence: ${tm.confidence}.${(tm.caveats || []).length ? ' Caveats: ' + tm.caveats.join(' ') : ''}${tm.open_questions ? ' ' + tm.open_questions + ' ledger question(s) are waiting for the user on the Margin page.' : ''}`);
       if (!tm.items_available) lines.push('Item-level margin is not available yet (Tally item lines not synced); do not guess per-product margins.');
+      else lines.push('Item lines are synced: for product margins call the products tool.');
+      if (tm.overdraft) lines.push('The business runs on a bank overdraft. The cash forecast counts bank balances only and Margyn does not know the overdraft limit, so a forecast dip below zero or below the floor is NOT running out of money: say the overdraft covers it up to its limit, which Margyn can\'t see. cash_and_loans has the overdraft owed and the interest paid.');
+      if (Array.isArray(tm.top_findings) && tm.top_findings.length) lines.push('What Margyn found in the books (biggest first): ' + tm.top_findings.join(' | '));
     }
     tallyBlock = lines.join('\n');
   }

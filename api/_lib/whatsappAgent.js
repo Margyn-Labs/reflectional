@@ -30,6 +30,9 @@ const bsp = require('./whatsappBsp');
 const marginActions = require('./marginActions');
 const { callClaude: claudeRequest, systemBlocks } = require('./claude');
 const moneyModel = require('./moneyModel');
+const booksTools = require('./booksTools');
+const topics = require('../../app/js/margyn-topics.js');
+const { track } = require('./track');
 
 const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5-5';
 const MAX_TOOL_ITERATIONS = 5;
@@ -173,7 +176,8 @@ const TOOLS = [
 // list_receivables, etc.) plus marginActions' own read tools and its one
 // terminal propose_action tool. See execTool below for how propose_action
 // is intercepted before it ever reaches a normal tool-result round trip.
-const ALL_TOOLS = [...TOOLS, ...marginActions.TOOLS];
+// The books tools (every Tally entry, the same engine the app and voice use) come first.
+const ALL_TOOLS = [...booksTools.TOOLS, ...TOOLS, ...marginActions.TOOLS];
 
 /* ------------------------------------------------------------------ */
 /* Entry point                                                         */
@@ -199,6 +203,24 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.error('[whatsappAgent] ANTHROPIC_API_KEY not set — cannot reply');
+    return;
+  }
+
+  // STOP ALERTS / START ALERTS: Margyn Watch's own opt-out and opt-in, handled without the model.
+  const stopAlerts = /^\s*(stop|pause|band karo)\s+(alerts?|updates?)\s*[.!]*\s*$/i.test(cleanText);
+  const startAlerts = /^\s*(start|resume)\s+(alerts?|updates?)\s*[.!]*\s*$/i.test(cleanText);
+  if (stopAlerts || startAlerts) {
+    let reply;
+    if (sender && !sender.is_primary) reply = 'Only the account owner can switch Margyn\'s updates on or off. They can do it by texting START ALERTS or STOP ALERTS, or in the app under Conversations.';
+    else {
+      try {
+        await require('./margynWatch').setMode(profileId, stopAlerts ? 'off' : 'on');
+        reply = stopAlerts ? 'Done. I\'ve paused my updates. You can still ask me anything here, and text START ALERTS to turn them back on.'
+          : 'Done. I\'ll text you when something in your books needs a look (at most a few points, mornings and evenings). Text STOP ALERTS any time to pause.';
+      } catch (e) { reply = 'I couldn\'t change that just now. You can also do it in the app under Conversations.'; }
+    }
+    await persist({ profileId, phone: fromPhone }, 'assistant', reply, null);
+    await sendReply(fromPhone, reply);
     return;
   }
 
@@ -284,6 +306,9 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
     break;
   }
 
+  if (topics.isQuestion(cleanText)) {
+    await track(profileId, 'question_asked', { channel: 'whatsapp', topic: topics.topicsOf(cleanText)[0], answered: !!finalText && !topics.looksUnanswered(finalText) });
+  }
   if (finalText) {
     await sendReply(fromPhone, finalText.slice(0, MAX_REPLY_CHARS));
     return;
@@ -426,11 +451,20 @@ EXAMPLES (shape, not numbers):
 "are we fine on cash" -> "Can't see the bank yet. From Razorpay, ₹X settled this week; books show ₹Y. Want the mismatches?"
 "what's wrong with invoice 1042" -> "Mismatch. Zoho 1042 is ₹50,000; Razorpay payment pay_abc is ₹49,100 on the same day. IDs don't line up cleanly."
 
+YOUR BOOKS (TALLY): THE MOST IMPORTANT PART
+- The person texting may not follow their finances closely. Answer in plain words, the number first, then what it means for them, in one or two short lines. Hindi or Hinglish in, easy Hinglish out. No finance jargon: "customers take about 70 days to pay you", not "DSO 70".
+- For ANY question about sales, purchases, profit, costs, a customer or vendor, products, who owes what, cash, overdraft, interest, GST or "what should I look at", use the books tools first: books_summary, books_breakdown, customer_or_vendor, products, money_owed, find_entries, cash_and_loans, what_needs_attention. They read every Tally entry for the year, not a summary. Never say Zoho isn't connected when the books are in Tally, and never say you only see 30 days.
+- Money comes back written the Indian way ("₹1.32 Cr", "₹41.2 L"). Copy it exactly; never convert lakh and crore or add figures up yourself.
+- "This year" means this Indian financial year (from 1 April). If a tool says a period isn't synced (like last year), say so plainly.
+- Tally is the business's own books: say "per your Tally books" once at most. Don't tack "Signal" on every number.
+- If you just sent them an alert with numbered points and they reply with a number or "why" / "tell me more", explain that point using the books tools.
+- Margyn's website is www.margynlabs.com and the app is at www.margynlabs.com/app.html (it opens in any browser, nothing to download).
+
 You can do three things:
-1. ANSWER using your read-only tools:
+1. ANSWER using your read-only tools (books tools first, then these):
    - get_vitals — Pulse Score + the six vitals (cash, receivables aging, payables due, GST/ITC leakage, net margin, runway) + cash/revenue/profit
    - list_receivables / list_payables — open receivables/payables merged across the app ledger + Zoho + Tally, each row source-tagged, with agree/conflict flags. Where sources agree, say so; where they conflict, give each number; never add per-source totals together.
-   - get_tally_data — TallyPrime outstanding + vouchers on their own (Signal-tier, one source)
+   - get_tally_data — a quick count of what has synced from Tally (prefer the books tools for any figure)
    - get_findings — issues Margyn has flagged
    - get_invoice_status — one invoice by number
    - get_stakeholder — the AR / AP / owner contact
@@ -460,6 +494,7 @@ Other rules:
 /* ------------------------------------------------------------------ */
 async function execTool(name, input, ctx) {
   try {
+    if (booksTools.has(name)) return await booksTools.exec(name, input, ctx.profileId);
     if (name === 'get_vitals') return await toolGetVitals(ctx);
     if (name === 'list_receivables') return await toolListLedger(ctx, 'receivables');
     if (name === 'list_payables') return await toolListLedger(ctx, 'payables');
@@ -636,7 +671,11 @@ async function toolGetVitals(ctx) {
     };
   }
 
-  // No snapshot at all — fall back to the Zoho Books vitals RPC.
+  // No snapshot yet: the Tally books if they're connected, then Zoho Books.
+  const fromBooks = await booksTools.exec('books_summary', {}, ctx.profileId);
+  if (fromBooks && fromBooks.sales_before_gst) {
+    return Object.assign({ data_source: 'tally', note: 'No Pulse Score snapshot yet, so these are the totals straight from the Tally books.' }, fromBooks);
+  }
   try {
     const v = await rpc('zoho_vitals', { p_user_id: ctx.profileId, p_org_ref: null });
     const vitals = Array.isArray(v) ? v[0] : v;

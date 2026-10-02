@@ -53,6 +53,41 @@ function mgMarPanel(title, aside, body){
 }
 function mgMarNote(t){ return '<div class="mg-panel-b"><p class="mg-muted">' + escapeHtml(t) + '</p></div>'; }
 
+/* What else the books say (api/_lib/booksEngine.js): findings, kits, branches, concentration.
+   Arrive with the analytics payload; every figure is worked out on the server. */
+function mgMarInsightsPanel(d){
+  const list = (d.insights || []).slice(0, 8);
+  if(!list.length) return '';
+  const rows = list.map(x => '<div class="mg-ins-li"><span class="mg-dot ' + (x.severity === 'high' ? 'neg' : x.severity === 'medium' ? 'warn' : '') + '"></span>' +
+    '<div style="min-width:0;flex:1"><div class="mg-li-t">' + escapeHtml(x.title) + '</div>' + (x.detail ? '<div class="mg-li-s">' + escapeHtml(x.detail) + '</div>' : '') +
+    (x.action ? '<div class="mg-li-s"><b>Next:</b> ' + escapeHtml(x.action) + '</div>' : '') + '</div>' +
+    (x.ask ? '<button type="button" class="mg-btn mg-btn-sm" data-hub-ask="' + escapeHtml(x.ask) + '">Ask Margyn</button>' : '') + '</div>').join('');
+  return mgMarPanel('What else your books say', 'Worked out from every Tally entry, biggest first', '<div>' + rows + '</div>');
+}
+function mgMarKitsPanel(d){
+  const k = (d.kits || []).filter(x => x.made_qty > 0);
+  if(!k.length) return '';
+  const rows = k.slice(0, 15).map(x => '<tr><td>' + escapeHtml(x.item) + '</td><td class="r">' + mgNum(x.made_qty) + '</td><td class="r">' + (x.cost_per_unit == null ? '—' : mgNum(x.cost_per_unit)) + '</td>' +
+    '<td class="r">' + mgNum(x.sold_qty) + '</td><td class="r">' + mgNum(x.sales) + '</td><td class="r">' + (x.avg_price == null ? '—' : mgNum(x.avg_price)) + '</td><td class="r">' + mgMarPct(x.margin_pct) + '</td></tr>').join('');
+  return mgMarPanel('Kits you put together', 'Cost = the parts in your Manufacturing Journals', '<table class="mg-grid"><thead><tr><th>Kit</th><th class="r">Made</th><th class="r">Cost per kit (₹)</th><th class="r">Sold</th><th class="r">Sales (₹)</th><th class="r">Avg price (₹)</th><th class="r">Margin %</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    mgMarNote('These are never bought, so until now they had no cost and no margin. Margyn now takes their cost from the parts that went into them.'));
+}
+function mgMarBranchPanel(d){
+  const b = d.branches || [];
+  if(b.length < 2) return '';
+  const months = [...new Set(b.flatMap(x => (x.months || []).map(m => m.month)))].sort().slice(-6);
+  const head = '<tr><th>Branch</th><th class="r">Sales this year (₹)</th><th class="r">Share</th><th class="r">Invoices</th><th class="r">Customers</th>' + months.map(m => '<th class="r">' + escapeHtml(mgMarMonth(m)) + '</th>').join('') + '</tr>';
+  const rows = b.map(x => '<tr><td>' + escapeHtml(x.branch) + '</td><td class="r">' + mgNum(x.net_sales) + '</td><td class="r">' + mgMarPct(x.share_pct) + '</td><td class="r">' + mgNum(x.invoices) + '</td><td class="r">' + mgNum(x.customers) + '</td>' +
+    months.map(m => { const r = (x.months || []).find(y => y.month === m); return '<td class="r">' + (r ? mgNum(r.net_sales) : '—') + '</td>'; }).join('') + '</tr>').join('');
+  return mgMarPanel('Sales by branch', 'From how your sales voucher types are named in Tally', '<table class="mg-grid"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>');
+}
+function mgMarConcentration(d){
+  const c = d.concentration;
+  if(!c || !c.top1) return '';
+  return mgMarTile('Your biggest customer', mgMarPct(c.top1.share_pct) + ' of sales', c.top1.party, c.top1.share_pct >= 20 ? 'bad' : 'flat') +
+    mgMarTile('Top 5 customers', mgMarPct(c.top5_pct) + ' of sales', c.customers + ' customers billed this year', c.top5_pct >= 60 ? 'bad' : 'flat');
+}
+
 function mgRenderMargin(){
   const host = document.getElementById('view-margin'); if(!host) return;
   if(!mgMar && !mgMarBusy && !mgMarErr) mgLoadMargin();
@@ -103,7 +138,7 @@ function mgRenderMargin(){
   let itemsPanel;
   if(d.items_available){
     const ir = d.items.slice(0, 30).map(i =>
-      '<tr><td>' + escapeHtml(i.item) + (i.flags.length ? ' <span class="mg-muted">' + escapeHtml(i.flags.map(f => ({ sold_below_cost:'sold below cost', no_purchase_cost_in_period:'no purchase cost', sold_more_than_bought_in_period:'sold more than bought' }[f] || f)).join(', ')) + '</span>' : '') + '</td>' +
+      '<tr><td>' + escapeHtml(i.item) + (i.flags.length ? ' <span class="mg-muted">' + escapeHtml(i.flags.map(f => ({ sold_below_cost:'sold below cost', no_purchase_cost_in_period:'no purchase cost', sold_more_than_bought_in_period:'sold more than bought', cost_from_assembly:'kit: cost from its parts' }[f] || f)).join(', ')) + '</span>' : '') + '</td>' +
       '<td class="r">' + mgNum(i.sold_qty) + '</td><td class="r">' + mgNum(i.sold_value) + '</td><td class="r">' + (i.avg_price == null ? '—' : mgNum(i.avg_price)) + '</td>' +
       '<td class="r">' + (i.avg_cost == null ? '—' : mgNum(i.avg_cost)) + '</td><td class="r">' + (i.est_margin == null ? '—' : mgNum(i.est_margin)) + '</td><td class="r">' + mgMarPct(i.est_margin_pct) + '</td></tr>').join('');
     const b = d.margin_bridge;
@@ -141,9 +176,13 @@ function mgRenderMargin(){
       mgMarTile('Days to get paid', wc.dso_days == null ? '—' : Math.round(wc.dso_days) + ' days', 'Last 90 days of sales', (wc.dso_days || 0) > 60 ? 'bad' : 'flat') +
     '</div>' +
     mgMarPanel('What stands out', 'Worked out from your figures, not written by AI', stand) +
+    mgMarInsightsPanel(d) +
     mgMarPanel('Month by month', 'Before stock movement', '<table class="mg-grid"><thead><tr><th>Month</th><th class="r">Net sales (₹)</th><th class="r">Cost of goods (₹)</th><th class="r">Gross profit (₹)</th><th class="r">Gross %</th><th class="r">Running cost (₹)</th><th class="r">Net profit (₹)</th><th class="r">Net %</th></tr></thead><tbody>' + (pnlRows || '<tr><td colspan="8" class="mg-muted">No vouchers yet.</td></tr>') + '</tbody></table>' +
       mgMarNote('Sales here exclude GST. Gross profit is sales less purchases and direct costs in each month. Stock movement is only known for the whole period, so it isn’t spread across months. Orders and delivery notes are left out because they don’t move money.')) +
     itemsPanel +
+    mgMarKitsPanel(d) +
+    mgMarBranchPanel(d) +
+    (d.concentration ? '<div class="mg-tiles four">' + mgMarConcentration(d) + '</div>' : '') +
     mgMarPanel('Customers, after the cost of waiting', 'Assumes ' + Math.round(((d.assumptions || {}).credit_rate_annual || 0.12) * 100) + '% a year on money owed to you', '<table class="mg-grid"><thead><tr><th>Customer</th><th class="r">Net sales (₹)</th><th class="r">Returns</th><th class="r">Owed (₹)</th><th class="r">Days to pay</th><th class="r">Cost of waiting</th><th class="r">Margin after</th></tr></thead><tbody>' + (custRows || '<tr><td colspan="7" class="mg-muted">No customer sales yet.</td></tr>') + '</tbody></table>' +
       mgMarNote(d.items_available ? 'Customer margin uses company-wide margin until item lines are matched to customers.' : 'Customer margin uses your company-wide gross margin, so it shows who is costly to wait for, not who buys the cheap items.')) +
     mgMarPanel('Where the money goes', 'Largest cost ledgers', '<table class="mg-grid"><thead><tr><th>Ledger</th><th>Type</th><th class="r">Amount (₹)</th><th class="r">% of sales</th></tr></thead><tbody>' + (costRows || '<tr><td colspan="4" class="mg-muted">Nothing yet.</td></tr>') + '</tbody></table>') +
@@ -194,7 +233,9 @@ function mgMarginForAsk(){
     dso_days: wc.dso_days, receivables_overdue: wc.receivables_overdue,
     confidence: (d.quality || {}).confidence, caveats: ((d.quality || {}).reasons || []).slice(0, 3),
     open_questions: (d.questions || []).length,
-    items_available: !!d.items_available
+    items_available: !!d.items_available,
+    overdraft: !!(d.funding && d.funding.overdraft),
+    top_findings: (d.insights || []).slice(0, 3).map(x => x.title)
   };
 }
 

@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-03-ask-your-books', date:'3 Oct 2026', title:'Ask your books anything',
+    items:[
+      { t:'Margyn reads every Tally entry', what:'Sales for any month or the whole year, profit, costs by ledger, a customer’s or vendor’s full story, product margins, who owes what and how late, cash, overdraft, interest and GST. In plain words, typed, spoken or on WhatsApp.',
+        how:'Ask “How much did I sell this year?”, “Tell me about Alkem” or “Which products make me the most margin?” in the Margyn panel or on WhatsApp.', act:'home' },
+      { t:'One place for every conversation', what:'Conversations now holds your app chats, calls and WhatsApp chats together, the questions you’ve asked sorted by topic, and the ones Margyn couldn’t answer before, with one tap to ask again.',
+        how:'Open Conversations in the menu.', act:'history' },
+      { t:'Margyn tells you what it noticed', what:'Margyn reads your books on its own and lists what needs a look: overdue money, customers who stopped ordering, bills over a year old, an unfinished month, GST due. Switch on WhatsApp updates and it texts you at most three points, mornings and evenings.',
+        how:'Conversations > Margyn noticed. Reply STOP ALERTS on WhatsApp any time.', act:'history' },
+      { t:'Kits, branches and more on Margin', what:'Kits you put together now have a cost (from their parts), so their margin shows. Margin also shows sales by branch, how much your biggest customers make up, and what else the books say.',
+        how:'Open Margin under Insight.', act:'margin' }
+    ]
+  },
+  {
     id:'2026-10-02-margyn-brain', date:'2 Oct 2026', title:'A sharper Margyn',
     items:[
       { t:'Margyn runs on Claude’s newest models', what:'Chat, WhatsApp, the daily briefing, findings and file import now use Claude Sonnet 5.5, and Deep answers use Claude Opus 5.5. Answers are sharper and less likely to be cut off.',

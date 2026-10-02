@@ -30,7 +30,9 @@ const ALLOWED_NAMES = new Set([
   'whatsapp_inbound',
   'whatsapp_outbound',
   'tally_agent_sync',
-  'briefing_opened'
+  'briefing_opened',
+  'question_asked',     // { channel, topic, answered }: the question index, no words
+  'watch_sent'          // { kind, mode, via }: a Margyn Watch message went out
 ]);
 
 // Keys we refuse to persist even if a caller passes them by mistake.

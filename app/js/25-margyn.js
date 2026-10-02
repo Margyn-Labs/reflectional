@@ -461,9 +461,16 @@ function mgrNudgeRules(){
     out.push({ key:'src:' + k, text:(name ? name : '') + label + (/reconnect/i.test(h.text) ? ' needs you to sign in again. Until then its figures may be stale.' : ' ' + h.text + '. Its figures may be stale.'),
       acts:canSync ? [{ label:'Sync now', run:() => mgrAsk('Sync ' + label + ' now') }, { label:'Sources', run:() => mgGo('sources') }] : [{ label:'Reconnect', run:() => mgGo('sources') }] });
   });
+  // The most urgent thing Margyn found in the books (api/_lib/booksEngine.js, via the Margin payload).
+  try {
+    const top = ((typeof mgMar !== 'undefined' && mgMar && mgMar.insights) || []).filter(x => x.severity === 'high' && x.kind !== 'stale')[0];
+    if(top) out.push({ key:'ins:' + top.key, text:name + top.title,
+      acts:[{ label:'Tell me more', run:() => mgrAsk(top.ask || top.title) }, { label:'What else?', run:() => mgrAsk('What should I look at today?') }] });
+  } catch(e){}
   try {
     const f = mgForecast();
-    if(f && f.firstBelow >= 0 && f.firstBelow < 6) out.push({ key:'fc:below', text:name + 'cash looks set to drop below your floor in week ' + (f.firstBelow + 1) + ' (lowest ' + fmtINR(f.min, 'tile') + ').',
+    const od = typeof mgMar !== 'undefined' && mgMar && mgMar.funding && mgMar.funding.overdraft;
+    if(f && f.firstBelow >= 0 && f.firstBelow < 6) out.push({ key:'fc:below', text:name + 'cash looks set to drop below your floor in week ' + (f.firstBelow + 1) + ' (lowest ' + fmtINR(f.min, 'tile') + ').' + (od ? ' That counts bank balances only: you run on an overdraft, and its limit isn’t in Tally, so your real headroom may be higher.' : ''),
       acts:[{ label:'Show cash', run:() => mgrShowView('cash') }, { label:'What can I do?', run:() => mgrAsk('Cash drops below my floor in week ' + (f.firstBelow + 1) + '. What are my options?') }] });
   } catch(e){}
   try {
