@@ -27,7 +27,7 @@ Buckets:
 - bank, cash, stock
 - balance_sheet: assets, liabilities, capital, loans, deposits, provisions, anything not in the profit and loss
 
-Use each ledger's parent group, primary group, name and how much it moved. Company names and personal names under a customer-like group are debtors; under a payable group they are creditors. When you are not sure, say so with a low confidence instead of guessing.
+Use each ledger's parent group, primary group, name and how much it moved. Company names and personal names under a customer-like group are debtors; under a payable group they are creditors. A person's name under a remuneration, salary or commission group (e.g. "X (REM)" under "Director Remuneration") is that person's pay, so it is opex; it is a creditor only when the ledger or its group says payable, outstanding or due. When you are not sure, say so with a low confidence instead of guessing.
 
 Output ONLY JSON: {"ledgers":[{"ledger":"<exact name>","bucket":"<one bucket>","confidence":0.0-1.0}]}`;
 
