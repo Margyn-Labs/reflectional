@@ -538,14 +538,20 @@ function computeAnalytics(input) {
   const carryPctOfSales = (dsoDays) => (dsoDays == null ? null : r2((dsoDays / 365) * creditRate * 100));
 
   // item-level economics
+  // Kits and packs the business puts together itself are never purchased, so their cost lives in
+  // Manufacturing Journals: one finished line worth exactly the components that went into it.
+  const assembled = assemblyCosts(allVouchers);
   const itemRows = [];
   if (itemsAvailable) {
     for (const a of Object.values(items)) {
       const avg_price = a.sold_qty > 0 ? a.sold_value / a.sold_qty : null;
-      const avg_cost = a.purchased_qty > 0 ? a.purchased_value / a.purchased_qty : null;
+      const asm = assembled[a.item];
+      const fromAssembly = !(a.purchased_qty > 0) && asm && asm.qty > 0;
+      const avg_cost = a.purchased_qty > 0 ? a.purchased_value / a.purchased_qty : fromAssembly ? asm.value / asm.qty : null;
       const cogs = avg_cost != null ? a.sold_qty * avg_cost : null;
       const margin = cogs != null ? a.sold_value - cogs : null;
       const flags = [];
+      if (fromAssembly) flags.push('cost_from_assembly');
       if (a.sold_qty > 0 && avg_cost == null) flags.push('no_purchase_cost_in_period');
       if (avg_price != null && avg_cost != null && avg_price < avg_cost) flags.push('sold_below_cost');
       if (a.sold_qty > a.purchased_qty && avg_cost != null) flags.push('sold_more_than_bought_in_period');
@@ -747,7 +753,10 @@ function computeAnalytics(input) {
 
   // ----- deterministic headlines (the model only narrates these) -----
   const headlines = [];
-  const closed = pnl.filter((r) => !r.provisional && !r.partial_start && r.net_sales > 0);
+  // A month whose running costs aren't booked yet would read as a jump in margin, so compare only complete months.
+  const closed = pnl.filter((r) => !r.provisional && !r.partial_start && !r.costs_incomplete && r.net_sales > 0);
+  const unbooked = pnl.filter((r) => r.costs_incomplete).slice(-1)[0];
+  if (unbooked) headlines.push(`${monthLabel(unbooked.month)} looks unfinished in Tally: running costs are ₹${Math.round(unbooked.opex).toLocaleString('en-IN')} against a usual ₹${Math.round(unbooked.typical_opex).toLocaleString('en-IN')}, so its profit will fall once salaries and other costs are booked.`);
   if (closed.length >= 2) {
     const a = closed[closed.length - 2], b = closed[closed.length - 1];
     if (a.gross_margin_pct_pre_stock != null && b.gross_margin_pct_pre_stock != null) {
@@ -776,4 +785,36 @@ function computeAnalytics(input) {
   };
 }
 
-module.exports = { computeAnalytics, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS };
+/* Manufacturing Journals: the finished item's line is worth what its components cost (Tally values it that
+   way), so cost per unit = that value / quantity made. A line moving one item to itself (a repack between
+   godowns) says nothing about cost and is skipped. */
+function assemblyCosts(vouchers) {
+  const out = {};
+  for (const v of vouchers || []) {
+    if (!v || v.is_cancelled === true || !/manufactur/i.test(v.voucher_type || '') || !Array.isArray(v.items)) continue;
+    const lines = v.items.filter((it) => it && it.item);
+    if (lines.length < 2) continue;
+    const val = (it) => (it.abs_amount != null ? num(it.abs_amount) : Math.abs(num(it.amount)));
+    const total = lines.reduce((t, it) => t + val(it), 0);
+    // The finished line is the one equal to the sum of all the others.
+    const made = lines.find((it) => val(it) > 0 && Math.abs(val(it) - (total - val(it))) <= Math.max(1, 0.02 * val(it)));
+    if (!made) continue;
+    const parts = lines.filter((it) => it !== made);
+    if (parts.every((it) => nameKey(it.item) === nameKey(made.item))) continue;
+    const a = out[made.item] || (out[made.item] = { item: made.item, qty: 0, value: 0, value_without_qty: 0, batches: 0, components: {} });
+    a.batches++;
+    if (num(made.qty) > 0) { a.qty += num(made.qty); a.value += val(made); } else a.value_without_qty += val(made);
+    for (const it of parts) {
+      const c = a.components[it.item] || (a.components[it.item] = { item: it.item, qty: 0, value: 0 });
+      c.qty += num(it.qty); c.value += val(it);
+    }
+  }
+  return out;
+}
+
+module.exports = {
+  computeAnalytics, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
+  partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
+  isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES
+};

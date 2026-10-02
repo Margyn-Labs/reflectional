@@ -70,7 +70,8 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const calls = await p.evaluate(() => window.__askCalls);
   ok(calls.length === 2, 'two calls: ask, then resume with tool results (' + calls.length + ')');
   ok(calls[0].surface === 'panel' && calls[0].context && calls[0].context.app && calls[0].context.app.firstName === 'Aditi', 'first call says panel + first name');
-  ok(calls[0].context.app.whatsNew.length >= 1 && calls[0].context.app.whatsNew.some(r => /One Margyn/.test(r.title)), 'release notes sent so Margyn knows new features');
+  // The newest release, whatever it is: a fixed title broke every time a newer release pushed it out of the list.
+  ok(calls[0].context.app.whatsNew.length >= 1 && await p.evaluate(w => w.some(r => r.title.endsWith(MG_RELEASES[0].title)), calls[0].context.app.whatsNew), 'release notes sent so Margyn knows new features');
   ok(calls[1].resume && calls[1].resume.results.length === 2 && calls[1].resume.sig === 'abc', 'resume carries both tool results and the signed state');
   const r1 = JSON.parse(calls[1].resume.results[0].content);
   ok(r1.rows && r1.rows.length && /Urban Nest/.test(r1.rows[0].name || r1.rows[0].party || JSON.stringify(r1.rows[0])), 'query_parties ran on live page data: ' + JSON.stringify(r1.rows[0]).slice(0, 80));

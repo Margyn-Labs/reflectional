@@ -27,6 +27,9 @@ const { track } = require('./_lib/track');
 const chase = require('./_lib/chaseEngine');
 const { runImportMapper } = require('./_lib/importMapper');
 const marginActions = require('./_lib/marginActions');
+const { runWatchAll } = require('./_lib/margynWatch');
+const booksTools = require('./_lib/booksTools');
+const booksEngine = require('./_lib/booksEngine');
 const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
 
 module.exports = async function handler(req, res) {
@@ -36,7 +39,7 @@ module.exports = async function handler(req, res) {
   if (action === 'webhook' && req.method === 'POST') return handleWebhookEvent(req, res);
   if (action === 'cron-opening' && req.method === 'GET') return handleCron(req, res, 'opening');
   if (action === 'cron-closing' && req.method === 'GET') return handleCron(req, res, 'closing');
-  if (action === 'cron-chase' && req.method === 'GET') return handleChaseCron(req, res);
+  if (action === 'cron-chase' && req.method === 'GET') return handleChaseCronAndWatch(req, res);
 
   res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing, cron-chase.' });
 };
@@ -608,12 +611,19 @@ async function handleCron(req, res, kind) {
     return;
   }
 
+  // Margyn Watch rides the Bell's schedule (07:30 and 19:00 IST). It reads every Tally account's books and
+  // texts the owner only what deserves attention, inside an open chat or through WHATSAPP_TEMPLATE_ALERT.
+  let watch = null;
+  try { watch = await runWatchAll(kind === 'opening' ? 'morning' : 'evening'); }
+  catch (e) { console.error('[whatsapp] watch failed:', e.message); watch = { error: e.message }; }
+
   const templateId = kind === 'opening'
     ? process.env.WHATSAPP_TEMPLATE_OPENING
     : process.env.WHATSAPP_TEMPLATE_CLOSING;
 
   if (!templateId) {
-    res.status(500).json({ error: `WHATSAPP_TEMPLATE_${kind.toUpperCase()} not configured` });
+    // Watch still ran; only the Bell template is missing.
+    res.status(200).json({ kind, watch: watch && { accounts: watch.accounts, sent: watch.sent }, bell: `WHATSAPP_TEMPLATE_${kind.toUpperCase()} not configured` });
     return;
   }
 
@@ -846,6 +856,16 @@ async function handleChaseReply(res, target, textEvent, rawPayload) {
 /* ------------------------------------------------------------------ */
 /* cron-chase — GET ?action=cron-chase (Vercel Cron target)           */
 /* ------------------------------------------------------------------ */
+/* The 10:30 IST run doubles as Margyn Watch's midday look: only urgent points or fresh news. */
+async function handleChaseCronAndWatch(req, res) {
+  const expected = process.env.CRON_SECRET;
+  if (expected && (req.headers['authorization'] === `Bearer ${expected}` || req.query.cron_secret === expected)) {
+    try { await runWatchAll('midday', { budgetMs: 25000 }); }
+    catch (e) { console.error('[whatsapp] midday watch failed:', e.message); }
+  }
+  return handleChaseCron(req, res);
+}
+
 async function handleChaseCron(req, res) {
   const authHeader = req.headers['authorization'];
   const querySecret = req.query.cron_secret;
@@ -1142,6 +1162,15 @@ async function syncChaseQueue(userId, config) {
  * template params are always strings).
  */
 async function getBriefingParams(userId, kind) {
+  // The Tally books first: the same findings Margyn Watch and the app show.
+  try {
+    const { ctx } = await booksTools.contextFor(userId);
+    if (ctx && ctx.rows.length) {
+      const list = booksEngine.insights(ctx);
+      const top = list[0] ? list[0].title : 'Nothing urgent in your books today';
+      return kind === 'opening' ? [top] : [top, String(list.length)];
+    }
+  } catch (e) { /* fall back to stored findings */ }
   let findings = [];
   try {
     findings = await selectRows(

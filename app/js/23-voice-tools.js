@@ -220,6 +220,8 @@ const VX_TOOLS = {
     const d = document.querySelector('.mg-drawer h3');
     if(d) out.side_panel_open_for = d.textContent;
     if(!MG_MONEY[page]) out.summary = vxPageSummary(page);
+    // The Margin summary waits for its figures (get_margin is async).
+    if(out.summary && typeof out.summary.then === 'function') return out.summary.then(sm => Object.assign(out, { summary:sm }));
     return out;
   },
 
@@ -433,17 +435,24 @@ const VX_TOOLS = {
   },
 
   /* "Is my Zoho connector working?" — instant, from what the app already has. */
-  get_margin(){
-    if(typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy) mgLoadMargin();
+  // Waits for the Margin figures instead of answering "still loading": on 1 Oct a first-time
+  // "what are my top margin products?" got "the margin view isn't available".
+  async get_margin(){
+    if(typeof mgLoadMargin === 'function' && !mgMar){
+      if(!mgMarBusy) mgLoadMargin();
+      for(let i = 0; i < 60 && !mgMar && (mgMarBusy || i < 3); i++) await new Promise(r => setTimeout(r, 300));
+    }
     const d = typeof mgMar !== 'undefined' ? mgMar : null;
-    if(!d) return { loading:true, note:'Margin is still loading. Ask again in a few seconds.' };
+    if(!d) return { loading:true, note:'Margin didn\u2019t load. Use the products tool for item margins, or books_summary for profit.' };
     if(!d.connected) return { connected:false, note:'Tally is not connected, so margin can\'t be worked out.' };
     const base = (typeof mgMarginForAsk === 'function' && mgMarginForAsk()) || {};
     return Object.assign(base, {
       company:d.company_name,
       slowest_payers:(d.customers || []).filter(c => c.outstanding > 0).sort((a, b) => b.overdue - a.overdue).slice(0, 5)
         .map(c => ({ customer:c.party, owed:vxInr(c.outstanding), overdue:vxInr(c.overdue), days_to_pay:c.dso_days, cost_of_waiting_pct:c.credit_cost_pct_of_sales })),
-      top_items:(d.items || []).slice(0, 5).map(i => ({ item:i.item, sales:vxInr(i.sold_value), margin_pct:i.est_margin_pct, flags:i.flags })),
+      top_items_by_sales:(d.items || []).slice(0, 5).map(i => ({ item:i.item, sales:vxInr(i.sold_value), margin_pct:i.est_margin_pct, flags:i.flags })),
+      top_items_by_margin_pct:(d.items || []).filter(i => i.est_margin_pct != null && i.sold_value >= 10000).sort((a, b) => b.est_margin_pct - a.est_margin_pct).slice(0, 5).map(i => ({ item:i.item, sales:vxInr(i.sold_value), margin_pct:i.est_margin_pct })),
+      more:'For any product, customer, month or ledger detail, call the books tools (products, customer_or_vendor, books_breakdown).',
       latest_months:(d.pnl || []).slice(-3).map(r => ({ month:r.month, net_sales:vxInr(r.net_sales), gross_margin_pct:r.gross_margin_pct_pre_stock, in_progress:r.provisional })),
       note:'Single source (Tally): call these signals. Gross margin is before stock movement unless stated.'
     });
@@ -904,3 +913,18 @@ function vxMoneyView(dir){
 }
 /* "Open the full list →" in a workspace card is the user's own click. */
 document.addEventListener('click', e => { const b = e.target.closest('[data-vx-go]'); if(b) mgGo(b.dataset.vxGo); });
+
+/* The books tools (api/_lib/booksTools.js) run on the server, through ?action=books: the same
+   engine typed chat and WhatsApp use, reading every Tally entry rather than what the page loaded. */
+const VX_BOOK_TOOLS = ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'what_needs_attention'];
+async function vxBooks(tool, input){
+  const { data:{ session } } = await sbClient.auth.getSession();
+  const res = await fetch('/api/ask-margyn?action=books', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', ...(session ? { 'Authorization':'Bearer ' + session.access_token } : {}) },
+    body:JSON.stringify({ tool, input:input || {} })
+  });
+  if(!res.ok) return { error:'Couldn’t read the books just now. Try again in a moment.' };
+  return res.json();
+}
+VX_BOOK_TOOLS.forEach(t => { VX_TOOLS[t] = (input) => vxBooks(t, input); });

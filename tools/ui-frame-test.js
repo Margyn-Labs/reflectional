@@ -389,7 +389,8 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.evaluate(n => (window.__tallyCalls || []).length === n + 1 && window.__tallyCalls[window.__tallyCalls.length - 1] === 'classify', marBefore), 'confirming a ledger calls classify once');
   await p.click('#view-margin [data-mar-refresh]'); await p.waitForTimeout(400);
   ok(await p.evaluate(() => { const d = mgMarginForAsk(); return d && d.headlines.length > 0 && d.items_available === false && d.confidence; }), 'Margyn gets headlines and an honest items flag');
-  ok(await p.evaluate(() => typeof VX_TOOLS.get_margin === 'function' && VX_TOOLS.get_margin().slowest_payers.length > 0), 'voice tool get_margin returns slowest payers');
+  // get_margin waits for the Margin figures now (it used to answer "still loading" on a first ask).
+  ok(await p.evaluate(async () => typeof VX_TOOLS.get_margin === 'function' && (await VX_TOOLS.get_margin()).slowest_payers.length > 0), 'voice tool get_margin returns slowest payers');
   await p.evaluate(() => { mgMe = null; mgActor = null; mgApplyActor(); showView('home'); });
 
   // 10d. An invite link is kept through sign-in and the URL is cleaned

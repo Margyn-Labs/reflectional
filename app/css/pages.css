@@ -286,3 +286,24 @@ body.mg-member #setDeleteAccount, body.mg-member #deleteAccountBtn{ display:none
 .mg-row2 > .mg-panel:only-child{ grid-column:1 / -1; }   /* Home without the cash panel (a role without cash) */
 .mg-team-wa{ margin-bottom:16px; }
 .mg-team-wa small{ display:block; margin-top:4px; }
+
+/* ---------- Conversations hub (app/js/26-hub.js) ---------- */
+#mgHub{ margin-bottom:8px; }
+#mgHub .mg-panel-h{ flex-wrap:wrap; }
+#mgHub .mg-panel-h h2{ white-space:nowrap; }
+#mgHub .mg-aside{ text-align:right; }
+.mg-hub-lbl{ font-size:var(--f13); font-weight:600; color:var(--g700); }
+.mg-hub-asks, .mg-hub-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.mg-chip.on{ border-color:var(--brand); background:var(--brand-50); color:var(--brand-700); }
+.mg-hub-watch{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; border-bottom:1px solid var(--g100); }
+.mg-hub-watch .mg-fine{ flex-basis:100%; margin:0; }
+.mg-li.mg-hub-note{ align-items:flex-start; }
+.mg-li.mg-hub-note .mg-dot{ margin-top:6px; }
+.mg-dot.neg{ background:var(--neg); }
+.mg-hub-acts{ display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:8px; }
+.mg-hub-miss{ color:var(--neg); }
+/* ---------- Margin: what else the books say ---------- */
+.mg-ins-li{ display:flex; gap:12px; align-items:flex-start; padding:12px 16px; border-bottom:1px solid var(--g100); font-size:var(--f13); }
+.mg-ins-li:last-child{ border-bottom:0; }
+.mg-ins-li .mg-dot{ margin-top:6px; }
+.mg-ins-li .mg-li-t{ font-weight:600; }

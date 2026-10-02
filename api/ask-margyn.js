@@ -18,11 +18,18 @@ import { getUserFromRequest, selectRows } from './_lib/supabaseRest.js';
 import { isProposeAction, execReadTool, validateProposal } from './_lib/marginActions.js';
 import { getAgent } from './_lib/agentRegistry.js';
 import claudePkg from './_lib/claude.js';
+import booksTools from './_lib/booksTools.js';
+import topicsPkg from '../app/js/margyn-topics.js';
+import trackPkg from './_lib/track.js';
+import watchPkg from './_lib/margynWatch.js';
 import crypto from 'crypto';
 
 const { callClaude, effortFor, escalate, supportsEffort } = claudePkg;
+const { topicsOf, isQuestion, looksUnanswered } = topicsPkg;
+const { track } = trackPkg;
 
-const MAX_TOOL_ITERATIONS = 5;
+// A books question can take two or three lookups before the screen tools run.
+const MAX_TOOL_ITERATIONS = 7;
 
 // Cost governance: token cost per turn is small (grounded context, capped
 // history), but uncapped chat is still a way to bleed money quietly at
@@ -92,6 +99,11 @@ export default async function handler(req, res) {
   if (voiceAction === 'speak') return handleSpeak(req, res);
   if (voiceAction === 'realtime-session') return handleRealtimeSession(req, res, user);
   if (voiceAction === 'romanize') return handleRomanize(req, res);
+  // The live call's books questions: the browser runs the voice model's tool
+  // call through here so voice reads the same engine as typed chat and WhatsApp.
+  if (voiceAction === 'books') return handleBooks(req, res, user);
+  // Margyn Watch from the Conversations hub: what Margyn noticed, and the owner's WhatsApp choices.
+  if (voiceAction === 'watch') return handleWatch(req, res, user);
 
   const { message, history, context, depth, surface, resume } = req.body || {};
   const agent = getAgent();
@@ -251,7 +263,9 @@ export default async function handler(req, res) {
         const serverResults = [];
         for (const tu of toolUses) {
           if (clientCalls.includes(tu)) continue;
-          const out = toolNames.has(tu.name) ? await execReadTool(tu.name, tu.input, user.id) : { error: 'Unknown tool ' + tu.name };
+          const out = !toolNames.has(tu.name) ? { error: 'Unknown tool ' + tu.name }
+            : booksTools.has(tu.name) ? await booksTools.exec(tu.name, tu.input, user.id, user.member ? user.member.permissions : null)
+            : await execReadTool(tu.name, tu.input, user.id);
           if (STEP_LABELS[tu.name]) steps.push(STEP_LABELS[tu.name]);
           serverResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
         }
@@ -281,6 +295,11 @@ export default async function handler(req, res) {
     }
     }
 
+    // The question index (Conversations) and the ops counters: topic and whether it was answered, never the words.
+    const asked = isResume ? lastUserText(messages) : message;
+    if (isQuestion(asked)) {
+      await track(user.id, 'question_asked', { channel: inPanel ? 'panel' : 'chat', topic: topicsOf(asked)[0], answered: !!finalText && !looksUnanswered(finalText) });
+    }
     res.status(200).json({
       reply: finalText || "I couldn't generate a response there, try rephrasing that.",
       actionCard,
@@ -300,6 +319,7 @@ export default async function handler(req, res) {
 const MAX_CLIENT_ROUNDS = 4;
 // What the panel shows while Margyn works ("> Checked what's waiting on you").
 const STEP_LABELS = {
+  ...booksTools.STEP_LABELS,
   list_pending_import_suggestions: 'Checked forwarded documents',
   list_pending_agent_actions: 'Checked reconciliation proposals',
   list_open_ledger_items: 'Read open ledger items',
@@ -313,6 +333,35 @@ function signState(state, userId) {
   return crypto.createHmac('sha256', resumeSecret())
     .update(userId + '|' + state.round + '|' + JSON.stringify(state.messages) + '|' + JSON.stringify(state.serverResults || []))
     .digest('hex');
+}
+function lastUserText(msgs) {
+  for (let i = (msgs || []).length - 1; i >= 0; i--) if (msgs[i].role === 'user' && typeof msgs[i].content === 'string') return msgs[i].content;
+  return '';
+}
+// POST ?action=books { tool, input }: one books tool for the signed-in account (voice calls it from the browser).
+async function handleBooks(req, res, user) {
+  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+  const { tool, input } = req.body || {};
+  if (typeof tool !== 'string' || !booksTools.has(tool)) { res.status(400).json({ error: 'unknown tool' }); return; }
+  const out = await booksTools.exec(tool, input && typeof input === 'object' ? input : {}, user.id, user.member ? user.member.permissions : null);
+  res.status(200).json(out);
+}
+// GET ?action=watch: { mode, signals }. POST { op: 'mode', mode } | { op: 'mute', key | kind, unmute } | { op: 'send_now' }.
+async function handleWatch(req, res, user) {
+  try {
+    if (req.method === 'GET') { res.status(200).json(await watchPkg.signals(user.id)); return; }
+    if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+    // Changing what Margyn sends is the owner's call (or someone they let edit).
+    if (user.member && !(user.member.permissions || []).includes('edit')) { res.status(403).json({ error: 'Only the account owner can change Margyn\'s WhatsApp updates.' }); return; }
+    const b = req.body || {};
+    if (b.op === 'mode') { res.status(200).json({ mode: await watchPkg.setMode(user.id, String(b.mode || '')) }); return; }
+    if (b.op === 'mute') { res.status(200).json(await watchPkg.mute(user.id, { key: b.key ? String(b.key).slice(0, 200) : null, kind: b.kind ? String(b.kind).slice(0, 40) : null, unmute: !!b.unmute })); return; }
+    if (b.op === 'send_now') { res.status(200).json(await watchPkg.watchAccount(user.id, { slot: 'manual', force: true })); return; }
+    res.status(400).json({ error: 'unknown op' });
+  } catch (e) {
+    console.error('[ask-margyn] watch:', e.message);
+    res.status(400).json({ error: e.message || 'That didn\'t work' });
+  }
 }
 function mergeSameRole(msgs) {
   const out = [];
@@ -759,6 +808,9 @@ const REALTIME_TOOLS = [
 // propose_change / confirm_pending_change (typed chat has propose_action and a
 // tap-to-confirm card) and end_conversation. These run in the browser; see
 // the pause/resume in the handler above.
+// Voice gets the books tools too (run through ?action=books from the browser, 23-voice-tools.js).
+REALTIME_TOOLS.push(...booksTools.realtimeDefs());
+
 const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst', 'get_margin',
   'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close', 'scroll'];
 const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
@@ -955,6 +1007,8 @@ SHOW, DON'T GO
 - When they say "this", "here" or "that one", call get_screen first.
 - If you didn't catch something (a stray word, background noise, a name you don't recognise, or something unrelated to what you were discussing), ask once, briefly. Never act on it.
 - Every request gets an answer, even if it's one short question back. Never go silent on them.
+- "Make a quick table" or "show a chart" with no detail: build it from the topic you were just discussing, now, with show_table or show_chart. Don't ask which columns.
+- Reminders: you can only message a customer whose WhatsApp number is saved in Margyn. If it isn't, say so and offer who to call first instead. Never promise reminders you can't send.
 - Only offer next steps you have a tool for. Never describe buttons or screens you haven't been told about ("there's usually an Add button"): use your tools instead.
 
 ADDING THINGS
@@ -964,6 +1018,9 @@ ADDING THINGS
 - "Add it in the ledger" means add_receivable / add_payable, not opening an existing customer.
 
 NUMBERS
+- The person may not follow their finances closely: answer in plain words, the number first, then what it means for them.
+- For anything in the books (sales for any period, profit, costs, a customer's or vendor's story, product margins, who owes what, cash, overdraft, interest, GST, what needs attention) call the books tools: books_summary, books_breakdown, customer_or_vendor, products, money_owed, find_entries, cash_and_loans, what_needs_attention. They read every Tally entry, not the last 30 days. Never say the margin view or the full year isn't available.
+- Those tools give money as "₹1.32 Cr" or "₹41.2 L": say it as "one point three two crore", "forty-one lakh". Never turn crore into lakh.
 - Figures come from your tools, which read exactly what the app has loaded. The snapshot below is for your first sentence only; once you've called a tool, trust the tool.
 - Never invent, estimate or recompute a figure you weren't given. If you don't have something, say so plainly and say which connector would give it.
 - If a figure looks implausible (negative cash, a gap bigger than the balance), say it looks off and is probably a data or sync issue, rather than presenting it as fact.
@@ -1101,6 +1158,17 @@ Good: "Mismatch. Zoho 1042 is ₹50,000; Razorpay payment pay_abc is ₹49,100 o
 User: is my GST leakage number real
 Good: "That one's Signal, not Verified — it's from your typed P&L, nothing else confirms it yet. Connect Books and I can cross-check it."
 
+YOUR BOOKS (TALLY): THE MOST IMPORTANT PART
+- The person asking may not follow their finances closely. They should be able to ask anything in plain words (English, Hindi or Hinglish) and get the right number and what it means in one or two sentences. Never make them learn finance words: say "customers take about 70 days to pay you", not "DSO is 70".
+- When Tally is connected you can read every entry in it with the books tools: books_summary (totals for any period), books_breakdown (by month, customer, vendor, ledger, item or branch), customer_or_vendor (one name's whole story), products (prices, costs, margins), money_owed (who owes what and how late), find_entries (individual vouchers), cash_and_loans (bank, overdraft, interest, GST estimate) and what_needs_attention (what to look at first). Use them for ANY question about sales, purchases, profit, costs, customers, vendors, items, money owed, cash, loans, interest or GST, and call them before answering. The data block is only a starting summary.
+- Never say you can only see the last 30 days, that the full year isn't available, or that you need Zoho for it: the tools read every synced entry. If a tool's notes say a period isn't synced (for example the last financial year), say exactly that, plainly.
+- Money comes back already written the Indian way ("₹1.32 Cr", "₹41.2 L", "₹45,300"). Repeat it exactly. Never convert between lakh and crore, never add figures up yourself, and never do "what if" arithmetic a tool didn't give you (money_owed gives what faster collection frees).
+- Pick the period they mean: "this year" is this_fy (the Indian financial year from 1 April), "last year" is last_fy, then "last month", "yesterday" and so on. If they don't say, use this financial year and say so.
+- If a tool lists notes (an unfinished month, an overdraft, Tally not syncing), mention the one that changes the answer, in a few words.
+- Tally is this business's own books. Say "per your Tally books" once; don't attach "Signal" or "not verified" to every figure. Bring up verification only when they ask how reliable a number is, or when two sources disagree. This overrides the general Signal wording elsewhere in these instructions whenever Tally is the only source.
+- Reminders to customers: you can only message a customer whose WhatsApp number is saved in Margyn (their Customers page, or the reminder list). If it isn't, say so in one line and offer what you can do now (who to call first, the bills to mention). Never promise to "start reminders" you can't send.
+- "Make a table" or "show a chart" with no detail means: build it now from what you were just discussing, with figures from your tools. Don't ask which columns they want.
+
 Rules you must always follow:
 0. Follow the VOICE section above on every reply — lead with the answer, address them as "you," sound like a person, name sources in plain English, no lecture endings.
 1. Only reason about the numbers in the data block or returned by your tools. Never invent a figure, percentage, or trend that wasn't provided to you.
@@ -1117,7 +1185,7 @@ Rules you must always follow:
 5. Never call the Pulse Score a "credit score" — it's an operating/financial health score, not a lending decision.
 6. Keep replies under ~120 words unless the user explicitly asks for more detail.
 7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
-8. The "Past findings" list is the only history you have access to — up to 10 entries, not a full archive. If the user asks about something further back, say plainly your visibility only goes back that far, rather than guessing what an older period might have looked like.
+8. For any past figure (a month, a quarter, a customer's history) use the books tools. The "Past findings" list is only Margyn's own earlier alerts, up to 10; don't treat it as the limit of what you can see.
 
 TAKING ACTION — you have tools that look things up (list_pending_import_suggestions, list_pending_agent_actions, list_open_ledger_items, list_chase_targets, get_chase_agent_config) and one tool, propose_action, that hands the user a confirm/cancel card. You never write anything yourself — propose_action only shows a card; the write happens only if the user clicks Confirm in the app.
 - Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the reminders", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
@@ -1150,7 +1218,7 @@ ${focusLine}${tierLine}${provenanceLine}${sourceDivergenceLine}
 
 Top-line P&L figures (the actual rupee numbers behind the vitals above — e.g. Net Margin is netProfit ÷ revenue from these):
 ${pnlBlock}
-Note: this is top-line only — no cost-of-goods-sold vs operating-expense split, no per-line-item or per-category breakdown. If asked for a category-level P&L (COGS, opex by type, gross margin specifically), say plainly you have the top-line numbers but not that breakdown yet, rather than implying you have no P&L data at all.
+Note: this is the top line only. For a breakdown (cost of goods, running costs by ledger, gross margin, any month, any customer or item) use the books tools when Tally is connected.
 
 ${paymentsHeader}:
 ${paymentsBlock}
