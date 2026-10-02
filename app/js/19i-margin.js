@@ -79,7 +79,7 @@ function mgMarBranchPanel(d){
   const head = '<tr><th>Branch</th><th class="r">Sales this year (₹)</th><th class="r">Share</th><th class="r">Invoices</th><th class="r">Customers</th>' + months.map(m => '<th class="r">' + escapeHtml(mgMarMonth(m)) + '</th>').join('') + '</tr>';
   const rows = b.map(x => '<tr><td>' + escapeHtml(x.branch) + '</td><td class="r">' + mgNum(x.net_sales) + '</td><td class="r">' + mgMarPct(x.share_pct) + '</td><td class="r">' + mgNum(x.invoices) + '</td><td class="r">' + mgNum(x.customers) + '</td>' +
     months.map(m => { const r = (x.months || []).find(y => y.month === m); return '<td class="r">' + (r ? mgNum(r.net_sales) : '—') + '</td>'; }).join('') + '</tr>').join('');
-  return mgMarPanel('Sales by branch', 'From how your sales voucher types are named in Tally', '<table class="mg-grid"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>');
+  return mgMarPanel('Sales by branch', 'Sales invoices, from how your sales voucher types are named in Tally. Returns aren’t split by branch', '<table class="mg-grid"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>');
 }
 function mgMarConcentration(d){
   const c = d.concentration;
