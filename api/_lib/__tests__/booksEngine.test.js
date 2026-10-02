@@ -148,6 +148,7 @@ check('fuzzy name resolves', pp.name === 'ALKEM LABORATORIES LIMITED', pp);
 check('owes in crore, not lakh', pp.owes_you.total === '₹1.32 Cr', pp.owes_you);
 check('share of sales and rank', pp.as_customer.rank_among_customers === 1 && /%$/.test(pp.as_customer.share_of_your_sales), pp.as_customer);
 check('payments received this FY', pp.owes_you.paid_you_this_fy === E.inr(5400000), pp.owes_you);
+check('money from customers excludes non-customer receipts', s.money_received_from_customers === E.inr(5400000) && /loans, transfers/.test(s.other_money_in), [s.money_received_from_customers, s.other_money_in]);
 const vp = E.partyProfile(ctx, { name: 'gauze supplier' });
 check('vendor story', vp.role === 'vendor' && vp.as_vendor && vp.as_vendor.you_owe === '₹6 L', vp);
 check('unknown name', E.partyProfile(ctx, { name: 'zzz nobody' }).found === false);

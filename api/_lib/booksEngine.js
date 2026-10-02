@@ -178,7 +178,7 @@ function prepare(book, opts) {
     const imp = A.impliedEntry(v, entries);
     const r = {
       guid: v.tally_guid || null, dt, day: isoDay(dt), mk: isoDay(dt).slice(0, 7), kind, type: typeName,
-      branch: branchOf(typeName, kind), party, number: v.voucher_number || null,
+      branch: branchOf(typeName, kind), party, partyBucket: party ? cls(party) : null, number: v.voucher_number || null,
       narration: v.narration ? String(v.narration).replace(/\s+/g, ' ').trim() : null,
       total: Math.abs(num(partyEntry ? partyEntry.amount : v.amount)) || Math.abs(num(v.amount)),
       sales: 0, returns: 0, purchases: 0, direct: 0, opex: 0, direct_income: 0, other_income: 0, tax_out: 0, tax_in: 0,
@@ -264,14 +264,15 @@ function sourceLine(ctx) {
 /* ---------------- 1. totals for a period ---------------- */
 
 function sumRows(rows) {
-  const t = { sales: 0, returns: 0, sales_incl_gst: 0, purchases: 0, direct: 0, opex: 0, direct_income: 0, other_income: 0, receipts: 0, payments: 0, tax_out: 0, tax_in: 0, invoices: 0, customers: new Set() };
+  const t = { sales: 0, returns: 0, sales_incl_gst: 0, purchases: 0, direct: 0, opex: 0, direct_income: 0, other_income: 0, receipts: 0, other_receipts: 0, payments: 0, vendor_payments: 0, tax_out: 0, tax_in: 0, invoices: 0, customers: new Set() };
   for (const r of rows) {
     t.sales += r.sales; t.returns += r.returns; t.purchases += r.purchases; t.direct += r.direct; t.opex += r.opex;
     t.direct_income += r.direct_income; t.other_income += r.other_income; t.tax_out += r.tax_out; t.tax_in += r.tax_in;
     if (r.kind === 'sales') { t.sales_incl_gst += r.total; t.invoices++; if (r.party) t.customers.add(norm(r.party)); }
     if (r.kind === 'credit_note') t.sales_incl_gst -= r.total;
-    if (r.kind === 'receipt') t.receipts += r.total;
-    if (r.kind === 'payment') t.payments += r.total;
+    // Money from customers only: loan drawdowns, transfers and capital also arrive as Receipt vouchers.
+    if (r.kind === 'receipt') { if (r.partyBucket === 'debtor') t.receipts += r.total; else t.other_receipts += r.total; }
+    if (r.kind === 'payment') { t.payments += r.total; if (r.partyBucket === 'creditor') t.vendor_payments += r.total; }
   }
   t.net_sales = t.sales - t.returns;
   t.gross = t.net_sales + t.direct_income - t.purchases - t.direct;
@@ -296,7 +297,8 @@ function summary(ctx, args) {
     running_costs: inr(t.opex),
     profit: inr(t.net) + ' (' + pctStr(pctOf(t.net, t.net_sales)) + ' of sales, before stock change)',
     money_received_from_customers: inr(t.receipts),
-    money_paid_out: inr(t.payments),
+    other_money_in: inr(t.other_receipts) + ' (loans, transfers, capital and other receipts not from a customer)',
+    money_paid_out: inr(t.payments) + ' (of which ' + inr(t.vendor_payments) + ' to suppliers)',
     sales_invoices: t.invoices,
     customers_billed: t.customers.size,
     average_invoice: t.invoices ? inr(t.sales / t.invoices) : null,
@@ -393,7 +395,7 @@ function breakdown(ctx, args) {
       for (const l of r.lines) {
         if (l.party) continue;
         let v = null;
-        if (measure === 'ledger') { if (fLedger(l.ledger)) v = -l.amount; }
+        if (measure === 'ledger') { if (fLedger(l.ledger) && (l.bucket !== 'tax' || /\b(tds|tcs|gst|tax)\b/i.test(a.ledger))) v = -l.amount; }
         else if (fLedger && !fLedger(l.ledger)) continue;
         else if (measure === 'expenses' && (l.bucket === 'opex' || l.bucket === 'direct_expense')) v = -l.amount;
         else if (measure === 'running_costs' && l.bucket === 'opex') v = -l.amount;
@@ -415,7 +417,7 @@ function breakdown(ctx, args) {
       case 'expenses': v = r.opex + r.direct; if (!v) continue; break;
       case 'running_costs': v = r.opex; if (!v) continue; break;
       case 'direct_costs': v = r.direct; if (!v) continue; break;
-      case 'receipts': if (r.kind !== 'receipt') continue; v = r.total; break;
+      case 'receipts': if (r.kind !== 'receipt' || (r.partyBucket !== 'debtor' && !fParty)) continue; v = r.total; break;
       case 'payments': if (r.kind !== 'payment') continue; v = r.total; break;
       case 'gst': v = r.tax_out - r.tax_in; if (!v) continue; break;
       default: continue;
@@ -447,7 +449,7 @@ function breakdown(ctx, args) {
   if (rest.length) out.everything_else = { groups: rest.length, amount: unit(rest.reduce((s, g) => s + g.value, 0)) };
   if (!list.length) out.note = 'Nothing matched in ' + per.label + '. Check the spelling of the name, or try a longer period.';
   if (measure === 'ledger') {
-    const names = [...new Set(ctx.rows.flatMap((r) => r.lines.filter((l) => fLedger(l.ledger)).map((l) => l.ledger)))].slice(0, 8);
+    const names = [...new Set(ctx.rows.flatMap((r) => r.lines.filter((l) => fLedger(l.ledger) && (l.bucket !== 'tax' || /\b(tds|tcs|gst|tax)\b/i.test(a.ledger))).map((l) => l.ledger)))].slice(0, 8);
     out.ledgers_matched = names;
     out.sign_note = 'Positive = money spent / debited to the ledger; negative = credited (income).';
   }
@@ -703,6 +705,7 @@ function productStats(ctx, per) {
     if (c.cost != null && price != null && price < c.cost) flags.push(price < 0.25 * c.cost ? 'price far below cost: check the unit (pack vs piece) or a free scheme' : 'sold below cost');
     if (g.zeroQty > 0) flags.push(Math.round(g.zeroQty) + ' given free (zero price)');
     if (c.basis === 'assembly') flags.push('kit you assemble: cost = its parts');
+    if (margin != null && g.value > 0 && margin / g.value > 0.9) flags.push('margin looks too high: the purchase unit may differ from the selling unit');
     if (c.cost == null) flags.push('no cost known (never purchased or assembled in the synced period)');
     return { g, price, cost: c.cost, basis: c.basis, margin, marginPct: margin != null ? pctOf(margin, g.value) : null, flags };
   });
@@ -746,7 +749,7 @@ function products(ctx, args) {
   const top = Math.max(1, Math.min(30, parseInt(a.top, 10) || 10));
   const total = stats.reduce((t, s) => t + s.g.value, 0);
   // Margin rankings ignore tiny items, or a ₹2,000 one-off tops the list.
-  const big = (s) => s.g.value >= Math.max(10000, 0.001 * total);
+  const big = (s) => s.g.value >= Math.max(25000, 0.003 * total);
   let list;
   switch (sort) {
     case 'margin_pct': list = stats.filter((s) => s.marginPct != null && big(s)).sort((x, y) => y.marginPct - x.marginPct); break;
@@ -863,11 +866,11 @@ function insights(ctx) {
     detail: veryOld.slice(0, 4).map((g) => `${g.party} (${g.oldest} days)`).join(', ') + '. Bills this old are usually disputed, short-paid, or paid but never knocked off in Tally.',
     action: 'Decide for each: chase, settle the difference, or write it off with your CA.', ask: 'Which bills are more than a year old?' });
 
-  // Customers late against their own habit.
-  for (const c of (an.customers || [])) {
-    if (num(c.overdue) < M / 2 || num(c.max_overdue_days) < 60) continue;
-    if (c.max_overdue_days > 365) continue;   // covered by old_debts
-    push({ key: 'late:' + norm(c.party), kind: 'late', severity: num(c.overdue) >= 4 * M ? 'high' : 'medium', impact: num(c.overdue),
+  // Customers more than two months late: the three biggest only, so the list stays readable.
+  const lateList = (an.customers || []).filter((c) => num(c.overdue) >= M / 2 && num(c.max_overdue_days) >= 60 && num(c.max_overdue_days) <= 365)
+    .sort((x, y) => num(y.overdue) - num(x.overdue)).slice(0, 3);
+  for (const c of lateList) {
+    push({ key: 'late:' + norm(c.party), kind: 'late', severity: num(c.overdue) >= 10 * M ? 'high' : 'medium', impact: num(c.overdue),
       title: `${c.party} owes ${inr(c.overdue)} overdue, oldest bill ${c.max_overdue_days} days late.`,
       detail: c.dso_days != null ? `They usually take about ${Math.round(c.dso_days)} days to pay.` : 'Worth a call.',
       action: `Call ${c.party} about the oldest bill.`, ask: `Tell me about ${c.party}` });
@@ -1049,14 +1052,15 @@ function kitsTable(ctx) {
       avg_price: s && s.price != null ? Math.round(s.price * 100) / 100 : null,
       margin_pct: s && s.marginPct != null ? s.marginPct : null
     };
-  }).filter((k) => k.made_qty > 0 || k.sales > 0).sort((x, y) => y.sales - x.sales).slice(0, 25);
+  }).filter((k) => k.made_qty > 0).sort((x, y) => y.sales - x.sales).slice(0, 25);
 }
 
 function branchTable(ctx) {
   const fy = resolvePeriod('this_fy', ctx.now);
   const m = new Map();
   for (const r of ctx.rows) {
-    if (!inPeriod(r, fy) || (r.kind !== 'sales' && r.kind !== 'credit_note')) continue;
+    // Credit notes usually carry no branch in their type name, so the split is on sales invoices.
+    if (!inPeriod(r, fy) || r.kind !== 'sales') continue;
     const b = r.branch || 'Main';
     const g = m.get(b) || { branch: b, net_sales: 0, invoices: 0, customers: new Set(), months: {} };
     g.net_sales += r.sales - r.returns; if (r.kind === 'sales') g.invoices++;
