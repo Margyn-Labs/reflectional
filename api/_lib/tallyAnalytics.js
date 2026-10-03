@@ -39,7 +39,7 @@
  *    part of the confidence story.
  */
 
-const { calibrateBills } = require('./tallyBills');
+const { calibrateBills, todayIstMs } = require('./tallyBills');
 
 /* ---------------- classification ---------------- */
 
@@ -222,7 +222,41 @@ function impliedEntry(v, entries) {
 
 /* ---------------- the engine ---------------- */
 
+/**
+ * The books as of today (India date). Tally's closing balances take in every entry in the financial year,
+ * including ones dated in the future: on 3 Oct Care Hygiene's accountant entered the Kotak loan EMIs for
+ * Oct-Mar in advance, and Tally's bank balance dropped by all six (₹9.45 L) at once, so Margyn showed ₹4.38 L
+ * of cash when the bank had about ₹13.8 L. Entries dated after today are taken out of the vouchers and backed
+ * out of each ledger's closing balance (the balance and the entry amounts share one sign convention).
+ * Returns { ledgers, vouchers, future } where future lists the entries waiting for their date.
+ */
+function asOfToday(ledgers, vouchers, now) {
+  const today = todayIstMs(now);
+  const past = [], future = [];
+  for (const v of vouchers || []) {
+    const d = v && parseDate(v.date);
+    if (d && d.getTime() > today) future.push(v); else past.push(v);
+  }
+  if (!future.length) return { ledgers: ledgers || [], vouchers: vouchers || [], future };
+  const move = new Map();
+  for (const v of future) {
+    if (v.is_cancelled === true) continue;
+    for (const e of Array.isArray(v.entries) ? v.entries : []) {
+      if (!e || !e.ledger) continue;
+      const k = nameKey(e.ledger);
+      move.set(k, (move.get(k) || 0) + num(e.amount));
+    }
+  }
+  const adj = (ledgers || []).map((l) => {
+    const m = l && l.closing_balance != null ? move.get(nameKey(l.name)) : null;
+    return m ? Object.assign({}, l, { closing_balance: Math.round((num(l.closing_balance) - m) * 100) / 100, future_entries_backed_out: Math.round(m * 100) / 100 }) : l;
+  });
+  return { ledgers: adj, vouchers: past, future };
+}
+
 function computeAnalytics(input) {
+  const today = asOfToday(input.ledgers, input.vouchers, input.now);
+  input = Object.assign({}, input, { ledgers: today.ledgers, vouchers: today.vouchers });
   const ledgers = dedupe(input.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
   // A renamed voucher type ("KANDIVALI SALE") is judged by the base type Tally rolls it up to, when we have it.
@@ -796,6 +830,13 @@ function computeAnalytics(input) {
     items_available: itemsAvailable,
     period, pnl, stock, cash, cost_structure,
     working_capital, customers: customerTop,
+    // Entries already in Tally for a later date (EMIs, post-dated cheques): not in today's figures.
+    entered_ahead: today.future.length ? {
+      count: today.future.length,
+      first: today.future.map((v) => v.date).sort()[0], last: today.future.map((v) => v.date).sort().slice(-1)[0],
+      items: today.future.slice().sort((x, y) => String(x.date).localeCompare(String(y.date))).slice(0, 24)
+        .map((v) => ({ date: v.date, type: v.voucher_type, number: v.voucher_number || null, party: v.party_name || null, amount: r2(Math.abs(num(v.amount))), narration: v.narration ? String(v.narration).slice(0, 80) : null }))
+    } : null,
     items: itemRows.slice(0, 100), margin_bridge,
     leaks, gst_estimate: gst, quality, questions, headlines,
     assumptions: { credit_rate_annual: creditRate, margin_window: 'period', dso_window_days: 90 }
@@ -830,7 +871,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
-  computeAnalytics, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  computeAnalytics, asOfToday, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
   isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES

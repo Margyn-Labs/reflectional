@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-books-as-of-today', date:'4 Oct 2026', title:'Cash as of today, not as of March',
+    items:[
+      { t:'Entries made ahead don’t count yet', what:'If your accountant enters EMIs or post-dated payments in Tally ahead of time, Tally takes them out of your bank balance straight away. Margyn now shows your cash, loans and costs as of today, and lists what’s already entered for later dates.',
+        how:'Cash page, or ask Margyn “What payments are already entered for later?”', act:'cash' }
+    ]
+  },
+  {
     id:'2026-10-04-delivery-receipts', date:'4 Oct 2026', title:'Know that each WhatsApp actually arrived',
     items:[
       { t:'Delivered, read, or why not', what:'Every update Margyn sends now shows what WhatsApp itself reported: delivered, read, or didn’t arrive and the reason. An update that doesn’t arrive is tried again next time instead of being counted as sent. Payment reminders to customers are tracked the same way.',

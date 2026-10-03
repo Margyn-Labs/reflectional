@@ -167,6 +167,9 @@ function branchOf(typeName, kind) {
 function prepare(book, opts) {
   const o = opts || {};
   const now = o.now ? new Date(o.now) : new Date();
+  // The books as of today: entries dated later (EMIs entered in advance) wait for their date (tallyAnalytics.asOfToday).
+  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now);
+  book = Object.assign({}, book, { ledgers: asOf.ledgers, vouchers: asOf.vouchers });
   const ledgers = A.dedupe(book.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
   const all = A.dedupe(book.vouchers || [], (v) => (v && v.tally_guid ? 'g:' + v.tally_guid : null))
@@ -251,6 +254,7 @@ function prepare(book, opts) {
     now, today: todayIST(now), book, analytics, ledgers, rows, bills, cls, assembled, bought, unitCost,
     coverage: { from: first, to: last },
     company: book.company || null, lastSync: book.lastSync || null,
+    future: asOf.future,
     avgMonthlySales,
     // What counts as "worth mentioning" scales with the business: 0.5% of a month's sales, at least ₹50,000.
     material: Math.max(50000, 0.005 * avgMonthlySales)
@@ -842,8 +846,18 @@ function cashAndDebt(ctx) {
     const due = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 20));
     out.gst_estimate = { month: monthLabel(lastGst.month), output_tax: inr(lastGst.output_tax), input_tax: inr(lastGst.input_tax), net_payable: inr(lastGst.net_payable_estimate), usual_due_date: dayStr(due, true), note: 'Estimate from the tax ledgers in Tally, not the GST portal. Your CA files the actual return.' };
   }
+  const later = (ctx.future || []).filter((v) => !v.is_cancelled && (v.entries || []).some((e) => e && ['bank', 'cash', 'bank_od'].includes(ctx.cls(e.ledger))));
+  if (later.length) {
+    const tot = later.reduce((t, v) => t + Math.abs(num(v.amount)), 0);
+    out.entered_for_later_dates = {
+      total: inr(tot), count: later.length,
+      note: 'Already entered in Tally with a future date (for example loan EMIs entered in advance). Not taken out of today\'s balances; they will be on their dates.',
+      items: later.slice(0, 12).map((v) => ({ date: dayStr(A.parseDate(v.date), true), amount: inr(Math.abs(num(v.amount))), what: v.narration ? String(v.narration).slice(0, 60) : v.voucher_type }))
+    };
+  }
   out.notes = [
     'Balances use Tally\'s figure where it sent one; otherwise the opening balance plus this year\'s entries.',
+    later.length ? 'Balances are as of today: entries Tally already has for later dates are not counted yet.' : null,
     loans.some((x) => /o\.?\s?d|overdraft|cash credit/i.test(x.name + ' ' + (x.group || ''))) ? 'The business runs on an overdraft. Margyn doesn\'t know the overdraft limit, so it can\'t say how much headroom is left; cash alone understates what you can draw.' : null
   ].filter(Boolean);
   return out;

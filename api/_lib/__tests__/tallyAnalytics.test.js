@@ -224,4 +224,18 @@ check('empty input does not throw, says so', e.pnl.length === 0 && e.quality.con
   check('no open supplier bills for last month\'s suppliers: no supplier days', untracked.working_capital.dpo_days == null && untracked.working_capital.suppliers_tracked_billwise === false, untracked.working_capital);
   check('a supplier with an open bill is not called untracked', a.working_capital.suppliers_tracked_billwise !== false, a.working_capital);
 }
+// Entries already made for later dates (EMIs entered in advance) are not in today's books
+{
+  const { asOfToday } = require('../tallyAnalytics');
+  const led = [{ name: 'Kotak Bank', parent: 'Bank Accounts', closing_balance: 313191 }, { name: 'Interest on Loan', parent: 'Indirect Expenses', closing_balance: -961973 }, { name: 'Kotak Loan', parent: 'Secured Loans', closing_balance: 11828670 }];
+  const emi = (date) => ({ date, voucher_type: 'Payment', amount: 157573, entries: [{ ledger: 'Kotak Loan', amount: -67000 }, { ledger: 'Interest on Loan', amount: -90573 }, { ledger: 'Kotak Bank', amount: 157573 }] });
+  const t = asOfToday(led, [emi('20260910'), emi('20261010'), emi('20261110')], '2026-10-04T06:00:00Z');
+  check('future entries leave the vouchers', t.vouchers.length === 1 && t.future.length === 2);
+  check('and are backed out of the bank balance', t.ledgers[0].closing_balance === 313191 - 2 * 157573, t.ledgers[0]);
+  check('...and out of interest and the loan', t.ledgers[1].closing_balance === -961973 + 2 * 90573 && t.ledgers[2].closing_balance === 11828670 + 2 * 67000, t.ledgers);
+  const none = asOfToday(led, [emi('20260910')], '2026-10-04T06:00:00Z');
+  check('nothing ahead: balances untouched', none.ledgers[0].closing_balance === 313191 && none.future.length === 0);
+  const an = computeAnalytics({ ledgers, vouchers: vouchers.concat([V('Payment', '99', '20261120', null, [['Salaries', -999999], ['HDFC Bank', 999999]])]), bills, now });
+  check('analytics: a future entry is listed, not counted', an.entered_ahead && an.entered_ahead.count === 1 && !an.pnl.some((m) => m.month === '2026-11'), an.entered_ahead);
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
