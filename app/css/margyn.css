@@ -37,6 +37,8 @@
 .mgr-msg.m.follow .mgr-who{ display:none; }
 .mgr-msg.me{ align-self:flex-end; max-width:86%; }
 .mgr-msg.me .mgr-b{ background:var(--g50); border:1px solid var(--g100); border-radius:var(--r-panel); padding:8px 12px; font-size:var(--f13); line-height:1.5; color:var(--g900); white-space:pre-wrap; overflow-wrap:anywhere; }
+.mgr-msg.me.queued .mgr-b{ opacity:.65; }
+.mgr-msg.me.queued::after{ content:'Next up'; display:block; text-align:right; font-size:11px; color:var(--g500); margin-top:2px; }
 .mgr-msg.quiet .mgr-b{ border-left-color:var(--g300); color:var(--g600); }
 .mgr-b h5{ font-size:var(--f16); font-weight:800; letter-spacing:-.01em; margin:0 0 6px; color:var(--g900); }
 .mgr-b p{ margin:0 0 6px; white-space:normal; }

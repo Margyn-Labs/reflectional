@@ -524,7 +524,9 @@ const VX_TOOLS = {
     try {
       const data = await Promise.race([
         callAskMargyn(String(question || '').slice(0, 1800), vxThinkHistory.slice(-4), null, null, 'margyn', 'balanced'),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000))
+        // Past 6s the call carries on and this answer is spoken when it lands
+        // (vxRunTool), so it gets real time instead of being thrown away at 30s.
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 75000))
       ]);
       const reply = (data && data.reply) || '';
       vxThinkHistory.push({ role:'user', content:question }, { role:'assistant', content:reply });
