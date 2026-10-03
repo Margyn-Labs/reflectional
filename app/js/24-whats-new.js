@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-delivery-receipts', date:'4 Oct 2026', title:'Know that each WhatsApp actually arrived',
+    items:[
+      { t:'Delivered, read, or why not', what:'Every update Margyn sends now shows what WhatsApp itself reported: delivered, read, or didn’t arrive and the reason. An update that doesn’t arrive is tried again next time instead of being counted as sent. Payment reminders to customers are tracked the same way.',
+        how:'Conversations → Margyn noticed: the “Last update” line and the label under each point.', act:'history' }
+    ]
+  },
+  {
     id:'2026-10-04-updates-and-times', date:'4 Oct 2026', title:'Sharper WhatsApp updates, and the right times everywhere',
     items:[
       { t:'Times in the app are correct', what:'Dates and times were showing 5½ hours late (an evening sync could read as after midnight). Every time is now India time. New entries and invoices made before 5:30 am also get today’s date, not yesterday’s.',

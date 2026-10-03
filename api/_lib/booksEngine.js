@@ -906,7 +906,8 @@ function insights(ctx) {
   if (late30 >= M) {
     // Who to call first: late but not hopeless. A bill over a year old is old debt (its own point), not a phone call.
     const first = lateParties.find((g) => !g.paidRecently && g.oldest.late <= 365) || lateParties.find((g) => g.oldest.late <= 365);
-    push({ key: 'overdue_total', kind: 'overdue_total', severity: pctOf(late30, recvTotal) > 25 ? 'high' : 'medium', impact: late30,
+    // Tagged with the customer it says to call, so Watch's one-point-per-customer rule doesn't add their own line too.
+    push({ key: 'overdue_total', kind: 'overdue_total', party: first ? first.party : undefined, severity: pctOf(late30, recvTotal) > 25 ? 'high' : 'medium', impact: late30,
       title: `${inr(late30)} of the ${inr(recvTotal)} customers owe you is more than a month late.`,
       detail: (slipping >= M ? `Another ${inr(slipping)} went past due in the last 30 days; a reminder usually does it. ` : '') +
         (lateParties.length ? 'Most late: ' + lateParties.slice(0, 3).map((g) => `${niceName(g.party)} ${inr(g.late30)}`).join(', ') + '.' : '') +
