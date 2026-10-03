@@ -50,7 +50,7 @@ const B = require('../booksTools');
 
   console.log('no Tally, unknown tool');
   const none = await B.exec('books_summary', {}, NOBODY);
-  check('plain note when Tally is not connected', none.connected === false && /isn't connected/.test(none.note), none);
+  check('plain note when no books are connected', none.connected === false && /No books are connected/.test(none.note), none);
   check('unknown tool', (await B.exec('drop_tables', {}, U)).error);
 
   console.log('team permissions');

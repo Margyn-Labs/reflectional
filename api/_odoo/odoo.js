@@ -152,7 +152,7 @@ function execKw(baseUrl, db, uid, apiKey, model, method, args, kwargs) {
 
 const MOVE_FIELDS = [
   'name', 'partner_id', 'invoice_date', 'invoice_date_due',
-  'amount_total_signed', 'amount_residual_signed', 'currency_id',
+  'amount_total_signed', 'amount_untaxed_signed', 'amount_residual_signed', 'currency_id',
   'move_type', 'state', 'payment_state', 'company_id'
 ];
 
@@ -179,6 +179,7 @@ const SETS = {
       invoice_date: str(r.invoice_date),
       due_date: str(r.invoice_date_due),
       amount_total: num(r.amount_total_signed),
+      amount_untaxed: r.amount_untaxed_signed == null || r.amount_untaxed_signed === false ? null : num(r.amount_untaxed_signed),
       balance: num(r.amount_residual_signed),
       currency_code: m2oName(r.currency_id),
       move_type: str(r.move_type),
@@ -204,6 +205,7 @@ const SETS = {
       bill_date: str(r.invoice_date),
       due_date: str(r.invoice_date_due),
       amount_total: num(r.amount_total_signed),
+      amount_untaxed: r.amount_untaxed_signed == null || r.amount_untaxed_signed === false ? null : num(r.amount_untaxed_signed),
       balance: num(r.amount_residual_signed),
       currency_code: m2oName(r.currency_id),
       move_type: str(r.move_type),
@@ -371,7 +373,13 @@ async function runSync(cred, opts) {
       // chunked upsert, merge on the natural key (cred_id, odoo_move_id)
       for (let i = 0; i < mapped.length; i += 500) {
         const chunk = mapped.slice(i, i + 500);
-        const out = await insertRows(spec.table, chunk, { onConflict: 'cred_id,odoo_move_id', merge: true });
+        let out;
+        try { out = await insertRows(spec.table, chunk, { onConflict: 'cred_id,odoo_move_id', merge: true }); }
+        catch (e) {
+          // amount_untaxed arrives with 2026-10-04-books-layer.sql; until it's run, sync exactly as before.
+          if (!/amount_untaxed/.test(String(e && e.message))) throw e;
+          out = await insertRows(spec.table, chunk.map(({ amount_untaxed, ...r }) => r), { onConflict: 'cred_id,odoo_move_id', merge: true });
+        }
         summary[kind].upserted += Array.isArray(out) ? out.length : chunk.length;
       }
     }

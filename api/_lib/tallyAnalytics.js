@@ -498,7 +498,8 @@ function computeAnalytics(input) {
       const dt = parseDate(v.date);
       if (!dt) continue;
       let m = 0;
-      for (const e of Array.isArray(v.entries) ? v.entries : []) if (e && e.ledger && cashKeys.has(nameKey(e.ledger))) m += debitPositive(e.amount);
+      // Voucher amounts are always debit-negative, whichever way ledger balances run: money in = -amount.
+      for (const e of Array.isArray(v.entries) ? v.entries : []) if (e && e.ledger && cashKeys.has(nameKey(e.ledger))) m += -num(e.amount);
       if (m) { const k = dt.toISOString().slice(0, 10); dayMove.set(k, (dayMove.get(k) || 0) + m); }
     }
     const days = [...dayMove.keys()].sort();

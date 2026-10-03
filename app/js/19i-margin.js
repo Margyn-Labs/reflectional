@@ -9,6 +9,11 @@
    corroborate it; the page says so instead of claiming more.
    ============================================================ */
 let mgMar = null, mgMarBusy = false, mgMarErr = false, mgMarAt = 0, mgMarCompany = '';
+/* Books are kept in Tally, Zoho Books or Odoo: the analytics come from whichever (api/_lib/dataLayer/books.js). */
+function mgBooksConnected(){
+  try { return !!((typeof tallyConnected !== 'undefined' && tallyConnected) || (typeof zohoConnected !== 'undefined' && zohoConnected) || (typeof odooConnected !== 'undefined' && odooConnected)); } catch(e){ return false; }
+}
+function mgBooksName(){ return (mgMar && mgMar.books_source_name) || 'Tally'; }
 
 async function mgLoadMargin(force){
   if(mgMarBusy || (!force && mgMar && Date.now() - mgMarAt < 60000)) return;
@@ -98,6 +103,17 @@ function mgMarPanel(title, aside, body){
 }
 function mgMarNote(t){ return '<div class="mg-panel-b"><p class="mg-muted">' + escapeHtml(t) + '</p></div>'; }
 
+/* Two books systems connected: one is read everywhere, the other shown beside it, never added (dataLayer/books.js). */
+function mgMarComparePanel(d){
+  const c = d.books_compare || [];
+  if(c.length < 2) return '';
+  const p = c[0];
+  const rows = c.map((x, i) => '<tr><td>' + escapeHtml(x.source_name) + (i === 0 ? ' <span class="mg-bdg pos">Used everywhere</span>' : '') + '</td><td class="r">' + mgNum(x.receivables) + '</td><td class="r">' + mgNum(x.payables) + '</td>' +
+    '<td class="r">' + (i === 0 ? '' : escapeHtml(fmtINR(x.receivables - p.receivables))) + '</td><td>' + (x.last_sync ? escapeHtml(fmtDate(x.last_sync)) : '—') + '</td></tr>').join('');
+  return mgMarPanel('Your books in more than one place', 'Compared, never added. Margyn reads the most trusted, most recently synced one everywhere',
+    '<table class="mg-grid"><thead><tr><th>Books</th><th class="r">Customers owe (₹)</th><th class="r">You owe (₹)</th><th class="r">Owed vs main (₹)</th><th>Last synced</th></tr></thead><tbody>' + rows + '</tbody></table>');
+}
+
 /* What else the books say (api/_lib/booksEngine.js): findings, kits, branches, concentration.
    Arrive with the analytics payload; every figure is worked out on the server. */
 function mgMarInsightsPanel(d){
@@ -138,16 +154,16 @@ function mgRenderMargin(){
   if(!mgMar && !mgMarBusy && !mgMarErr) mgLoadMargin();
   const d = mgMar;
   const head = mgPageHead({ group:'Insight', title:'Margin',
-    sub:'How much you keep, worked out from your Tally books. One source, so every figure is a signal until bank and GST agree with it.',
+    sub:'How much you keep, worked out from your ' + mgBooksName() + ' books. One source, so every figure is a signal until bank and GST agree with it.',
     actions:mgBtn('Refresh', 'data-mar-refresh') + (d && d.connected ? mgExportBtn('marExport') : '') });
   if(!d){
     host.innerHTML = head + '<div class="mg-panel mg-empty-panel"><h2>' + (mgMarErr ? 'Couldn’t load margin' : 'Loading…') + '</h2>' +
-      '<p>' + (mgMarErr ? 'Try Refresh in a moment.' : 'Reading your Tally books.') + '</p></div>';
+      '<p>' + (mgMarErr ? 'Try Refresh in a moment.' : 'Reading your books.') + '</p></div>';
     return;
   }
   if(!d.connected){
-    host.innerHTML = head + '<div class="mg-panel mg-empty-panel"><h2>Connect Tally to see your margin</h2>' +
-      '<p>Margin is built from the ledgers and vouchers the Margyn Tally agent reads from your desktop.</p>' +
+    host.innerHTML = head + '<div class="mg-panel mg-empty-panel"><h2>Connect your books to see your margin</h2>' +
+      '<p>Margin is built from your books: Tally (through the Margyn Tally agent), Zoho Books or Odoo.</p>' +
       '<div style="margin-top:12px">' + mgBtn('Open sources', 'data-mar-go="connectors"', true) + '</div></div>';
     return;
   }
@@ -222,7 +238,7 @@ function mgRenderMargin(){
       mgMarTile('Days to get paid', wc.dso_days == null ? '—' : Math.round(wc.dso_days) + ' days', 'Last 90 days of sales', (wc.dso_days || 0) > 60 ? 'bad' : 'flat') +
     '</div>' +
     mgMarPanel('What stands out', 'Worked out from your figures, not written by AI', stand) +
-    mgMarInsightsPanel(d) +
+    mgMarComparePanel(d) + mgMarInsightsPanel(d) +
     mgMarPanel('Month by month', 'Before stock movement', '<table class="mg-grid"><thead><tr><th>Month</th><th class="r">Net sales (₹)</th><th class="r">Cost of goods (₹)</th><th class="r">Gross profit (₹)</th><th class="r">Gross %</th><th class="r">Running cost (₹)</th><th class="r">Net profit (₹)</th><th class="r">Net %</th></tr></thead><tbody>' + (pnlRows || '<tr><td colspan="8" class="mg-muted">No vouchers yet.</td></tr>') + '</tbody></table>' +
       mgMarNote('Sales here exclude GST. Gross profit is sales less purchases and direct costs in each month. Stock movement is only known for the whole period, so it isn’t spread across months. Orders and delivery notes are left out because they don’t move money.')) +
     itemsPanel +

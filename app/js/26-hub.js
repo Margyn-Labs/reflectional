@@ -152,7 +152,7 @@ function mgHubNoticed(){
         (s.status === 'muted' ? '<button type="button" class="mg-link" data-hub-unmute="' + escapeHtml(x.key) + '">Unmute</button>'
           : '<button type="button" class="mg-link" data-hub-mute="' + escapeHtml(x.key) + '">Don’t send this again</button>') +
       '</div></div></div>';
-  }).join('') : '<div class="mg-empty">' + ((typeof tallyConnected !== 'undefined' && tallyConnected) ? (typeof mgMar !== 'undefined' && !mgMar ? 'Reading your books…' : 'Nothing needs your attention right now.') : 'Connect Tally and Margyn will read your books and tell you what needs a look.') + '</div>';
+  }).join('') : '<div class="mg-empty">' + (((typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))) ? (typeof mgMar !== 'undefined' && !mgMar ? 'Reading your books…' : 'Nothing needs your attention right now.') : 'Connect your books (Tally, Zoho Books or Odoo) and Margyn will read them and tell you what needs a look.') + '</div>';
   return '<div class="mg-panel"><div class="mg-panel-h"><h2>Margyn noticed</h2><span class="mg-aside">Worked out from your books, biggest first</span></div>' + mgHubWatchControls() + '<div>' + body + '</div></div>';
 }
 
@@ -180,7 +180,7 @@ async function mgHubRender(force){
     host.innerHTML = mgHubAskPanel() + '<div class="mg-row3"><div class="mg-panel"><div class="mg-empty">Loading…</div></div></div>';
     await mgHubLoad(force);
   }
-  if(typeof mgMar !== 'undefined' && !mgMar && typeof mgLoadMargin === 'function' && typeof tallyConnected !== 'undefined' && tallyConnected){
+  if(typeof mgMar !== 'undefined' && !mgMar && typeof mgLoadMargin === 'function' && (typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))){
     mgLoadMargin().then(() => { if(document.body.contains(host)) host.innerHTML = mgHubAskPanel() + '<div class="mg-row3">' + mgHubNoticed() + mgHubAsked() + '</div>'; });
   }
   host.innerHTML = mgHubAskPanel() + '<div class="mg-row3">' + mgHubNoticed() + mgHubAsked() + '</div>';

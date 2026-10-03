@@ -27,7 +27,9 @@ const MG_RELEASES = [
       { t:'CFO pack opens on the last full month', what:'The pack now covers every month in your books, and opens on last month instead of a month only a few days old.',
         how:'CFO pack → Month.', act:'cfopack' },
       { t:'Honest WhatsApp status', what:'Automations and Home now show whether each WhatsApp message is really going out. Margyn updates are listed with what WhatsApp delivered.',
-        how:'Automations, or Admin → Channel health.', act:'agents' }
+        how:'Automations, or Admin → Channel health.', act:'agents' },
+      { t:'Zoho Books and Odoo books, read the same way', what:'Margin, Reports, the CFO pack, Margyn’s answers and Margyn updates now read your books whether you keep them in Tally, Zoho Books or Odoo. With two connected, Margyn uses one everywhere and shows the other beside it, never added together.',
+        how:'Margin. Ask Margyn anything about your books.', act:'margin' }
     ]
   },
   {

@@ -13,7 +13,8 @@
 
 const E = require('./booksEngine');
 const FORMULAS = require('../../app/js/margyn-formulas.js');
-const { loadTallyBook } = require('./tallyData');
+// The books from whichever system keeps them (Tally, Zoho Books, Odoo): the one place for the Books category.
+const { loadBooks } = require('./dataLayer/books');
 
 const PERIOD = {
   description: 'Which dates. One of: this_fy (default: this Indian financial year, April to today), last_fy, this_month, last_month, this_quarter, last_quarter, last_7_days, last_30_days, last_90_days, today, yesterday, this_week, last_week, all; or a month "2026-08"; or a day "2026-08-14". For a custom range use from/to instead.',
@@ -125,13 +126,17 @@ const RUN = {
 const _prepared = new WeakMap();
 
 async function contextFor(userId) {
-  const book = await loadTallyBook(userId);
+  const book = await loadBooks(userId);
   if (!book.connected) return { ctx: null };
   // The book is cached until the next sync, which can be days if the Tally PC is off. "Today" (days late,
   // this week, this month) must still move on, so a context from an earlier India date is worked out again.
   let ctx = _prepared.get(book);
   const day = require('./tallyBills').todayIstMs();
-  if (!ctx || ctx._day !== day) { ctx = E.prepare(book); ctx._day = day; _prepared.set(book, ctx); }
+  if (!ctx || ctx._day !== day) {
+    ctx = E.prepare(book); ctx._day = day;
+    ctx.source = book.source || 'tally'; ctx.source_name = book.source_name || 'Tally'; ctx.book_notes = book.notes || []; ctx.compare = book.compare || [];
+    _prepared.set(book, ctx);
+  }
   return { ctx };
 }
 
@@ -169,8 +174,8 @@ async function exec(name, input, userId, perms) {
   if (!allowed(name, input, perms)) return { error: 'Your access to this account doesn\'t include that part of the books. The account owner can change it under Settings > People.' };
   try {
     const { ctx } = await contextFor(userId);
-    if (!ctx) return { connected: false, note: 'Tally isn\'t connected for this business, so there are no books to read. Connect it under Organisations and sources (the Margyn Tally agent runs on the Tally PC).' };
-    if (!ctx.rows.length) return { connected: true, note: 'Tally is connected but no entries have synced yet. Is the Tally PC on with the Margyn agent running?' };
+    if (!ctx) return { connected: false, note: 'No books are connected for this business (Tally, Zoho Books or Odoo), so there are no books to read. Connect one under Organisations and sources.' };
+    if (!ctx.rows.length) return { connected: true, note: ctx.source === 'tally' ? 'Tally is connected but no entries have synced yet. Is the Tally PC on with the Margyn agent running?' : ctx.source_name + ' is connected but no entries have synced yet.' };
     return RUN[name](ctx, input || {});
   } catch (e) {
     console.error('[booksTools] ' + name + ' failed:', e.message);
