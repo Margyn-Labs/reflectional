@@ -181,6 +181,32 @@ function vxFormValues(f){
 /* A save by voice needs the user's own words asking for it, like a change card. */
 const VX_SAVE_WORDS = /\b(save|saved|submit|add (it|him|her|them|this)|go ahead|do it|yes|yeah|yep|haan|kar do|kardo|theek hai|thik hai|please do|confirm|done)\b/i;
 
+/* Buttons the user can see on the page (or the open side panel), for get_screen and press. */
+function vxButtons(){
+  const sc = (typeof mgDrawerEl !== 'undefined' && mgDrawerEl) || document.getElementById('view-' + mgCurrentView) || document.querySelector('.view:not(.hidden)');
+  if(!sc) return [];
+  return [...new Set([...sc.querySelectorAll('button, [role="tab"], summary')].filter(el => el.offsetParent && !el.disabled)
+    .map(el => (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim()).filter(t => t && t.length <= 40))].slice(0, 16);
+}
+/* What the page says, in words, for pages without a figures summary: headings, tiles, table rows. */
+function vxPageText(max){
+  const sc = (typeof mgDrawerEl !== 'undefined' && mgDrawerEl) || document.getElementById('view-' + mgCurrentView) || document.querySelector('.view:not(.hidden)');
+  if(!sc) return '';
+  return String(sc.innerText || '').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim().slice(0, max || 1800);
+}
+/* Keep a tool result small: long lists shrink to their first few rows. */
+function vxCompact(o, maxLen){
+  let s = JSON.stringify(o);
+  for(let keep = 5; s.length > maxLen && keep >= 1; keep -= 2){
+    o = JSON.parse(s, (k, x) => Array.isArray(x) ? x.slice(0, keep) : (typeof x === 'string' && x.length > 160 ? x.slice(0, 157) + '…' : x));
+    s = JSON.stringify(o);
+  }
+  return o;
+}
+// Saving a PDF or a CSV to their own computer is fine even though it says "save" / "download".
+const VX_PRESS_OK = /\b(print|pdf|export|download|csv)\b/i;
+const VX_PRESS_NO = /\b(approve|confirm|dismiss|reject|delete|remove|disconnect|send|pay|paid|save|submit|apply|archive|sign ?out|log ?out|revoke|reset|clear|cancel invite|invite|add|create|book|post|sync|connect|accept|decline|mute|stop)\b/i;
+
 /* ---------- the tools ---------- */
 const VX_TOOLS = {
   navigate({ page, view, period }){
@@ -195,10 +221,16 @@ const VX_TOOLS = {
       if(period && page === 'analytics' && mgRangeOptions().some(o => o.key === period)) mgSetRange(period);
     });
     vxActivity('Opened ' + vxLabel(page) + (view && view !== 'reconciled' ? ' · ' + (MG_SRC_LABEL[view] || view) : ''));
-    // Only money pages return figures here; anything else, the model asks for with a read tool if it needs it.
-    const onPage = (MG_MONEY[page] || page === 'cfopack') ? vxPageSummary(page) : null;   // CFO pack: so "summarise what you see" works
-    if(onPage && onPage.largest) onPage.largest = onPage.largest.slice(0, 3).map(r => ({ name:r.name, outstanding:r.outstanding, oldest_days_overdue:r.oldest_days_overdue }));
-    return { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null, on_this_page:onPage };
+    // What's on the page comes back with the move, for every page: "open the inbox, what does it say"
+    // was answered "it's empty" when only money pages carried their figures (2026-10-03).
+    const base = { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null };
+    const shape = sm => {
+      if(sm && sm.largest) sm.largest = sm.largest.slice(0, 3).map(r => ({ name:r.name, outstanding:r.outstanding, oldest_days_overdue:r.oldest_days_overdue }));
+      if(!sm || (Object.keys(sm).length === 1 && 'about' in sm)) sm = Object.assign({}, sm, { page_text:vxPageText(1200) });
+      return Object.assign(base, { on_this_page:vxCompact(sm, 1800) });
+    };
+    const sm = vxPageSummary(page);
+    return sm && typeof sm.then === 'function' ? sm.then(shape) : shape(sm);
   },
 
   search_app({ query, open_top }){
@@ -220,6 +252,10 @@ const VX_TOOLS = {
     const d = document.querySelector('.mg-drawer h3');
     if(d) out.side_panel_open_for = d.textContent;
     if(!MG_MONEY[page]) out.summary = vxPageSummary(page);
+    out.buttons = vxButtons();
+    // Pages with no figures summary: say what the page says, in its own words.
+    if(!MG_MONEY[page] && out.summary && Object.keys(out.summary).length === 1 && 'about' in out.summary) out.page_text = vxPageText(1800);
+    if(d) out.side_panel_text = vxPageText(1200);
     // The Margin summary waits for its figures (get_margin is async).
     if(out.summary && typeof out.summary.then === 'function') return out.summary.then(sm => Object.assign(out, { summary:sm }));
     return out;
@@ -699,6 +735,139 @@ const VX_TOOLS = {
     if(!closed) return { closed:null, note:t === 'top' ? 'Nothing is open on top of the page. Ask whether they mean the page they are on (target "page") or the Margyn panel (target "margyn").' : 'That isn’t open.' };
     vxActivity('Closed ' + closed.replace(/ \(.*\)$/, ''));
     return { closed, note:t === 'margyn' && vxActive ? 'Say a two-word goodbye; the call ends and the panel closes.' : 'Closed. Say so in a few words.' };
+  },
+
+
+  /* ---------- explaining like an accountant (2026-10-03) ----------
+     "How is runway calculated?", "why is my score 59?", "where does this cash
+     figure come from?": the formula from MG_FORMULAS (app/js/margyn-formulas.js,
+     the same text WhatsApp uses) plus the live inputs from the current
+     reading, each with its source and how much it can be trusted, and the
+     sum worked through with the app's own functions, so the explanation can
+     never disagree with the screen. */
+  explain({ figure }){
+    const F = typeof MG_FORMULAS !== 'undefined' ? MG_FORMULAS : null;
+    if(!F) return { error:'Explanations aren’t loaded yet.' };
+    const key = F.find(figure);
+    if(!key) return { found:false, how_margyn_works:F.howTopic(figure).text, figures_i_can_explain:F.KEYS.map(k => F.FIGURES[k].label) };
+    const e = F.FIGURES[key], out = Object.assign({ found:true }, F.describe(key));
+    const s = (typeof snapshots !== 'undefined' && snapshots[0]) || null;
+    if(!s){ out.live = 'There is no reading yet, so no live figures to plug in. Connect a source or add figures first.'; return out; }
+    out.reading_as_of = fmtDate(s.created_at);
+    const v = k => Number(s[INPUT_COLUMN[k]]) || 0;
+    // Where each input came from: saved on the reading; older readings didn't save it, so work it out the way the score does.
+    let prov = s.input_provenance || null;
+    if(!prov){ try { prov = resolveSnapshotInputs().provenance; } catch(err){ prov = {}; } }
+    const SRCN = { zoho:'Zoho Books', tally:'Tally', odoo:'Odoo', self:'typed in', manual:'typed in' };
+    const TRUST = { verified:'verified: sources agree', connector:'one source (a signal)', self:'self-reported' };
+    const NAME = { cash:'Cash', revenue:'Monthly revenue', netProfit:'Monthly net profit', burn:'Monthly spend', gstLeak:'ITC at risk', gstPayable:'GST payable', recvTotal:'Receivables', recv90:'Receivables over 90 days', paySoon:'Bills due in 30 days' };
+    out.inputs = (e.inputs || []).filter(k => INPUT_COLUMN[k]).map(k => {
+      const p = prov[INPUT_COLUMN[k]];
+      return { input:NAME[k], value:vxInr(v(k)), from:p ? (SRCN[p.source] || p.source) + (p.agree ? ', matches ' + p.agree.map(x => SRCN[x] || x).join(' and ') : '') : 'not recorded on this reading', trust:p ? TRUST[p.tier] || p.tier : null };
+    });
+    const clash = (s.source_conflicts || []).filter(c => (e.inputs || []).some(k => INPUT_COLUMN[k] === c.field));
+    if(clash.length) out.sources_disagree = clash.map(c => ({ input:c.field, used:SRCN[c.chosen] || c.chosen, gap_pct:c.spread_pct, values:Object.fromEntries(Object.entries(c.values || {}).map(([k, x]) => [SRCN[k] || k, vxInr(x)])) }));
+    const w = e.weight && VITAL_WEIGHTS[e.weight];
+    const stored = e.weight ? mgVital(s, e.weight) : null;
+    const months = n => (Math.round(n * 10) / 10) + ' months';
+    try {
+      switch(key){
+        case 'pulse_score': {
+          const vit = Array.isArray(s.vitals) ? s.vitals : [];
+          out.worked = vit.map(x => x.label + ': score ' + Math.round(x.score) + ' × ' + Math.round((VITAL_WEIGHTS[x.label] || 0) * 100) + '% = ' + (Math.round(x.score * (VITAL_WEIGHTS[x.label] || 0) * 10) / 10) + ' points');
+          out.result = 'Total ' + s.pulse_score + ' out of 100 (' + scoreBand(s.pulse_score).label + ')';
+          const low = vit.slice().sort((a, b) => a.score - b.score)[0];
+          if(low) out.biggest_drag = low.label + ' at ' + Math.round(low.score) + ' (' + vxVitalValue(low.value) + ')';
+          break;
+        }
+        case 'cash_vital': { const r = scoreCash(v('cash'), v('burn')); out.worked = vxInr(v('cash')) + ' ÷ ' + vxInr(v('burn')) + ' a month = ' + vxVitalValue(r.value) + ' → score ' + Math.round(r.score); break; }
+        case 'receivables_vital': { const r = scoreReceivables(v('recvTotal'), v('recv90')); const sh = v('recvTotal') > 0 ? Math.round(v('recv90') / v('recvTotal') * 1000) / 10 : 0; out.worked = vxInr(v('recv90')) + ' over 90 days ÷ ' + vxInr(v('recvTotal')) + ' = ' + sh + '% stale → 100 − (' + sh + ' ÷ 30) × 100 → score ' + Math.round(r.score); break; }
+        case 'payables_vital': { const r = scorePayables(v('paySoon'), v('cash')); const ra = v('cash') > 0 ? Math.round(v('paySoon') / v('cash') * 1000) / 10 + '%' : 'no cash'; out.worked = vxInr(v('paySoon')) + ' due ÷ ' + vxInr(v('cash')) + ' cash = ' + ra + ' → score ' + Math.round(r.score); break; }
+        case 'gst_vital': { const r = scoreGst(v('gstLeak'), v('gstPayable')); out.worked = vxInr(v('gstLeak')) + ' at risk ÷ ' + vxInr(v('gstPayable')) + ' payable → score ' + Math.round(r.score); break; }
+        case 'margin_vital': { const r = scoreMargin(v('netProfit'), v('revenue')); out.worked = vxInr(v('netProfit')) + ' ÷ ' + vxInr(v('revenue')) + ' = ' + r.value + ' → score ' + Math.round(r.score); break; }
+        case 'runway': {
+          const wc = v('cash') + v('recvTotal') - v('paySoon'), r = scoreRunway(v('cash'), v('recvTotal'), v('paySoon'), v('burn'));
+          out.worked = '(' + vxInr(v('cash')) + ' cash + ' + vxInr(v('recvTotal')) + ' owed to you − ' + vxInr(v('paySoon')) + ' due in 30 days) = ' + vxInr(wc) + ', ÷ ' + vxInr(v('burn')) + ' a month = ' + vxVitalValue(r.value) + ' → score ' + Math.round(r.score);
+          const gross = metricValue('grossRunway', s), net = metricValue('netRunway', s);
+          out.other_views = 'Cash alone ÷ spend = ' + (gross == null ? 'n/a' : months(gross)) + '; net runway (spend less revenue) = ' + (net == null ? 'not burning: revenue covers spend' : months(net));
+          break;
+        }
+        case 'cash': {
+          const t = typeof tallyLiquidLedgers === 'function' ? tallyLiquidLedgers() : null;
+          if(t && t.liquid.length){
+            out.ledgers_counted = t.liquid.slice().sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)).slice(0, 8).map(x => x.name + ' (' + x.parent + '): ' + vxInr(x.balance));
+            if(t.borrow.length) out.left_out_as_borrowing = t.borrow.slice(0, 5).map(x => x.name + ': ' + vxInr(x.balance) + ' owed');
+            if(t.inverted) out.sign_note = 'This Tally export shows bank balances with the opposite sign, so Margyn flipped them.';
+          }
+          out.result = vxInr(v('cash'));
+          break;
+        }
+        case 'burn': case 'revenue': case 'net_profit': case 'gross_margin': {
+          const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || []).filter(r => !r.provisional && !r.partial_start && Number(r.net_sales) > 0).slice(-6);
+          if(pnl.length) out.months_used = pnl.map(r => r.month + ': sales ' + vxInr(r.net_sales) + ', direct cost ' + vxInr(r.cogs_pre_stock) + ', gross ' + r.gross_margin_pct_pre_stock + '%, running cost ' + vxInr(r.opex) + ', profit ' + vxInr(r.net_profit_pre_stock) + (r.costs_incomplete ? ' (costs not fully booked: left out of the average)' : ''));
+          else out.months_used = 'Margin data is still loading or Tally isn’t connected; the figure on the reading is used.';
+          if(key !== 'gross_margin') out.result = vxInr(v(key === 'net_profit' ? 'netProfit' : key));
+          break;
+        }
+        case 'gst_payable': { out.result = vxInr(v('gstPayable')); const g = (typeof mgMar !== 'undefined' && mgMar && mgMar.gst_estimate) || []; if(g.length) out.months = g.slice(-3).map(x => x.month + ': ' + vxInr(x.net_payable_estimate)); break; }
+        case 'receivables': case 'payables': {
+          const dir = key === 'receivables' ? 'recv' : 'pay', groups = mgMoneyGroups(dir);
+          const per = {}; groups.forEach(g => g.sources.forEach(src => { per[src] = (per[src] || 0) + g.by[src].amount; }));
+          out.result = vxInr(groups.reduce((t, g) => t + g.amount, 0)) + ' across ' + groups.length + (dir === 'recv' ? ' customers' : ' vendors');
+          out.each_source_own_total = Object.fromEntries(Object.entries(per).map(([k, x]) => [(MG_SRC_LABEL[k] || k), vxInr(x)]));
+          out.parties = { in_one_source:groups.filter(g => g.status === 'single').length, sources_agree:groups.filter(g => g.status === 'agree').length, sources_disagree:groups.filter(g => g.status === 'conflict').length };
+          if(dir === 'recv') out.ageing = vxMoneySummary('recv').ageing;
+          const note = typeof mgPosNote === 'function' ? mgPosNote(dir) : ''; if(note) out.coverage_note = note;
+          break;
+        }
+        case 'forecast': {
+          const f = mgForecast(); if(!f) break;
+          out.worked = { starting_cash:vxInr(f.opening), lowest:vxInr(f.min) + ' in week ' + (f.minWeek + 1), week_13:vxInr(f.close[12]), floor:vxInr(f.floor), first_week_below_floor:f.firstBelow >= 0 ? f.firstBelow + 1 : 'none', left_out_as_doubtful:vxInr(f.doubtful), due_after_13_weeks:vxInr(f.beyond) };
+          out.assumptions_in_use = { collection_delay_days:f.st.collectDelay, doubtful_after_days:f.st.doubtfulAfter, new_sales_monthly:vxInr(f.st.salesMonthly) + ' from week ' + f.st.salesStart, spend_not_in_bills_monthly:vxInr(f.st.fixedMonthly), new_bills_monthly:vxInr(f.st.billsMonthly) + ' from week ' + f.st.billsStart, gst_monthly:vxInr(f.st.gstMonthly) };
+          break;
+        }
+        case 'dso': ['dso', 'dpo', 'ccc'].forEach(m => { const x = metricValue(m, s); out[m] = x == null ? 'n/a' : Math.round(x) + ' days'; }); break;
+        case 'working_capital': ['workingCapital', 'quickRatio', 'cashCover'].forEach(m => { const x = metricValue(m, s); out[m] = x == null ? 'n/a' : (METRICS[m].unit === 'inr' ? vxInr(x) : (Math.round(x * 100) / 100) + '×'); }); break;
+        case 'capital_readiness': { const c = computeFinancingEligibility(); out.worked = c ? vxInr(v('revenue')) + ' a month × ' + (s.pulse_score >= 70 ? 3 : s.pulse_score >= 40 ? 2 : 1) + ' (Pulse Score ' + s.pulse_score + ') → ' + vxInr(c.low) + ' to ' + vxInr(c.high) : 'Needs a reading with monthly revenue.'; break; }
+        case 'payments': ['payGross', 'payNet', 'mdrPct', 'failRate', 'settleLag'].forEach(m => { const x = metricValue(m, s); if(x != null) out[METRICS[m].label] = METRICS[m].unit === 'inr' ? vxInr(x) : METRICS[m].unit === 'pct' ? (Math.round(x * 10) / 10) + '%' : Math.round(x * 10) / 10 + ' ' + METRICS[m].unit; }); break;
+        case 'recovered': out.result = vxCompact(vxChannelSummary(), 900); break;
+        case 'cfo_pack': out.month = vxPackSummary(); break;
+      }
+    } catch(err){ console.error('[voice] explain ' + key, err); }
+    if(stored && w) out.in_pulse_score = 'This vital scores ' + Math.round(stored.score) + ' and carries ' + Math.round(w * 100) + '% of the Pulse Score, so it adds ' + (Math.round(stored.score * w * 10) / 10) + ' points.';
+    return out;
+  },
+
+  how_margyn_works({ topic }){
+    const F = typeof MG_FORMULAS !== 'undefined' ? MG_FORMULAS : null;
+    if(!F) return { error:'Not loaded yet.' };
+    const h = F.howTopic(topic);
+    return { topic:h.topic, answer:h.text, other_topics:Object.keys(F.HOW).filter(k => k !== h.topic) };
+  },
+
+  /* Press a button, tab or link the user can see, by its words: "click Save as
+     PDF", "open the Tally tab", "show more". Anything that changes data or
+     sends something is refused here and goes through propose_change /
+     save_form and the confirm card, as always. */
+  press({ label }){
+    const want = String(label || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if(!want) return { pressed:false, error:'Say which button.' };
+    const text = el => (el.getAttribute('aria-label') || el.textContent || el.title || '').replace(/\s+/g, ' ').trim();
+    const scopes = [document.querySelector('.mg-dialog-scrim'), typeof mgDrawerEl !== 'undefined' ? mgDrawerEl : null,
+      document.getElementById('view-' + mgCurrentView) || document.querySelector('.view:not(.hidden)'), document.querySelector('.app-body')].filter(Boolean);
+    let hit = null;
+    for(const sc of scopes){
+      const els = [...sc.querySelectorAll('button, [role="button"], [role="tab"], a[href], summary, .mg-seg button, [data-go-page]')]
+        .filter(el => el.offsetParent && !el.disabled && !el.closest('#mgRail') && text(el));
+      hit = els.find(el => text(el).toLowerCase() === want) || els.find(el => text(el).toLowerCase().startsWith(want)) || els.find(el => text(el).toLowerCase().includes(want));
+      if(hit) break;
+    }
+    if(!hit) return { pressed:false, note:'No button called "' + label + '" on screen.', buttons_on_screen:vxButtons() };
+    const name = text(hit);
+    if(!VX_PRESS_OK.test(name) && VX_PRESS_NO.test(name)) return { pressed:false, refused:name, reason:'That one changes data or sends something. Prepare it with propose_change (or save_form for an open form) so they confirm on the card, or ask them to tap it.' };
+    vxDrive(() => hit.click());
+    vxSpot(hit); vxActivity('Pressed ' + name.slice(0, 40));
+    return { pressed:name.slice(0, 60), now_on:vxLabel(mgCurrentView), note:/print|pdf/i.test(name) ? 'The browser’s print window is open. They pick "Save as PDF" as the printer and press Save there; that window is the browser’s, so you can’t press it for them.' : null };
   },
 
   end_conversation(){ vxEndAfterSpeech(); return { ok:true }; }

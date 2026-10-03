@@ -129,6 +129,9 @@ function mgrStepLabel(name, a){
     case 'navigate': return 'Opening ' + (typeof vxLabel === 'function' ? vxLabel(a.page) : a.page);
     case 'search_app': return 'Searching for “' + String(a.query || '').slice(0, 40) + '”';
     case 'get_screen': return 'Looking at your screen';
+    case 'explain': return 'Working out how ' + String(a.figure || 'that').slice(0, 30) + ' is calculated';
+    case 'how_margyn_works': return 'Checking how I work';
+    case 'press': return 'Pressing ' + String(a.label || 'the button').slice(0, 30);
     case 'get_overview': return 'Reading the headline numbers';
     case 'query_parties': return 'Checking ' + dir + (a.search ? ' matching “' + String(a.search).slice(0, 30) + '”' : '');
     case 'open_party': return 'Opening ' + String(a.name || 'the record').slice(0, 40);

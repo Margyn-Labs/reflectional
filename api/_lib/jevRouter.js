@@ -34,16 +34,18 @@ const jev = require('./jev');
 /* ---------- tool groups (by tool name; a tool may sit in two groups) ---------- */
 const GROUPS = {
   books: {
-    q: 'Answering it needs figures or records from the business\'s accounts: sales, purchases, profit, costs, expenses, a customer or vendor, products or stock, who owes money or is owed, cash, bank, loans, GST or tax, health score.',
+    q: 'Answering it needs figures or records from the business\'s accounts, or how a figure is calculated: sales, purchases, profit, costs, expenses, a customer or vendor, products or stock, who owes money or is owed, cash, bank, loans, GST or tax, health score, a formula or where a number comes from.',
     tools: ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'what_needs_attention',
       // panel: live figures the app has loaded; WhatsApp: its own read tools
       'get_overview', 'query_parties', 'get_cash', 'get_gst', 'get_margin',
-      'get_vitals', 'list_receivables', 'list_payables', 'get_tally_data', 'get_findings', 'get_invoice_status']
+      'get_vitals', 'list_receivables', 'list_payables', 'get_tally_data', 'get_findings', 'get_invoice_status',
+      // how a figure is worked out, and how Margyn works (2026-10-03)
+      'explain', 'how_margyn_works', 'how_its_calculated']
   },
   screen: {
     surfaces: ['panel'],
     q: 'They want something in the app opened, shown, scrolled, filtered, closed or refreshed, a source synced or checked, or they point at what is on screen ("this", "here").',
-    tools: ['navigate', 'search_app', 'get_screen', 'open_party', 'filter_list', 'get_inbox', 'get_sources', 'sync_source', 'scroll', 'close']
+    tools: ['navigate', 'search_app', 'get_screen', 'open_party', 'filter_list', 'get_inbox', 'get_sources', 'sync_source', 'scroll', 'close', 'press']
   },
   show: {
     surfaces: ['panel'],
@@ -80,8 +82,8 @@ function surfaceOf(s) { return s === 'panel' || s === 'whatsapp' ? s : 'chat'; }
 /* ---------- free rules first: keywords that put a group in for sure ---------- */
 const MONTHS = 'jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t|tember)?|oct(ober)?|nov(ember)?|dec(ember)?';
 const RULES = {
-  books: new RegExp('\\b(sales?|sold|bikri|becha|revenue|turnover|profit|loss|munafa|margin|costs?|expenses?|kharch\\w*|purchases?|kharid\\w*|owe[sd]?|owing|dues?|overdue|outstanding|udh?aa?r|baa?ki|lena|dena|receivables?|payables?|debtors?|creditors?|cash|bank|balance|loans?|overdraft|od|interest|byaj|gst|tax|tds|itc|invoices?|bills?|customers?|clients?|vendors?|suppliers?|party|parties|items?|products?|stock|inventory|salary|salaries|rent|freight|commission|runway|burn|score|pulse|vitals?|health|risks?|worr\\w*|problems?|issues?|attention|flag\\w*|explain|numbers?|figures?|doing|kaisa|kaisi|kaise|haal|ledgers?|entries|vouchers?|tally|zoho|month|year|quarter|week|today|yesterday|' + MONTHS + '|kitna|kitne|kitni|how much|how many|total|top|biggest|largest|highest|lowest|best|worst|NUM|PARTY)\\b', 'i'),
-  screen: /\b(open|kholo|khol|go to|goto|take me|jao|show|dikhao|dikha|dekh\w*|close|band|hatao|scroll|filter|this|here|yeh|ye|screen|page|tab|sync|refresh|connected|connector|sources?)\b/i,
+  books: new RegExp('\\b(sales?|sold|bikri|becha|revenue|turnover|profit|loss|munafa|margin|costs?|expenses?|kharch\\w*|purchases?|kharid\\w*|owe[sd]?|owing|dues?|overdue|outstanding|udh?aa?r|baa?ki|lena|dena|receivables?|payables?|debtors?|creditors?|cash|bank|balance|loans?|overdraft|od|interest|byaj|gst|tax|tds|itc|invoices?|bills?|customers?|clients?|vendors?|suppliers?|party|parties|items?|products?|stock|inventory|salary|salaries|rent|freight|commission|runway|burn|score|pulse|vitals?|health|risks?|worr\\w*|problems?|issues?|attention|flag\\w*|explain|numbers?|figures?|calculat\\w*|formula|logic|worked out|nikal\\w*|doing|kaisa|kaisi|kaise|haal|ledgers?|entries|vouchers?|tally|zoho|month|year|quarter|week|today|yesterday|' + MONTHS + '|kitna|kitne|kitni|how much|how many|total|top|biggest|largest|highest|lowest|best|worst|NUM|PARTY)\\b', 'i'),
+  screen: /\b(open|kholo|khol|go to|goto|take me|jao|show|dikhao|dikha|dekh\w*|close|band|hatao|scroll|filter|this|here|yeh|ye|screen|page|tab|sync|refresh|connected|connector|sources?|click|press|tap|button)\b/i,
   show: /\b(table|chart|graph|plot|summary|summari[sz]e|note|notes|write|likh\w*|workspace|breakdown)\b/i,
   change: /\b(mark(ed)?|approve|reject|dismiss|add|log|record|enter|create|make|raise|issue|send|bhej\w*|remind|chase|pause|resume|stop|start|cancel|delete|remove|update|change|edit|set|save|settle|write ?off|paid|received|clear|aa ?gaya|aaya|mil ?gaya|jama|kar ?do|karo|kardo|daal\w*|dalo|likh\w*|bana\w*|rok\w*|chalu)\b/i,
   chase: /\b(remind\w*|chase|chasing|follow ?up|collections?|collect|tagada|nudge|reminders?)\b/i,
