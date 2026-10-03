@@ -23,6 +23,7 @@ import topicsPkg from '../app/js/margyn-topics.js';
 import trackPkg from './_lib/track.js';
 import watchPkg from './_lib/margynWatch.js';
 import jevNavPkg from './_lib/jevNav.js';
+import jevRouterPkg from './_lib/jevRouter.js';
 import crypto from 'crypto';
 
 const { callClaude, effortFor, escalate, supportsEffort } = claudePkg;
@@ -151,20 +152,54 @@ export default async function handler(req, res) {
     balanced: { model: process.env.ASK_MARGYN_MODEL || 'claude-sonnet-5-5',               max_tokens: 1200, history: 8 },
     deep:     { model: process.env.ASK_MARGYN_MODEL_DEEP || 'claude-opus-5-5',                max_tokens: 2000, history: 12 }
   };
-  const depthKey = (typeof depth === 'string' && DEPTH_PRESETS[depth]) ? depth : 'balanced';
+  const askedDepth = (typeof depth === 'string' && DEPTH_PRESETS[depth]) ? depth : 'balanced';
+
+  // The front door (Jev, _lib/jevRouter.js; JEV_MODE_ROUTER, off by default).
+  // Live: a bare greeting gets a fixed reply, Claude gets only the tool groups
+  // this message needs, and Balanced may drop to Quick for a one-fact
+  // question. Shadow: Jev runs beside today's turn and is only logged. Any
+  // doubt or failure is today's turn. A paused panel turn keeps the pick it
+  // started with (it rides in the signed resume state as `rt`).
+  const surfaceKey = inPanel ? 'panel' : 'chat';
+  const rtIn = isResume && resume.rt && typeof resume.rt === 'object' ? resume.rt : null;   // checked with the signature below
+  const routerMode = isResume ? 'off' : jevRouterPkg.mode();
+  const routeP = routerMode === 'off' ? Promise.resolve(null)
+    : jevRouterPkg.route({ surface: surfaceKey, text: message, earlier: lastUserText(Array.isArray(history) ? history : []), userId: user.id, depth: askedDepth,
+      name: context && context.app && context.app.firstName }).catch((e) => { console.error('[jev-router] failed:', e.message); return null; });
+  const route = routerMode === 'live' ? await routeP : null;
+
+  const fullTools = inPanel ? [...agent.tools, ...APP_TOOLS] : agent.tools;
+  if (route && route.apply.reply) {
+    jevRouterPkg.logLine(route, { used: [], depthUsed: 'none', sent: 0, full: fullTools.length });
+    res.status(200).json({ reply: route.apply.reply, actionCard: null, steps: [], agentId: agent.id, agentName: agent.name, depth: askedDepth, model: 'none' });
+    return;
+  }
+  const rtGroups = rtIn && Array.isArray(rtIn.g) ? rtIn.g.filter(g => jevRouterPkg.GROUPS[g]) : null;
+  let appliedGroups = isResume ? rtGroups : (route && route.apply.groups) || null;
+  const depthKey = isResume ? (rtIn && DEPTH_PRESETS[rtIn.d] ? rtIn.d : askedDepth)
+    : (route && DEPTH_PRESETS[route.apply.depth] ? route.apply.depth : askedDepth);
   const preset = DEPTH_PRESETS[depthKey];
   const model = preset.model;
   console.log('[ask-margyn] depth:', depthKey, 'model:', model, inPanel ? 'panel' : '', isResume ? 'resume ' + resume.round : '');
 
-  const tools = inPanel ? [...agent.tools, ...APP_TOOLS] : agent.tools;
-  const toolNames = new Set(tools.map(t => t.name));
+  let tools = appliedGroups ? jevRouterPkg.selectTools(fullTools, appliedGroups, surfaceKey) : fullTools;
+  if (tools.length >= fullTools.length) appliedGroups = null;
+  let toolNames = new Set(tools.map(t => t.name));
+  const toolsUsed = [];
+  let routerRetry = false;
+  // One log line per request (labels only), and the pick for the next round of a paused turn.
+  const routeLog = async () => {
+    const r = isResume ? (rtIn && rtIn.p ? { mode: rtIn.m, surface: surfaceKey, pick: rtIn.p, jevMs: null } : null) : await routeP;
+    if (r) jevRouterPkg.logLine(r, { used: toolsUsed, depthUsed: depthKey, sent: tools.length, full: fullTools.length, retry: routerRetry, round: isResume ? resume.round : 0 });
+    return r ? { m: r.mode, p: jevRouterPkg.slimPick(r.pick), g: appliedGroups, d: depthKey } : null;
+  };
 
   let messages, round = 0;
   if (isResume) {
     // Picking a paused turn back up. The state went to the browser and came
     // back, so it is checked: signed by us for this user, well-formed, and
     // every result answers a tool call Margyn actually made.
-    const st = checkResumeState(resume, user.id, toolNames);
+    const st = checkResumeState(resume, user.id, new Set(fullTools.map(t => t.name)));
     if (!st.ok) {
       res.status(400).json({ error: st.error });
       return;
@@ -189,7 +224,8 @@ export default async function handler(req, res) {
   const system = buildSystemPrompt(context, agent, { inPanel });
   // Cache the tool list and the fixed instructions: they're the same on every
   // turn, and with the panel's screen tools they're most of the input.
-  const cachedTools = tools.map((t, i) => i === tools.length - 1 ? Object.assign({}, t, { cache_control: { type: 'ephemeral' } }) : t);
+  const withCache = (list) => list.map((t, i) => i === list.length - 1 ? Object.assign({}, t, { cache_control: { type: 'ephemeral' } }) : t);
+  let cachedTools = withCache(tools);
 
   try {
     let actionCard = null;
@@ -201,6 +237,20 @@ export default async function handler(req, res) {
     const job = depthKey === 'deep' ? 'judge' : 'narrate';
     let effort = effortFor(job);
     const baseLength = messages.length;
+    // Pass 2 only when the front door trimmed the tools and the answer came
+    // back empty or "I can't see that": the same turn again with every tool.
+    for (let pass = 0; pass < 2; pass++) {
+    if (pass === 1) {
+      if (!appliedGroups || actionCard || (finalText && !looksUnanswered(finalText))) break;
+      console.log('[ask-margyn] front door trimmed too much, retrying with every tool');
+      routerRetry = true;
+      appliedGroups = null;
+      tools = fullTools; toolNames = new Set(tools.map(t => t.name)); cachedTools = withCache(tools);
+      effort = effortFor(job);
+      messages.length = baseLength;
+      steps.length = 0;
+      finalText = '';
+    }
     for (let attempt = 0; attempt < 2 && !finalText && !actionCard; attempt++) {
     if (attempt === 1) {
       const up = supportsEffort(model) ? escalate(effort) : null;
@@ -236,6 +286,7 @@ export default async function handler(req, res) {
       const blocks = Array.isArray(data.content) ? data.content : [];
       const toolUses = blocks.filter(b => b.type === 'tool_use');
       const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      toolUses.forEach(t => toolsUsed.push(t.name));
 
       const proposal = toolUses.find(t => isProposeAction(t.name));
       if (proposal) {
@@ -281,6 +332,8 @@ export default async function handler(req, res) {
             break;
           }
           const state = { messages, serverResults, round: round + 1 };
+          const rt = await routeLog();
+          if (rt) state.rt = rt;
           res.status(200).json({
             clientCalls: clientCalls.map(t => ({ id: t.id, name: t.name, input: t.input || {} })),
             interim: textOut || '',
@@ -299,6 +352,8 @@ export default async function handler(req, res) {
       break;
     }
     }
+    }
+    await routeLog();
 
     // The question index (Conversations) and the ops counters: topic and whether it was answered, never the words.
     const asked = isResume ? lastUserText(messages) : message;
@@ -336,7 +391,8 @@ function resumeSecret() {
 }
 function signState(state, userId) {
   return crypto.createHmac('sha256', resumeSecret())
-    .update(userId + '|' + state.round + '|' + JSON.stringify(state.messages) + '|' + JSON.stringify(state.serverResults || []))
+    .update(userId + '|' + state.round + '|' + JSON.stringify(state.messages) + '|' + JSON.stringify(state.serverResults || [])
+      + (state.rt ? '|' + JSON.stringify(state.rt) : ''))
     .digest('hex');
 }
 function lastUserText(msgs) {
@@ -414,7 +470,7 @@ function checkResumeState(resume, userId, toolNames) {
   if (JSON.stringify(st.messages).length > 200000) return { ok: false, error: 'resume state too large' };
   const round = Number(st.round) || 0;
   if (round < 1 || round > MAX_CLIENT_ROUNDS) return { ok: false, error: 'bad resume round' };
-  const expect = signState({ messages: st.messages, serverResults: st.serverResults || [], round }, userId);
+  const expect = signState({ messages: st.messages, serverResults: st.serverResults || [], round, rt: st.rt || null }, userId);
   const sig = String(st.sig || '');
   if (sig.length !== expect.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return { ok: false, error: 'resume state not recognised' };
   const last = st.messages[st.messages.length - 1];
