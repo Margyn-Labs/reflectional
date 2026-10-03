@@ -65,11 +65,13 @@ function renderAnalyticsView(){
       const color = !used.has(M.color) ? M.color : ANALYTICS_COLORS.find(x => !used.has(x)) || M.color; used.add(color);
       return { type: stype, color, name: M.label, unit: M.unit, data: P.map(p => p.values[m] == null ? null : p.values[m]) };
     });
-    const labels = P.map(p => p.label + (MG_REPORTS.FLOW[metrics[0]] && p.in_progress ? ' (so far)' : MG_REPORTS.FLOW[metrics[0]] && p.costs_incomplete ? ' *' : ''));
+    // Missing running costs change spend, profit and margin, not revenue.
+    const costsMatter = metrics.some(m => m === 'spend' || m === 'netprofit' || m === 'margin');
+    const labels = P.map(p => p.label + (MG_REPORTS.FLOW[metrics[0]] && p.in_progress ? ' (so far)' : costsMatter && p.costs_incomplete ? ' *' : ''));
     const ch = MG_REPORTS.lastChange(P, metrics[0]);
     const groupLabel = (M0.group || 'Month').toLowerCase();
     const wide = metrics.length > 1;
-    const notes = [M0.note, P.some(p => p.costs_incomplete) && metrics.some(m => MG_REPORTS.FLOW[m]) ? '* Running costs look incomplete that month, so profit is overstated until they’re booked.' : ''].filter(Boolean).join(' ');
+    const notes = [M0.note, P.some(p => p.costs_incomplete) && costsMatter ? '* Running costs look incomplete that month, so profit is overstated until they’re booked.' : ''].filter(Boolean).join(' ');
     if(P.length < 2) return '<div class="ch-tile' + (wide ? ' wide' : '') + '"><div class="ch-h"><div><div class="t">' + escapeHtml(c.name) + '</div></div><button class="ch-menu" data-del="' + c.id + '" title="Remove chart">&times;</button></div><div class="ledger-empty">Not enough periods in this range yet.</div></div>';
     return '<div class="ch-tile' + (wide ? ' wide' : '') + '" data-margyn-topic="' + escapeHtml(c.name) + '">' +
       '<div class="ch-h"><div><div class="t">' + escapeHtml(c.name) + '</div>' +
