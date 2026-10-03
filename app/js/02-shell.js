@@ -356,6 +356,8 @@ async function refreshAll(){
   await loadShopifyStatus();
   await loadTallyStatus();
   tallyData = await loadTallyData();
+  // The books' analytics (19i-margin.js) carry day-by-day cash: saved readings take it when it arrives.
+  if(typeof tallyConnected !== 'undefined' && tallyConnected && typeof mgLoadMargin === 'function' && !mgMar) mgLoadMargin();
   // The reconciled receivables / payables position, computed on the server
   // over every open row (19-pages.js). Falls back to the local model if slow.
   if(typeof mgLoadPosition === 'function') await mgLoadPosition();

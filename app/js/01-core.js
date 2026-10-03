@@ -55,6 +55,8 @@ function fmtINR(n, mode){
   return (v < 0 ? '-' : '') + '₹' + a.toLocaleString('en-IN');
 }
 function inr(n){ return fmtINR(n); }
+/* Tally names can carry a line break inside them ("GLENMARK&#13;&#10;PHARMA" or a real CR/LF): one clean line. */
+function mgCleanName(n){ return String(n == null ? '' : n).replace(/(&#13;|&#10;|&#x0?[dD];|&#x0?[aA];|[\r\n\t])+/g, ' ').replace(/\s{2,}/g, ' ').trim(); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
 // India time, whatever the computer's clock is set to. These used to add 5h30 by hand on top of the browser's
 // own India time, so every time in the app read 5h30 late (a 6:58 pm sync showed as 12:28 am the next day).
@@ -234,7 +236,9 @@ async function loadSnapshots(){
   if(from) q = q.gte('created_at', from);
   const { data, error } = await q.order('created_at', { ascending:false }).limit(50);
   if(error){ console.error('[margyn] loadSnapshots:', error); return []; }
-  return data || [];
+  const list = data || [];
+  if(typeof mgApplyCashHistory === 'function') mgApplyCashHistory(list);   // 19i-margin.js: cash from the books' day-by-day history
+  return list;
 }
 document.getElementById('onboardForm').addEventListener('submit', async (e) => {
   e.preventDefault();

@@ -132,7 +132,7 @@ check('duplicate installs do not double the books', twice.period.gross_sales ===
 const noBal = ledgers.map((l) => ['Stock-in-hand', 'HDFC Bank', 'Acme Retail', 'Beta Stores', 'Output CGST', 'Input CGST'].includes(l.name) ? Object.assign({}, l, { closing_balance: null, opening_balance: l.name === 'HDFC Bank' ? -100000 : l.opening_balance }) : l);
 const nb = computeAnalytics({ ledgers: noBal, vouchers, bills, now });
 check('stock with no returned balance is unavailable, not zero', nb.stock.available === false && nb.stock.reason === 'balance_not_returned' && nb.period.gross_profit_after_stock === null, nb.stock);
-check('missing balance-sheet balances are counted and said', nb.quality.balance_sheet_balances.missing >= 5 && nb.quality.reasons.some((r) => /no balance for/.test(r)), nb.quality.balance_sheet_balances);
+check('missing balance-sheet balances are counted and said', nb.quality.balance_sheet_balances.missing >= 5 && nb.quality.internal.some((r) => /no balance for/.test(r)) && !nb.quality.reasons.some((r) => /no balance for/.test(r)), nb.quality.balance_sheet_balances);
 check('cash is derived from opening + vouchers when Tally gave no closing', nb.cash && nb.cash.derived_from_vouchers === 1 && nb.cash.total === 47300, nb.cash);   // debit opening 1,00,000 (negative = debit here) less 52,700 paid out
 const noBoth = computeAnalytics({ ledgers: ledgers.map((l) => l.name === 'HDFC Bank' ? Object.assign({}, l, { closing_balance: null }) : l), vouchers, bills, now });
 check('no closing and no opening: cash is unavailable, never a made-up number', noBoth.cash === null && noBoth.working_capital.cash === null, noBoth.cash);

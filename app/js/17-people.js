@@ -410,6 +410,15 @@ async function renderAgentRoster(){
   await loadAgentData();
   const wa = agentDeployments['whatsapp_bell'];
   const waStatus = (wa && wa.status) || 'not_deployed';
+  // The truth about what reaches WhatsApp comes from Channel health (19h-channels.js), not from "deployed".
+  if(typeof mgLoadChannels === 'function' && typeof mgChan !== 'undefined' && !mgChan) await mgLoadChannels();
+  const bellsLive = typeof mgBellsLive === 'function' ? mgBellsLive() : null;
+  const wch = typeof mgWatchChannel === 'function' ? mgWatchChannel() : null;
+  const watchLine = wch ? wch.detail : '';
+  const watchBadge = !wch ? '<span class="agent-badge notdeployed">…</span>'
+    : wch.headline === 'Off' ? '<span class="agent-badge notdeployed">Off</span>'
+    : wch.status === 'failing' ? '<span class="agent-badge paused">Not delivering</span>'
+    : '<span class="agent-badge active">' + (wch.status === 'working' ? 'Delivering' : 'On') + '</span>';
 
   let actions;
   if(waStatus === 'active'){
@@ -442,9 +451,20 @@ async function renderAgentRoster(){
           '<h3>WhatsApp Bell</h3>' +
           '<div class="agent-desc">Pushes your Opening and Closing Bell briefing to WhatsApp, and lets you ask about your numbers by replying.</div>' +
         '</div>' +
-        agentBadge(waStatus) +
+        (bellsLive === false && waStatus === 'active' ? '<span class="agent-badge paused">Not sending</span>' : agentBadge(waStatus)) +
       '</div>' +
+      (bellsLive === false ? '<div class="agent-desc" style="margin-top:6px">Not live yet: WhatsApp hasn’t approved the Bell message, so nothing goes out. Margyn updates (below) is what reaches WhatsApp today.</div>' : '') +
       '<div class="agent-card-actions">' + actions + '</div>' +
+    '</div>' +
+    '<div class="agent-card">' +
+      '<div class="agent-card-head">' +
+        '<div style="flex:1; min-width:0;">' +
+          '<h3>Margyn updates</h3>' +
+          '<div class="agent-desc">Margyn watches your books and sends a short WhatsApp update when something needs you: a payment that’s late, GST due, costs not booked. ' + escapeHtml(watchLine) + '</div>' +
+        '</div>' +
+        watchBadge +
+      '</div>' +
+      '<div class="agent-card-actions"><button class="btn-ghost" type="button" data-go-page="history">Open in Conversations</button><span class="agent-configure-link" data-go-page="channels">Delivery</span></div>' +
     '</div>' +
     '<div class="agent-card">' +
       '<div class="agent-card-head">' +

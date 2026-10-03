@@ -121,15 +121,24 @@ function ltAvColor(name){ let h = 0; for(let i=0;i<(name||'').length;i++) h = (h
 function renderLedgerFacts(){
   const host = document.getElementById('ledgerFacts'); if(!host) return;
   host.className = 'rd-strip';
-  const { recvTotal } = ledgerAggregates();               // self-entered only, feeds the Pulse Score
-  const payTotal = payables.reduce((s,p) => s + Number(p.amount), 0);
+  // The same reconciled position the list below shows (every source, each party once). These tiles used to count
+  // hand-kept entries only, so ₹0 / ₹0 sat above 678 open Tally bills (2026-10-04).
+  let recvTotal, payTotal, overdue;
+  if(typeof mgMoneyGroups === 'function'){
+    const R = mgMoneyGroups('recv'), P = mgMoneyGroups('pay');
+    recvTotal = R.reduce((t, g) => t + g.amount, 0); payTotal = P.reduce((t, g) => t + g.amount, 0);
+    overdue = [...R, ...P].reduce((t, g) => t + ((g.by[g.primary] || {}).rows || []).filter(r => r.days !== null && r.days < 0).length, 0);
+  } else {
+    recvTotal = ledgerAggregates().recvTotal;
+    payTotal = payables.reduce((s,p) => s + Number(p.amount), 0);
+    overdue = [...receivables, ...payables].filter(r => { const d = daysFromToday(r.due_date); return d != null && d < 0; }).length;
+  }
   const net = recvTotal - payTotal;
-  const overdue = [...receivables, ...payables].filter(r => { const d = daysFromToday(r.due_date); return d != null && d < 0; }).length;
   host.innerHTML =
     '<div data-margyn-topic="Total receivable"><div class="l">Receivable</div><div class="v" style="color:var(--rose);">'+inr(recvTotal)+'</div></div>' +
     '<div data-margyn-topic="Total payable"><div class="l">Payable</div><div class="v" style="color:var(--text-1);">'+inr(payTotal)+'</div></div>' +
     '<div data-margyn-topic="Net position"><div class="l">Net position</div><div class="v" style="color:'+(net>=0?'var(--emerald-bright)':'var(--rose)')+';">'+(net>=0?'+':'')+inr(net)+'</div></div>' +
-    '<div><div class="l">Overdue count</div><div class="v">'+overdue+'</div></div>';
+    '<div><div class="l">Overdue bills</div><div class="v">'+overdue+'</div></div>';
 }
 function renderLedgerView(){
   renderLedgerFacts();

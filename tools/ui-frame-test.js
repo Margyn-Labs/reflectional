@@ -73,10 +73,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   // 3c. CFO pack: month, sections with scope lines, PDF window, delivery settings
   await p.click('.pagenav button[data-view="cfopack"]'); await p.waitForTimeout(500);
   ok(p.url().endsWith('#/cfo-pack') && JSON.stringify(await vis()) === '["view-cfopack"]', 'rail CFO pack -> #/cfo-pack');
-  ok((await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-08' && (await p.textContent('#mgPerVal')) === 'August 2026', 'defaults to the last full month (August 2026)');
+  // The last full month, in India, whenever this runs (it used to be hard-coded to August 2026).
+  const LM = await p.evaluate(() => mgMonthShift(mgMonthKey(new Date().toISOString()), -1)), LML = await p.evaluate(k => mgMonthLabel(k), LM);
+  ok((await p.inputValue('#view-cfopack [data-pk-month]')) === LM && (await p.textContent('#mgPerVal')) === LML, 'defaults to the last full month (' + LML + ')');
   ok((await p.$$('#view-cfopack .pk-sec')).length === 10, 'cover + 9 sections');
   const scopes = await p.$$eval('#view-cfopack .pk-scope', x => x.map(e => e.textContent));
-  ok(scopes.length === 9 && scopes.every(t => /Anvaya Home Goods · Reconciled/.test(t)) && scopes.slice(0, 8).every(t => /August 2026 · closing reading/.test(t)), 'every section carries its scope line and reading date');
+  ok(scopes.length === 9 && scopes.every(t => /Anvaya Home Goods · Reconciled/.test(t)) && scopes.slice(0, 8).every(t => t.includes(LML + ' · closing reading')), 'every section carries its scope line and reading date');
   // With Tally connected the P&L lines are the selected month's own figures from Tally, not the reading's average.
   ok(await p.evaluate(() => { const k = mgPackCurrent(), t = mgPackTallyPnl(k), pl = document.getElementById('pkPl').textContent;
     return !!t && pl.includes(mgPackN(t.revenue)) && document.querySelectorAll('#pkPl tbody tr').length === 4; }), 'P&L: the month’s revenue comes from Tally, 4 rows')

@@ -7,10 +7,14 @@
 
    Week 1 starts today. Closing cash for each week =
      opening cash (latest snapshot)
-   + open receivables, each on its due date + collection delay
-     (items overdue by more than the doubtful threshold are left out)
+   + open receivables, each on its due date + collection delay; ones already
+     overdue come in spread over weeks 1–4 (2026-10-04: they all landed in
+     week 3, so weeks 1–2 had no money in at all); items overdue by more than
+     the doubtful threshold are left out
    + new sales collected per month, from the week the customer sets
-   − open bills, each on its due date + payment delay (overdue: this week)
+   − open bills, each on its due date + payment delay; overdue ones spread
+     over weeks 1–4, and bills overdue by more than the doubtful threshold
+     are left out (a 431-day-old bill is in dispute, not due this week)
    − spend not in bills (salaries, rent...) per month, every week
    − new bills per month, from the week the customer sets
    − GST on the 20th of each month.
@@ -26,6 +30,7 @@
    ============================================================ */
 const MG_FC_WEEKS = 13;
 const MG_WEEKLY = 12 / 52;   // monthly amount -> per week
+const MG_FC_SPREAD = 4;      // overdue money in and out is spread over the first four weeks
 
 function mgFcData(){
   const s = (typeof snapshots !== 'undefined' && snapshots[0]) || null;
@@ -39,8 +44,11 @@ function mgFcData(){
   const revenue = Math.max(0, Number(s.revenue) || 0);
   const recvOpen = mgMoneyGroups('recv').reduce((t, g) => t + g.by[g.primary].rows.filter(r => !(r.days !== null && r.days < -90)).reduce((a, r) => a + r.amount, 0), 0);
   const cover = revenue > 0 ? recvOpen / (revenue * MG_WEEKLY) : 0;
+  // Opening cash: today's balance in the books when Tally is where cash comes from (19i-margin.js).
+  const prov = s.input_provenance && s.input_provenance.cash;
+  const live = prov && prov.source === 'tally' && typeof mgMar !== 'undefined' && mgMar && !mgMarCompany && mgMar.cash && mgMar.cash.total != null ? Number(mgMar.cash.total) : null;
   return {
-    cash:Number(s.cash) || 0, asOf:s.created_at,
+    cash:live != null && isFinite(live) ? live : (Number(s.cash) || 0), asOf:live != null ? (mgMar.as_of || s.created_at) : s.created_at,
     defaults:{
       enabled:true, collectDelay:15, doubtfulAfter:90, payDelay:0,
       // Week numbers are as people count them: week 1 is this week.
@@ -70,17 +78,21 @@ function mgForecast(){
   const d = mgFcData(); if(!d) return null;
   const st = mgFcSettings();
   const inflow = new Array(MG_FC_WEEKS).fill(0), outflow = new Array(MG_FC_WEEKS).fill(0);
-  let doubtful = 0, beyond = 0;
+  let doubtful = 0, beyond = 0, stale = 0, overdueIn = 0, overdueOut = 0;
   const weekOf = days => Math.floor(Math.max(0, days) / 7);
+  const spread = (arr, amt) => { for(let w = 0; w < MG_FC_SPREAD; w++) arr[w] += amt / MG_FC_SPREAD; };
   mgMoneyGroups('recv').forEach(g => g.by[g.primary].rows.forEach(r => {
     const due = r.days === null ? 0 : r.days;
     if(due < 0 && -due > st.doubtfulAfter){ doubtful += r.amount; return; }
-    const w = weekOf(Math.max(0, due) + st.collectDelay);
+    if(due < 0){ overdueIn += r.amount; spread(inflow, r.amount); return; }
+    const w = weekOf(due + st.collectDelay);
     if(w >= MG_FC_WEEKS){ beyond += r.amount; return; }
     inflow[w] += r.amount;
   }));
   mgMoneyGroups('pay').forEach(g => g.by[g.primary].rows.forEach(r => {
     const due = r.days === null ? 0 : r.days;
+    if(due < 0 && -due > st.doubtfulAfter){ stale += r.amount; return; }
+    if(due < 0){ overdueOut += r.amount; spread(outflow, r.amount); return; }
     const w = weekOf(due + st.payDelay);
     if(w < MG_FC_WEEKS) outflow[w] += r.amount;
   }));
@@ -98,7 +110,7 @@ function mgForecast(){
   for(let w = 0; w < MG_FC_WEEKS; w++){ c += inflow[w] - outflow[w]; close.push(c); }
   const min = Math.min(...close), minWeek = close.indexOf(min);
   const firstBelow = close.findIndex(v => v < st.floor);
-  return { opening:d.cash, close, inflow, outflow, min, minWeek, firstBelow, floor:st.floor, doubtful, beyond, st, origin:d.origin };
+  return { opening:d.cash, close, inflow, outflow, min, minWeek, firstBelow, floor:st.floor, doubtful, beyond, stale, overdueIn, overdueOut, st, origin:d.origin };
 }
 
 /* ---------- Home panel ---------- */
@@ -124,8 +136,11 @@ function mgForecastChart(f, wide){
 function mgForecastSentence(f){
   const st = f.st, bits = [];
   bits.push('customers pay ' + st.collectDelay + ' days after the due date');
+  if(f.overdueIn) bits.push(fmtINR(f.overdueIn, 'tile') + ' already overdue comes in over the next four weeks');
   if(f.doubtful) bits.push(fmtINR(f.doubtful, 'tile') + ' overdue more than ' + st.doubtfulAfter + ' days is left out');
   bits.push(st.payDelay ? 'bills are paid ' + st.payDelay + ' days after due' : 'bills are paid on their due date');
+  if(f.overdueOut) bits.push(fmtINR(f.overdueOut, 'tile') + ' of overdue bills is paid over the next four weeks');
+  if(f.stale) bits.push(fmtINR(f.stale, 'tile') + ' of bills overdue more than ' + st.doubtfulAfter + ' days is left out (check whether you still owe it)');
   if(st.salesMonthly) bits.push(fmtINR(st.salesMonthly, 'tile') + ' of new sales a month from week ' + st.salesStart);
   if(st.gstMonthly) bits.push('GST of ' + fmtINR(st.gstMonthly, 'tile') + ' on the 20th');
   return 'Assumes ' + bits.join(', ') + '.';

@@ -38,10 +38,11 @@ function mgMoneySources(dir){ const s = new Set(mgMoneyRows(dir).map(r => r.src)
 /* One row per counterparty. `amount` comes from the most trusted source that
    has the party (connector before manual); the other sources are compared
    against it, never added to it. Same 2% / ₹1 tolerance as crossLedgerGroups(). */
+function mgPartyName(n){ return typeof mgCleanName === 'function' ? mgCleanName(n) : n; }   // 01-core.js
 function mgMoneyGroupsLocal(dir){
   const map = new Map();
   mgMoneyRowsLocal(dir).forEach(r => {
-    if(!map.has(r.key)) map.set(r.key, { key:r.key, party:r.party, by:{} });
+    if(!map.has(r.key)) map.set(r.key, { key:r.key, party:mgPartyName(r.party), by:{} });
     const g = map.get(r.key);
     if(!g.by[r.src]) g.by[r.src] = { amount:0, rows:[] };
     g.by[r.src].amount += r.amount; g.by[r.src].rows.push(r);
@@ -125,10 +126,10 @@ function mgGroupsFromPos(dir, P){
     g.sources.forEach(src => {
       by[src] = { amount:g.by[src].amount, rows:(g.by[src].rows || []).map(r => {
         const raw = src === 'manual' && r.id != null ? own.get(String(r.id)) || null : null;
-        return { party:r.party || g.party, amount:r.amount, due:r.due, ref:r.ref, src, editable:!!raw, raw, key:g.key, days:r.days };
+        return { party:mgPartyName(r.party || g.party), amount:r.amount, due:r.due, ref:r.ref, src, editable:!!raw, raw, key:g.key, days:r.days };
       }) };
     });
-    return { key:g.key, party:g.party, by, sources:g.sources, primary:g.primary, status:g.status, amount:g.amount,
+    return { key:g.key, party:mgPartyName(g.party), by, sources:g.sources, primary:g.primary, status:g.status, amount:g.amount,
       diff:g.diff, oldestDays:g.oldest_days, invoices:g.open_items, overdue:g.overdue, due7:g.due_7d };
   });
 }
@@ -291,8 +292,15 @@ function mgRenderHome(){
   const s = (snapshots || [])[0] || null, p = (snapshots || [])[1] || null;
   const recv = mgMoneyGroups('recv'), pay = mgMoneyGroups('pay');
   const overdue = recv.reduce((t, g) => t + g.overdue, 0);
-  const due7 = pay.reduce((t, g) => t + g.due7, 0);
-  const nOver = recv.filter(g => g.overdue > 0).length, nDue = pay.filter(g => g.due7 > 0).length;
+  // Bills due in the next 7 days, and bills already overdue, apart: "due in 7 days ₹25.4 L" was bills 39–770 days late.
+  const payRows = pay.flatMap(g => (g.by[g.primary] || {}).rows || []);
+  const due7 = payRows.filter(r => r.days !== null && r.days >= 0 && r.days <= 7).reduce((t, r) => t + r.amount, 0);
+  const payLate = payRows.filter(r => r.days !== null && r.days < 0);
+  const payLateAmt = payLate.reduce((t, r) => t + r.amount, 0), payOldest = payLate.length ? -Math.min(...payLate.map(r => r.days)) : 0;
+  const nOver = recv.filter(g => g.overdue > 0).length, nDue = pay.filter(g => ((g.by[g.primary] || {}).rows || []).some(r => r.days !== null && r.days >= 0 && r.days <= 7)).length;
+  const billwise = typeof mgMar !== 'undefined' && mgMar && mgMar.working_capital ? mgMar.working_capital.suppliers_tracked_billwise : null;
+  const payNote = billwise === false ? 'Your suppliers aren’t kept bill by bill in Tally, so due dates are a guess'
+    : (payLateAmt > 0 ? fmtINR(payLateAmt, 'tile') + ' already overdue (oldest ' + payOldest + ' days)' : nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay');
   const live = mgLiveCount();
   const srcLine = 'Reconciled · ' + (live ? live + ' source' + (live === 1 ? '' : 's') + ' live' : 'self-entered');
   const runway = mgVital(s, 'Working Capital Runway'), runwayP = mgVital(p, 'Working Capital Runway');
@@ -302,7 +310,7 @@ function mgRenderHome(){
     mgTile({ need:'view_cash', label:'Runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less payables due, over monthly spend',
       delta:(rNow != null && rPrev != null) ? rNow - rPrev : null, deltaText:(rNow != null && rPrev != null) ? Math.abs(rNow - rPrev).toFixed(1) + ' months' : '', goodUp:true, src:srcLine, go:'pulse' }) +
     mgTile({ need:'view_receivables', label:'Receivables overdue', value:fmtINR(overdue, 'tile'), full:fmtINR(overdue), delta:null, note:nOver + ' customer' + (nOver === 1 ? '' : 's') + ' overdue', goodUp:false, src:srcLine, go:'receivables' }) +
-    mgTile({ need:'view_payables', label:'Payables due in 7 days', value:fmtINR(due7, 'tile'), full:fmtINR(due7) + ', including anything already overdue', delta:null, note:nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay', goodUp:false, src:srcLine, go:'payables' }) +
+    mgTile({ need:'view_payables', label:'Payables due in 7 days', value:fmtINR(due7, 'tile'), full:fmtINR(due7) + ' due in the next 7 days' + (payLateAmt > 0 ? '; ' + fmtINR(payLateAmt) + ' already overdue on top' : ''), delta:null, note:payNote, goodUp:false, src:srcLine, go:'payables' }) +
     (() => { const G = mgGstFig(s, 'gst_payable');
       return mgTile({ need:'view_gst', label:'GST payable this month', value:G.known ? fmtINR(G.v, 'tile') : 'n/a', full:G.known ? fmtINR(G.v) : '', delta:G.known && p && mgGstFig(p, 'gst_payable').known ? mgPct(G.v, Number(p.gst_payable)) : null, goodUp:false, src:G.src, go:'gst' }); })() +
     '</div>';
@@ -323,7 +331,8 @@ function mgRenderHome(){
   }
   const dec = mgDecisions(), dis = mgDisagreements();
   const listRows = (arr, cls) => arr.slice(0, 5).map(x => '<div class="mg-li"><div><div class="mg-li-t">' + escapeHtml(x.t) + '</div><div class="mg-li-s">' + escapeHtml(x.s) + '</div></div><div class="mg-li-a' + (cls ? ' ' + cls : '') + '">' + escapeHtml(fmtINR(x.amt)) + '</div></div>').join('');
-  const hist = (snapshots || []).slice(0, 13).slice().reverse();
+  const bookHist = typeof mgCashHistorySeries === 'function' ? mgCashHistorySeries(90) : null;
+  const hist = bookHist || (snapshots || []).slice(0, 13).slice().reverse();
   const brief = s && s.briefing;
   const fc = s && typeof mgForecastPanel === 'function' ? mgForecastPanel() : null;
   // Margyn's desk (25-margyn.js): greeted by name, Margyn's read of the
@@ -339,7 +348,7 @@ function mgRenderHome(){
     (desk ? mgrDeskTop() + '<div class="mgd-sec"><h2>Where things stand</h2><span>' + escapeHtml(mgAsOf ? mgAsOf() : '') + '</span></div>' : '') +
     tiles +
     '<div class="mg-row2">' +
-      (typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
+      (typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (bookHist ? 'Last 90 days, from your books' : hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
         (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>')) +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Pulse Score</h2><span class="mg-aside">Operating health, not a credit score</span></div><div class="mg-panel-b">' + pulse + '</div></div>' +
     '</div>' +

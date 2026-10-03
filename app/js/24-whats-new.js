@@ -16,6 +16,21 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-figures-from-the-books', date:'4 Oct 2026', title:'Every figure now agrees with your books',
+    items:[
+      { t:'Cash history from your books', what:'Cash, its change and the cash chart now come from your books day by day, so an old reading can’t make cash look like it jumped or fell. Runway and the Pulse Score follow.',
+        how:'Home and Cash: the cash chart shows the last 90 days.', act:'cash' },
+      { t:'A forecast that spreads what’s overdue', what:'Money customers already owe comes in over the next four weeks instead of all at once in week 3, and very old supplier bills that are likely disputed are left out (the forecast says how much).',
+        how:'Cash → 13-week forecast. Change the assumptions there.', act:'cash' },
+      { t:'Reports month by month from the books', what:'Revenue, spend and profit are each month’s own figures; cash is the balance at the end of each period. A month still in progress is marked and has no margin %.',
+        how:'Reports.', act:'analytics' },
+      { t:'CFO pack opens on the last full month', what:'The pack now covers every month in your books, and opens on last month instead of a month only a few days old.',
+        how:'CFO pack → Month.', act:'cfopack' },
+      { t:'Honest WhatsApp status', what:'Automations and Home now show whether each WhatsApp message is really going out. Margyn updates are listed with what WhatsApp delivered.',
+        how:'Automations, or Admin → Channel health.', act:'agents' }
+    ]
+  },
+  {
     id:'2026-10-04-books-as-of-today', date:'4 Oct 2026', title:'Cash as of today, not as of March',
     items:[
       { t:'Entries made ahead don’t count yet', what:'If your accountant enters EMIs or post-dated payments in Tally ahead of time, Tally takes them out of your bank balance straight away. Margyn now shows your cash, loans and costs as of today, and lists what’s already entered for later dates.',
