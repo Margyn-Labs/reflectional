@@ -62,12 +62,15 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').tr
  * Only for sentences Margyn writes; tables and lookups keep Tally's exact name.
  */
 function niceName(s) {
-  let t = String(s || '').replace(/\s+/g, ' ').trim();
+  // Tally names can carry a line break inside them, which arrives as "&#13;&#10;" or a real CR/LF.
+  let t = String(s || '').replace(/&#(1[03]|x0?[ad]);/gi, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return t;
   t = t.replace(/[\s,.]+((pvt|private)\.?\s*)?(ltd|limited|llp)\.?(?=\s|$)/i, '').trim();
   if (t === t.toUpperCase() && /[A-Z]{3}/.test(t)) {
     t = t.toLowerCase().replace(/(^|[\s(/&-])([a-z])/g, (m, a, b) => a + b.toUpperCase())
-      .replace(/\b(Llp|Pvt|Gst|Hdfc|Icici|Sbi|Idfc|Ipca|Usv|Mp|Up)\b/g, (w) => w.toUpperCase());
+      .replace(/\b(Llp|Pvt|Gst|Hdfc|Icici|Sbi|Idfc|Ipca|Usv|Mp|Up)\b/g, (w) => w.toUpperCase())
+      .replace(/\b([a-z])(?=\.)/gi, (c) => c.toUpperCase())    // M.p. -> M.P.
+      .replace(/\b((?:[A-Z]\.)+)([a-z])\b/g, (m, a, c) => a + c.toUpperCase());   // S.S.d -> S.S.D
   }
   return t;
 }
@@ -901,7 +904,8 @@ function insights(ctx) {
   const slipping = recvBills.filter((b) => b.late > 0 && b.late <= 30).reduce((s, b) => s + b.amount, 0);
   const lateParties = lateRanking(recvBills, recentPay);
   if (late30 >= M) {
-    const first = lateParties.find((g) => !g.paidRecently) || lateParties[0];
+    // Who to call first: late but not hopeless. A bill over a year old is old debt (its own point), not a phone call.
+    const first = lateParties.find((g) => !g.paidRecently && g.oldest.late <= 365) || lateParties.find((g) => g.oldest.late <= 365);
     push({ key: 'overdue_total', kind: 'overdue_total', severity: pctOf(late30, recvTotal) > 25 ? 'high' : 'medium', impact: late30,
       title: `${inr(late30)} of the ${inr(recvTotal)} customers owe you is more than a month late.`,
       detail: (slipping >= M ? `Another ${inr(slipping)} went past due in the last 30 days; a reminder usually does it. ` : '') +
