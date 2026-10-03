@@ -200,6 +200,35 @@ async function mgrRunCalls(calls, stepsEl){
   }
   return results;
 }
+/* The navigator shortcut. A short "go somewhere" message ("open cash", "GST kholo",
+   "take me to vendors") is answered here, with no Claude call, when Jev is sure it's
+   a place and sure it's not a question (JEV_MODE_NAV_PANEL=live). In shadow mode
+   Claude answers as always and Jev's pick is only logged beside what Claude did.
+   "Show me" is left to Claude on purpose: it draws a view in the workspace
+   without leaving the page, which a page jump would break. */
+function mgrNavCommand(text){
+  const t = String(text || '').trim();
+  if(!t || t.split(/\s+/).length > 8) return false;
+  if(/\?|\b(why|how|what|when|which|who|kyun|kyon|kaise|kitna|kitni|kab|kya|kaun|tell|explain|batao|bata|compare|and|aur|then|mark|pause|stop|send|chase|delete|approve)\b/i.test(t)) return false;
+  return /^(please\s+)?(open|go\s+to|go|take\s+me(\s+to)?|jump\s+to|switch\s+to|navigate\s+to|bring\s+up)\b/i.test(t) ||
+    /\b(kholo|khol\s+do|kholna|kholiye|pe\s+jao|par\s+jao|pe\s+le\s+chalo|par\s+le\s+chalo|le\s+chalo|chalo)\s*[.!]*$/i.test(t);
+}
+async function mgrNavLocal(text, t){
+  const sugg = mgrEl('mgrSugg'); if(sugg) sugg.innerHTML = '';
+  mgrLine('user', text);
+  mgrRemember('user', text);
+  if(typeof vxUtterances !== 'undefined') vxUtterances.push({ at:Date.now(), text });
+  const tk = mgrThreadKey();
+  saveChatMessage(tk, mgrFocus, 'user', text, 'margyn');
+  try { t.run(); } catch(e){ console.error('[margyn] nav ' + t.label, e); }
+  const row = mgrHtmlLine('');
+  const body = document.createElement('div'); body.className = 'mgr-text';
+  row.querySelector('.mgr-b').appendChild(body);
+  await mgrType(body, t.say);
+  mgrRemember('assistant', t.say);
+  saveChatMessage(tk, mgrFocus, 'assistant', t.say, 'margyn');
+  mgrScroll();
+}
 /* Ask Margyn something from the panel (typed, a suggestion, a nudge button,
    or anywhere else in the app that hands over a question). */
 async function mgrAsk(text, opts){
@@ -209,6 +238,15 @@ async function mgrAsk(text, opts){
   if(typeof vxActive !== 'undefined' && vxActive){ vxSendText(text); return; }   // on a call: the call answers
   if(mgrBusy){ toast('Margyn is still answering', { sub:'Give it a second' }); return; }
   if(opts.focus) mgrFocus = opts.focus;
+  const navCmd = typeof mgNavModes === 'function' && mgrNavCommand(text);
+  const navMode = navCmd ? (await mgNavModes()).panel : 'off';
+  if(navMode === 'live'){
+    mgrBusy = true; mgrSetBusy(true);
+    let t = null;
+    try { const r = await mgNavPick(text, 'panel'); t = r && r.go ? mgNavTarget(r.go) : null; }
+    finally { mgrBusy = false; mgrSetBusy(false); }
+    if(t) return mgrNavLocal(text, t);
+  }
   mgrBusy = true; mgrSetBusy(true);
   const sugg = mgrEl('mgrSugg'); if(sugg) sugg.innerHTML = '';
   mgrLine('user', text);
@@ -223,7 +261,10 @@ async function mgrAsk(text, opts){
   let data;
   try {
     data = await mgrPost({ message:text, history, context:mgrContext(mgrFocus), depth, surface:'panel' });
+    let claudeNav = 'none';
     for(let n = 0; data && data.clientCalls && n < 5; n++){
+      const nc = data.clientCalls.find(c => c.input && ((c.name === 'navigate' && c.input.page) || (c.name === 'show_view' && c.input.view)));
+      if(nc && claudeNav === 'none') claudeNav = nc.name + ':' + (nc.input.page || nc.input.view);
       for(const s of (data.steps || [])) await mgrStep(stepsEl, s);
       if(data.interim) await mgrStep(stepsEl, data.interim.slice(0, 160));
       const results = await mgrRunCalls(data.clientCalls, stepsEl);
@@ -243,6 +284,8 @@ async function mgrAsk(text, opts){
     saveChatMessage(tk, mgrFocus, 'assistant', reply, 'margyn');
     if(data && data.actionCard && data.actionCard.type) mgrShowChange(data.actionCard, text);
     if(typeof mtrack === 'function') mtrack('ask_message_sent', { msg_len:text.length, surface:'panel' });
+    // Shadow: log Jev's pick next to what Claude did (server logs, no text kept).
+    if(navMode === 'shadow') mgNavPick(text, 'panel', claudeNav.replace(/[^a-z_:]/g, '').slice(0, 41));
   } catch(err){
     const d = row.querySelector('.mgr-dots'); if(d) d.remove();
     row.classList.remove('working');

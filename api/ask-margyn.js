@@ -22,6 +22,7 @@ import booksTools from './_lib/booksTools.js';
 import topicsPkg from '../app/js/margyn-topics.js';
 import trackPkg from './_lib/track.js';
 import watchPkg from './_lib/margynWatch.js';
+import jevNavPkg from './_lib/jevNav.js';
 import crypto from 'crypto';
 
 const { callClaude, effortFor, escalate, supportsEffort } = claudePkg;
@@ -61,7 +62,7 @@ async function overDailyCap(userId, authId) {
 
 export default async function handler(req, res) {
   // Everything here is a POST, except reading Margyn Watch's status for the Conversations hub.
-  const isWatchRead = req.method === 'GET' && req.query && req.query.action === 'watch';
+  const isWatchRead = req.method === 'GET' && req.query && (req.query.action === 'watch' || req.query.action === 'nav');
   if (req.method !== 'POST' && !isWatchRead) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -106,6 +107,8 @@ export default async function handler(req, res) {
   if (voiceAction === 'books') return handleBooks(req, res, user);
   // Margyn Watch from the Conversations hub: what Margyn noticed, and the owner's WhatsApp choices.
   if (voiceAction === 'watch') return handleWatch(req, res, user);
+  // The navigator: typed words -> a page, by Jev, no Claude call (⌘K and the panel).
+  if (voiceAction === 'nav') return handleNav(req, res, user);
 
   const { message, history, context, depth, surface, resume } = req.body || {};
   const agent = getAgent();
@@ -347,6 +350,33 @@ async function handleBooks(req, res, user) {
   if (typeof tool !== 'string' || !booksTools.has(tool)) { res.status(400).json({ error: 'unknown tool' }); return; }
   const out = await booksTools.exec(tool, input && typeof input === 'object' ? input : {}, user.id, user.member ? user.member.permissions : null);
   res.status(200).json(out);
+}
+// GET ?action=nav: { nav, panel } modes. POST { q, surface?, claude? }: Jev's pick for the
+// typed text. Only `q` comes from the browser; the list of places is fixed on the
+// server (_lib/jevNav.js). Fails open: { place: null } and the caller does what it
+// does today. Logs one line per call, never the text.
+const navHits = new Map();   // best-effort per-instance limit: a debounced palette never gets near it
+async function handleNav(req, res, user) {
+  const modes = jevNavPkg.modes();
+  if (req.method === 'GET' || modes.nav === 'off') { res.status(200).json(modes); return; }
+  const now = Date.now(), mine = (navHits.get(user.id) || []).filter(t => now - t < 60000);
+  if (mine.length >= 40) { res.status(200).json({ ...modes, place: null, limited: true }); return; }
+  mine.push(now); navHits.set(user.id, mine);
+  if (navHits.size > 5000) navHits.clear();
+  const { q, surface, claude } = req.body || {};
+  if (typeof q !== 'string' || !q.trim()) { res.status(400).json({ error: 'q required' }); return; }
+  const r = await jevNavPkg.navPick(q);
+  const where = surface === 'panel' ? 'panel' : 'palette';
+  const said = typeof claude === 'string' && /^[a-z_]{1,20}(:[a-z_]{1,20})?$/.test(claude) ? claude : null;
+  console.log('[jev-nav]', where, modes[where === 'panel' ? 'panel' : 'nav'], r ? `${r.place} ${r.placeConfidence} ${r.intent} ${r.intentConfidence} ${r.ms}ms` : 'none',
+    said ? 'claude=' + said + ' agree=' + (r && said.split(':')[1] === r.place ? 1 : 0) : '');
+  if (!r) { res.status(200).json({ ...modes, place: null }); return; }
+  // Shadow: Jev runs and is logged, the browser acts as if it never answered.
+  res.status(200).json({
+    ...modes, ...r,
+    best: modes.nav === 'live' ? jevNavPkg.paletteBest(r) : null,
+    go: modes.panel === 'live' ? jevNavPkg.panelGo(r) : null
+  });
 }
 // GET ?action=watch: { mode, signals }. POST { op: 'mode', mode } | { op: 'mute', key | kind, unmute } | { op: 'send_now' }.
 async function handleWatch(req, res, user) {

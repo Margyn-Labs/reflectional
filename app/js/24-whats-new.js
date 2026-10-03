@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-03-navigator', date:'3 Oct 2026', title:'Type where you want to go, in any words',
+    items:[
+      { t:'Search understands what you mean', what:'Press ⌘K (Ctrl+K on Windows) and type the way you talk: “who owes me money”, “GST kholo”, “bills I have to pay”. Margyn puts the right page at the top as Best match, even with typos or in Hinglish.',
+        how:'Press ⌘K, type, then Enter.', act:'home' }
+    ]
+  },
+  {
     id:'2026-10-03-ask-your-books', date:'3 Oct 2026', title:'Ask your books anything',
     items:[
       { t:'Margyn reads every Tally entry', what:'Sales for any month or the whole year, profit, costs by ledger, a customer’s or vendor’s full story, product margins, who owes what and how late, cash, overdraft, interest and GST. In plain words, typed, spoken or on WhatsApp.',
