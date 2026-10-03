@@ -1,2 +1,5 @@
 node_modules
 .DS_Store
+# Jev evals on real partner data: local only, never committed
+tools/jev-eval/*.csv
+tools/jev-eval/WHAT-WOULD-BE-SENT.txt
