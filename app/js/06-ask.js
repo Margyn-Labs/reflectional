@@ -24,7 +24,7 @@ const ASK_DEPTHS = {
    Balanced for the rest of the day. */
 const ASK_DEEP_DAILY_CAP = 5;
 function askDeepUsage(){
-  const today = new Date().toISOString().slice(0,10);
+  const today = mgTodayIST();
   let u = { date: today, n: 0 };
   try { const raw = lsGet('margyn_ask_deep_usage', ''); if(raw){ const p = JSON.parse(raw); if(p && p.date === today) u = p; } } catch(e){}
   return u;
@@ -230,7 +230,7 @@ async function renderHistoryLedgerList(){
   }
   const verb = { created:'Added', settled:'Settled', deleted:'Deleted', imported:'Imported', edited:'Edited' };
   listEl.innerHTML = ledgerEvents.map(e => {
-    const d = new Date(e.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+    const d = new Date(e.created_at).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric' });
     const who = e.party_name ? escapeHtml(e.party_name) : (e.note ? escapeHtml(e.note) : '—');
     const amt = (e.amount != null) ? inr(e.amount) : '';
     const src = e.source ? '<span class="source-badge self-reported">' + (e.source === 'upload' ? 'CSV upload' : 'Manual entry') + '</span>' : '';
@@ -259,7 +259,7 @@ async function renderHistoryThreadList(){
     const tk = m.thread_key;
     const label = tk.startsWith('panel:') ? 'Margyn panel' : tk.startsWith('voice:') ? 'Call' : isAgentHomeThread(tk) ? 'Margyn (earlier)'
       : (tk === 'global' || tk.startsWith('global:')) ? 'General' : (m.vital && m.vital !== 'Voice conversation' ? m.vital : tk.replace(/^finding:|^vital:/, '').replace(/::.*$/, ''));
-    const when = new Date(m.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    const when = new Date(m.created_at).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
     row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,90)) + '</div>';
     row.addEventListener('click', () => {
       listEl.querySelectorAll('.chat-history-row').forEach(r => r.classList.remove('on'));
@@ -314,7 +314,7 @@ function renderHistoryFindingsList(){
   const sorted = findings.slice().sort((a,b) => new Date(b.generated_at) - new Date(a.generated_at));
   listEl.innerHTML = '';
   sorted.forEach(f => {
-    const when = new Date(f.generated_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+    const when = new Date(f.generated_at).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric' });
     const row = document.createElement('div');
     row.className = 'finding-card ' + f.tier;
     row.style.marginBottom = '10px';

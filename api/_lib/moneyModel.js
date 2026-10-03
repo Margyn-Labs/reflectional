@@ -217,7 +217,7 @@ async function loadTally(accountId, dir) {
   const { bills, truncated } = await loadTallyBills(accountId);
   const want = dir === 'recv' ? 'receivable' : 'payable';
   return {
-    rows: bills.filter((b) => b.direction === want)
+    rows: bills.filter((b) => b.direction === want && !b.advance)
       .map((b) => ({ party: b.party_name || 'Unknown', amount: Math.abs(num(b.closing_balance)), due: b.due_date || null, ref: b.bill_ref || null, src: 'tally' }))
       .filter((r) => r.amount > 0),
     truncated

@@ -183,7 +183,7 @@ async function handleSummary(req, res) {
       pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
     ]);
     bills = B.rows; vouchers = V.rows; ledgers = L.rows;
-    try { bills = calibrateBills(bills, vouchers).bills; } catch (e) { /* keep stored labels */ }
+    try { bills = calibrateBills(bills, vouchers, { now: Date.now() }).bills; } catch (e) { /* keep stored labels */ }
   } catch (e) {
     return json(res, 500, { error: 'lookup_failed' });
   }
@@ -198,7 +198,8 @@ async function handleSummary(req, res) {
   };
 
   let receivableTotal = 0, payableTotal = 0, overdueTotal = 0, recvOver90 = 0, payDue30 = 0;
-  const billItems = bills.map((b) => {
+  // A customer's on-account money shows in Tally as a bill on the vendor side; it isn't owed to anyone.
+  const billItems = bills.filter((b) => !b.advance).map((b) => {
     const bal = Math.abs(Number(b.closing_balance) || 0);
     if (b.direction === 'payable') payableTotal += bal; else receivableTotal += bal;
     if ((b.overdue_days || 0) > 0) overdueTotal += bal;

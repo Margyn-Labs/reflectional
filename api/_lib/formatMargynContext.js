@@ -291,7 +291,7 @@ export function formatMargynContext(context) {
   let historyBlock = 'No past findings recorded yet.';
   if (Array.isArray(ctx.findingsHistory) && ctx.findingsHistory.length) {
     historyBlock = ctx.findingsHistory.map((f) => {
-      const d = new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      const d = new Date(f.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
       return `- ${d} · ${f.vital} (${f.tier}): ${f.summary}`;
     }).join('\n');
   }

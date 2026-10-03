@@ -127,8 +127,11 @@ const _prepared = new WeakMap();
 async function contextFor(userId) {
   const book = await loadTallyBook(userId);
   if (!book.connected) return { ctx: null };
+  // The book is cached until the next sync, which can be days if the Tally PC is off. "Today" (days late,
+  // this week, this month) must still move on, so a context from an earlier India date is worked out again.
   let ctx = _prepared.get(book);
-  if (!ctx) { ctx = E.prepare(book); _prepared.set(book, ctx); }
+  const day = require('./tallyBills').todayIstMs();
+  if (!ctx || ctx._day !== day) { ctx = E.prepare(book); ctx._day = day; _prepared.set(book, ctx); }
   return { ctx };
 }
 

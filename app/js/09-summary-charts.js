@@ -457,7 +457,7 @@ function renderSummary(){
   renderAlerts(latest, recvTotal, recv90, paySoon, pay);
   renderSummaryTimeline(latest);
 }
-function fmtMon(iso){ try { return new Date(iso).toLocaleDateString('en-IN', { day:'numeric', month:'short' }); } catch(e){ return ''; } }
+function fmtMon(iso){ try { return new Date(iso).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short' }); } catch(e){ return ''; } }
 function renderSummaryTimeline(latest){
   const host = document.getElementById('sumTimeline'); if(!host) return;
   const items = [];

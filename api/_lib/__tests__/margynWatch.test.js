@@ -41,6 +41,7 @@ global.fetch = async (url, opts = {}) => {
     if (eq('user_id')) rows = rows.filter((r) => !r.user_id || r.user_id === eq('user_id'));
     if (eq('from_phone')) rows = rows.filter((r) => r.from_phone === eq('from_phone'));
     if (eq('role')) rows = rows.filter((r) => r.role === eq('role'));
+    if (eq('phone')) rows = rows.filter((r) => r.phone === eq('phone'));
     if (table === 'whatsapp_conversations') rows = rows.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     const off = parseInt(u.searchParams.get('offset') || '0', 10), lim = parseInt(u.searchParams.get('limit') || '1000', 10);
     return ok(rows.slice(off, off + lim));
@@ -48,13 +49,14 @@ global.fetch = async (url, opts = {}) => {
   const body = opts.body ? JSON.parse(opts.body) : null;
   if (method === 'POST') {
     const rows = Array.isArray(body) ? body : [body];
-    if (table === 'margyn_signals') for (const r of rows) { const i = DB.margyn_signals.findIndex((x) => x.key === r.key); if (i >= 0) Object.assign(DB.margyn_signals[i], r); else DB.margyn_signals.push(Object.assign({}, r)); }
+    if (table === 'watch_pending') for (const r of rows) { const i = (DB.watch_pending = DB.watch_pending || []).findIndex((x) => x.phone === r.phone); if (i >= 0) Object.assign(DB.watch_pending[i], r); else DB.watch_pending.push(Object.assign({}, r)); }
+    else if (table === 'margyn_signals') for (const r of rows) { const i = DB.margyn_signals.findIndex((x) => x.key === r.key); if (i >= 0) Object.assign(DB.margyn_signals[i], r); else DB.margyn_signals.push(Object.assign({}, r)); }
     else (DB[table] = DB[table] || []).push(...rows.map((r) => Object.assign({ created_at: new Date().toISOString() }, r)));
     return ok(rows);
   }
   if (method === 'PATCH') {
-    const key = eq('key'), id = eq('id');
-    for (const r of DB[table] || []) if ((key && r.key === key) || (id && r.id === id)) Object.assign(r, body);
+    const key = eq('key'), id = eq('id'), phone = eq('phone');
+    for (const r of DB[table] || []) if ((key && r.key === key) || (id && r.id === id) || (phone && r.phone === phone)) Object.assign(r, body);
     return ok([]);
   }
   return ok([]);
@@ -66,21 +68,34 @@ const W = require('../margynWatch');
   console.log('choosing what to send');
   const list = [
     { key: 'a', kind: 'overdue_total', severity: 'high', impact: 100 },
-    { key: 'b', kind: 'quiet', severity: 'medium', impact: 50 },
+    { key: 'b', kind: 'quiet', severity: 'medium', impact: 50, party: 'BIG CO LTD' },
     { key: 'c', kind: 'receipt', severity: 'low', impact: 10, news: true },
-    { key: 'd', kind: 'commission', severity: 'low', impact: 5 }
+    { key: 'e', kind: 'newly_overdue', severity: 'low', impact: 8, news: true, party: 'Big Co' },
+    { key: 'd', kind: 'commission', severity: 'low', impact: 5 },
+    { key: 'f', kind: 'old_debts', severity: 'low', impact: 4 }
   ];
-  check('first time: up to three', W.choose(list, [], 'morning').map((x) => x.key).join() === 'a,b,c');
+  check('first time: up to three, one per customer, receipts are not points', W.choose(list, [], 'morning').map((x) => x.key).join() === 'a,b,d', W.choose(list, [], 'morning').map((x) => x.key));
   const sentYesterday = new Date(Date.now() - 86400000).toISOString();
   check('cooldown holds a repeat', !W.choose(list, [{ key: 'a', kind: 'overdue_total', status: 'sent', impact: 100, last_sent_at: sentYesterday }], 'morning').some((x) => x.key === 'a'));
-  check('a big move makes it news again', W.choose([{ key: 'a', kind: 'overdue_total', severity: 'high', impact: 200 }], [{ key: 'a', kind: 'overdue_total', status: 'sent', impact: 100, last_sent_at: new Date(Date.now() - 2 * 86400000).toISOString() }], 'morning').length === 1);
+  const worse = W.choose([{ key: 'a', kind: 'overdue_total', severity: 'high', impact: 200 }], [{ key: 'a', kind: 'overdue_total', status: 'sent', impact: 100, last_sent_at: new Date(Date.now() - 2 * 86400000).toISOString() }], 'morning');
+  check('getting worse makes it news again, with the earlier figure', worse.length === 1 && worse[0].was && worse[0].was.impact === 100, worse);
+  check('getting better is not a reason to repeat', W.choose([{ key: 'a', kind: 'overdue_total', severity: 'high', impact: 50 }], [{ key: 'a', kind: 'overdue_total', status: 'sent', impact: 100, last_sent_at: new Date(Date.now() - 2 * 86400000).toISOString() }], 'morning').length === 0);
+  check('a preview-only send does not hold back the owner', W.choose(list, [{ key: 'a', kind: 'overdue_total', status: 'sent', impact: 100, last_sent_at: sentYesterday, sent_to: 'preview' }], 'morning', null, 'on').some((x) => x.key === 'a'));
+  check('...but does hold back the next preview', !W.choose(list, [{ key: 'a', kind: 'overdue_total', status: 'sent', impact: 100, last_sent_at: sentYesterday, sent_to: 'preview' }], 'morning', null, 'preview').some((x) => x.key === 'a'));
   check('muted finding stays quiet', !W.choose(list, [{ key: 'b', kind: 'quiet', status: 'muted' }], 'morning').some((x) => x.key === 'b'));
   check('muted kind stays quiet', !W.choose(list, [{ key: 'mute:quiet', kind: 'quiet', status: 'muted' }], 'morning').some((x) => x.kind === 'quiet'));
-  check('midday: urgent or news only', W.choose(list, [], 'midday').map((x) => x.key).join() === 'a,c');
+  check('midday: deadlines only, not news or the morning\'s points', W.choose(list.concat([{ key: 'g', kind: 'gst_due', severity: 'high', impact: 3 }]), [], 'midday').map((x) => x.key).join() === 'g');
 
   console.log('the message');
   const text = W.compose([{ title: '₹90 L of the ₹90 L customers owe you is overdue.', action: 'Call Big Co first.' }], { company: 'Acme Ltd (2026-27)', slot: 'morning', firstName: 'Mihir' });
   check('greets, numbers, says how to reply and stop', /^Good morning Mihir\./.test(text) && /\n1\. ₹90 L/.test(text) && /STOP ALERTS/.test(text), text);
+  const t2 = W.compose([{ title: 'A is late.', action: 'Call A.', was: { impact: 4000000, at: '2026-10-01T03:00:00Z' } }, { title: 'B.' }], { company: 'Acme', slot: 'morning', lastSync: '2026-10-03T13:28:00Z', ctxLines: ['Money in since yesterday: ₹21.7 L (Sun Pharma ₹21.7 L).', 'Bank and cash ₹4.38 L.'] });
+  check('says when the books are from, in India time', /as of 3 Oct, 6:58 pm/.test(t2), t2);
+  check('money in and cash come before the points', t2.indexOf('Money in') > 0 && t2.indexOf('Money in') < t2.indexOf('1. '), t2);
+  check('a repeat says what changed', /up from ₹40 L on 1 Oct/.test(t2), t2);
+  check('reply hint matches the number of points', /Reply 1 or 2 to know more/.test(t2), t2);
+  const tz = W.teaserParams([{ title: '₹1.82 Cr is more than a month late.' }, { title: 'x' }], { company: 'Acme Ltd', firstName: 'Mihir' });
+  check('short template: name and one headline line', tz[0] === 'Mihir' && /^2 things in your books need you today\. The biggest: ₹1\.82 Cr/.test(tz[1]) && !/\n/.test(tz[1]), tz);
   check('preview is labelled', /^\[Preview for Acme\./.test(W.compose([{ title: 'x' }], { company: 'Acme Ltd (2026-27)', slot: 'evening', preview: true })));
   const tp = W.templateParams([{ title: 'one' }, { title: 'two' }], { company: 'Acme Ltd', firstName: null });
   check('template params have no new lines', tp.length === 2 && !/\n/.test(tp[1]) && tp[1] === '(1) one (2) two', tp);
@@ -100,8 +115,9 @@ const W = require('../margynWatch');
   check('message lands in the owner\'s WhatsApp thread', DB.whatsapp_conversations.some((m) => m.role === 'assistant' && /Good morning Mihir/.test(m.content) && m.from_phone === '919324000000'));
   check('state says sent', DB.margyn_signals.filter((s) => s.status === 'sent').length === r.chosen.length, DB.margyn_signals);
   check('ops counter', DB.product_events.some((e) => e.name === 'watch_sent'));
+  const firstRound = r.chosen.slice();
   r = await W.watchAccount(U, { slot: 'evening' });
-  check('same findings are not sent twice the same day', !r.sent && r.chosen.length === 0, r);
+  check('same findings are not sent twice the same day', !r.chosen.some((k) => firstRound.includes(k)), { firstRound, r });
 
   console.log('outside 24h with the alert template');
   DB.whatsapp_conversations = [];
@@ -112,12 +128,35 @@ const W = require('../margynWatch');
   const last = sent[sent.length - 1];
   check('template id and two params', last.template && JSON.parse(last.template).id === 'tpl-1' && JSON.parse(last.template).params.length === 2, last);
 
+  console.log('short template + See details');
+  DB.margyn_signals = [];
+  DB.watch_pending = [];
+  process.env.WHATSAPP_TEMPLATE_ALERT_V2 = 'tpl-2';
+  r = await W.watchAccount(U, { slot: 'morning' });
+  const t2last = sent[sent.length - 1];
+  check('uses the short template when it exists', r.sent && JSON.parse(t2last.template).id === 'tpl-2', t2last);
+  check('full update waits for the reply', DB.watch_pending.length === 1 && /Good morning Mihir/.test(DB.watch_pending[0].text), DB.watch_pending);
+  const got = await W.takePending('+91 93240 00000');
+  check('reply picks it up once', got && /Good morning/.test(got.text), got);
+  check('...and only once', !(await W.takePending('919324000000')));
+  delete process.env.WHATSAPP_TEMPLATE_ALERT_V2;
+
+  console.log('preview today\'s update (app button)');
+  DB.margyn_signals = [];
+  const n0 = sent.length;
+  r = await W.watchAccount(U, { slot: 'manual', previewOnly: true });
+  check('returns the exact text, sends nothing to the owner, records nothing', /Good morning|Your update/.test(r.text) && sent.length === n0 && DB.margyn_signals.length === 0, r);
+
   console.log('preview mode');
   DB.profiles[0].preferences.margyn_watch.mode = 'preview';
   DB.margyn_signals = [];
   r = await W.watchAccount(U, { slot: 'morning' });
   check('goes to the preview number, not the owner', r.sent && r.sent.to === 'preview' && sent[sent.length - 1].destination === '919999900000', { r, last: sent[sent.length - 1] });
   check('preview is not written into the owner\'s thread', !DB.whatsapp_conversations.some((m) => /Preview for/.test(m.content || '')));
+  check('preview does not count as sent to the owner', DB.margyn_signals.filter((x) => x.sent_to === 'preview').every((x) => !x.sent_count), DB.margyn_signals);
+  DB.profiles[0].preferences.margyn_watch.mode = 'on';
+  r = await W.watchAccount(U, { slot: 'evening' });
+  check('switching to On still sends what was only previewed', r.sent && r.sent.to === 'owner' && r.chosen.length > 0, r);
 
   console.log('off');
   DB.profiles[0].preferences.margyn_watch.mode = 'off';

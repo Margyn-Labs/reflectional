@@ -146,7 +146,7 @@ function mgForecastPanel(wide){
 /* Week-by-week table (Cash page, CFO pack). Week 1 starts today. */
 function mgForecastWeeks(f){
   const today = new Date(new Date().toDateString());
-  const d = n => new Date(today.getTime() + n * 86400000).toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+  const d = n => new Date(today.getTime() + n * 86400000).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short' });
   return f.close.map((c, w) => ({ n:w + 1, from:d(w * 7), to:d(w * 7 + 6), inflow:f.inflow[w], outflow:f.outflow[w], close:c, below:c < f.floor }));
 }
 function mgForecastTable(f){

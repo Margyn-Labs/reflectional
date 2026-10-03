@@ -10,22 +10,30 @@
  *
  *  - WHETHER: each finding has a stable key. It's sent once, then not again
  *    until its cooldown passes (a week for overdue money, two months for
- *    concentration) or its size moves by more than a quarter. One-off news
- *    (a big receipt, a bill that just went overdue) is sent once only. At
- *    most MAX_PER_RUN points per message, and the midday run only sends
- *    high-priority points or fresh news. The owner can mute one finding or a
- *    whole kind from the app, or reply STOP ALERTS on WhatsApp.
+ *    concentration) or it gets worse by more than a quarter (then the line
+ *    says by how much). One-off news (a bill that just went past due) is sent
+ *    once only. At most MAX_PER_RUN points, one per customer. The midday run
+ *    is for deadlines only (GST due in a few days, Tally gone quiet). The
+ *    owner can mute one finding or a whole kind from the app, or reply STOP
+ *    ALERTS on WhatsApp.
+ *  - SHAPE (2026-10-04): when the books are from, money that came in, cash
+ *    and overdraft, then the points with amounts, then how to reply. Names
+ *    the way a person says them, not "SUN PHARMA LABORATORIES LTD".
  *  - TO WHOM (profiles.preferences.margyn_watch.mode, chosen in the app):
  *      off     (default) nothing is sent; findings still show in the app.
  *      preview sent to MARGYN_WATCH_PREVIEW_PHONE (the Margyn team's test
  *              number) instead of the business, so a new account can be
- *              checked before it goes live. Shown to the owner in the app.
+ *              checked before it goes live. A preview never counts as sent
+ *              to the owner, so switching to On later still sends it.
  *      on      sent to the account's own WhatsApp number (profiles.whatsapp_phone,
  *              only with whatsapp_opt_in).
  *  - HOW: WhatsApp lets a business send free text only within 24 hours of
  *    the person's last message. Inside that window it's a normal message;
- *    outside it, the approved WHATSAPP_TEMPLATE_ALERT carries it. With
- *    neither, nothing is sent and the app says why.
+ *    outside it, an approved template carries it: WHATSAPP_TEMPLATE_ALERT_V2
+ *    (a short "your update is ready" with a See details button; the full
+ *    update waits in watch_pending and goes out the moment they reply) or
+ *    the older WHATSAPP_TEMPLATE_ALERT (points run together on one line).
+ *    With neither, nothing is sent and the app says why.
  *
  * Every finding seen is kept in margyn_signals (status open / sent / muted /
  * resolved) so the Conversations hub can show what Margyn noticed, what was
@@ -45,11 +53,14 @@ const DAY = 86400000;
 const MAX_PER_RUN = 3;
 // How long before the same finding may be sent again (days). News kinds are once only.
 const COOLDOWN_DAYS = {
-  stale: 2, overdue_total: 7, old_debts: 30, late: 14, quiet: 21, concentration: 60, funding_gap: 30,
+  stale: 2, overdue_total: 7, slipping: 7, old_debts: 30, late: 14, short_paid: 30, quiet: 21, concentration: 60, collection_days: 30,
   commission: 60, expense_jump: 365, unbooked: 365, sales_trend: 365, below_cost: 30, unit_mismatch: 60,
   gst_due: 365, receipt: 3650, newly_overdue: 3650, duplicate: 3650
 };
+// Never a point of their own: good news goes in the "money in" line instead.
+const NOT_A_POINT = new Set(['receipt']);
 const MODES = ['off', 'preview', 'on'];
+const PENDING_HOURS = 24;
 
 const digits = (p) => String(p || '').replace(/[^\d]/g, '');
 
@@ -68,42 +79,114 @@ function modeOf(profile) {
   return MODES.includes(m) ? m : 'off';
 }
 
-/** The findings this run should send, given what was sent before. */
-function choose(list, state, slot, now) {
+/** Midday is for things with a clock on them, not another round of the morning's points. */
+function isDeadline(x) {
+  return x.kind === 'stale' || (x.kind === 'gst_due' && x.severity === 'high');
+}
+
+/**
+ * The findings this run should send, given what was sent before.
+ * mode 'on' ignores sends that only went to the preview phone (they never reached the owner).
+ * Returns the chosen findings, each with `was` (the earlier figure) when it's back because it got worse.
+ */
+function choose(list, state, slot, now, mode) {
   const byKey = new Map(state.map((s) => [s.key, s]));
   const mutedKinds = new Set(state.filter((s) => s.key.startsWith('mute:') && s.status === 'muted').map((s) => s.kind));
   const t = now ? new Date(now).getTime() : Date.now();
-  const due = list.filter((x) => {
-    if (mutedKinds.has(x.kind)) return false;
+  const out = [], parties = new Set();
+  for (const x of list) {
+    if (out.length >= MAX_PER_RUN) break;
+    if (NOT_A_POINT.has(x.kind) || mutedKinds.has(x.kind)) continue;
     const s = byKey.get(x.key);
-    if (s && s.status === 'muted') return false;
-    if (slot === 'midday' && x.severity !== 'high' && !x.news) return false;
-    if (!s || !s.last_sent_at) return true;
-    const days = (t - Date.parse(s.last_sent_at)) / DAY;
-    if (days >= (COOLDOWN_DAYS[x.kind] || 14)) return true;
-    // A finding that grew or shrank by more than a quarter is news again (but never twice in a day).
-    const was = Number(s.impact) || 0;
-    return days >= 1 && was > 0 && Math.abs((x.impact || 0) - was) / was > 0.25;
-  });
-  return due.slice(0, MAX_PER_RUN);
+    if (s && s.status === 'muted') continue;
+    if (slot === 'midday' && !isDeadline(x)) continue;
+    // One point per customer: their overdue bills, "short paid" and "gone quiet" are one conversation.
+    const pk = x.party ? E.niceName(x.party).toLowerCase() : null;
+    if (pk && parties.has(pk)) continue;
+    const sentAt = s && s.last_sent_at && !(mode === 'on' && s.sent_to === 'preview') ? Date.parse(s.last_sent_at) : null;
+    let ok = false, was = null;
+    if (!sentAt) ok = true;
+    else {
+      const days = (t - sentAt) / DAY;
+      if (days >= (COOLDOWN_DAYS[x.kind] || 14)) ok = true;
+      else {
+        // Back sooner only if it got worse by more than a quarter (never twice in a day). Smaller is not news.
+        const prev = Number(s.impact) || 0;
+        if (days >= 1 && prev > 0 && (x.impact || 0) > prev * 1.25) { ok = true; was = { impact: prev, at: s.last_sent_at }; }
+      }
+    }
+    if (!ok) continue;
+    if (pk) parties.add(pk);
+    out.push(was ? Object.assign({}, x, { was }) : x);
+  }
+  return out;
 }
 
 function greeting(slot) {
-  return slot === 'morning' ? 'Good morning' : slot === 'evening' ? 'Evening update' : 'Quick update';
+  return slot === 'morning' ? 'Good morning' : slot === 'evening' ? 'Evening update' : slot === 'midday' ? 'Heads up' : 'Your update';
 }
 function shortCompany(name) { return String(name || 'your business').replace(/\s*\(\d{4}-\d{2,4}\)\s*$/, '').replace(/\s+((pvt|private)\.?\s+)?(ltd|limited|llp)\.?$/i, '').trim(); }
-
-/** The WhatsApp text: plain, numbered, one line each, and how to reply. */
-function compose(items, { company, slot, preview, firstName }) {
-  const head = (preview ? `[Preview for ${shortCompany(company)}. They have not been sent this.]\n\n` : '') +
-    `${greeting(slot)}${firstName ? ' ' + firstName : ''}. Here's what I noticed in your books today:`;
-  const body = items.map((x, i) => `${i + 1}. ${x.title}${x.action ? ' ' + x.action : ''}`).join('\n\n');
-  return `${head}\n\n${body}\n\nReply with a number to know more, or ask me anything about your books. Reply STOP ALERTS to pause these.`;
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "3 Oct, 6:58 pm" in India time. */
+function istStamp(iso) {
+  const t = Date.parse(iso || '');
+  if (Number.isNaN(t)) return null;
+  const d = new Date(t + 5.5 * 3600000);
+  let h = d.getUTCHours(); const m = String(d.getUTCMinutes()).padStart(2, '0'), ap = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${h}:${m} ${ap}`;
 }
-/** Template parameters can't hold new lines, so the points are run together. */
+
+/** Money in since yesterday, and the cash / overdraft position, as two short lines. Never throws. */
+function context(ctx) {
+  const lines = [];
+  try {
+    const from = new Date(ctx.today.getTime() - DAY);
+    const recs = ctx.rows.filter((r) => r.kind === 'receipt' && r.dt >= from && r.total > 0);
+    if (recs.length) {
+      const by = new Map();
+      for (const r of recs) { const k = r.party ? E.niceName(r.party) : 'others'; by.set(k, (by.get(k) || 0) + r.total); }
+      const top = [...by.entries()].sort((a, b) => b[1] - a[1]);
+      const tot = recs.reduce((s, r) => s + r.total, 0);
+      lines.push(`Money in since yesterday: ${E.inr(tot)}` + (top.length ? ' (' + top.slice(0, 2).map(([k, v]) => `${k} ${E.inr(v)}`).join(', ') + (top.length > 2 ? ` and ${top.length - 2} more` : '') + ')' : '') + '.');
+    } else lines.push('No money from customers entered in Tally since yesterday.');
+  } catch (e) { /* skip the line */ }
+  try {
+    const cd = E.cashAndDebt(ctx);
+    lines.push(`Bank and cash ${cd.cash_and_bank_total}` + (cd.total_borrowed && cd.total_borrowed !== '₹0' ? ` · overdraft and loans ${cd.total_borrowed}` : '') + '.');
+  } catch (e) { /* skip the line */ }
+  return lines;
+}
+
+/** One point: what, how much, what to do, and what changed if it's back. */
+function pointLine(x) {
+  const changed = x.was ? ` (up from ${E.inr(x.was.impact)} on ${istStamp(x.was.at).split(',')[0]})` : '';
+  return `${x.title}${changed}${x.action ? ' ' + x.action : ''}`;
+}
+
+/** The WhatsApp text: when it's from, money in, cash, the points, how to reply. */
+function compose(items, { company, slot, preview, firstName, lastSync, ctxLines }) {
+  const asOf = istStamp(lastSync);
+  const head = (preview ? `[Preview for ${shortCompany(company)}. They have not been sent this.]\n\n` : '') +
+    `${greeting(slot)}${firstName ? ' ' + firstName : ''}.` + (asOf ? ` Your Tally books as of ${asOf}:` : ' From your Tally books:');
+  const ctxBlock = (ctxLines || []).length ? '\n\n' + ctxLines.join('\n') : '';
+  const body = items.length
+    ? '\n\n' + (items.length === 1 ? 'One thing needs you:' : `${items.length} things need you:`) + '\n\n' + items.map((x, i) => `${i + 1}. ${pointLine(x)}`).join('\n\n')
+    : '\n\nNothing new needs you today.';
+  const foot = items.length > 1 ? `Reply ${items.map((_, i) => i + 1).join(', ').replace(/, (\d)$/, ' or $1')} to know more, or ask me anything.`
+    : items.length ? 'Reply 1 to know more, or ask me anything.' : 'Ask me anything about your books.';
+  return `${head}${ctxBlock}${body}\n\n${foot} Reply STOP ALERTS to pause these.`;
+}
+/** Older template: parameters can't hold new lines, so the points are run together. */
 function templateParams(items, { company, firstName }) {
   const points = items.map((x, i) => `(${i + 1}) ${x.title}`).join(' ').replace(/\s+/g, ' ');
   return [String(firstName || shortCompany(company)).slice(0, 60), points.slice(0, 900)];
+}
+/** Short template: name and a one-line headline; the full update follows when they tap See details. */
+function teaserParams(items, { company, firstName }) {
+  const n = items.length;
+  const head = (n === 1 ? 'One thing in your books needs you today: ' : `${n} things in your books need you today. The biggest: `) + (items[0] ? items[0].title : '');
+  return [String(firstName || shortCompany(company)).slice(0, 60), head.replace(/\s+/g, ' ').slice(0, 300)];
 }
 
 async function sessionOpen(phone, now) {
@@ -116,19 +199,41 @@ async function sessionOpen(phone, now) {
   } catch (e) { return false; }
 }
 
+/** The full update waiting for a tap on See details. Returns false when the table isn't there yet. */
+async function savePending(phone, userId, text) {
+  try {
+    await insertRows('watch_pending', [{ phone: digits(phone), user_id: userId, text, created_at: new Date().toISOString() }], { onConflict: 'phone', merge: true });
+    return true;
+  } catch (e) { return false; }
+}
+/** Called on any WhatsApp message from `phone`: the waiting update, once, if it's under a day old. */
+async function takePending(phone) {
+  const d = digits(phone);
+  if (!d) return null;
+  try {
+    const r = await selectRows('watch_pending', `select=text,user_id,created_at&phone=eq.${d}&limit=1`);
+    if (!r[0] || !r[0].text) return null;
+    const row = Object.assign({}, r[0]);
+    await updateRows('watch_pending', `phone=eq.${d}`, { text: '', created_at: new Date(0).toISOString() }).catch(() => {});
+    return Date.now() - Date.parse(row.created_at) > PENDING_HOURS * 3600000 ? null : row;
+  } catch (e) { return null; }
+}
+
 async function saveState(userId, list, chosen, sentInfo, state) {
   const nowIso = new Date().toISOString();
   const prev = new Map(state.map((s) => [s.key, s]));
+  const chosenKeys = new Set(chosen.map((x) => x.key));
   const rows = list.map((x) => {
     const p = prev.get(x.key) || {};
-    const sent = sentInfo && chosen.includes(x);
+    // A preview never overwrites a real send to the owner (that would reset the owner's cooldown).
+    const sent = !!(sentInfo && chosenKeys.has(x.key)) && !(sentInfo.to === 'preview' && p.sent_to === 'owner');
     return {
       user_id: userId, key: x.key, kind: x.kind, severity: x.severity, impact: Math.round(x.impact || 0),
       title: x.title, detail: x.detail || null, action: x.action || null, ask: x.ask || null,
       status: p.status === 'muted' ? 'muted' : sent ? 'sent' : (p.status === 'sent' ? 'sent' : 'open'),
       last_seen: nowIso,
       last_sent_at: sent ? nowIso : (p.last_sent_at || null),
-      sent_count: (Number(p.sent_count) || 0) + (sent ? 1 : 0),
+      sent_count: (Number(p.sent_count) || 0) + (sent && sentInfo.to === 'owner' ? 1 : 0),
       sent_via: sent ? sentInfo.via : (p.sent_via || null),
       sent_to: sent ? sentInfo.to : (p.sent_to || null)
     };
@@ -144,7 +249,9 @@ async function saveState(userId, list, chosen, sentInfo, state) {
 
 /**
  * One account. slot: 'morning' | 'midday' | 'evening' | 'manual'.
- * opts.force sends the top findings even if they were sent recently (the app's "send me today's update").
+ * opts.previewOnly: the app's "Preview today's update". Works out the message the owner would get next, sends
+ * it only to the preview phone (and only in preview mode), and records nothing, so it never repeats or uses up
+ * a point.
  */
 async function watchAccount(userId, opts) {
   const o = opts || {};
@@ -158,7 +265,21 @@ async function watchAccount(userId, opts) {
 
   const profile = await prefsOf(userId);
   const mode = o.mode || modeOf(profile);
-  const chosen = o.force ? list.filter((x) => !state.some((s) => (s.key === x.key || (s.key === 'mute:' + x.kind)) && s.status === 'muted')).slice(0, MAX_PER_RUN) : choose(list, state, slot, o.now);
+  const chosen = choose(list, state, o.previewOnly ? 'manual' : slot, o.now, mode === 'preview' ? 'preview' : 'on');
+  const company = ctx.company || profile.company_name;
+  const ctxLines = context(ctx);
+
+  if (o.previewOnly) {
+    const text = compose(chosen, { company, slot, preview: false, firstName: firstNameOf(profile), lastSync: ctx.lastSync, ctxLines });
+    const res = { user: userId, mode, found: list.length, chosen: chosen.map((x) => x.kind), text };
+    if (mode === 'preview' && process.env.MARGYN_WATCH_PREVIEW_PHONE) {
+      const to = process.env.MARGYN_WATCH_PREVIEW_PHONE;
+      const ptext = compose(chosen, { company, slot, preview: true, lastSync: ctx.lastSync, ctxLines });
+      const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: ptext }) : null;
+      res.sent_to_preview_phone = !!(s && s.ok);
+    }
+    return res;
+  }
 
   let sentInfo = null, result = { user: userId, mode, found: list.length, chosen: chosen.map((x) => x.kind) };
   if (chosen.length && mode !== 'off') {
@@ -167,15 +288,23 @@ async function watchAccount(userId, opts) {
     if (!to) {
       result.not_sent = preview ? 'MARGYN_WATCH_PREVIEW_PHONE is not set in Vercel' : 'no WhatsApp number on the account (Settings > Profile)';
     } else {
-      const firstName = preview ? null : String(((profile.preferences || {}).display_name) || '').trim().split(/\s+/)[0] || null;
-      const text = compose(chosen, { company: ctx.company || profile.company_name, slot, preview, firstName });
+      const firstName = preview ? null : firstNameOf(profile);
+      const text = compose(chosen, { company, slot, preview, firstName, lastSync: ctx.lastSync, ctxLines });
       let sent = null;
       if (await sessionOpen(to, o.now)) {
         sent = await bsp.sendText({ to, text });
         if (sent && sent.ok) sentInfo = { via: 'session', to: preview ? 'preview' : 'owner' };
       }
+      if (!sentInfo && process.env.WHATSAPP_TEMPLATE_ALERT_V2) {
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT_V2, params: teaserParams(chosen, { company, firstName }) });
+        if (sent && sent.ok) {
+          sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
+          // The full update goes out when they tap See details (or reply anything) within a day.
+          await savePending(to, userId, text);
+        }
+      }
       if (!sentInfo && process.env.WHATSAPP_TEMPLATE_ALERT) {
-        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT, params: templateParams(chosen, { company: ctx.company || profile.company_name, firstName }) });
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT, params: templateParams(chosen, { company, firstName }) });
         if (sent && sent.ok) sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
       }
       if (sentInfo) {
@@ -188,12 +317,15 @@ async function watchAccount(userId, opts) {
         await track(userId, 'watch_sent', { kind: chosen[0].kind, points: chosen.length, mode, via: sentInfo.via });
       } else {
         result.not_sent = (sent && sent.error) ? String(sent.error).slice(0, 160)
-          : 'No open WhatsApp chat in the last 24 hours and WHATSAPP_TEMPLATE_ALERT is not set, so WhatsApp won\'t accept a message from us yet.';
+          : 'No open WhatsApp chat in the last 24 hours and no alert template is set, so WhatsApp won\'t accept a message from us yet.';
       }
     }
   }
   if (!o.dryRun) await saveState(userId, list, chosen, sentInfo, state);
   return result;
+}
+function firstNameOf(profile) {
+  return String(((profile && profile.preferences) || {}).display_name || '').trim().split(/\s+/)[0] || null;
 }
 
 /** Every account with Tally connected. Bounded so one cron run can't overrun. */
@@ -241,10 +373,13 @@ async function signals(userId) {
   catch (e) { return { mode: modeOf(p), ready: false, note: 'Run the Margyn Watch SQL to keep a history of what Margyn noticed.' }; }
   return {
     mode: modeOf(p), ready: true,
-    has_number: !!p.whatsapp_phone, preview_available: !!process.env.MARGYN_WATCH_PREVIEW_PHONE,
-    template_ready: !!process.env.WHATSAPP_TEMPLATE_ALERT,
+    has_number: !!p.whatsapp_phone,
+    // So the switch can say exactly whose phone "On" texts, e.g. "Mihir's WhatsApp (…4000)".
+    owner_name: firstNameOf(p), owner_phone_end: p.whatsapp_phone ? digits(p.whatsapp_phone).slice(-4) : null,
+    preview_available: !!process.env.MARGYN_WATCH_PREVIEW_PHONE,
+    template_ready: !!(process.env.WHATSAPP_TEMPLATE_ALERT || process.env.WHATSAPP_TEMPLATE_ALERT_V2),
     signals: rows
   };
 }
 
-module.exports = { watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, modeOf, MODES, COOLDOWN_DAYS };
+module.exports = { watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };

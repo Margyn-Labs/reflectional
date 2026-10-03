@@ -63,7 +63,7 @@ function mgrRemember(role, content){
   mgrHistory.push({ role, content:content.slice(0, 2000) });
   if(mgrHistory.length > 40) mgrHistory.splice(0, mgrHistory.length - 40);
 }
-function mgrTime(){ return new Date().toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit' }); }
+function mgrTime(){ return new Date().toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour:'numeric', minute:'2-digit' }); }
 /* A message row. who: 'user' | 'margyn'. `id` lets a live transcript update in place. */
 function mgrLine(who, text, id){
   const f = mgrFeed(); if(!f) return null;
@@ -643,7 +643,7 @@ function mgStatus(text, quiet){
 function mgRenderStatusLog(){
   const pop = mgrEl('mgStatusPop'); if(!pop) return;
   pop.innerHTML = '<h6>What Margyn has been doing</h6>' + (mgStatusLog.length
-    ? mgStatusLog.slice(0, 12).map(x => '<div class="mg-act-row"><span>' + escapeHtml(new Date(x.at).toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit' })) + '</span>' + escapeHtml(x.text) + '</div>').join('')
+    ? mgStatusLog.slice(0, 12).map(x => '<div class="mg-act-row"><span>' + escapeHtml(new Date(x.at).toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour:'numeric', minute:'2-digit' })) + '</span>' + escapeHtml(x.text) + '</div>').join('')
     : '<div class="mg-note">Nothing yet this session.</div>') +
     '<div class="mg-act-src">' + ['razorpay', 'cashfree', 'zoho', 'tally', 'odoo', 'shopify'].map(k => ({ k, h:mgSourceHealth(k) })).filter(x => x.h.on)
       .map(x => '<div><b>' + escapeHtml(MG_SRC_LABEL[x.k]) + '</b> <span' + (x.h.warn ? ' class="warn"' : '') + '>' + escapeHtml(x.h.text) + '</span></div>').join('') + '</div>';
@@ -780,7 +780,7 @@ function mgrDeskTop(){
   on('mgrSub', 'click', () => {
     const rows = mgStatusLog.slice(0, 10);
     mgrHtmlLine(rows.length
-      ? '<p><b>What I’ve been doing</b></p>' + rows.map(x => '<div class="mg-act-row"><span>' + escapeHtml(new Date(x.at).toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit' })) + '</span>' + escapeHtml(x.text) + '</div>').join('')
+      ? '<p><b>What I’ve been doing</b></p>' + rows.map(x => '<div class="mg-act-row"><span>' + escapeHtml(new Date(x.at).toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour:'numeric', minute:'2-digit' })) + '</span>' + escapeHtml(x.text) + '</div>').join('')
       : 'Nothing to report yet this session. I’ll note syncs, changes you approve and anything I spot here.', 'quiet');
   });
   // ⌘J / Ctrl+J: open the panel and type.

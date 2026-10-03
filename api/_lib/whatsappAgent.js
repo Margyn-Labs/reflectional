@@ -207,6 +207,17 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
     return;
   }
 
+  // A short "your update is ready" template went out and this is their reply (a See details tap or anything
+  // else): the full update goes first. A bare "see details" / "show" needs nothing more.
+  try {
+    const waiting = await require('./margynWatch').takePending(fromPhone);
+    if (waiting && waiting.text) {
+      await sendReply(fromPhone, waiting.text);
+      if (String(waiting.user_id) === String(profileId)) await persist({ profileId, phone: fromPhone }, 'assistant', waiting.text, null);
+      if (/^\s*(see|show|view|open)?\s*(details?|update|it|more)?\s*[.!]*\s*$/i.test(cleanText) || /^\s*(ok|okay|yes|haan|ha)\s*[.!]*\s*$/i.test(cleanText)) return;
+    }
+  } catch (e) { console.error('[whatsappAgent] pending update:', e.message); }
+
   // STOP ALERTS / START ALERTS: Margyn Watch's own opt-out and opt-in, handled without the model.
   const stopAlerts = /^\s*(stop|pause|band karo)\s+(alerts?|updates?)\s*[.!]*\s*$/i.test(cleanText);
   const startAlerts = /^\s*(start|resume)\s+(alerts?|updates?)\s*[.!]*\s*$/i.test(cleanText);
@@ -619,8 +630,10 @@ async function toolGetTally(ctx) {
   const inList = `(${installs.map((i) => i.id).join(',')})`;
   let bills = [], vouchers = [];
   try {
-    bills = await selectRows('tally_bills', `select=direction,closing_balance,overdue_days&install_id=in.${inList}&limit=1000`);
-    vouchers = await selectRows('tally_vouchers', `select=voucher_type,date,amount&install_id=in.${inList}&order=date.desc&limit=2000`);
+    bills = await selectRows('tally_bills', `select=direction,party_name,due_date,closing_balance,overdue_days&install_id=in.${inList}&limit=1000`);
+    vouchers = await selectRows('tally_vouchers', `select=voucher_type,party_name,date,amount&install_id=in.${inList}&order=date.desc&limit=2000`);
+    // Same side-check, days-late-as-of-today and advance handling as the app (tallyBills.js).
+    bills = require('./tallyBills').calibrateBills(bills, vouchers).bills.filter((b) => !b.advance);
   } catch (e) {
     return { error: 'That lookup failed just now.' };
   }

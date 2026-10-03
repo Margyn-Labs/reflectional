@@ -14,7 +14,7 @@
      couldn't answer pulled out and a one-tap "Ask again".
    In the thread list: WhatsApp chats sit beside the app conversations.
    ============================================================ */
-let mgHub = { chat:null, wa:null, watch:null, topic:null, missedOnly:false, busy:false };
+let mgHub = { chat:null, wa:null, watch:null, topic:null, missedOnly:false, busy:false, preview:null };
 
 const MG_HUB_ASK = [
   'How much did I sell this year?',
@@ -82,21 +82,32 @@ function mgHubAskPanel(){
     '<div class="mg-panel-b mg-hub-asks">' + MG_HUB_ASK.map(q => '<button type="button" class="mgr-chip" data-hub-ask="' + escapeHtml(q) + '">' + escapeHtml(q) + '</button>').join('') + '</div></div>';
 }
 
+/* Whose phone each setting texts, said plainly. "On" used to read like "on for me"; on 3 Oct it sent three
+   updates to the business owner's own WhatsApp when the team meant to test. */
+function mgHubOwnerLabel(w){
+  const who = w.owner_name ? w.owner_name + '’s' : 'the owner’s';
+  return who + ' WhatsApp' + (w.owner_phone_end ? ' (…' + w.owner_phone_end + ')' : '');
+}
 function mgHubWatchControls(){
   const w = mgHub.watch || {};
   const mode = w.mode || 'off';
-  const opts = [['off', 'Off'], ['on', 'On']];
-  if(w.preview_available || mode === 'preview') opts.splice(1, 0, ['preview', 'Team preview']);
+  const opts = [['off', 'Off']];
+  if(w.preview_available || mode === 'preview') opts.push(['preview', 'Test on Margyn’s phone']);
+  opts.push(['on', 'Send to ' + mgHubOwnerLabel(w)]);
   const seg = '<div class="mg-seg" role="group" aria-label="WhatsApp updates">' + opts.map(o => '<button type="button" data-hub-mode="' + o[0] + '" class="' + (mode === o[0] ? 'on' : '') + '">' + escapeHtml(o[1]) + '</button>').join('') + '</div>';
+  const when = 'around 7:30 am and 7 pm, plus 10:30 am only for a deadline (GST due, Tally gone quiet)';
   let note;
   if(!w.ready) note = 'Keeping a history of these needs one setup step on Margyn’s side. They still show here.';
-  else if(mode === 'off') note = 'Margyn won’t text you. Switch on to get a short WhatsApp in the morning and evening when something in your books needs a look (at most three points).';
-  else if(mode === 'preview') note = 'Updates go to the Margyn team’s test number first, not to you, so they can be checked before they reach you.';
-  else note = w.has_number ? 'Margyn texts your WhatsApp when something needs a look, mornings and evenings. Reply STOP ALERTS any time.' : 'Add your WhatsApp number under Settings first, then Margyn can text you.';
-  if(mode === 'on' && w.ready && !w.template_ready) note += ' Until Margyn’s WhatsApp alert template is approved, messages only go out within 24 hours of you texting Margyn.';
+  else if(mode === 'off') note = 'Nothing is texted to anyone. Margyn still lists what it noticed here.';
+  else if(mode === 'preview') note = 'Updates go only to the Margyn team’s test phone, ' + when + '. ' + (w.owner_name || 'The owner') + ' gets nothing until you pick “Send to ' + mgHubOwnerLabel(w) + '”.';
+  else note = w.has_number ? 'Margyn texts ' + mgHubOwnerLabel(w) + ' ' + when + ', at most three points, one per customer. Reply STOP ALERTS to pause.' : 'Add a WhatsApp number under Settings first, then Margyn can text it.';
+  if(mode !== 'off' && w.ready && !w.template_ready) note += ' Until Margyn’s WhatsApp template is approved, messages only go out within 24 hours of the last message to Margyn.';
+  const pv = mgHub.preview;
   return '<div class="mg-panel-b mg-hub-watch"><span class="mg-hub-lbl">WhatsApp updates</span>' + seg +
-    (mode !== 'off' ? mgBtn('Send me today’s update now', 'data-hub-send') : '') +
-    '<p class="mg-fine">' + escapeHtml(note) + '</p></div>';
+    mgBtn('Preview today’s update', 'data-hub-send') +
+    '<p class="mg-fine">' + escapeHtml(note) + '</p>' +
+    (pv ? '<div class="mg-hub-preview"><div class="mg-li-s">' + escapeHtml(pv.note) + '</div><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + escapeHtml(pv.text) + '</pre></div>' : '') +
+    '</div>';
 }
 
 function mgHubNoticed(){
@@ -169,8 +180,15 @@ document.addEventListener('click', async e => {
   if(md){
     const mode = md.getAttribute('data-hub-mode');
     if(mgHub.watch && mgHub.watch.mode === mode) return;
+    const w = mgHub.watch || {};
+    if(mode === 'on' && typeof mgConfirm === 'function'){
+      const yes = await mgConfirm({ title:'Text ' + mgHubOwnerLabel(w) + '?',
+        body:'From the next update, Margyn sends what it notices in these books to ' + mgHubOwnerLabel(w) + ', around 7:30 am and 7 pm (10:30 am only for a deadline). Use Preview today’s update first to see exactly what they’ll get.',
+        confirmLabel:'Yes, send to ' + (w.owner_name || 'the owner') });
+      if(!yes) return;
+    }
     try { await mgHubWatchPost({ op:'mode', mode }); mgHub.watch = Object.assign({}, mgHub.watch, { mode });
-      toast(mode === 'off' ? 'Margyn won’t text you' : mode === 'on' ? 'Margyn will text you when something needs a look' : 'Updates will go to the Margyn team first'); }
+      toast(mode === 'off' ? 'Updates are off' : mode === 'on' ? 'Margyn will text ' + mgHubOwnerLabel(w) : 'Updates go to the Margyn team’s test phone only'); }
     catch(err){ toast(err.message, { kind:'bad' }); }
     mgHubRender(); return;
   }
@@ -185,10 +203,9 @@ document.addEventListener('click', async e => {
   if(e.target.closest('[data-hub-send]')){
     const b = e.target.closest('[data-hub-send]'); b.disabled = true;
     try {
-      const r = await mgHubWatchPost({ op:'send_now' });
-      if(r.sent) toast('Sent to ' + (r.sent.to === 'preview' ? 'the Margyn team’s test number' : 'your WhatsApp'));
-      else toast(r.not_sent || r.skipped || 'Nothing to send right now', { kind:r.not_sent ? 'bad' : undefined });
-      await mgHubLoad(true);
+      const r = await mgHubWatchPost({ op:'preview' });
+      if(r.skipped) toast(r.skipped, { kind:'bad' });
+      else mgHub.preview = { text:r.text || '', note:'This is the next update exactly as it would go out. Nothing was sent to ' + (mgHub.watch && mgHub.watch.owner_name || 'the owner') + ' and nothing is used up.' + (r.sent_to_preview_phone ? ' A copy went to the Margyn team’s test phone.' : '') };
     } catch(err){ toast(err.message, { kind:'bad' }); }
     b.disabled = false; mgHubRender(); return;
   }
@@ -218,7 +235,7 @@ async function mgHubAppendWhatsApp(){
     row.className = 'chat-history-row mg-hub-wa-row';
     row.setAttribute('data-hub-wa', t.phone);
     const who = t.phone === 'whatsapp' ? 'WhatsApp' : 'WhatsApp · ••' + String(t.phone).slice(-4);
-    const when = new Date(t.last.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    const when = new Date(t.last.created_at).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
     row.innerHTML = '<div class="chr-label">' + escapeHtml(who) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(String(t.last.content).slice(0, 90)) + '</div>';
     listEl.insertBefore(row, listEl.firstChild);   // WhatsApp chats lead the list: they're where the owner talks most
   });

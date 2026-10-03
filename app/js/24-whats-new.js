@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-updates-and-times', date:'4 Oct 2026', title:'Sharper WhatsApp updates, and the right times everywhere',
+    items:[
+      { t:'Times in the app are correct', what:'Dates and times were showing 5½ hours late (an evening sync could read as after midnight). Every time is now India time. New entries and invoices made before 5:30 am also get today’s date, not yesterday’s.',
+        how:'Nothing to do. Check “last synced” on any page.', act:'home' },
+      { t:'WhatsApp updates you can act on', what:'Each update says when your Tally books are from, the money that came in, your bank and overdraft, then at most three things, one per customer, each with the amount, the bill and how late it is. “More than a month late” is kept apart from bills that only just fell due. A customer who paid this week isn’t sent as “chase them”. Points don’t repeat unless they get worse, and then the update says by how much.',
+        how:'Conversations → Margyn noticed → Preview today’s update shows the next one exactly as it would go out, without sending it.', act:'history' },
+      { t:'You always know who gets them', what:'The switch now reads Off, Test on Margyn’s phone, or Send to [owner]’s WhatsApp with the last four digits, and asks before it starts texting the owner.',
+        how:'Conversations → Margyn noticed → WhatsApp updates.', act:'history' }
+    ]
+  },
+  {
     id:'2026-10-03-explains-like-an-accountant', date:'3 Oct 2026', title:'Margyn explains every number',
     items:[
       { t:'Ask how any figure is worked out', what:'Margyn now shows the formula, the actual amounts that went into it, which system each one came from and whether your sources agree. Runway, cash, Pulse Score, margin, receivables, the cash forecast, GST, DSO and more.',

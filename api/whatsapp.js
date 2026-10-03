@@ -28,6 +28,7 @@ const chase = require('./_lib/chaseEngine');
 const { runImportMapper } = require('./_lib/importMapper');
 const marginActions = require('./_lib/marginActions');
 const { runWatchAll } = require('./_lib/margynWatch');
+const cronOnce = require('./_lib/cronOnce');
 const booksTools = require('./_lib/booksTools');
 const booksEngine = require('./_lib/booksEngine');
 const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
@@ -610,6 +611,8 @@ async function handleCron(req, res, kind) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
+  // Called on the minute by Supabase pg_cron and again, some time in the hour, by Vercel: run once a day.
+  if (!(await cronOnce.claim('whatsapp-' + kind))) { res.status(200).json({ kind, skipped: 'already ran today' }); return; }
 
   // Margyn Watch rides the Bell's schedule (07:30 and 19:00 IST). It reads every Tally account's books and
   // texts the owner only what deserves attention, inside an open chat or through WHATSAPP_TEMPLATE_ALERT.
@@ -860,6 +863,8 @@ async function handleChaseReply(res, target, textEvent, rawPayload) {
 async function handleChaseCronAndWatch(req, res) {
   const expected = process.env.CRON_SECRET;
   if (expected && (req.headers['authorization'] === `Bearer ${expected}` || req.query.cron_secret === expected)) {
+    // Same once-a-day guard as the Bells: customer reminders must never go out twice because two clocks fired.
+    if (!(await cronOnce.claim('whatsapp-chase'))) { res.status(200).json({ skipped: 'already ran today' }); return; }
     try { await runWatchAll('midday', { budgetMs: 25000 }); }
     catch (e) { console.error('[whatsapp] midday watch failed:', e.message); }
   }
