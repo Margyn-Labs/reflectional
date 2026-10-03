@@ -426,7 +426,7 @@ async function resolveAndSaveSnapshot(){
   if(!currentUser) return false;
   let latest = snapshots[0];
   // Tally's monthly P&L feeds revenue, burn and profit (tallyInputCandidates); load it first.
-  if(typeof mgLoadMargin === 'function' && typeof tallyConnected !== 'undefined' && tallyConnected){
+  if(typeof mgLoadMargin === 'function' && (typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))){
     try { await mgLoadMargin(); } catch(e){}
   }
 
@@ -436,7 +436,7 @@ async function resolveAndSaveSnapshot(){
   if(!latest){
     // First snapshot straight from a connected source: no upload needed. Fields no connector
     // supplies start at zero; revenue/burn/profit come from Tally's last closed month when we can.
-    if(typeof mgLoadMargin === 'function' && typeof tallyConnected !== 'undefined' && tallyConnected){
+    if(typeof mgLoadMargin === 'function' && (typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))){
       try { await mgLoadMargin(true); } catch(e){}
       const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || []).filter(r => !r.provisional && !r.partial_start && r.net_sales > 0);
       const m = pnl[pnl.length - 1];

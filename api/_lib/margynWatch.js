@@ -150,7 +150,7 @@ function context(ctx) {
       const top = [...by.entries()].sort((a, b) => b[1] - a[1]);
       const tot = recs.reduce((s, r) => s + r.total, 0);
       lines.push(`Money in since yesterday: ${E.inr(tot)}` + (top.length ? ' (' + top.slice(0, 2).map(([k, v]) => `${k} ${E.inr(v)}`).join(', ') + (top.length > 2 ? ` and ${top.length - 2} more` : '') + ')' : '') + '.');
-    } else lines.push('No money from customers entered in Tally since yesterday.');
+    } else lines.push(`No money from customers entered in ${ctx.source_name || 'Tally'} since yesterday.`);
   } catch (e) { /* skip the line */ }
   try {
     const cd = E.cashAndDebt(ctx);
@@ -166,10 +166,10 @@ function pointLine(x) {
 }
 
 /** The WhatsApp text: when it's from, money in, cash, the points, how to reply. */
-function compose(items, { company, slot, preview, firstName, lastSync, ctxLines }) {
+function compose(items, { company, slot, preview, firstName, lastSync, ctxLines, sourceName }) {
   const asOf = istStamp(lastSync);
   const head = (preview ? `[Preview for ${shortCompany(company)}. They have not been sent this.]\n\n` : '') +
-    `${greeting(slot)}${firstName ? ' ' + firstName : ''}.` + (asOf ? ` Your Tally books as of ${asOf}:` : ' From your Tally books:');
+    `${greeting(slot)}${firstName ? ' ' + firstName : ''}.` + (asOf ? ` Your ${sourceName || 'Tally'} books as of ${asOf}:` : ` From your ${sourceName || 'Tally'} books:`);
   const ctxBlock = (ctxLines || []).length ? '\n\n' + ctxLines.join('\n') : '';
   const body = items.length
     ? '\n\n' + (items.length === 1 ? 'One thing needs you:' : `${items.length} things need you:`) + '\n\n' + items.map((x, i) => `${i + 1}. ${pointLine(x)}`).join('\n\n')
@@ -258,7 +258,7 @@ async function watchAccount(userId, opts) {
   const o = opts || {};
   const slot = o.slot || 'manual';
   const { ctx } = await booksTools.contextFor(userId);
-  if (!ctx || !ctx.rows.length) return { user: userId, skipped: 'no Tally books' };
+  if (!ctx || !ctx.rows.length) return { user: userId, skipped: 'no books' };
   const list = E.insights(ctx);
   let state;
   try { state = await selectRows('margyn_signals', `select=key,kind,status,impact,last_sent_at,sent_count,sent_via,sent_to&user_id=eq.${userId}&limit=1000`); }
@@ -272,11 +272,11 @@ async function watchAccount(userId, opts) {
   const ctxLines = context(ctx);
 
   if (o.previewOnly) {
-    const text = compose(chosen, { company, slot, preview: false, firstName: firstNameOf(profile), lastSync: ctx.lastSync, ctxLines });
+    const text = compose(chosen, { company, slot, preview: false, firstName: firstNameOf(profile), lastSync: ctx.lastSync, ctxLines, sourceName: ctx.source_name });
     const res = { user: userId, mode, found: list.length, chosen: chosen.map((x) => x.kind), text };
     if (mode === 'preview' && process.env.MARGYN_WATCH_PREVIEW_PHONE) {
       const to = process.env.MARGYN_WATCH_PREVIEW_PHONE;
-      const ptext = compose(chosen, { company, slot, preview: true, lastSync: ctx.lastSync, ctxLines });
+      const ptext = compose(chosen, { company, slot, preview: true, lastSync: ctx.lastSync, ctxLines, sourceName: ctx.source_name });
       const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: ptext }) : null;
       res.sent_to_preview_phone = !!(s && s.ok);
       if (s && s.ok) await deliveries.record({ messageId: s.messageId, userId, kind: 'watch', to, sentTo: 'preview_copy', keys: [] });
@@ -292,7 +292,7 @@ async function watchAccount(userId, opts) {
       result.not_sent = preview ? 'MARGYN_WATCH_PREVIEW_PHONE is not set in Vercel' : 'no WhatsApp number on the account (Settings > Profile)';
     } else {
       const firstName = preview ? null : firstNameOf(profile);
-      const text = compose(chosen, { company, slot, preview, firstName, lastSync: ctx.lastSync, ctxLines });
+      const text = compose(chosen, { company, slot, preview, firstName, lastSync: ctx.lastSync, ctxLines, sourceName: ctx.source_name });
       let sent = null;
       if (await sessionOpen(to, o.now)) {
         sent = await bsp.sendText({ to, text });
@@ -351,15 +351,19 @@ function firstNameOf(profile) {
   return String(((profile && profile.preferences) || {}).display_name || '').trim().split(/\s+/)[0] || null;
 }
 
-/** Every account with Tally connected. Bounded so one cron run can't overrun. */
+/** Every account with books connected (Tally, Zoho Books or Odoo: dataLayer/books.js). Bounded so one cron run can't overrun. */
 async function runWatchAll(slot, opts) {
   const o = opts || {};
   const started = Date.now(), budgetMs = o.budgetMs || 45000;
   let users = [];
   try {
     const rows = await selectRows('tally_installs', 'select=user_id&status=eq.active&limit=500');
-    users = [...new Set(rows.map((r) => r.user_id))];
-  } catch (e) { return { slot, error: 'could not list Tally accounts' }; }
+    const more = await Promise.all([
+      selectRows('zoho_organizations', 'select=user_id&status=eq.active&limit=500').catch(() => []),
+      selectRows('connector_credentials', 'select=user_id&connector_type=eq.odoo&disconnected_at=is.null&limit=500').catch(() => [])
+    ]);
+    users = [...new Set(rows.concat(...more).map((r) => r.user_id).filter(Boolean))];
+  } catch (e) { return { slot, error: 'could not list accounts with books' }; }
   const results = [];
   for (const u of users) {
     if (Date.now() - started > budgetMs) { results.push({ user: u, skipped: 'out of time this run' }); continue; }

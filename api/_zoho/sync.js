@@ -90,6 +90,8 @@ function mapInvoice(i, orgRef) {
     customer_ref: i.customer_id ? String(i.customer_id) : null,
     customer_name: i.customer_name || null,
     total: toNumber(i.total),
+    // Before GST: sales in the books layer (dataLayer/books.js). The list API may only carry tax_total.
+    sub_total: i.sub_total != null ? toNumber(i.sub_total) : (i.total != null && i.tax_total != null ? toNumber(i.total) - toNumber(i.tax_total) : null),
     balance: toNumber(i.balance),
     status: i.status || 'sent',
     invoice_date: toDateOnly(i.date),
@@ -111,6 +113,7 @@ function mapBill(b, orgRef) {
     vendor_ref: b.vendor_id ? String(b.vendor_id) : null,
     vendor_name: b.vendor_name || null,
     total: toNumber(b.total),
+    sub_total: b.sub_total != null ? toNumber(b.sub_total) : (b.total != null && b.tax_total != null ? toNumber(b.total) - toNumber(b.tax_total) : null),
     balance: toNumber(b.balance),
     status: b.status || 'open',
     bill_date: toDateOnly(b.date),
@@ -187,7 +190,14 @@ async function upsert(table, rows, conflictColumns) {
   // Chunk so a very large backfill batch doesn't blow the PostgREST payload limit.
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
-    await insertRows(table, rows.slice(i, i + CHUNK), { onConflict: conflictColumns, merge: true });
+    let chunk = rows.slice(i, i + CHUNK);
+    try { await insertRows(table, chunk, { onConflict: conflictColumns, merge: true }); }
+    catch (e) {
+      // sub_total arrives with 2026-10-04-books-layer.sql; until it's run, sync exactly as before.
+      if (!/sub_total/.test(String(e && e.message)) || !('sub_total' in chunk[0])) throw e;
+      chunk = chunk.map(({ sub_total, ...r }) => r);
+      await insertRows(table, chunk, { onConflict: conflictColumns, merge: true });
+    }
   }
   return rows.length;
 }

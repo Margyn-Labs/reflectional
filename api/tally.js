@@ -45,7 +45,9 @@ const { track } = require('./_lib/track');
 const { computeAnalytics, asOfToday, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
-const { loadTallyBook, forgetTallyBook, pagedAll } = require('./_lib/tallyData');
+const { pagedAll } = require('./_lib/tallyData');
+// The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
+const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
 const { buildInsights } = require('./_lib/booksEngine');
 
 /* ------------------------------------------------------------------ */
@@ -299,10 +301,10 @@ async function handleAnalytics(req, res) {
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
 
-  // One reader for the Margin page, Margyn's books tools and Margyn Watch (api/_lib/tallyData.js).
+  // One reader for the Margin page, Margyn's books tools and Margyn Watch (api/_lib/dataLayer/books.js).
   // The page always reads fresh; the warm copy it leaves behind serves the questions that follow.
   let book;
-  try { book = await loadTallyBook(user.id, { company: req.query && req.query.company, fresh: true }); }
+  try { book = await loadBooks(user.id, { company: req.query && req.query.company, fresh: true }); }
   catch (e) { return json(res, 500, { error: 'lookup_failed' }); }
   if (!book.connected) return json(res, 200, { connected: false });
   const { company, companies, chosen, ledgers, bills, vouchers, truncated, overrides, aiPlaced, syncRuns, diagnostics } = book;
@@ -335,13 +337,18 @@ async function handleAnalytics(req, res) {
     out.quality.reasons.unshift(`Margyn placed ${aiPlaced.size} ledger(s) in the profit and loss for you (e.g. ${[...aiPlaced].slice(0, 3).join(', ')}). Change any of them under “Margyn needs your help”.`);
   }
   const staleH = lastSync ? Math.round((Date.now() - Date.parse(lastSync)) / 3600000) : null;
-  if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind Tally.`);
+  const srcName = book.source_name || 'Tally';
+  if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind ${srcName}.`);
+  for (const n of book.notes || []) out.quality.reasons.unshift(n);
+  if (book.source && book.source !== 'tally') out.quality.reasons = out.quality.reasons.map((r) => r.replace(/^Single source \(Tally\)/, `Single source (${srcName})`));
   if (truncated) out.quality.reasons.unshift('Voucher history was capped at 20,000 rows, so older months may be incomplete.');
   // What else the books say (kits, branches, commission, customers gone quiet, old debts...): the same list
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
   let extra = {};
   try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
-  return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra });
+  return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra,
+    // Which books system this is, the others connected, and their headline figures side by side (never added).
+    books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] });
 }
 
 /* ------------------------------------------------------------------ */
@@ -383,7 +390,7 @@ async function handleClassify(req, res) {
     if (!bucket) {
       const del = await restRequest(`tally_ledger_classes?user_id=eq.${user.id}&company_name=eq.${encodeURIComponent(company)}&ledger_name=eq.${encodeURIComponent(ledger)}`, { method: 'DELETE' });
       if (!del.ok) return json(res, 500, { error: 'save_failed' });
-      forgetTallyBook(user.id);
+      forgetBooks(user.id);
       await auditClassify(user, company, ledger, null);
       return json(res, 200, { ok: true, cleared: true });
     }
@@ -392,7 +399,7 @@ async function handleClassify(req, res) {
       set_by: user.auth_id || user.id, updated_at: new Date().toISOString()
     }], { onConflict: 'user_id,company_name,ledger_name', merge: true });
   } catch (e) { return json(res, 500, { error: 'save_failed' }); }
-  forgetTallyBook(user.id);
+  forgetBooks(user.id);
   await auditClassify(user, company, ledger, bucket);
   return json(res, 200, { ok: true, ledger, bucket });
 }

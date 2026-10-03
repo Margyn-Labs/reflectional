@@ -45,7 +45,7 @@ function renderAnalyticsView(){
     mp.querySelectorAll('button').forEach(b => b.addEventListener('click', () => b.classList.toggle('on')));
   }
   const charts = loadAnalyticsCharts();
-  if(typeof tallyConnected !== 'undefined' && tallyConnected && typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy){
+  if((typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected)) && typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy){
     mgLoadMargin().then(() => { if(mgMar && typeof renderAnalyticsView === 'function') renderAnalyticsView(); });
   }
   const anyData = charts.some(c => analyticsModel((c.metrics || ['revenue']).filter(m => ANALYTICS_METRICS[m]), c.group).periods.length >= 2);
