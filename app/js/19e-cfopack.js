@@ -31,13 +31,34 @@ let mgPackSends = null;          // recent report_deliveries rows, or false when
 function mgMonthKey(iso){ return new Date(new Date(iso).getTime() + 5.5 * 3600000).toISOString().slice(0, 7); }
 function mgMonthLabel(k){ const [y, m] = k.split('-').map(Number); return MG_MONTHS[m - 1] + ' ' + y; }
 function mgMonthShift(k, by){ const [y, m] = k.split('-').map(Number); const t = y * 12 + m - 1 + by; return Math.floor(t / 12) + '-' + String(t % 12 + 1).padStart(2, '0'); }
-function mgPackMonths(){ return [...new Set((snapshots || []).map(s => mgMonthKey(s.created_at)))].sort().reverse(); }
+/* Months the pack can cover: every month with a saved reading, and every month the books have (2026-10-04:
+   an account that started with Margyn on 3 Oct only had October, 4 days in, so the pack opened on that). */
+function mgPackBookMonths(){
+  const pnl = (typeof mgMar !== 'undefined' && mgMar && !mgMarCompany && Array.isArray(mgMar.pnl)) ? mgMar.pnl : [];
+  return pnl.filter(r => r && r.month && !r.partial_start).map(r => r.month);
+}
+function mgPackMonths(){ return [...new Set([...(snapshots || []).map(s => mgMonthKey(s.created_at)), ...mgPackBookMonths()])].sort().reverse(); }
 function mgPackDefaultMonth(){
   const months = mgPackMonths(), last = mgMonthShift(mgMonthKey(new Date().toISOString()), -1);
   return months.includes(last) ? last : (months[0] || last);
 }
 function mgPackCurrent(){ const m = mgPackMonths(); return mgPackMonth && m.includes(mgPackMonth) ? mgPackMonth : mgPackDefaultMonth(); }
-function mgPackSnap(k){ return (snapshots || []).find(s => mgMonthKey(s.created_at) === k) || null; }   // snapshots are newest first
+function mgPackSnap(k){
+  const snap = (snapshots || []).find(s => mgMonthKey(s.created_at) === k);   // snapshots are newest first
+  if(snap) return snap;
+  if(!mgPackBookMonths().includes(k)) return null;
+  // No reading saved that month: the month's figures straight from the books. Nothing is guessed: figures the books
+  // don't give for a past date (receivables then, Pulse Score) are left empty and the pack shows "—".
+  const end = Date.parse(mgMonthShift(k, 1) + '-01T00:00:00+05:30') - 1000;
+  const at = new Date(Math.min(end, Date.now())).toISOString();
+  const hist = mgMar && mgMar.cash_history && Array.isArray(mgMar.cash_history.points) ? mgMar.cash_history.points : [];
+  const day = mgIstDateKey(at), cp = hist.filter(x => x.date <= day).pop();
+  const g = (mgMar.gst_estimate || []).find(x => x.month === k);
+  const t = mgPackTallyPnl(k) || {};
+  return { created_at:at, _books:true, cash:cp ? Number(cp.cash) : null, revenue:t.revenue, burn:t.burn, net_profit:t.net_profit,
+    recv_total:null, pay_soon:null, gst_payable:g ? Number(g.net_payable_estimate) : null, gst_leak:null,
+    pulse_score:null, vitals:[], confidence:null, briefing:null };
+}
 /* Revenue, spend and profit for a month straight from Tally's monthly P&L, when Tally is
    connected. A reading's own figures are an average across months, not that month's. */
 function mgPackTallyPnl(k){
@@ -111,12 +132,13 @@ const MG_PACK_PRINT_CSS = "@page{size:A4;margin:14mm 14mm 12mm}html,body{margin:
 
 function mgPackPct(a, b){ a = Number(a); b = Number(b); return b ? (a - b) / Math.abs(b) * 100 : null; }
 function mgPackChg(a, b, goodUp){
+  if(a == null || b == null) return '<span class="pk-muted">—</span>';
   const p = mgPackPct(a, b);
   if(p === null || !isFinite(p)) return '<span class="pk-muted">—</span>';
   const good = Math.abs(p) < 0.05 ? null : (p > 0) === goodUp;
   return '<span class="' + (good === null ? '' : good ? 'pk-pos' : 'pk-neg') + '">' + (p > 0 ? '+' : p < 0 ? '−' : '') + Math.abs(p).toFixed(1) + '%</span>';
 }
-function mgPackN(n){ return escapeHtml(fmtINR(n).replace('₹', '')); }
+function mgPackN(n){ return n == null || (typeof n === 'number' && !isFinite(n)) ? '—' : escapeHtml(fmtINR(n).replace('₹', '')); }
 function mgPackTable(head, rows, id){
   return '<table class="pk-t"' + (id ? ' id="' + id + '"' : '') + '><thead><tr>' + head.map(h => '<th' + (/\(₹\)|%|pts|days|Score/.test(h) ? ' class="r"' : '') + '>' + escapeHtml(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
 }
@@ -132,7 +154,7 @@ function mgPackDoc(k){
   const org = mgOrgName(), month = mgMonthLabel(k);
   const today = fmtDay(new Date().toISOString());
   const gen = new Date().toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit' });
-  const closing = 'closing reading ' + fmtDay(s.created_at);
+  const closing = (s._books ? 'books at ' : 'closing reading ') + fmtDay(s.created_at);
   const monthScope = mgOrgShort() + ' · Reconciled · ' + month + ' · ' + closing;
   const liveScope = mgOrgShort() + ' · Reconciled · as of today, ' + today;
   const latestMonth = mgPackMonths()[0] === k;
@@ -149,9 +171,9 @@ function mgPackDoc(k){
   // 1. headline
   const tile = (l, v, note) => '<div class="pk-tile"><div class="pk-tile-l">' + escapeHtml(l) + '</div><div class="pk-tile-v">' + escapeHtml(v) + '</div><div class="pk-tile-n">' + note + '</div></div>';
   const headline = '<div class="pk-tiles">' +
-    tile('Cash at month end', fmtINR(s.cash, 'tile'), p ? mgPackChg(s.cash, p.cash, true) + ' vs prior month' : 'First month') +
+    tile('Cash at month end', s.cash == null ? 'n/a' : fmtINR(s.cash, 'tile'), p ? mgPackChg(s.cash, p.cash, true) + ' vs prior month' : 'First month') +
     tile('Revenue', fmtINR(plS.revenue, 'tile'), (tk && tk.pl_in_progress ? 'Month in progress' : plCmp ? mgPackChg(plS.revenue, plP.revenue, true) + ' vs prior month' : '')) +
-    tile('Net profit', fmtINR(plS.net_profit, 'tile'), margin != null ? escapeHtml(margin.toFixed(1) + '% margin') : '') +
+    tile('Net profit', fmtINR(plS.net_profit, 'tile'), margin != null && !(tk && tk.pl_in_progress) ? escapeHtml(margin.toFixed(1) + '% margin') : '') +
     tile('Pulse Score', s.pulse_score != null ? String(s.pulse_score) : 'n/a', band ? escapeHtml(band.label + ' · operating health') : '') + '</div>';
 
   // 2. P&L
@@ -183,7 +205,7 @@ function mgPackDoc(k){
   }
   const f = mgForecast();
   const cash = '<div class="pk-tiles" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
-      tile('Cash at month end (reconciled)', fmtINR(s.cash, 'tile'), escapeHtml(fmtINR(s.cash))) +
+      tile('Cash at month end' + (s._books ? ' (books)' : ' (reconciled)'), s.cash == null ? 'n/a' : fmtINR(s.cash, 'tile'), s.cash == null ? '' : escapeHtml(fmtINR(s.cash))) +
       tile('Cash today (reconciled)', fmtINR(reconNow, 'tile'), escapeHtml(fmtINR(reconNow) + ' · ' + today)) + '</div>' +
     '<div class="pk-blk"><h3>Where the cash is, as of today</h3>' +
     (cashRows.length ? mgPackTable(['Source', 'Account', 'Balance (₹)', 'Against reconciled'], cashRows, 'pkCash') : '<div class="pk-empty">No source reports balances by account yet.</div>') +

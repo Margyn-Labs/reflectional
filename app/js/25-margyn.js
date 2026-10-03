@@ -558,13 +558,20 @@ function mgrNudgeRules(){
       acts:[{ label:'Show cash', run:() => mgrShowView('cash') }, { label:'What can I do?', run:() => mgrAsk('Cash drops below my floor in week ' + (f.firstBelow + 1) + '. What are my options?') }] });
   } catch(e){}
   try {
-    const old = mgMoneyGroups('recv').filter(g => g.oldestDays != null && g.oldestDays <= -60 && g.overdue > 0);
-    const amt = old.reduce((t, g) => t + g.overdue, 0);
-    if(old.length) out.push({ key:'od60:' + old.length, text:fmtINR(amt, 'tile') + ' is more than 60 days overdue across ' + old.length + ' customer' + (old.length === 1 ? '' : 's') + ', the biggest ' + old.slice().sort((a, b) => b.overdue - a.overdue)[0].party + '.',
+    // Only the invoices that are themselves 60+ days late (a customer's whole overdue balance counted the 31–60 day ones
+    // too: ₹1.81 Cr vs the real ₹82.2 L). "Biggest" skips debts over a year old: those are a write-off question, not a chase.
+    const old = mgMoneyGroups('recv').map(g => {
+      const rows = ((g.by[g.primary] || {}).rows || []).filter(r => r.days !== null && r.days < -60 && r.amount > 0);
+      return { party:g.party, amt:rows.reduce((t, r) => t + r.amount, 0), fresh:rows.filter(r => r.days >= -365).reduce((t, r) => t + r.amount, 0) };
+    }).filter(x => x.amt > 0);
+    const amt = old.reduce((t, x) => t + x.amt, 0);
+    const big = old.slice().sort((a, b) => b.fresh - a.fresh)[0];
+    if(old.length) out.push({ key:'od60:' + old.length, text:fmtINR(amt, 'tile') + ' is more than 60 days overdue across ' + old.length + ' customer' + (old.length === 1 ? '' : 's') + (big && big.fresh > 0 ? ', the biggest ' + mgCleanName(big.party) : '') + '.',
       acts:[{ label:'Show them', run:() => { mgrOpen(); VX_TOOLS.filter_list({ direction:'receivables', age:'61-90' }); } }, { label:'Who first?', run:() => mgrAsk('Who should I chase first, and why?') }] });
   } catch(e){}
   try {
-    const due = mgMoneyGroups('pay').reduce((t, g) => t + (g.due7 || 0), 0);
+    // Only bills actually falling due in the next 7 days (g.due7 includes everything already overdue).
+    const due = mgMoneyGroups('pay').reduce((t, g) => t + ((g.by[g.primary] || {}).rows || []).filter(r => r.days !== null && r.days >= 0 && r.days <= 7).reduce((a, r) => a + r.amount, 0), 0);
     if(due > 0) out.push({ key:'pay7', text:fmtINR(due, 'tile') + ' of bills fall due in the next 7 days.',
       acts:[{ label:'Show payables', run:() => mgrShowView('payables') }, { label:'Can we cover it?', run:() => mgrAsk('Can we cover the bills due in the next 7 days?') }] });
   } catch(e){}
@@ -708,7 +715,12 @@ function mgrWorkingOn(){
     const h = mgSourceHealth(k); if(!h.on) return;
     rows.push({ dot:h.warn ? 'warn' : '', t:'Keeping ' + MG_SRC_LABEL[k] + ' in sync', s:h.text, st:h.warn ? 'NEEDS YOU' : 'OK', ask:h.warn ? 'Is my ' + MG_SRC_LABEL[k] + ' connector working?' : null });
   });
-  if(d.whatsapp_bell && d.whatsapp_bell.status === 'active') rows.push({ dot:'', t:'Opening and Closing Bell', s:'Your morning and evening briefing on WhatsApp', st:'SCHEDULED' });
+  // Bells: only "scheduled" when they can actually go out (templates set; Channel health says so).
+  const bellsLive = typeof mgBellsLive === 'function' ? mgBellsLive() : null;
+  if(d.whatsapp_bell && d.whatsapp_bell.status === 'active' && bellsLive === true) rows.push({ dot:'', t:'Opening and Closing Bell', s:'Your morning and evening briefing on WhatsApp', st:'SCHEDULED' });
+  else if(d.whatsapp_bell && d.whatsapp_bell.status === 'active' && bellsLive === false) rows.push({ dot:'warn', t:'Opening and Closing Bell', s:'Not live yet: WhatsApp hasn’t approved the message, so nothing goes out', st:'NOT LIVE' });
+  const wch = typeof mgWatchChannel === 'function' ? mgWatchChannel() : null;
+  if(wch && wch.headline !== 'Off') rows.push({ dot:wch.status === 'failing' ? 'warn' : '', t:'Margyn updates on WhatsApp', s:wch.detail, st:wch.status === 'failing' ? 'NEEDS YOU' : wch.status === 'working' ? 'DELIVERING' : 'ON', ask:'What have you sent me on WhatsApp?' });
   if(!rows.length) rows.push({ dot:'', t:'Nothing running yet', s:'Connect a source or switch on payment reminders and I’ll get to work.', st:'' });
   return rows.map(r => '<div class="mgd-task' + (r.ask ? ' click' : '') + '"' + (r.ask ? ' data-mgr-ask="' + escapeHtml(r.ask) + '"' : '') + '><span class="mgd-dot ' + r.dot + '"></span><div><b>' + escapeHtml(r.t) + '</b><span>' + escapeHtml(r.s) + '</span></div><span class="mgd-st">' + escapeHtml(r.st) + '</span></div>').join('');
 }

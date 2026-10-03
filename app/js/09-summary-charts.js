@@ -107,7 +107,8 @@ function _rdBuildConfig(spec){
     const isArea = stype === 'area';
     return {
       label: s.name || ('Series ' + (i+1)),
-      data: s.data.map(Number),
+      data: s.data.map(v => v == null ? null : Number(v)),   // a period with no figure is a gap, not ₹0
+      spanGaps: true,
       _unit: s.unit || 'inr',
       type: isBar ? 'bar' : 'line',
       yAxisID: axisFor({ unit: s.unit || 'inr', type: stype }),

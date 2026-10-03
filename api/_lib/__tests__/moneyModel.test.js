@@ -107,6 +107,7 @@ const browserSrc = [
   extract('19-pages.js', 'MG_SRC_ORDER', 'const'),
   extract('19-pages.js', 'mgMoneyRowsLocal'),
   extract('19-pages.js', 'mgMoneyGroupsLocal'),
+  extract('19-pages.js', 'mgPartyName'),
   extract('19-pages.js', 'mgGroupsFromPos')
 ].join('\n') + '\nthis.groups = mgMoneyGroupsLocal; this.fromPos = mgGroupsFromPos;';
 

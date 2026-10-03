@@ -22,8 +22,53 @@ async function mgLoadMargin(force){
     clearTimeout(timer);
     if(!res.ok) throw new Error('HTTP ' + res.status);
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
+    // Saved readings now carry the books' cash for their day: re-draw the page that shows them.
+    const moved = mgApplyCashHistory(typeof snapshots !== 'undefined' ? snapshots : null);
+    if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView !== 'margin' && (moved || ['home', 'cash', 'reports', 'cfopack'].includes(mgCurrentView))) mgRenderOwn(mgCurrentView);
   } catch(e){ mgMarErr = true; console.error('[margyn] margin:', e.message); }
   finally { mgMarBusy = false; if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'margin') mgRenderMargin(); }
+}
+
+/* Cash, day by day, from the books (tallyAnalytics cash_history, 2026-10-04).
+   A saved reading keeps the cash it was saved with, and Care Hygiene's 3 Oct readings were saved from
+   Tally balances that still had future EMIs in them (₹4.38 L, real ₹13.8 L), so "vs prior" read +215%.
+   Readings whose cash came from Tally take the books' end-of-day cash for their India date instead
+   (the saved figure stays on the reading as _cash_saved). Other sources are left as saved. */
+function mgCashHistoryMap(){
+  const h = mgMar && !mgMarCompany && mgMar.cash_history;   // another company's books don't describe this account's readings
+  if(!h || !Array.isArray(h.points) || !h.points.length) return null;
+  return new Map(h.points.map(p => [p.date, Number(p.cash)]));
+}
+function mgIstDateKey(iso){ const t = Date.parse(iso); return isNaN(t) ? '' : new Date(t + 5.5 * 3600000).toISOString().slice(0, 10); }
+function mgApplyCashHistory(list){
+  const by = mgCashHistoryMap();
+  if(!by || !Array.isArray(list)) return false;
+  let changed = false;
+  list.forEach(s => {
+    const prov = s && s.input_provenance && s.input_provenance.cash;
+    if(!prov || prov.source !== 'tally') return;
+    const v = by.get(mgIstDateKey(s.created_at));
+    if(v == null || !isFinite(v)) return;
+    if(s._cash_saved === undefined) s._cash_saved = s.cash;
+    if(Number(s.cash) === v) return;
+    s.cash = v; changed = true;
+    // Cash feeds three vitals and so the Pulse Score: re-score those from the same reading's other figures,
+    // or Runway and Pulse keep the wrong cash's verdict (Care Hygiene's Pulse read 44 → 36 from it).
+    if(Array.isArray(s.vitals) && typeof scoreCash === 'function' && typeof computePulseScore === 'function'){
+      const burn = Number(s.burn) || 0, recv = Number(s.recv_total) || 0, pay = Number(s.pay_soon) || 0;
+      const redo = { 'Cash Position':scoreCash(v, burn), 'Payables Due (30d)':scorePayables(pay, v), 'Working Capital Runway':scoreRunway(v, recv, pay, burn) };
+      if(s._vitals_saved === undefined){ s._vitals_saved = s.vitals; s._pulse_saved = s.pulse_score; }
+      s.vitals = s.vitals.map(x => redo[x.label] ? Object.assign({}, x, { value:redo[x.label].value, score:redo[x.label].score }) : x);
+      if(s.vitals.length === 6) s.pulse_score = computePulseScore(s.vitals);
+    }
+  });
+  return changed;
+}
+/* The last `days` days of book cash as chart points ({ created_at, cash }), or null without history. */
+function mgCashHistorySeries(days){
+  const h = mgMar && !mgMarCompany && mgMar.cash_history;
+  if(!h || !Array.isArray(h.points) || h.points.length < 2) return null;
+  return h.points.slice(-(days || 90)).map(p => ({ created_at:p.date + 'T18:00:00+05:30', cash:Number(p.cash) || 0 }));
 }
 
 const MG_MAR_BUCKETS = [
@@ -122,15 +167,16 @@ function mgRenderMargin(){
   const pnlRows = (d.pnl || []).slice().reverse().map(r =>
     '<tr><td>' + escapeHtml(mgMarMonth(r.month)) + (r.provisional ? ' <span class="mg-muted">(month in progress)</span>' : r.partial_start ? ' <span class="mg-muted">(partial month, synced from mid-month)</span>' : r.costs_incomplete ? ' <span class="mg-muted">(running costs look incomplete)</span>' : '') + '</td>' +
     '<td class="r">' + mgNum(r.net_sales) + '</td><td class="r">' + mgNum(r.cogs_pre_stock) + '</td>' +
-    '<td class="r">' + mgNum(r.gross_profit_pre_stock) + '</td><td class="r">' + mgMarPct(r.gross_margin_pct_pre_stock) + '</td>' +
-    '<td class="r">' + mgNum(r.opex) + '</td><td class="r">' + mgNum(r.net_profit_pre_stock) + '</td><td class="r">' + mgMarPct(r.net_margin_pct_pre_stock) + '</td></tr>').join('');
+    // A month a few days old (or with costs not booked) has no meaningful margin %: Oct, 4 days in, read −175%.
+    '<td class="r">' + mgNum(r.gross_profit_pre_stock) + '</td><td class="r">' + (r.provisional ? '—' : mgMarPct(r.gross_margin_pct_pre_stock)) + '</td>' +
+    '<td class="r">' + mgNum(r.opex) + '</td><td class="r">' + mgNum(r.net_profit_pre_stock) + '</td><td class="r">' + (r.provisional || r.costs_incomplete ? '—' : mgMarPct(r.net_margin_pct_pre_stock)) + '</td></tr>').join('');
 
   const costRows = (d.cost_structure || []).map(c =>
     '<tr><td>' + escapeHtml(c.ledger) + '</td><td class="mg-muted">' + escapeHtml((MG_MAR_BUCKETS.find(b => b[0] === c.bucket) || [0, c.bucket])[1]) + '</td>' +
     '<td class="r">' + mgNum(c.amount) + '</td><td class="r">' + mgMarPct(c.pct_of_net_sales) + '</td></tr>').join('');
 
   const custRows = (d.customers || []).filter(c => c.net_sales || c.outstanding).slice(0, 25).map(c =>
-    '<tr><td>' + escapeHtml(c.party || '—') + (c.flags.length ? ' <span class="mg-muted">' + escapeHtml(c.flags.map(f => ({ over_90_days:'over 90 days', owes_with_no_sales_in_90d:'no recent sales', high_returns:'high returns' }[f] || f)).join(', ')) + '</span>' : '') + '</td>' +
+    '<tr><td>' + escapeHtml(mgCleanName(c.party) || '—') + (c.flags.length ? ' <span class="mg-muted">' + escapeHtml(c.flags.map(f => ({ over_90_days:'over 90 days', owes_with_no_sales_in_90d:'no recent sales', high_returns:'high returns' }[f] || f)).join(', ')) + '</span>' : '') + '</td>' +
     '<td class="r">' + mgNum(c.net_sales) + '</td><td class="r">' + mgMarPct(c.returns_pct) + '</td>' +
     '<td class="r">' + mgNum(c.outstanding) + '</td><td class="r">' + (c.dso_days == null ? '—' : Math.round(c.dso_days) + ' d') + '</td>' +
     '<td class="r">' + mgMarPct(c.credit_cost_pct_of_sales) + '</td><td class="r">' + mgMarPct(c.est_margin_after_credit_pct) + '</td></tr>').join('');

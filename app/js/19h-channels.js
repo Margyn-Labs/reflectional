@@ -18,8 +18,17 @@ async function mgLoadChannels(force){
     if(!res.ok) throw new Error('HTTP ' + res.status);
     mgChan = await res.json(); mgChanAt = Date.now(); mgChanErr = false;
   } catch(e){ mgChanErr = true; console.error('[margyn] channel health:', e.message); }
-  finally { mgChanBusy = false; if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'channels') mgRenderChannels(); }
+  finally {
+    mgChanBusy = false;
+    if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'channels') mgRenderChannels();
+    else if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home' && typeof mgRenderOwn === 'function') mgRenderOwn('home');
+  }
 }
+
+/* What the app may say about the Bells and Margyn updates: from Channel health, never from "deployed".
+   Bells: true / false (templates set on the server or not), null until channel health has loaded. */
+function mgBellsLive(){ return mgChan && typeof mgChan.bells_live === 'boolean' ? mgChan.bells_live : null; }
+function mgWatchChannel(){ return (mgChan && (mgChan.channels || []).find(c => c.key === 'margyn_updates')) || null; }
 
 const MG_CHAN_TONE = { working:'', failing:'warn', not_set_up:'off', quiet:'off' };
 function mgRenderChannels(){

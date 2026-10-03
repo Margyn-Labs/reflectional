@@ -25,7 +25,8 @@ const CHANNELS = [
   { key: 'opening_bell', label: 'Opening Bell', via: 'WhatsApp', env: 'WHATSAPP_TEMPLATE_OPENING' },
   { key: 'closing_bell', label: 'Closing Bell', via: 'WhatsApp', env: 'WHATSAPP_TEMPLATE_CLOSING' },
   { key: 'chases', label: 'Payment chases', via: 'WhatsApp' },
-  { key: 'cfo_pack', label: 'CFO pack', via: 'Email' }
+  { key: 'cfo_pack', label: 'CFO pack', via: 'Email' },
+  { key: 'margyn_updates', label: 'Margyn updates', via: 'WhatsApp' }
 ];
 
 const ts = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) ? t : null; };
@@ -85,7 +86,7 @@ function judge(meta, attempts, { configured, now }) {
  * @param {object}   i.configured   { opening_bell, closing_bell } booleans, from the server's settings
  * @param {number}   [i.now]
  */
-function buildChannelHealth({ chases = [], targets = [], bellLogs = [], deliveries = null, configured = {}, now = Date.now() }) {
+function buildChannelHealth({ chases = [], targets = [], bellLogs = [], deliveries = null, configured = {}, watch = null, now = Date.now() }) {
   const channels = [];
 
   for (const key of ['opening_bell', 'closing_bell']) {
@@ -108,7 +109,25 @@ function buildChannelHealth({ chases = [], targets = [], bellLogs = [], deliveri
     channels.push({ key: 'cfo_pack', label: 'CFO pack', via: 'Email', status: 'not_set_up', headline: 'Not set up', detail: 'Scheduled sends aren’t switched on for this account yet.', sent_30d: 0, failed_30d: 0, last_success_at: null, last_failure_at: null, last_error: null });
   }
 
-  return { generated_at: iso(now), window_days: WINDOW_DAYS, channels, recovered: recovered(chases, targets, now) };
+  // Margyn updates (Watch, 2026-10-04): the one WhatsApp message that is live. A send counts once WhatsApp says it
+  // arrived (wa_deliveries, from Gupshup's message events); still on its way is neither sent nor failed.
+  if (watch) {
+    const meta = CHANNELS.find((c) => c.key === 'margyn_updates');
+    const rows = Array.isArray(watch.deliveries) ? watch.deliveries : [];
+    const attempts = rows.filter((d) => ['delivered', 'read', 'failed'].includes(d.status))
+      .map((d) => ({ at: ts(d.delivered_at || d.read_at || d.failed_at || d.sent_at), ok: d.status !== 'failed', error: d.error }));
+    const toOwner = watch.mode === 'on' ? 'Goes to your WhatsApp.' : watch.mode === 'preview' ? 'Goes to the Margyn team’s preview phone only, not to you yet.' : 'Switched off: Margyn notices things but sends nothing.';
+    const j = judge(meta, attempts, { configured: undefined, now });
+    if (!attempts.length) {
+      const pending = rows.filter((d) => !['delivered', 'read', 'failed'].includes(d.status)).length;
+      channels.push({ ...j, status: watch.mode === 'off' ? 'not_set_up' : 'quiet', headline: watch.mode === 'off' ? 'Off' : 'Nothing delivered yet',
+        detail: toOwner + (pending ? ` ${pending} sent, waiting for WhatsApp to confirm delivery.` : '') });
+    } else channels.push({ ...j, detail: toOwner + ' ' + j.detail });
+  }
+
+  return { generated_at: iso(now), window_days: WINDOW_DAYS, channels, recovered: recovered(chases, targets, now),
+    // Bells only go out when their message template is set on the server: the app reads this instead of "deployed".
+    bells_live: !!(configured.opening_bell || configured.closing_bell) };
 }
 
 /** Paid-after-a-chase, per invoice, from the chase records. */
@@ -159,14 +178,18 @@ function recovered(chases, targets, now) {
 async function channelHealthForAccount(accountId) {
   const since = new Date(Date.now() - WINDOW_DAYS * DAY).toISOString();
   const uid = encodeURIComponent(accountId);
-  const [chases, targets, bellLogs, deliveries] = await Promise.all([
+  const [chases, targets, bellLogs, deliveries, watchRows, profile] = await Promise.all([
     selectRows('whatsapp_chases', `user_id=eq.${uid}&created_at=gte.${since}&select=id,chase_target_id,chase_number,channel,status,error,sent_at,created_at&order=created_at.desc&limit=1000`).catch(() => []),
     selectRows('whatsapp_chase_targets', `user_id=eq.${uid}&select=id,party_name,invoice_ref,amount,state,resolved_at,last_chase_at&limit=2000`).catch(() => []),
     selectRows('connector_logs', `user_id=eq.${uid}&connector_type=eq.whatsapp&operation=in.(send_opening,send_closing)&created_at=gte.${since}&select=operation,status,error_message,created_at&order=created_at.desc&limit=200`).catch(() => []),
-    selectRows('report_deliveries', `user_id=eq.${uid}&created_at=gte.${since}&select=kind,status,error,created_at&order=created_at.desc&limit=100`).catch(() => null)
+    selectRows('report_deliveries', `user_id=eq.${uid}&created_at=gte.${since}&select=kind,status,error,created_at&order=created_at.desc&limit=100`).catch(() => null),
+    selectRows('wa_deliveries', `user_id=eq.${uid}&kind=eq.watch&sent_at=gte.${since}&select=status,error,sent_to,sent_at,delivered_at,read_at,failed_at&order=sent_at.desc&limit=200`).catch(() => []),
+    selectRows('profiles', `id=eq.${uid}&select=preferences&limit=1`).then((r) => r[0] || null).catch(() => null)
   ]);
+  const w = profile && profile.preferences && profile.preferences.margyn_watch;
+  const watchMode = w && typeof w === 'object' && ['on', 'preview', 'off'].includes(w.mode) ? w.mode : 'off';
   return buildChannelHealth({
-    chases, targets, bellLogs, deliveries,
+    chases, targets, bellLogs, deliveries, watch: { mode: watchMode, deliveries: watchRows },
     configured: { opening_bell: !!process.env.WHATSAPP_TEMPLATE_OPENING, closing_bell: !!process.env.WHATSAPP_TEMPLATE_CLOSING }
   });
 }

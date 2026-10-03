@@ -1,6 +1,6 @@
 /* ============================================================
-   ANALYTICS (new, presentational). Trends across snapshots and
-   connector data already in memory. Nothing here is persisted or
+   ANALYTICS / REPORTS. Charts from the books, period by period
+   (app/js/margyn-reports.js). Nothing here is persisted or
    feeds the Pulse Score.
    ============================================================ */
 let analyticsRange = '1q'; // '1m', '1q', '1y' or 'max'. How far back the chart data goes.
@@ -8,13 +8,13 @@ const ANALYTICS_METRICS = {
   revenue:   { label:'Revenue',         color:'#0E8F5C', unit:'inr',   agg:'sum',  val:s => Number(s.revenue)||0 },
   cash:      { label:'Cash position',   color:'#0B4B8C', unit:'inr',   agg:'last', val:s => Number(s.cash)||0 },
   pulse:     { label:'Pulse Score',     color:'#0E8F5C', unit:'score', agg:'last', val:s => Number(s.pulse_score)||0 },
-  margin:    { label:'Net margin',      color:'#0E8F5C', unit:'pct',   agg:'last', val:s => Number(s.revenue) ? (Number(s.net_profit)/Number(s.revenue))*100 : 0 },
+  margin:    { label:'Net margin',      color:'#9A6B00', unit:'pct',   agg:'last', val:s => Number(s.revenue) ? (Number(s.net_profit)/Number(s.revenue))*100 : 0 },
   spend:     { label:'Total spend',     color:'#CC5B34', unit:'inr',   agg:'sum',  val:s => Number(s.burn)||0 },
-  netprofit: { label:'Net profit',      color:'#0E8F5C', unit:'inr',   agg:'sum',  val:s => Number(s.net_profit)||0 },
+  netprofit: { label:'Net profit',      color:'#0B4B8C', unit:'inr',   agg:'sum',  val:s => Number(s.net_profit)||0 },
   gstleak:   { label:'GST/ITC leakage', color:'#CC5B34', unit:'inr',   agg:'last', val:s => Number(s.gst_leak)||0 }
 };
 const ANALYTICS_DEFAULTS = [
-  { id:'d1', name:'Revenue', type:'bar', metrics:['revenue'], group:'Week' },
+  { id:'d1', name:'Revenue', type:'bar', metrics:['revenue'], group:'Month' },
   { id:'d2', name:'Cash position', type:'area', metrics:['cash'], group:'Week' },
   { id:'d3', name:'Pulse Score', type:'line', metrics:['pulse'], group:'Week' },
   { id:'d4', name:'Revenue vs net profit', type:'combo', metrics:['revenue','netprofit'], group:'Month' }
@@ -24,24 +24,17 @@ function loadAnalyticsCharts(){
   return ANALYTICS_DEFAULTS.slice();
 }
 function saveAnalyticsCharts(list){ mgPrefSet('analytics_charts', list); }
-function analyticsRows(){
-  const chron = (snapshots || []).slice().reverse(); // oldest first
-  const days = { '1m':31, '1q':93, '1y':372, 'max':1e7 }[analyticsRange] || 93;
-  const cut = Date.now() - days * 86400000;
-  const within = chron.filter(s => s.created_at && new Date(s.created_at).getTime() >= cut);
-  const rows = within.length >= 2 ? within : chron;
-  if(rows.length >= 2) return rows;
-  // One source is enough: with Tally connected, draw the months it already has instead of waiting for uploads.
-  const pnl = (typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || [];
-  if(pnl.length >= 2){
-    return pnl.map(r => ({
-      created_at: r.month + '-15T00:00:00Z',
-      revenue: r.net_sales, net_profit: r.net_profit_pre_stock, burn: (Number(r.cogs_pre_stock) || 0) + (Number(r.opex) || 0),
-      cash: 0, pulse_score: 0, gst_leak: 0, _fromTally: true
-    }));
-  }
-  return rows;
+/* Every chart reads one model (app/js/margyn-reports.js): the books for money that flows and for cash,
+   Margyn's readings only for its own measures (Pulse Score, GST leakage). Readings are never summed. */
+function analyticsModel(metrics, group){
+  const books = typeof mgMar !== 'undefined' && mgMar && !mgMarCompany ? mgMar : null;
+  return MG_REPORTS.build({
+    pnl:(books && books.pnl) || [], cashPoints:(books && books.cash_history && books.cash_history.points) || [],
+    readings:snapshots || [], metrics, group,
+    rangeDays:{ '1m':31, '1q':93, '1y':372, 'max':1e5 }[analyticsRange] || 93
+  });
 }
+const ANALYTICS_COLORS = ['#0E8F5C', '#0B4B8C', '#CC5B34', '#767E8B', '#9A6B00'];
 function renderAnalyticsView(){
   const mount = document.getElementById('analyticsMount'); if(!mount) return;
   document.querySelectorAll('#analyticsRangeTabs button').forEach(b => b.classList.toggle('active', b.dataset.range === analyticsRange));
@@ -51,39 +44,41 @@ function renderAnalyticsView(){
     mp.innerHTML = Object.keys(ANALYTICS_METRICS).map(k => '<button type="button" data-m="'+k+'">'+ANALYTICS_METRICS[k].label+'</button>').join('');
     mp.querySelectorAll('button').forEach(b => b.addEventListener('click', () => b.classList.toggle('on')));
   }
-  const rows = analyticsRows();
   const charts = loadAnalyticsCharts();
-  if(rows.length < 2 && typeof tallyConnected !== 'undefined' && tallyConnected && typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy){
+  if(typeof tallyConnected !== 'undefined' && tallyConnected && typeof mgLoadMargin === 'function' && !mgMar && !mgMarBusy){
     mgLoadMargin().then(() => { if(mgMar && typeof renderAnalyticsView === 'function') renderAnalyticsView(); });
   }
-  if(rows.length < 2){
-    mount.innerHTML = '<div class="ch-tile wide"><div class="ledger-empty">Charts appear once Margyn has two readings. Connected sources add one automatically as your books change; you can also widen the range.</div></div>';
+  const anyData = charts.some(c => analyticsModel((c.metrics || ['revenue']).filter(m => ANALYTICS_METRICS[m]), c.group).periods.length >= 2);
+  if(!anyData){
+    mount.innerHTML = '<div class="ch-tile wide"><div class="ledger-empty">' + (typeof mgMarBusy !== 'undefined' && mgMarBusy ? 'Reading your books…' : 'Charts appear once there are two periods of figures. Connect your books, or widen the range.') + '</div></div>';
     return;
   }
   mount.innerHTML = charts.map(c => {
     const metrics = (c.metrics && c.metrics.length ? c.metrics : ['revenue']).filter(m => ANALYTICS_METRICS[m]);
-    const buckets = rdBucketRows(rows, c.group || 'Month');
-    const palette = ['#0B4B8C','#CC5B34','#767E8B'];
+    const M0 = analyticsModel(metrics, c.group || 'Month');
+    const P = M0.periods;
+    const used = new Set();
     const series = metrics.map((m, i) => {
       const M = ANALYTICS_METRICS[m];
       const stype = c.type === 'combo' ? (i === 0 ? 'bar' : 'line') : c.type;
-      return { type: stype, color: i === 0 ? M.color : palette[(i-1) % palette.length], name: M.label, unit: M.unit, data: rdMetricSeries(m, buckets) };
+      // distinct colours: two series never share one
+      const color = !used.has(M.color) ? M.color : ANALYTICS_COLORS.find(x => !used.has(x)) || M.color; used.add(color);
+      return { type: stype, color, name: M.label, unit: M.unit, data: P.map(p => p.values[m] == null ? null : p.values[m]) };
     });
-    // change vs the previous bucket, not vs the first: a partial opening
-    // week or month otherwise produces meaningless four-figure percentages.
-    const s0 = series[0].data;
-    const last = s0[s0.length - 1], before = s0.length > 1 ? s0[s0.length - 2] : null;
-    let pct = (before !== null && before !== 0) ? ((last - before) / Math.abs(before) * 100) : null;
-    if(pct !== null && (!isFinite(pct) || Math.abs(pct) > 999)) pct = null;
-    const perLabel = 'vs previous ' + (c.group || 'Month').toLowerCase();
+    const labels = P.map(p => p.label + (MG_REPORTS.FLOW[metrics[0]] && p.in_progress ? ' (so far)' : MG_REPORTS.FLOW[metrics[0]] && p.costs_incomplete ? ' *' : ''));
+    const ch = MG_REPORTS.lastChange(P, metrics[0]);
+    const groupLabel = (M0.group || 'Month').toLowerCase();
     const wide = metrics.length > 1;
+    const notes = [M0.note, P.some(p => p.costs_incomplete) && metrics.some(m => MG_REPORTS.FLOW[m]) ? '* Running costs look incomplete that month, so profit is overstated until they’re booked.' : ''].filter(Boolean).join(' ');
+    if(P.length < 2) return '<div class="ch-tile' + (wide ? ' wide' : '') + '"><div class="ch-h"><div><div class="t">' + escapeHtml(c.name) + '</div></div><button class="ch-menu" data-del="' + c.id + '" title="Remove chart">&times;</button></div><div class="ledger-empty">Not enough periods in this range yet.</div></div>';
     return '<div class="ch-tile' + (wide ? ' wide' : '') + '" data-margyn-topic="' + escapeHtml(c.name) + '">' +
       '<div class="ch-h"><div><div class="t">' + escapeHtml(c.name) + '</div>' +
-        '<div class="s">' + escapeHtml(metrics.map(m => ANALYTICS_METRICS[m].label).join(' · ')) + ' &nbsp;/&nbsp; by ' + escapeHtml((c.group || 'Month').toLowerCase()) + '</div></div>' +
+        '<div class="s">' + escapeHtml(metrics.map(m => ANALYTICS_METRICS[m].label).join(' · ')) + ' &nbsp;/&nbsp; by ' + escapeHtml(groupLabel) + '</div></div>' +
       '<button class="ch-menu" data-del="' + c.id + '" title="Remove chart">&times;</button></div>' +
-      rdChart({ type: c.type, labels: buckets.map(b => b._label), series, h: wide ? 260 : 220 }) +
+      rdChart({ type: c.type, labels, series, h: wide ? 260 : 220 }) +
       '<div class="ch-foot">' +
-      (pct !== null ? '<span class="rd-tag ' + (pct >= 0 ? 'ok' : '') + '">' + (pct >= 0 ? '▲ +' : '▼ ') + Math.abs(pct).toFixed(0) + '% ' + perLabel + '</span>' : '') +
+      (ch ? '<span class="rd-tag ' + (ch.pct >= 0 ? 'ok' : '') + '">' + (ch.pct >= 0 ? '▲ +' : '▼ ') + Math.abs(ch.pct).toFixed(0) + '% ' + escapeHtml(ch.to + ' vs ' + ch.from) + '</span>' : '') +
+      (notes ? '<span class="mg-muted" style="font-size:12px">' + escapeHtml(notes) + '</span>' : '') +
       '</div></div>';
   }).join('');
   mount.querySelectorAll('.ch-menu[data-del]').forEach(b => b.addEventListener('click', (e) => {

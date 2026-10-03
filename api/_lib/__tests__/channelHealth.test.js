@@ -87,5 +87,17 @@ check('promises tracked separately', r.recovered.promised.amount === 2000 && r.r
 check('unknown errors pass through, trimmed', plainError('x'.repeat(300)).length <= 140);
 check('empty error is null', plainError('') === null);
 
+
+// Margyn updates (Watch): delivered counts, pending is neither, mode is said plainly; Bells not live without templates.
+r = buildChannelHealth({ configured: { opening_bell: false, closing_bell: false }, now: NOW,
+  watch: { mode: 'on', deliveries: [{ status: 'delivered', sent_at: ago(1), delivered_at: ago(1) }, { status: 'accepted', sent_at: ago(0) }] } });
+check('watch delivered → working', by(r, 'margyn_updates').status === 'working' && by(r, 'margyn_updates').sent_30d === 1, by(r, 'margyn_updates'));
+check('bells_live false without templates', r.bells_live === false);
+r = buildChannelHealth({ now: NOW, watch: { mode: 'off', deliveries: [] } });
+check('watch off says Off', by(r, 'margyn_updates').headline === 'Off');
+r = buildChannelHealth({ now: NOW, watch: { mode: 'on', deliveries: [{ status: 'sent', sent_at: ago(0) }] } });
+check('watch awaiting receipt is quiet, not failing', by(r, 'margyn_updates').status === 'quiet' && /waiting/.test(by(r, 'margyn_updates').detail));
+r = buildChannelHealth({ now: NOW });
+check('no watch input → no watch row', !by(r, 'margyn_updates'));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
