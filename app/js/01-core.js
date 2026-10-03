@@ -56,16 +56,21 @@ function fmtINR(n, mode){
 }
 function inr(n){ return fmtINR(n); }
 function clamp(n){ return Math.max(0, Math.min(100, n)); }
-function fmtDate(iso){ 
+// India time, whatever the computer's clock is set to. These used to add 5h30 by hand on top of the browser's
+// own India time, so every time in the app read 5h30 late (a 6:58 pm sync showed as 12:28 am the next day).
+const MG_TZ = 'Asia/Kolkata';
+function fmtDate(iso){
   const d = new Date(iso);
-  const utcTime = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
-  return utcTime.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) + ', ' + 
-         utcTime.toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit', hour12:true });
+  return d.toLocaleDateString('en-IN', { timeZone:MG_TZ, day:'numeric', month:'short', year:'numeric' }) + ', ' +
+         d.toLocaleTimeString('en-IN', { timeZone:MG_TZ, hour:'numeric', minute:'2-digit', hour12:true });
 }
-function fmtDay(iso){ 
-  const d = new Date(iso);
-  const utcTime = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
-  return utcTime.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); 
+function fmtDay(iso){
+  return new Date(iso).toLocaleDateString('en-IN', { timeZone:MG_TZ, day:'numeric', month:'short', year:'numeric' });
+}
+/** Today's date in India as 'YYYY-MM-DD'. new Date().toISOString() is the UTC date, which is yesterday until 5:30 am. */
+function mgTodayIST(plusDays){
+  const d = new Date(Date.now() + 5.5 * 3600000 + (plusDays || 0) * 86400000);
+  return d.toISOString().slice(0, 10);
 }
 function scoreClass(s){ return s >= 70 ? 'score-good' : s >= 40 ? 'score-warn' : 'score-bad'; }
 function scoreBandCutoffs(){

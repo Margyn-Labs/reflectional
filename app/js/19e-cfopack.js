@@ -131,7 +131,7 @@ function mgPackDoc(k){
   const cfg = mgPackCfg(), on = new Set(cfg.sections);
   const org = mgOrgName(), month = mgMonthLabel(k);
   const today = fmtDay(new Date().toISOString());
-  const gen = new Date().toLocaleString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit' });
+  const gen = new Date().toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit' });
   const closing = 'closing reading ' + fmtDay(s.created_at);
   const monthScope = mgOrgShort() + ' · Reconciled · ' + month + ' · ' + closing;
   const liveScope = mgOrgShort() + ' · Reconciled · as of today, ' + today;

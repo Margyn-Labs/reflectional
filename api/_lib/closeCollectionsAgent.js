@@ -42,7 +42,7 @@ const gapRatio = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 
 
 function runAgent(bundle, opts) {
   const B = bundle || {};
-  const asOf = B.asOf || new Date().toISOString().slice(0, 10);
+  const asOf = B.asOf || new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);   // India date, not UTC
   const booksPayments = B.booksPayments || [];
   const invoices = B.invoices || [];
   const gateway = (B.gateway || []).filter((g) => norm(g.status) === 'captured' || !g.status);

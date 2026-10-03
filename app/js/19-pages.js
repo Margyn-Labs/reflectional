@@ -250,7 +250,7 @@ function mgCashChart(hist){
   [0, 0.5, 1].forEach(f => { const v = max / 1.1 * f; grid += '<line x1="' + padL + '" x2="' + W + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="#ECEAE4"/><text x="0" y="' + (y(v) + 4) + '" class="mg-ax">' + escapeHtml(fmtINR(v, 'tile').replace('₹', '')) + '</text>'; });
   let ticks = '';
   const step = Math.max(1, Math.ceil(hist.length / 6));
-  hist.forEach((s, i) => { if(i % step === 0 || i === hist.length - 1) ticks += '<text x="' + x(i) + '" y="' + (H - 6) + '" class="mg-ax" text-anchor="middle">' + escapeHtml(new Date(s.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' })) + '</text>'; });
+  hist.forEach((s, i) => { if(i % step === 0 || i === hist.length - 1) ticks += '<text x="' + x(i) + '" y="' + (H - 6) + '" class="mg-ax" text-anchor="middle">' + escapeHtml(new Date(s.created_at).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short' })) + '</text>'; });
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Cash position over time">' + grid +
     '<path d="' + d + 'L' + x(pts.length - 1) + ',' + (H - padB) + 'L' + x(0) + ',' + (H - padB) + 'Z" fill="#0E8F5C" opacity=".08"/>' +
     '<path d="' + d + '" fill="none" stroke="#0E8F5C" stroke-width="2"/>' + ticks + '</svg>';
@@ -552,7 +552,7 @@ document.addEventListener('click', async e => {
   const age = t.closest('[data-money-age]');
   if(age){ mgMoneyAge = age.dataset.moneyAge && mgMoneyAge !== age.dataset.moneyAge ? age.dataset.moneyAge : null; mgRenderOwn(mgCurrentView); return; }
   const exp = t.closest('[id^="mgExport-"]');
-  if(exp){ const host = document.getElementById('view-' + mgCurrentView); if(host && host.__csv) mgCsv(mgCurrentView + '-' + new Date().toISOString().slice(0, 10) + '.csv', host.__csv[0], host.__csv[1]); return; }
+  if(exp){ const host = document.getElementById('view-' + mgCurrentView); if(host && host.__csv) mgCsv(mgCurrentView + '-' + mgTodayIST() + '.csv', host.__csv[0], host.__csv[1]); return; }
   const settle = t.closest('[data-money-settle]');
   if(settle){
     const host = document.getElementById('view-' + mgCurrentView), r = host && host.__rows && host.__rows[Number(settle.dataset.moneySettle)];

@@ -159,7 +159,7 @@ function renderKhataPartyDetail(){
   ).join('');
 }
 document.getElementById('kpdEntryBtn').addEventListener('click', () => {
-  document.getElementById('keDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('keDate').value = mgTodayIST();
   document.getElementById('kpdEntryForm').classList.toggle('hidden');
 });
 document.getElementById('keSaveBtn').addEventListener('click', async () => {
@@ -168,7 +168,7 @@ document.getElementById('keSaveBtn').addEventListener('click', async () => {
   const row = {
     user_id: currentUser.id, party_id: khataActivePartyId,
     entry_type: document.getElementById('keType').value, amount,
-    entry_date: document.getElementById('keDate').value || new Date().toISOString().slice(0,10),
+    entry_date: document.getElementById('keDate').value || mgTodayIST(),
     reference_number: document.getElementById('keRef').value.trim() || null,
     notes: document.getElementById('keNotes').value.trim() || null
   };
@@ -279,9 +279,8 @@ function nextInvoiceNumber(){
 function renderInvoiceForm(){
   populateInvoiceCustomerSelect();
   document.getElementById('invNumber').value = nextInvoiceNumber();
-  document.getElementById('invIssueDate').value = new Date().toISOString().slice(0,10);
-  const due = new Date(); due.setDate(due.getDate()+14);
-  document.getElementById('invDueDate').value = due.toISOString().slice(0,10);
+  document.getElementById('invIssueDate').value = mgTodayIST();
+  document.getElementById('invDueDate').value = mgTodayIST(14);
   invoiceDraftLines = [{ description:'', hsn:'', qty:1, rate:0, gst:18 }];
   renderInvoiceLines();
   document.getElementById('invCustomer').addEventListener('change', renderInvoiceTotals);
@@ -363,7 +362,7 @@ async function markInvoicePaid(inv){
     // instead of the invoice status changing while the khata still shows it outstanding.
     const { error: entErr } = await sbClient.from('ledger_entries').insert({
       user_id: currentUser.id, party_id: inv.party_id, entry_type:'receipt', amount: inv.total,
-      entry_date: new Date().toISOString().slice(0,10), reference_number: inv.invoice_number, notes: 'Payment against invoice'
+      entry_date: mgTodayIST(), reference_number: inv.invoice_number, notes: 'Payment against invoice'
     });
     if(entErr) throw entErr;
     khataInvoices = await loadKhataInvoices(); khataEntries = await loadKhataEntries();
@@ -397,7 +396,7 @@ document.getElementById('printPartyStatementBtn').addEventListener('click', () =
   });
   buildAndPrintSheet(buildStatementSheet({
     title: 'Statement of account',
-    dateLine: 'As on ' + fmtDay(new Date().toISOString().slice(0,10)),
+    dateLine: 'As on ' + fmtDay(mgTodayIST()),
     party: { name: party.name, lines: [party.phone, party.gstin ? 'GSTIN ' + party.gstin : null].filter(Boolean).join('<br>') },
     columns: [ {key:'date',label:'Date'}, {key:'type',label:'Type'}, {key:'ref',label:'Reference'}, {key:'amount',label:'Amount',num:true}, {key:'balance',label:'Balance',num:true} ],
     rows: rows,
@@ -426,7 +425,7 @@ document.getElementById('printDayBookBtn').addEventListener('click', () => {
   });
   buildAndPrintSheet(buildStatementSheet({
     title: 'Day book',
-    dateLine: 'As on ' + fmtDay(new Date().toISOString().slice(0,10)),
+    dateLine: 'As on ' + fmtDay(mgTodayIST()),
     columns: [ {key:'date',label:'Date'}, {key:'party',label:'Party'}, {key:'type',label:'Type'}, {key:'amount',label:'Amount',num:true} ],
     rows: dbRows
   }));

@@ -228,7 +228,7 @@ function computeAnalytics(input) {
   // A renamed voucher type ("KANDIVALI SALE") is judged by the base type Tally rolls it up to, when we have it.
   const allVouchers = dedupe(input.vouchers || [], (v) => (v && v.tally_guid ? 'g:' + v.tally_guid : null))
     .map((v) => (v && v.voucher_base ? Object.assign({}, v, { voucher_type_name: v.voucher_type, voucher_type: v.voucher_base }) : v));
-  const calibrated = calibrateBills(input.bills || [], allVouchers);
+  const calibrated = calibrateBills(input.bills || [], allVouchers, { now: input.now });
   const bills = dedupe(calibrated.bills, (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
   const syncRuns = input.syncRuns || [];
   const diagnostics = input.diagnostics && typeof input.diagnostics === 'object' ? input.diagnostics : null;
@@ -492,10 +492,13 @@ function computeAnalytics(input) {
     .sort((a, b) => b.amount - a.amount).slice(0, 15);
 
   // ----- receivables / payables from bills -----
-  let recv = 0, pay = 0, recvOverdue = 0;
+  let recv = 0, pay = 0, recvOverdue = 0, custAdvances = 0, vendorAdvances = 0;
   const recvBy = new Map();
   for (const b of bills) {
     const bal = Math.abs(num(b.closing_balance));
+    // A customer's on-account money (or a vendor paid ahead) is not a bill anyone owes: counting it as a
+    // payable made supplier days look like 5 when the suppliers simply aren't tracked bill by bill.
+    if (b.advance) { if (b.direction === 'payable') custAdvances += bal; else vendorAdvances += bal; continue; }
     if (b.direction === 'payable') { pay += bal; continue; }
     recv += bal;
     const od = num(b.overdue_days);
@@ -528,6 +531,7 @@ function computeAnalytics(input) {
   const dio = stockVal != null && cogs90 > 0 && !shortHistory ? r2((stockVal / cogs90) * 90) : null;
   const working_capital = {
     receivables: r2(recv), receivables_overdue: r2(recvOverdue), payables: r2(pay),
+    customer_advances: r2(custAdvances), vendor_advances: r2(vendorAdvances),
     stock_value: stockVal,
     cash: cash ? cash.total : null,
     dso_days: dso, dpo_days: dpo, dio_days: dio,

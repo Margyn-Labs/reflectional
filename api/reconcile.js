@@ -601,7 +601,7 @@ async function runAgentForUser(userId) {
   ]);
   const gateway = reauth.razorpay ? [] : normRazorpay(rpRaw);
   const runId = randomUUID();
-  const asOf = new Date().toISOString().slice(0, 10);
+  const asOf = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);   // India date (cron runs at 03:05 IST = yesterday in UTC)
 
   // Clusters already sent to the Tier-2 LLM with identical rows — skipped so
   // the same unresolved items aren't re-billed every night. null when the

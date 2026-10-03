@@ -113,7 +113,7 @@ function mgAsOf(){
   try {
     const s = snapshots && snapshots[0];
     if(!s) return 'No data yet';
-    return 'As of ' + new Date(s.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+    return 'As of ' + new Date(s.created_at).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric' });
   } catch(e){ return 'Latest'; }
 }
 

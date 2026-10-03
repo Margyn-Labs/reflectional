@@ -961,7 +961,7 @@ function vxTableHtml(cols, rows){
 }
 function vxMore(page, label){ return '<div class="vx-more"><button type="button" data-vx-go="' + page + '">' + escapeHtml(label) + ' →</button></div>'; }
 function vxViewCard(key, title, sub, body){ return vxAddCard('<h4>' + escapeHtml(title) + '</h4>' + (sub ? '<div class="vx-sub">' + escapeHtml(sub) + '</div>' : '') + body, 'vx-view', key); }
-function vxMonth(iso){ try { return new Date(iso).toLocaleDateString('en-IN', { month:'short' }); } catch(e){ return ''; } }
+function vxMonth(iso){ try { return new Date(iso).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', month:'short' }); } catch(e){ return ''; } }
 function vxDue(days){ return days == null ? 'no due date' : days < 0 ? (-days) + 'd overdue' : days === 0 ? 'due today' : 'due in ' + days + 'd'; }
 
 const VX_VIEWS = {

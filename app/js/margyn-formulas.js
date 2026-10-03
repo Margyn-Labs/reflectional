@@ -127,7 +127,7 @@
       what: 'Everything customers still owe you, one line per customer.',
       formula: 'Each customer appears once. Their amount comes from the most trusted source that has them (Zoho Books, then Tally, then Odoo, then manual entries). Other sources are compared with it and never added. Total = the sum of those amounts. Ageing buckets go by days past the due date: current and 0–30, 31–60, 61–90, 90+.',
       inputs: ['recvTotal', 'recv90'],
-      notes: ['Sources "agree" for a customer when they differ by at most ₹1 or 2%. Otherwise the line is marked as a conflict with each source\'s amount.', 'Tally bills come from its bill-wise outstanding. A bill with no due date is treated as due now.', 'Each source\'s own total is shown side by side on the page (switch the view); they are never summed together.'],
+      notes: ['Sources "agree" for a customer when they differ by at most ₹1 or 2%. Otherwise the line is marked as a conflict with each source\'s amount.', 'Tally bills come from its bill-wise outstanding. A bill with no due date is treated as due now.', 'Days late are counted from the due date to today (India date), not frozen at the last Tally sync.', 'A customer\'s on-account money or credit balance in Tally is not counted as something you owe a vendor, and not as a bill they owe you.', 'Each source\'s own total is shown side by side on the page (switch the view); they are never summed together.'],
       code: '19-pages.js mgMoneyGroups; api/_lib/moneyModel.js', page: 'receivables'
     },
     payables: {

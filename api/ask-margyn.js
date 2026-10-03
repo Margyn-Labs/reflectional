@@ -444,7 +444,9 @@ async function handleWatch(req, res, user) {
     const b = req.body || {};
     if (b.op === 'mode') { res.status(200).json({ mode: await watchPkg.setMode(user.id, String(b.mode || '')) }); return; }
     if (b.op === 'mute') { res.status(200).json(await watchPkg.mute(user.id, { key: b.key ? String(b.key).slice(0, 200) : null, kind: b.kind ? String(b.kind).slice(0, 40) : null, unmute: !!b.unmute })); return; }
-    if (b.op === 'send_now') { res.status(200).json(await watchPkg.watchAccount(user.id, { slot: 'manual', force: true })); return; }
+    // "Preview today's update": shows the message the owner would get next. It never re-sends to the owner
+    // and records nothing (it used to force a re-send, which is how the same three points went out twice).
+    if (b.op === 'send_now' || b.op === 'preview') { res.status(200).json(await watchPkg.watchAccount(user.id, { slot: 'manual', previewOnly: true })); return; }
     res.status(400).json({ error: 'unknown op' });
   } catch (e) {
     console.error('[ask-margyn] watch:', e.message);

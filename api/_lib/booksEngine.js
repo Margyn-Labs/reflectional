@@ -57,6 +57,20 @@ function dayStr(d, withYear) {
 const monthLabel = (k) => { const [y, m] = String(k).split('-'); return MON[(+m || 1) - 1] + ' ' + y; };
 const isoDay = (dt) => dt.toISOString().slice(0, 10);
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+/**
+ * How a person says a party's name: "SUN PHARMA LABORATORIES LTD" -> "Sun Pharma Laboratories".
+ * Only for sentences Margyn writes; tables and lookups keep Tally's exact name.
+ */
+function niceName(s) {
+  let t = String(s || '').replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+  t = t.replace(/[\s,.]+((pvt|private)\.?\s*)?(ltd|limited|llp)\.?(?=\s|$)/i, '').trim();
+  if (t === t.toUpperCase() && /[A-Z]{3}/.test(t)) {
+    t = t.toLowerCase().replace(/(^|[\s(/&-])([a-z])/g, (m, a, b) => a + b.toUpperCase())
+      .replace(/\b(Llp|Pvt|Gst|Hdfc|Icici|Sbi|Idfc|Ipca|Usv|Mp|Up)\b/g, (w) => w.toUpperCase());
+  }
+  return t;
+}
 
 /** "alkem" matches "ALKEM LABORATORIES LIMITED"; every word of the query must appear. */
 function matcher(q) {
@@ -162,7 +176,7 @@ function prepare(book, opts) {
   classes.set(nameKey(A.IMPLIED_SALES), { bucket: 'sales' });
   classes.set(nameKey(A.IMPLIED_PURCHASES), { bucket: 'purchases' });
   const cls = (name) => (classes.get(name) || classes.get(nameKey(name)) || { bucket: 'unknown' }).bucket;
-  const bills = A.dedupe(calibrateBills(book.bills || [], all).bills,
+  const bills = A.dedupe(calibrateBills(book.bills || [], all, { now }).bills,
     (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
 
   const rows = [];
@@ -498,7 +512,7 @@ function findEntries(ctx, args) {
 
 const AGE_BUCKETS = [['not yet due', -Infinity, 0], ['1-30 days late', 1, 30], ['31-60 days late', 31, 60], ['61-90 days late', 61, 90], ['91-180 days late', 91, 180], ['181-365 days late', 181, 365], ['over a year late', 366, Infinity]];
 function billRows(ctx, direction) {
-  return ctx.bills.filter((b) => (direction === 'payable' ? b.direction === 'payable' : b.direction !== 'payable'))
+  return ctx.bills.filter((b) => !b.advance && (direction === 'payable' ? b.direction === 'payable' : b.direction !== 'payable'))
     .map((b) => ({ party: b.party_name || 'Unknown', ref: b.bill_ref || null, date: A.parseDate(b.bill_date), due: A.parseDate(b.due_date), amount: Math.abs(num(b.closing_balance)), late: b.overdue_days == null ? 0 : num(b.overdue_days) }))
     .filter((b) => b.amount >= 1);
 }
@@ -835,6 +849,35 @@ function cashAndDebt(ctx) {
 
 const SEV = { high: 3, medium: 2, low: 1 };
 
+/** Customers who paid in the last `days` days: nameKey -> their latest receipt. */
+function recentReceipts(ctx, days) {
+  const from = addDays(ctx.today, -days), out = new Map();
+  for (const r of ctx.rows) {
+    if (r.kind !== 'receipt' || !r.party || r.dt < from) continue;
+    const k = norm(r.party), p = out.get(k);
+    if (!p || r.dt > p.dt) out.set(k, { dt: r.dt, amount: r.total });
+  }
+  return out;
+}
+/**
+ * Customers with money more than a month late, most urgent first. Score = each late bill's amount weighted by
+ * how late it is (capped at six months), so age counts as much as size.
+ */
+function lateRanking(recvBills, recentPay) {
+  const m = new Map();
+  for (const b of recvBills) {
+    if (b.late <= 0) continue;
+    const k = norm(b.party);
+    const g = m.get(k) || { party: b.party, late30: 0, slipping: 0, score: 0, oldest: null };
+    if (b.late > 30) { g.late30 += b.amount; g.score += b.amount * Math.min(b.late, 180) / 30; } else g.slipping += b.amount;
+    if (!g.oldest || b.late > g.oldest.late) g.oldest = b;
+    m.set(k, g);
+  }
+  return [...m.values()].filter((g) => g.late30 > 0)
+    .map((g) => Object.assign(g, { paidRecently: recentPay.get(norm(g.party)) || null }))
+    .sort((x, y) => y.score - x.score);
+}
+
 function insights(ctx) {
   const an = ctx.analytics, M = ctx.material, out = [];
   const push = (x) => out.push(Object.assign({ severity: 'medium', impact: 0 }, x));
@@ -851,29 +894,49 @@ function insights(ctx) {
     if (hrs > 26) push({ key: 'stale:' + String(ctx.lastSync).slice(0, 10), kind: 'stale', severity: 'high', title: `Tally hasn't synced since ${dayStr(new Date(new Date(ctx.lastSync).getTime() + 5.5 * 3600000), true)}.`, detail: 'Is the Tally PC switched on with Tally and the Margyn agent running? Until it syncs, new sales, receipts and payments are missing here.', action: 'Switch on the Tally PC and open Tally.', ask: 'When did Tally last sync?' });
   }
 
-  // Overdue money.
-  if (recvOver >= M) {
-    const top = recvParties.filter((g) => g.overdue > 0).sort((x, y) => y.overdue - x.overdue).slice(0, 3);
-    push({ key: 'overdue_total', kind: 'overdue_total', severity: pctOf(recvOver, recvTotal) > 40 ? 'high' : 'medium', impact: recvOver,
-      title: `${inr(recvOver)} of the ${inr(recvTotal)} customers owe you is overdue.`,
-      detail: 'Biggest: ' + top.map((g) => `${g.party} ${inr(g.overdue)}`).join(', ') + '.' + (daily > 0 ? ` Every 10 days faster collection frees about ${inr(daily * 10)}.` : ''),
-      action: top.length ? `Call ${top[0].party} first.` : null, ask: 'Who owes me the most, and how late are they?' });
+  // Overdue money, split the way an accountant would: "slipping" (1-30 days past due, usually a reminder) is not
+  // the same as "late" (over a month). Lumping them made ₹3.73 Cr look urgent when ₹1.92 Cr was days old.
+  const recentPay = recentReceipts(ctx, 7);
+  const late30 = recvBills.filter((b) => b.late > 30).reduce((s, b) => s + b.amount, 0);
+  const slipping = recvBills.filter((b) => b.late > 0 && b.late <= 30).reduce((s, b) => s + b.amount, 0);
+  const lateParties = lateRanking(recvBills, recentPay);
+  if (late30 >= M) {
+    const first = lateParties.find((g) => !g.paidRecently) || lateParties[0];
+    push({ key: 'overdue_total', kind: 'overdue_total', severity: pctOf(late30, recvTotal) > 25 ? 'high' : 'medium', impact: late30,
+      title: `${inr(late30)} of the ${inr(recvTotal)} customers owe you is more than a month late.`,
+      detail: (slipping >= M ? `Another ${inr(slipping)} went past due in the last 30 days; a reminder usually does it. ` : '') +
+        (lateParties.length ? 'Most late: ' + lateParties.slice(0, 3).map((g) => `${niceName(g.party)} ${inr(g.late30)}`).join(', ') + '.' : '') +
+        (daily > 0 ? ` Every 10 days faster collection frees about ${inr(daily * 10)}.` : ''),
+      action: first ? `Start with ${niceName(first.party)}: ${inr(first.late30)}, oldest bill ${first.oldest.late} days late.` : null,
+      ask: 'Who owes me the most, and how late are they?' });
+  } else if (slipping >= 2 * M) {
+    push({ key: 'slipping_total', kind: 'slipping', severity: 'low', impact: slipping,
+      title: `${inr(slipping)} went past due in the last 30 days.`, detail: 'Nothing is badly late yet. A reminder now keeps it that way.',
+      action: null, ask: 'Who owes me the most, and how late are they?' });
   }
   const veryOld = recvParties.filter((g) => g.oldest > 365);
   const veryOldAmt = recvBills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0);
-  if (veryOldAmt >= M / 2) push({ key: 'old_debts', kind: 'old_debts', severity: 'medium', impact: veryOldAmt,
+  if (veryOldAmt >= M / 2) push({ key: 'old_debts', kind: 'old_debts', severity: 'low', impact: veryOldAmt,
     title: `${inr(veryOldAmt)} has been unpaid for over a year.`,
-    detail: veryOld.slice(0, 4).map((g) => `${g.party} (${g.oldest} days)`).join(', ') + '. Bills this old are usually disputed, short-paid, or paid but never knocked off in Tally.',
-    action: 'Decide for each: chase, settle the difference, or write it off with your CA.', ask: 'Which bills are more than a year old?' });
+    detail: veryOld.slice(0, 4).map((g) => `${niceName(g.party)} (${g.oldest} days)`).join(', ') + '. Bills this old are usually disputed, short-paid, or paid but never knocked off in Tally.',
+    action: 'Decide for each with your CA: chase, settle the difference, or write it off.', ask: 'Which bills are more than a year old?' });
 
-  // Customers more than two months late: the three biggest only, so the list stays readable.
-  const lateList = (an.customers || []).filter((c) => num(c.overdue) >= M / 2 && num(c.max_overdue_days) >= 60 && num(c.max_overdue_days) <= 365)
-    .sort((x, y) => num(y.overdue) - num(x.overdue)).slice(0, 3);
-  for (const c of lateList) {
-    push({ key: 'late:' + norm(c.party), kind: 'late', severity: num(c.overdue) >= 10 * M ? 'high' : 'medium', impact: num(c.overdue),
-      title: `${c.party} owes ${inr(c.overdue)} overdue, oldest bill ${c.max_overdue_days} days late.`,
-      detail: c.dso_days != null ? `They usually take about ${Math.round(c.dso_days)} days to pay.` : 'Worth a call.',
-      action: `Call ${c.party} about the oldest bill.`, ask: `Tell me about ${c.party}` });
+  // Customers more than a month late, ranked by money x how late (₹2.67 L at 212 days outranks ₹53 L at 11 days).
+  // A customer who paid in the last week is not "chase them": what's left is usually a short payment.
+  for (const g of lateParties.filter((x) => x.late30 >= M / 2 && x.oldest.late <= 365).slice(0, 3)) {
+    const o = g.oldest, name = niceName(g.party);
+    const billTxt = `bill ${o.ref ? o.ref + ' ' : ''}(${inr(o.amount)}${o.date ? ', ' + dayStr(o.date) : ''})`;
+    if (g.paidRecently) {
+      push({ key: 'short:' + norm(g.party) + ':' + norm(o.ref), kind: 'short_paid', party: g.party, severity: 'low', impact: g.late30,
+        title: `${name} paid ${inr(g.paidRecently.amount)} on ${dayStr(g.paidRecently.dt)}, but ${billTxt} is still open, ${o.late} days late.`,
+        detail: 'Usually a short payment, a deduction, or a receipt not set against the right bill in Tally.',
+        action: `Ask your accountant to check ${o.ref ? 'bill ' + o.ref : 'that bill'} against their payment.`, ask: `Tell me about ${g.party}` });
+    } else {
+      push({ key: 'late:' + norm(g.party), kind: 'late', party: g.party, severity: g.late30 >= 10 * M || o.late > 90 ? 'high' : 'medium', impact: g.late30, score: g.score,
+        title: `${name} owes ${inr(g.late30)} that's more than a month late; oldest is ${billTxt}, ${o.late} days.`,
+        detail: (g.slipping > 0 ? `Plus ${inr(g.slipping)} that went past due recently. ` : '') + (() => { const c = (an.customers || []).find((x) => norm(x.party) === norm(g.party)); return c && c.dso_days != null ? `They usually take about ${Math.round(c.dso_days)} days to pay.` : ''; })(),
+        action: `Call ${name} about ${o.ref ? 'bill ' + o.ref : 'the oldest bill'}.`, ask: `Tell me about ${g.party}` });
+    }
   }
 
   // Regular customers who've gone quiet.
@@ -885,10 +948,10 @@ function insights(ctx) {
     const med = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
     const since = Math.round((ctx.today - g.last) / DAY);
     if (med == null || since < Math.max(45, 3 * med)) continue;
-    push({ key: 'quiet:' + norm(g.party), kind: 'quiet', severity: g.net >= 10 * M ? 'high' : 'medium', impact: g.net,
-      title: `${g.party} hasn't ordered for ${since} days.`,
+    push({ key: 'quiet:' + norm(g.party), kind: 'quiet', party: g.party, severity: g.net >= 10 * M ? 'high' : 'medium', impact: g.net,
+      title: `${niceName(g.party)} hasn't ordered for ${since} days.`,
       detail: `They bought ${inr(g.net)} this year and usually order every ${Math.max(1, Math.round(med))} days. Last order ${dayStr(g.last)}.`,
-      action: `Check in with ${g.party}: lost order, price, or a problem?`, ask: `Tell me about ${g.party}` });
+      action: `Check in with ${niceName(g.party)}: lost order, price, or a problem?`, ask: `Tell me about ${g.party}` });
   }
 
   // Concentration.
@@ -898,21 +961,21 @@ function insights(ctx) {
     const s1 = pctOf(ranked[0].net, totNet), s5 = pctOf(ranked.slice(0, 5).reduce((s, g) => s + g.net, 0), totNet);
     if (s1 >= 15 || s5 >= 50) {
       const owes = recvParties.find((g) => norm(g.party) === norm(ranked[0].party));
-      push({ key: 'concentration', kind: 'concentration', severity: s1 >= 25 ? 'high' : 'low', impact: ranked[0].net,
-        title: `${ranked[0].party} is ${pctStr(s1)} of your sales this year${owes ? ' and owes you ' + inr(owes.total) : ''}.`,
+      push({ key: 'concentration', kind: 'concentration', party: ranked[0].party, severity: s1 >= 25 ? 'high' : 'low', impact: ranked[0].net,
+        title: `${niceName(ranked[0].party)} is ${pctStr(s1)} of your sales this year${owes ? ' and owes you ' + inr(owes.total) : ''}.`,
         detail: `Your top 5 customers are ${pctStr(s5)} of sales. Losing or delaying one big buyer moves the whole business.`,
         action: null, ask: 'Who are my biggest customers?' });
     }
   }
 
-  // Funding gap: paid in days, collected in months.
-  if (wc.dso_days != null && wc.dpo_days != null && wc.dso_days - wc.dpo_days >= 30 && daily > 0) {
-    const tied = (wc.dso_days - wc.dpo_days) * daily;
+  // How long customers take to pay. (This used to compare against "you pay suppliers in 5 days", worked out
+  // from supplier bills Tally doesn't track bill by bill; that half was wrong, so it's gone.)
+  if (wc.dso_days != null && wc.dso_days >= 45 && daily > 0) {
     const cd = cashAndDebt(ctx);
-    push({ key: 'funding_gap', kind: 'funding_gap', severity: 'medium', impact: tied,
-      title: `You get paid in about ${Math.round(wc.dso_days)} days but pay suppliers in about ${Math.round(wc.dpo_days)}.`,
-      detail: `That gap ties up roughly ${inr(tied)} of working capital${cd.interest_paid_this_fy !== '₹0' ? ', and interest this year is ' + cd.interest_paid_this_fy : ''}.`,
-      action: 'Ask big suppliers for 30 days\' credit, or push the slowest customers to pay on time.', ask: 'How much interest am I paying, and why?' });
+    push({ key: 'collection_days', kind: 'collection_days', severity: 'low', impact: daily * 10,
+      title: `Customers take about ${Math.round(wc.dso_days)} days to pay you.`,
+      detail: `Every 10 days faster frees about ${inr(daily * 10)}${cd.interest_paid_this_fy !== '₹0' ? `; you've paid ${cd.interest_paid_this_fy} interest this year` : ''}.`,
+      action: 'Agree shorter credit with new orders, or a small discount for paying early.', ask: 'How much interest am I paying, and why?' });
   }
 
   // Commission and other big cost lines as a share of sales.
@@ -1001,13 +1064,22 @@ function insights(ctx) {
   const recent = addDays(ctx.today, -3);
   for (const r of ctx.rows) {
     if (r.kind !== 'receipt' || r.dt < recent || r.total < 2 * M) continue;
-    push({ key: 'receipt:' + (r.guid || r.day + ':' + norm(r.party) + ':' + Math.round(r.total)), kind: 'receipt', severity: 'low', impact: r.total,
-      title: `${inr(r.total)} came in from ${r.party || 'a customer'} on ${dayStr(r.dt)}.`, detail: null, action: null, ask: r.party ? `What does ${r.party} still owe?` : null, news: true });
+    push({ key: 'receipt:' + (r.guid || r.day + ':' + norm(r.party) + ':' + Math.round(r.total)), kind: 'receipt', party: r.party, severity: 'low', impact: r.total,
+      title: `${inr(r.total)} came in from ${r.party ? niceName(r.party) : 'a customer'} on ${dayStr(r.dt)}.`, detail: null, action: null, ask: r.party ? `What does ${r.party} still owe?` : null, news: true });
   }
+  // Bills that went past due this week: one line per customer, not one per bill (three Alkem bills were three points).
+  const fresh = new Map();
   for (const b of recvBills) {
-    if (b.late < 1 || b.late > 7 || b.amount < 2 * M) continue;
-    push({ key: 'newdue:' + norm(b.party) + ':' + norm(b.ref), kind: 'newly_overdue', severity: 'low', impact: b.amount,
-      title: `${b.party}'s ${inr(b.amount)} bill${b.ref ? ' ' + b.ref : ''} went overdue ${b.late} day${b.late === 1 ? '' : 's'} ago.`, detail: null, action: 'A polite reminder now is easier than a chase later.', ask: `Tell me about ${b.party}`, news: true });
+    if (b.late < 1 || b.late > 7) continue;
+    const k = norm(b.party), g = fresh.get(k) || { party: b.party, amount: 0, refs: [] };
+    g.amount += b.amount; g.refs.push(b.ref); fresh.set(k, g);
+  }
+  for (const g of fresh.values()) {
+    if (g.amount < 2 * M || recentPay.has(norm(g.party))) continue;
+    const n = g.refs.length;
+    push({ key: 'newdue:' + norm(g.party) + ':' + g.refs.map(norm).sort().join(','), kind: 'newly_overdue', party: g.party, severity: 'low', impact: g.amount,
+      title: `${niceName(g.party)}: ${n === 1 ? 'a ' + inr(g.amount) + ' bill' : n + ' bills, ' + inr(g.amount) + ','} went past due this week.`,
+      detail: null, action: 'A polite reminder now is easier than a chase later.', ask: `Tell me about ${g.party}`, news: true });
   }
 
   // Possible duplicates in the last 60 days.
@@ -1017,7 +1089,7 @@ function insights(ctx) {
     const k = r.kind + '|' + norm(r.party) + '|' + r.day + '|' + Math.round(r.total);
     const prev = seen.get(k);
     if (prev && prev.number !== r.number) push({ key: 'dup:' + k, kind: 'duplicate', severity: 'low', impact: r.total,
-      title: `Two ${r.kind === 'sales' ? 'invoices' : r.kind === 'purchase' ? 'purchase bills' : 'payments'} of ${inr(r.total)} to ${r.party} on ${dayStr(r.dt)}${prev.number || r.number ? ' (' + [prev.number, r.number].filter(Boolean).join(' and ') + ')' : ''}.`,
+      title: `Two ${r.kind === 'sales' ? 'invoices' : r.kind === 'purchase' ? 'purchase bills' : 'payments'} of ${inr(r.total)} to ${niceName(r.party)} on ${dayStr(r.dt)}${prev.number || r.number ? ' (' + [prev.number, r.number].filter(Boolean).join(' and ') + ')' : ''}.`,
       detail: 'Could be two genuine orders. Worth a ten-second check that it wasn\'t entered twice.', action: null, ask: `Show entries for ${r.party} on ${dayStr(r.dt)}` });
     else seen.set(k, r);
   }
@@ -1107,5 +1179,5 @@ function buildInsights(book, analytics, opts) {
 module.exports = {
   inr, pctStr, dayStr, resolvePeriod, PERIODS, MEASURES, GROUPS,
   prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, insights, attention,
-  buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf
+  buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf, niceName
 };
