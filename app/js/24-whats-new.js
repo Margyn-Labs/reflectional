@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-03-follow-through', date:'3 Oct 2026', title:'Margyn comes back to you on its own',
+    items:[
+      { t:'Long answers report back', what:'When a question takes time, Margyn says it’s still on it after a few seconds and tells you the answer the moment it’s ready, on a call or in the panel, without you asking again. If you’ve looked away, a note by the Margyn button says it’s done.',
+        how:'Ask something big, like “Why did margin drop this quarter?”, and carry on.', act:'home' },
+      { t:'Heard the first time', what:'On a call, Margyn now decides you’ve finished speaking sooner and always answers, so you don’t have to repeat yourself. Typed messages sent while it’s busy are kept and answered next, not dropped.',
+        how:'Press Talk, or type two questions back to back.', act:'home'},
+      { t:'Talks like a person', what:'On a call, pause to think and Margyn waits. Cut in and it stops, answers you, then offers to finish what it was saying. It keeps track of everything you asked on the call and comes back to anything still open.',
+        how:'Press Talk and just talk: interrupt it, change topic, come back.', act:'home' }
+    ]
+  },
+  {
     id:'2026-10-03-navigator', date:'3 Oct 2026', title:'Type where you want to go, in any words',
     items:[
       { t:'Search understands what you mean', what:'Press ⌘K (Ctrl+K on Windows) and type the way you talk: “who owes me money”, “GST kholo”, “bills I have to pay”. Margyn puts the right page at the top as Best match, even with typos or in Hinglish.',

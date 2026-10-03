@@ -21,6 +21,7 @@
 let mgrThread = null;          // chat_messages.thread_key of the panel conversation (typed + voice)
 const mgrHistory = [];         // { role, content } sent to Claude as context
 let mgrBusy = false, mgrFocus = null, mgrGreeted = false, mgrUserId = null;
+const mgrQueue = [];           // messages sent while Margyn was still answering; answered in order
 let mgrAway = null;            // what happened since the last visit (shared with the Home desk)
 let mgrName = null;            // first name, once known
 const MGR_OPEN_KEY = 'mg.panel', MGR_SEEN_KEY = 'mg.lastSeen.', MGR_SNOOZE_KEY = 'mg.nudge.snooze';
@@ -213,9 +214,9 @@ function mgrNavCommand(text){
   return /^(please\s+)?(open|go\s+to|go|take\s+me(\s+to)?|jump\s+to|switch\s+to|navigate\s+to|bring\s+up)\b/i.test(t) ||
     /\b(kholo|khol\s+do|kholna|kholiye|pe\s+jao|par\s+jao|pe\s+le\s+chalo|par\s+le\s+chalo|le\s+chalo|chalo)\s*[.!]*$/i.test(t);
 }
-async function mgrNavLocal(text, t){
+async function mgrNavLocal(text, t, row0){
   const sugg = mgrEl('mgrSugg'); if(sugg) sugg.innerHTML = '';
-  mgrLine('user', text);
+  if(row0) row0.classList.remove('queued'); else mgrLine('user', text);
   mgrRemember('user', text);
   if(typeof vxUtterances !== 'undefined') vxUtterances.push({ at:Date.now(), text });
   const tk = mgrThreadKey();
@@ -228,7 +229,31 @@ async function mgrNavLocal(text, t){
   mgrRemember('assistant', t.say);
   saveChatMessage(tk, mgrFocus, 'assistant', t.say, 'margyn');
   mgrScroll();
+  mgrDrain();
 }
+/* The next message that came in while Margyn was busy. */
+function mgrDrain(){
+  if(mgrBusy || !mgrQueue.length) return;
+  const n = mgrQueue.shift();
+  setTimeout(() => mgrAsk(n.text, n.opts), 60);
+}
+/* Margyn finished while you were looking elsewhere (another tab, the panel
+   closed, scrolled up): say so, so you don't have to keep checking. */
+let mgrTitle0 = null;
+function mgrDoneNotice(reply, tookMs){
+  const away = document.hidden || !mgrIsOpen();
+  const f = mgrFeed();
+  const scrolledUp = f && f.scrollHeight - f.scrollTop - f.clientHeight > 160;
+  if(!away && !scrolledUp && !(tookMs > 15000)) return;
+  const short = String(reply || '').replace(/\s+/g, ' ').trim();
+  mgStatus('Margyn has answered');
+  if(away || scrolledUp) mgrBubble({ key:'done', text:'Done. ' + (short.length > 140 ? short.slice(0, 137) + '…' : short), acts:[{ label:'Show me', run:() => { mgrOpen(); const ff = mgrFeed(); if(ff) ff.scrollTop = ff.scrollHeight; } }] }, true);
+  if(document.hidden){
+    if(mgrTitle0 == null) mgrTitle0 = document.title;
+    document.title = '● Margyn answered · ' + mgrTitle0;
+  }
+}
+document.addEventListener('visibilitychange', () => { if(!document.hidden && mgrTitle0 != null){ document.title = mgrTitle0; mgrTitle0 = null; } });
 /* Ask Margyn something from the panel (typed, a suggestion, a nudge button,
    or anywhere else in the app that hands over a question). */
 async function mgrAsk(text, opts){
@@ -236,7 +261,13 @@ async function mgrAsk(text, opts){
   opts = opts || {};
   if(!mgrIsOpen()) mgrOpen();
   if(typeof vxActive !== 'undefined' && vxActive){ vxSendText(text); return; }   // on a call: the call answers
-  if(mgrBusy){ toast('Margyn is still answering', { sub:'Give it a second' }); return; }
+  // Busy: keep it and answer it next, instead of dropping it ("I have to say it twice").
+  if(mgrBusy){
+    const q = mgrLine('user', text); if(q) q.classList.add('queued');
+    mgrQueue.push({ text, opts:Object.assign({}, opts, { row:q }) });
+    mgStatus('Got it. I’ll do that next.', true);
+    return;
+  }
   if(opts.focus) mgrFocus = opts.focus;
   const navCmd = typeof mgNavModes === 'function' && mgrNavCommand(text);
   const navMode = navCmd ? (await mgNavModes()).panel : 'off';
@@ -245,11 +276,11 @@ async function mgrAsk(text, opts){
     let t = null;
     try { const r = await mgNavPick(text, 'panel'); t = r && r.go ? mgNavTarget(r.go) : null; }
     finally { mgrBusy = false; mgrSetBusy(false); }
-    if(t) return mgrNavLocal(text, t);
+    if(t) return mgrNavLocal(text, t, opts.row);
   }
   mgrBusy = true; mgrSetBusy(true);
   const sugg = mgrEl('mgrSugg'); if(sugg) sugg.innerHTML = '';
-  mgrLine('user', text);
+  if(opts.row && opts.row.isConnected) opts.row.classList.remove('queued'); else mgrLine('user', text);
   const history = mgrHistory.slice(-9);
   mgrRemember('user', text);
   if(typeof vxUtterances !== 'undefined') vxUtterances.push({ at:Date.now(), text });   // save_form's "yes, save it" check reads these
@@ -258,6 +289,10 @@ async function mgrAsk(text, opts){
   const row = mgrHtmlLine('<div class="mgr-steps"></div><div class="mgr-dots"><i></i><i></i><i></i></div>', 'working');
   const stepsEl = row.querySelector('.mgr-steps');
   const depth = mgrDepth();
+  // Checks in while it works, so a long answer never looks like a hang.
+  const t0 = Date.now();
+  const beats = [[4000, 'Still on it…'], [10000, 'Going through the figures, nearly there…'], [22000, 'This one is taking longer than usual. I’ll post the answer here the moment it’s ready; carry on meanwhile.']]
+    .map(([ms, say]) => setTimeout(() => { if(row.classList.contains('working')){ mgrStep(stepsEl, say); mgStatus(say, true); } }, ms));
   let data;
   try {
     data = await mgrPost({ message:text, history, context:mgrContext(mgrFocus), depth, surface:'panel' });
@@ -283,6 +318,7 @@ async function mgrAsk(text, opts){
     mgrRemember('assistant', reply);
     saveChatMessage(tk, mgrFocus, 'assistant', reply, 'margyn');
     if(data && data.actionCard && data.actionCard.type) mgrShowChange(data.actionCard, text);
+    mgrDoneNotice(reply, Date.now() - t0);
     if(typeof mtrack === 'function') mtrack('ask_message_sent', { msg_len:text.length, surface:'panel' });
     // Shadow: log Jev's pick next to what Claude did (server logs, no text kept).
     if(navMode === 'shadow') mgNavPick(text, 'panel', claudeNav.replace(/[^a-z_:]/g, '').slice(0, 41));
@@ -291,11 +327,13 @@ async function mgrAsk(text, opts){
     row.classList.remove('working');
     row.querySelector('.mgr-b').insertAdjacentHTML('beforeend', '<div class="mgr-text">' + escapeHtml(err.message || 'Something went wrong.') + '</div>');
   } finally {
+    beats.forEach(clearTimeout);
     mgrBusy = false; mgrSetBusy(false); mgrScroll();
+    mgrDrain();
   }
 }
 function mgrSetBusy(on){
-  const s = mgrEl('mgrSend'); if(s) s.disabled = !!on;
+  // Send stays usable: a message sent meanwhile is queued, not lost.
   const r = mgrEl('mgRail'); if(r) r.classList.toggle('busy', !!on);
 }
 /* A change Margyn prepared: same confirm card as everywhere, nothing happens without a tap. */

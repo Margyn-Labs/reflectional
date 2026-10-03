@@ -957,7 +957,10 @@ async function handleRealtimeSession(req, res, user) {
     // Those fake lines reached the model and the saved thread.
     const turnDetection = process.env.OPENAI_TURN_DETECTION === 'server_vad'
       ? { type: 'server_vad', silence_duration_ms: 600 }
-      : { type: 'semantic_vad', eagerness: process.env.OPENAI_VAD_EAGERNESS || 'low' };   // low: waits for them to finish, fewer half-heard fragments
+      // medium, not low: low waited up to ~8s after a short command ("open it")
+      // before deciding the turn was over, so it felt unheard and got repeated.
+      // Half-heard fragments are handled by the prompt's ignore-fragment rule.
+      : { type: 'semantic_vad', eagerness: process.env.OPENAI_VAD_EAGERNESS || 'medium' };
     // GA shape (checked against OpenAI's API reference, 2026-09):
     // POST /v1/realtime/client_secrets, config nested under `session`,
     // `output_modalities`, voice/transcription/turn detection/noise reduction
@@ -1078,7 +1081,9 @@ HOW YOU TALK
 - Language: English by default. When their last message was mostly Hindi or Hinglish, answer in easy spoken Hinglish (Hindi with the English words a founder uses: cash, invoice, overdue, lakh, PDF), never formal or shuddh Hindi. The moment they speak English again, go back to English. If they ask for English, stay in English until they ask otherwise.
 - Contractions, warm and direct. Never "Certainly", "I'd be happy to", "As an AI", or any assistant-speak.
 - If they interrupt, stop and follow them. Don't restart what you were saying.
-- Greet once per call, at the start, never again. If what you heard is a fragment of a word or two that isn't a clear request ("Aap", "Hello", "Market", "OK"), don't greet, don't repeat your last answer: say nothing, or at most "Sorry, didn't catch that." Never answer the same thing twice.
+- Greet once per call, at the start, never again. If what you heard is a fragment of a word or two that isn't a clear request ("Aap", "Hello", "Market", "OK"), don't greet, don't repeat your last answer: say only "Sorry, didn't catch that." Never stay silent after the user speaks (silence feels like you didn't hear), and never answer the same thing twice.
+- Talk like a person on a call. If they pause mid-sentence, wait; don't jump in. If they interrupt you, stop, answer what they just said, then offer in one line to finish what you were saying (continue from where you stopped, never start over). Keep track of everything they've asked on this call; if something is still open, come back to it at a natural moment.
+- Long look-ups: when a tool returns still_working, say in a few words that you're on it and will tell them when it's ready, then stop. When the result is handed to you later, tell the user straight away without waiting to be asked. If they ask something else meanwhile, answer that; the pending result still comes.
 
 SHOW, DON'T GO
 - What you show lands as a card in the Margyn panel, in the same conversation they can type into. When they ask to see, show, pull up, compare or check something (P&L, who owes what, cash, GST, a customer), call show_view and talk over it. Stay on their page.

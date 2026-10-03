@@ -20,7 +20,12 @@
 let rtPc = null, rtDc = null, rtStream = null;
 let vxActive = false, vxMuted = false, vxDriving = false;
 let vxState = 'idle', vxCaption = '', vxThreadKey = null;
-let vxCallsThisResponse = [], vxResponseActive = false, vxEnding = false, vxQueuedCreate = false;
+let vxCallsThisResponse = [], vxResponseActive = false, vxEnding = false;
+let vxWantReply = false, vxWantAfterCreate = false, vxCreateSentAt = 0;
+/* Talking like a person (2026-10-03, VP: "like Grok"): what Margyn was saying
+   when it was cut off, look-ups still running, and a running recap so a long
+   call doesn't forget what was asked at the start. */
+let vxBargeIn = null, vxBgTasks = {}, vxTurnsSinceRecap = 0;   // a reply owed while another was still running, see vxRequestReply
 let vxLastSaid = '', vxNudges = 0;   // follow-through check, see vxBrokenPromise
 let vxUtterances = [];         // { at, text } — the user's own words (spoken or typed), for the confirm gate
 let vxThinkHistory = [];       // think() thread so follow-up "why"s keep context
@@ -235,8 +240,25 @@ function vxResumeChoice(r){
 function vxTellModel(text, reply){
   if(!vxActive) return;
   rtSend({ type:'conversation.item.create', item:{ type:'message', role:'system', content:[{ type:'input_text', text }] } });
-  if(reply && !vxResponseActive) rtSend({ type:'response.create' });
+  if(reply) vxRequestReply();
 }
+/* Ask Margyn to speak now, or the moment the current reply ends. A
+   response.create sent while another reply is running is rejected by OpenAI
+   ("conversation_already_has_active_response"), and that error used to be
+   ignored: a finished search, a deep answer or "your sync is done" was then
+   never said, and Margyn went quiet until asked again. */
+function vxRequestReply(){
+  if(!vxActive) return;
+  // Never talk over the user: wait until they finish. The reply to what
+  // they're saying reads this too, so nothing is lost.
+  if(vxResponseActive || vxState === 'hearing'){ vxWantReply = true; return; }
+  // A reply was just asked for but hasn't started: it won't see what came in
+  // after the ask, so another one is owed once it ends.
+  if(Date.now() - vxCreateSentAt < 2500){ vxWantAfterCreate = true; return; }
+  vxWantReply = false; vxWantAfterCreate = false; vxCreateSentAt = Date.now();
+  rtSend({ type:'response.create' });
+}
+function vxFlushReply(){ if(vxWantReply && !vxResponseActive){ vxCreateSentAt = 0; vxRequestReply(); } }
 
 /* ---------- start / stop ---------- */
 async function openRealtimeOverlay(){
@@ -246,7 +268,7 @@ async function openRealtimeOverlay(){
     return;
   }
   const dock = vxEl('vxDock'); if(!dock) return;
-  vxActive = true; vxEnding = false; vxMuted = false; vxRecent = null; vxResumeCard = null; vxUtterances = []; vxThinkHistory = []; vxCallsThisResponse = []; vxResponseActive = false;
+  vxActive = true; vxEnding = false; vxMuted = false; vxRecent = null; vxResumeCard = null; vxUtterances = []; vxThinkHistory = []; vxCallsThisResponse = []; vxResponseActive = false; vxWantReply = false; vxWantAfterCreate = false; vxCreateSentAt = 0; vxBargeIn = null; vxBgTasks = {}; vxTurnsSinceRecap = 0;
   // One conversation: the call joins the panel's thread, typed lines and all.
   vxThreadKey = typeof mgrThreadKey === 'function' ? mgrThreadKey() : 'voice:' + new Date().toISOString();
   document.body.classList.add('vx-on');
@@ -391,8 +413,8 @@ function vxSendText(text){
   vxTouch();
   if(vxIsGoodbye(text)){ rtSend({ type:'conversation.item.create', item:{ type:'message', role:'user', content:[{ type:'input_text', text }] } }); vxGoodbye(); return; }
   rtSend({ type:'conversation.item.create', item:{ type:'message', role:'user', content:[{ type:'input_text', text }] } });
-  if(vxResponseActive){ rtSend({ type:'response.cancel' }); vxQueuedCreate = true; }   // answer the typed message once the cancel lands
-  else rtSend({ type:'response.create' });
+  if(vxResponseActive){ rtSend({ type:'response.cancel' }); vxWantReply = true; }   // answer the typed message once the cancel lands
+  else vxRequestReply();
 }
 /* The confirm gate waits briefly for the transcript of the "yes" that
    triggered the tool call; transcription can land just after it. */
@@ -444,14 +466,16 @@ function vxBrokenPromise(said){ said = String(said || '').trim(); return !!said 
    please." got silence: either no response started, or one finished with no
    words and no tool. Both are caught here and the model is asked again, once. */
 let vxLastUserText = '', vxCallsSinceCommit = 0, vxLastCommitAt = 0, vxLastResponseAt = 0, vxReplyTimer = null;
-function vxWatchReply(text){
-  vxLastUserText = text;
+/* Armed when the turn is committed, not when its transcript lands: a line
+   the transcriber returned empty (noise, wrong script) never armed it, and
+   that turn got no answer ("I have to say it two or three times"). */
+function vxWatchReply(){
   clearTimeout(vxReplyTimer);
   // Long enough that the server's own reply has always started by then:
   // at 3.5s the watchdog could race it and Margyn answered the same line twice.
   vxReplyTimer = setTimeout(() => {
-    if(vxActive && !vxEnding && !vxResponseActive && vxState !== 'speaking' && vxLastResponseAt < vxLastCommitAt) rtSend({ type:'response.create' });
-  }, 7000);
+    if(vxActive && !vxEnding && !vxResponseActive && vxState !== 'speaking' && vxLastResponseAt < vxLastCommitAt) vxRequestReply();
+  }, 6000);
 }
 /* Tools that only draw or move the screen. When Margyn already answered in
    full while calling them, a second reply is just "it's in the workspace now". */
@@ -464,10 +488,15 @@ let vxToolFailed = false;
 function vxOnEvent(m){
   switch(m.type){
     case 'input_audio_buffer.speech_started':
+      // They spoke while Margyn was answering. The server stops the reply by
+      // itself; remember what it was in the middle of (see vxNoteBargeIn).
+      if(vxResponseActive) vxBargeIn = { question:vxLastUserText, said:vxCaption, at:Date.now() };
       vxTouch(); vxSetState('hearing', ''); break;
     case 'input_audio_buffer.committed':
       vxNudges = 0; vxLastCommitAt = Date.now(); vxCallsSinceCommit = 0; vxSpokeSinceUser = false;
+      if(++vxTurnsSinceRecap >= 4) vxRecapCall();
       if(m.item_id) vxAddLine('user', '', m.item_id);   // placeholder keeps transcript order right
+      vxWatchReply();
       vxSetState('thinking', ''); break;
     case 'conversation.item.input_audio_transcription.completed': {
       let text = (m.transcript || '').trim();
@@ -487,7 +516,7 @@ function vxOnEvent(m){
       if(text && VX_ODD_SCRIPT.test(text)){
         // Written in Roman letters before it's shown or saved (see vxRomanize).
         const id = m.item_id;
-        vxAddLine('user', '…', id); vxDropResume(); vxWatchReply(text);
+        vxAddLine('user', '…', id); vxDropResume(); vxLastUserText = text;
         vxRomanize(text).then(r => {
           const roman = r || '(spoken in Hindi)';
           vxAddLine('user', roman, id); vxPersist('user', r || text);
@@ -497,7 +526,8 @@ function vxOnEvent(m){
       }
       if(text){
         vxUtterances.push({ at:Date.now(), text }); vxAddLine('user', text, m.item_id); vxPersist('user', text); vxDropResume();
-        if(vxIsGoodbye(text)) vxGoodbye(); else vxWatchReply(text);
+        vxLastUserText = text;
+        if(vxIsGoodbye(text)) vxGoodbye();
       }
       else document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove());
       break;
@@ -506,7 +536,8 @@ function vxOnEvent(m){
       document.querySelectorAll('#vxFeed [data-item="' + m.item_id + '"], #vxMini [data-item="' + m.item_id + '"]').forEach(r => r.remove()); break;
     }
     case 'response.created':
-      vxResponseActive = true; vxCallsThisResponse = []; vxCaption = ''; vxToolFailed = false; vxLastResponseAt = Date.now(); break;
+      // This reply reads everything said and every result handed in so far, so a reply owed until now is covered.
+      vxResponseActive = true; vxWantReply = vxWantAfterCreate; vxWantAfterCreate = false; vxCreateSentAt = 0; vxCallsThisResponse = []; vxCaption = ''; vxToolFailed = false; vxLastResponseAt = Date.now(); break;
     case 'response.output_audio_transcript.delta':
     case 'response.audio_transcript.delta':
       if(m.delta){ vxSpokeSinceUser = true; vxSetState('speaking'); vxSetCaption(vxCaption + m.delta); vxAddLine('margyn', VX_ODD_SCRIPT.test(vxCaption) ? '…' : vxCaption, 'r' + m.response_id); }
@@ -537,6 +568,15 @@ function vxOnEvent(m){
       const said = vxLastSaid || vxCaption; vxLastSaid = '';
       vxSetCaption('');
       const status = m.response && m.response.status;
+      // Cut off by the user speaking: nothing to nudge or narrate; the reply to
+      // what they're saying now comes next and knows what was cut short.
+      if(status === 'cancelled' && vxBargeIn){
+        vxNoteBargeIn(said, m.response && m.response.id);
+        if(calls.length) Promise.all(calls).catch(() => {});
+        if(vxWantReply) vxFlushReply();
+        break;
+      }
+      vxBargeIn = null;
       if(calls.length) vxNudges = 0;
       else if(vxActive && !vxEnding && vxNudges < 1 && status === 'completed' && !String(said).trim() && vxLastUserText && !vxCallsSinceCommit){
         // Finished with nothing said and nothing done.
@@ -565,16 +605,19 @@ function vxOnEvent(m){
           if(!vxActive || names.includes('end_conversation')) return;
           // Already answered and only drew something: don't talk again.
           if(spokeInFull && !vxToolFailed && names.every(n => VX_DISPLAY_TOOLS.includes(n))){ if(vxState !== 'speaking') vxSetState('listening'); return; }
-          rtSend({ type:'response.create' });
+          vxRequestReply();
         });
-      } else if(vxQueuedCreate) rtSend({ type:'response.create' });
+        // The reply that narrates these results is asked for once they're all in.
+        vxWantReply = false;
+      } else if(vxWantReply) vxFlushReply();
       else if(vxState !== 'speaking') vxSetState('listening');
-      vxQueuedCreate = false;
       break;
     }
     case 'error': {
       const code = m.error && m.error.code;
-      if(['response_cancel_not_active', 'conversation_already_has_active_response'].includes(code)) break;
+      if(code === 'response_cancel_not_active') break;
+      // Another reply was still running: say it as soon as that one ends.
+      if(code === 'conversation_already_has_active_response'){ vxCreateSentAt = 0; vxWantReply = true; vxWantAfterCreate = false; break; }
       console.error('Realtime error event:', m);
       toast('Margyn hit a snag on the call', { sub:(m.error && m.error.message) || 'Try again' });
       break;
@@ -582,14 +625,31 @@ function vxOnEvent(m){
   }
 }
 
+/* A look-up that takes longer than a few seconds carries on in the
+   background: Margyn says it's still on it, and speaks the answer the moment
+   it lands, without being asked again. Changes (saving, applying, a proposed
+   change) always wait for their real result, so nothing is done twice. */
+const VX_BG_AFTER_MS = 6000;
+const VX_WAIT_TOOLS = ['propose_change', 'confirm_pending_change', 'save_form', 'fill_form', 'end_conversation'];
+const VX_LATE = {};
 async function vxRunTool(m){
   let args = {}; try { args = JSON.parse(m.arguments || '{}'); } catch(e){}
   const fn = VX_TOOLS[m.name];
   let out;
   vxTouch();
   if(VX_SLOW_TOOLS[m.name]) vxActivity(VX_SLOW_TOOLS[m.name]);
-  try { out = fn ? await fn(args) : { error:'Unknown tool ' + m.name }; }
-  catch(e){ console.error('[voice] tool ' + m.name, e); out = { error:(e && e.message) || 'That failed.' }; }
+  const run = (async () => {
+    try { return fn ? await fn(args) : { error:'Unknown tool ' + m.name }; }
+    catch(e){ console.error('[voice] tool ' + m.name, e); return { error:(e && e.message) || 'That failed.' }; }
+  })();
+  out = VX_WAIT_TOOLS.includes(m.name) ? await run
+    : await Promise.race([run, new Promise(r => setTimeout(() => r(VX_LATE), VX_BG_AFTER_MS))]);
+  if(out === VX_LATE){
+    vxActivity('Still working on it…');
+    vxBgTasks[m.call_id] = { name:m.name, about:String(args.question || args.source || args.query || args.view || '').slice(0, 100), at:Date.now() };
+    run.then(res => { delete vxBgTasks[m.call_id]; vxLateResult(m.name, res); });
+    out = { still_working:true, note:'This is taking a few more seconds and is still running. Tell the user in under ten words that you are on it and will tell them the moment it is ready. Do not guess the answer and do not call this tool again: the result will be handed to you.' };
+  }
   if(out && (out.error || out.ok === false || out.shown === false || out.found === false)) vxToolFailed = true;
   let s = JSON.stringify(out === undefined ? { ok:true } : out);
   // Every tool result stays in the conversation and is re-read on every later
@@ -597,6 +657,52 @@ async function vxRunTool(m){
   if(s.length > 3500) s = s.slice(0, 3500) + '…(trimmed)';
   rtSend({ type:'conversation.item.create', item:{ type:'function_call_output', call_id:m.call_id, output:s } });
   return m.name;
+}
+
+/* The background result is in: Margyn says it now. If the call ended in the
+   meantime, a deep answer still lands in the panel. */
+function vxLateResult(name, out){
+  vxTouch();
+  // sync_source announces its own finish (see VX_TOOLS.sync_source).
+  if(out && out.still_running) return;
+  if(!vxActive){
+    if(out && out.answer){ vxAddLine('margyn', out.answer); vxPersist('assistant', out.answer); if(typeof mgrDoneNotice === 'function') mgrDoneNotice(out.answer); }
+    return;
+  }
+  vxActivity(out && out.error ? 'That ran into a problem' : 'Got it');
+  let s = JSON.stringify(out === undefined ? { ok:true } : out);
+  if(s.length > 3500) s = s.slice(0, 3500) + '…(trimmed)';
+  vxTellModel('The ' + name + ' you started earlier has finished. Result: ' + s + '\nTell the user now, without being asked, briefly and in your own words. If you were just talking about something else, open with a short bridge like "Also, on what you asked earlier about …". Keep every figure exactly as given. Do not call ' + name + ' again for this.', true);
+}
+
+/* Cut off mid-answer. Two cases:
+   - Margyn had started answering: answer what they say now, then offer to
+     finish the earlier answer (or just finish it if it was nearly done);
+   - Margyn hadn't said anything yet: they were still talking (a pause, then
+     more), so both parts are one request and get one answer. */
+function vxNoteBargeIn(said, responseId){
+  const b = vxBargeIn; vxBargeIn = null;
+  if(!b || !vxActive) return;
+  said = String(said || b.said || '').trim();
+  const words = said.split(/\s+/).filter(Boolean).length;
+  if(words >= 4){
+    if(responseId) vxAddLine('margyn', said + ' —', 'r' + responseId);
+    vxTellModel('The user interrupted you. You were answering "' + String(b.question || '').slice(0, 160) + '" and had only got as far as: "' + said.slice(-220) + '". They have not heard the rest. Deal with what they say now first. Then, unless it replaces or cancels the earlier question, ask in one short line whether they want you to finish it (for example "Want me to finish the bit on …?"). If they say yes later, continue from where you stopped; do not start over.', false);
+  } else if(b.question){
+    vxTellModel('The user paused and then kept talking. Treat what they said before the pause ("' + String(b.question).slice(0, 160) + '") and what they say now as ONE request, and answer it once.', false);
+  }
+}
+/* Every few turns, a short recap of the call goes into the conversation.
+   Old audio is trimmed to keep calls cheap (the server's truncation), and
+   without this the start of a long call was forgotten. */
+function vxRecapCall(){
+  vxTurnsSinceRecap = 0;
+  const asks = vxUtterances.map(u => String(u.text || '').trim()).filter(t => t.split(/\s+/).length >= 3).slice(-10);
+  if(asks.length < 3) return;
+  const bg = Object.values(vxBgTasks).map(t => t.name + (t.about ? ' (' + t.about + ')' : ''));
+  vxTellModel('Recap of this call so far, for your memory (do not read it out). The user asked, oldest first: ' + asks.map((a, i) => (i + 1) + ') ' + a.slice(0, 120)).join(' ') +
+    (bg.length ? ' Still running in the background, you will be handed the result: ' + bg.join('; ') + '.' : '') +
+    ' If any of these is still unanswered or was cut short, come back to it when the moment is right.', false);
 }
 
 /* ---------- screen awareness: tell Margyn when the user moves on their own ---------- */

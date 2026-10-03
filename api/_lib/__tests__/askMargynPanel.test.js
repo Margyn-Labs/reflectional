@@ -81,7 +81,9 @@ function check(name, cond, detail) {
   // scrolling, and one hello per call
   check('voice and typed chat both have scroll', M.REALTIME_TOOLS.some(t => t.name === 'scroll') && M.APP_TOOLS.some(t => t.name === 'scroll'));
   check('prompts map "scroll down" to the tool', /call scroll now/.test(vp) && /call scroll/.test(sys[0].text));
-  check('voice greets once and ignores fragments', /Greet once per call/.test(vp) && /Never answer the same thing twice/.test(vp));
+  check('voice greets once and ignores fragments', /Greet once per call/.test(vp) && /never answer the same thing twice/i.test(vp));
+  check('voice talks like a person: waits through pauses, offers to finish after an interruption, keeps track of asks', /If they pause mid-sentence, wait/.test(vp) && /offer in one line to finish/.test(vp) && /Keep track of everything they've asked/.test(vp));
+  check('voice never goes silent and reports long look-ups back on its own', /Never stay silent after the user speaks/.test(vp) && /still_working/.test(vp) && /without waiting to be asked/.test(vp));
   // language on calls, and romanizing
   check('voice: English by default, Hinglish only when they speak it, never shuddh Hindi', /English by default/.test(vp) && /never formal or shuddh Hindi/.test(vp) && /go back to English/.test(vp));
   const resOf = () => { const r = { code: 0, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } }; return r; };
