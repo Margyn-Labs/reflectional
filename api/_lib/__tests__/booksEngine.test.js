@@ -195,6 +195,8 @@ check('sorted by severity', ins.every((x, i) => i === 0 || ({ high: 3, medium: 2
 check('no supplier-days claim', !ins.some((x) => /pay suppliers/i.test(x.title)));
 check('names read like a person wrote them', !ins.some((x) => /LIMITED|\bLTD\b/.test(x.title)), ins.map((x) => x.title));
 check('late is ranked with how late, and names the oldest bill', ins.filter((x) => x.kind === 'late').every((x) => /oldest is bill/.test(x.title)));
+check('nice names: line breaks and initials', E.niceName('VIDHARBHA SURGICAL AGENCIES&#13;&#10;') === 'Vidharbha Surgical Agencies' && E.niceName('GLENMARK PHARMACEUTICALS (M.P.)') === 'Glenmark Pharmaceuticals (M.P.)' && E.niceName('S.S.D SURGICAL') === 'S.S.D Surgical', [E.niceName('VIDHARBHA SURGICAL AGENCIES&#13;&#10;'), E.niceName('GLENMARK PHARMACEUTICALS (M.P.)'), E.niceName('S.S.D SURGICAL')]);
+check('"start with" is never a debt over a year old', !ins.some((x) => x.kind === 'overdue_total' && /Glenmark/i.test(x.action || '')), ins.filter((x) => x.kind === 'overdue_total'));
 check('every insight has a key and a title', ins.every((x) => x.key && x.title));
 const at = E.attention(ctx, { top: 3 });
 check('attention returns three', at.things_to_know.length === 3, at);
