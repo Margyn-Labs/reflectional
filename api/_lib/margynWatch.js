@@ -48,6 +48,7 @@ const bsp = require('./whatsappBsp');
 const booksTools = require('./booksTools');
 const E = require('./booksEngine');
 const { track } = require('./track');
+const deliveries = require('./waDeliveries');
 
 const DAY = 86400000;
 const MAX_PER_RUN = 3;
@@ -277,6 +278,7 @@ async function watchAccount(userId, opts) {
       const ptext = compose(chosen, { company, slot, preview: true, lastSync: ctx.lastSync, ctxLines });
       const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: ptext }) : null;
       res.sent_to_preview_phone = !!(s && s.ok);
+      if (s && s.ok) await deliveries.record({ messageId: s.messageId, userId, kind: 'watch', to, sentTo: 'preview_copy', keys: [] });
     }
     return res;
   }
@@ -309,6 +311,8 @@ async function watchAccount(userId, opts) {
       }
       if (sentInfo) {
         result.sent = sentInfo;
+        // Gupshup taking it is not WhatsApp delivering it: keep the id so the delivery report can be matched.
+        await deliveries.record({ messageId: sent && sent.messageId, userId, kind: 'watch', to, sentTo: sentInfo.to, keys: chosen.map((x) => x.key) });
         if (!preview) {
           // In the owner's thread, so a reply of "2" or "why?" has the context.
           await insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text, tool_calls: null, wa_message_id: (sent && sent.messageId) || null, from_phone: digits(to) }])
@@ -378,6 +382,8 @@ async function signals(userId) {
     owner_name: firstNameOf(p), owner_phone_end: p.whatsapp_phone ? digits(p.whatsapp_phone).slice(-4) : null,
     preview_available: !!process.env.MARGYN_WATCH_PREVIEW_PHONE,
     template_ready: !!(process.env.WHATSAPP_TEMPLATE_ALERT || process.env.WHATSAPP_TEMPLATE_ALERT_V2),
+    // Whether each update actually arrived (null = delivery tracking not set up yet).
+    deliveries: await deliveries.recent(userId, 20),
     signals: rows
   };
 }

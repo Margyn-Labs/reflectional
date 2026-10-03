@@ -88,6 +88,23 @@ function mgHubOwnerLabel(w){
   const who = w.owner_name ? w.owner_name + '’s' : 'the owner’s';
   return who + ' WhatsApp' + (w.owner_phone_end ? ' (…' + w.owner_phone_end + ')' : '');
 }
+/* Did it arrive? From WhatsApp's own delivery report, not from "Gupshup accepted it". */
+function mgHubTime(iso){ return iso ? new Date(iso).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' }) : ''; }
+function mgHubDeliveryText(d, w){
+  if(!d) return null;
+  const who = d.sent_to === 'owner' ? mgHubOwnerLabel(w) : 'the Margyn test phone';
+  if(d.status === 'read') return { cls:'pos', text:'Read on ' + who + ' · ' + mgHubTime(d.read_at) };
+  if(d.status === 'delivered') return { cls:'pos', text:'Delivered to ' + who + ' · ' + mgHubTime(d.delivered_at) };
+  if(d.status === 'failed') return { cls:'neg', text:'Didn’t arrive on ' + who + ': ' + (d.error || 'WhatsApp didn’t say why') };
+  const mins = (Date.now() - Date.parse(d.sent_at)) / 60000;
+  return mins > 30 ? { cls:'warn', text:'WhatsApp hasn’t confirmed delivery to ' + who + ' (sent ' + mgHubTime(d.sent_at) + ')' }
+    : { cls:'', text:'Sent to ' + who + ' · waiting for WhatsApp to confirm' };
+}
+function mgHubDeliveryFor(key){
+  const list = (mgHub.watch && mgHub.watch.deliveries) || [];
+  return list.find(d => (d.signal_keys || []).includes(key)) || null;
+}
+
 function mgHubWatchControls(){
   const w = mgHub.watch || {};
   const mode = w.mode || 'off';
@@ -103,9 +120,14 @@ function mgHubWatchControls(){
   else note = w.has_number ? 'Margyn texts ' + mgHubOwnerLabel(w) + ' ' + when + ', at most three points, one per customer. Reply STOP ALERTS to pause.' : 'Add a WhatsApp number under Settings first, then Margyn can text it.';
   if(mode !== 'off' && w.ready && !w.template_ready) note += ' Until Margyn’s WhatsApp template is approved, messages only go out within 24 hours of the last message to Margyn.';
   const pv = mgHub.preview;
+  const last = ((w.deliveries || []).filter(d => d.sent_to === 'owner' || d.sent_to === 'preview'))[0];
+  const lt = mgHubDeliveryText(last, w);
+  const deliveryLine = w.deliveries === null && mode !== 'off'
+    ? '<p class="mg-fine">Margyn can’t yet confirm that updates arrive (one setup step on Margyn’s side).</p>'
+    : lt ? '<p class="mg-fine"><span class="mg-bdg ' + lt.cls + '">Last update</span> ' + escapeHtml(lt.text) + '</p>' : '';
   return '<div class="mg-panel-b mg-hub-watch"><span class="mg-hub-lbl">WhatsApp updates</span>' + seg +
     mgBtn('Preview today’s update', 'data-hub-send') +
-    '<p class="mg-fine">' + escapeHtml(note) + '</p>' +
+    '<p class="mg-fine">' + escapeHtml(note) + '</p>' + deliveryLine +
     (pv ? '<div class="mg-hub-preview"><div class="mg-li-s">' + escapeHtml(pv.note) + '</div><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + escapeHtml(pv.text) + '</pre></div>' : '') +
     '</div>';
 }
@@ -117,8 +139,10 @@ function mgHubNoticed(){
   const body = items.length ? items.slice(0, 8).map(x => {
     const s = state.get(x.key) || x;
     const when = s.last_sent_at ? fmtDay(s.last_sent_at) : null;
+    const dv = mgHubDeliveryText(mgHubDeliveryFor(x.key), mgHub.watch || {});
     const badge = s.status === 'muted' ? '<span class="mg-bdg">Muted</span>'
-      : when ? '<span class="mg-bdg pos">Sent on WhatsApp ' + escapeHtml(when) + (s.sent_to === 'preview' ? ' (preview)' : '') + '</span>'
+      : dv ? '<span class="mg-bdg ' + dv.cls + '">' + escapeHtml(dv.text) + '</span>'
+      : when ? '<span class="mg-bdg">Sent ' + escapeHtml(when) + (s.sent_to === 'preview' ? ' to the test phone' : '') + ', not confirmed</span>'
       : '<span class="mg-bdg">In the app</span>';
     const sev = x.severity === 'high' ? 'neg' : x.severity === 'medium' ? 'warn' : '';
     return '<div class="mg-li mg-hub-note"><span class="mg-dot ' + sev + '"></span><div style="min-width:0;flex:1"><div class="mg-li-t">' + escapeHtml(x.title || '') + '</div>' +
@@ -182,8 +206,10 @@ document.addEventListener('click', async e => {
     if(mgHub.watch && mgHub.watch.mode === mode) return;
     const w = mgHub.watch || {};
     if(mode === 'on' && typeof mgConfirm === 'function'){
+      const lastTest = (w.deliveries || []).find(d => d.sent_to === 'preview');
+      const proven = lastTest && (lastTest.status === 'delivered' || lastTest.status === 'read');
       const yes = await mgConfirm({ title:'Text ' + mgHubOwnerLabel(w) + '?',
-        body:'From the next update, Margyn sends what it notices in these books to ' + mgHubOwnerLabel(w) + ', around 7:30 am and 7 pm (10:30 am only for a deadline). Use Preview today’s update first to see exactly what they’ll get.',
+        body:(proven ? 'The last test update was delivered, so the same route works. ' : 'No test update has been confirmed delivered yet. Try “Test on Margyn’s phone” first so you know it arrives. ') + 'From the next update, Margyn sends what it notices in these books to ' + mgHubOwnerLabel(w) + ', around 7:30 am and 7 pm (10:30 am only for a deadline). Use Preview today’s update first to see exactly what they’ll get.',
         confirmLabel:'Yes, send to ' + (w.owner_name || 'the owner') });
       if(!yes) return;
     }

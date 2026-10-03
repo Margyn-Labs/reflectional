@@ -29,6 +29,7 @@ const { runImportMapper } = require('./_lib/importMapper');
 const marginActions = require('./_lib/marginActions');
 const { runWatchAll } = require('./_lib/margynWatch');
 const cronOnce = require('./_lib/cronOnce');
+const deliveries = require('./_lib/waDeliveries');
 const booksTools = require('./_lib/booksTools');
 const booksEngine = require('./_lib/booksEngine');
 const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
@@ -86,6 +87,15 @@ async function handleWebhookEvent(req, res) {
     // Always 200 an unparseable body — WhatsApp/BSP retries and can
     // eventually disable the webhook if it sees repeated non-2xx.
     res.status(200).json({ received: true });
+    return;
+  }
+
+  // Delivery reports (delivered / read / failed) for messages we sent. Before 2026-10-04 these were dropped,
+  // so a message Gupshup accepted but WhatsApp never delivered still looked "sent".
+  const statuses = deliveries.parseStatusEvents(payload);
+  if (statuses.length) {
+    try { await deliveries.apply(statuses); } catch (e) { console.error('[whatsapp] delivery report:', e.message); }
+    res.status(200).json({ received: true, statuses: statuses.length });
     return;
   }
 
@@ -978,7 +988,11 @@ async function handleChaseCron(req, res) {
       } else {
         const result = await bsp.sendTemplate({ to: target.contact_phone, templateId: msg.templateId, params: msg.params });
         if (!result.ok) { status = 'failed'; error = result.error; failed++; }
-        else { waMessageId = result.messageId || null; sent++; budget--; }
+        else {
+          waMessageId = result.messageId || null; sent++; budget--;
+          // So the app can say whether the customer actually got it, not just that Gupshup took it.
+          await deliveries.record({ messageId: waMessageId, userId: dep.user_id, kind: 'chase', to: target.contact_phone, sentTo: 'customer', ref: target.id });
+        }
       }
 
       try {

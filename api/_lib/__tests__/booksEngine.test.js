@@ -197,6 +197,7 @@ check('names read like a person wrote them', !ins.some((x) => /LIMITED|\bLTD\b/.
 check('late is ranked with how late, and names the oldest bill', ins.filter((x) => x.kind === 'late').every((x) => /oldest is bill/.test(x.title)));
 check('nice names: line breaks and initials', E.niceName('VIDHARBHA SURGICAL AGENCIES&#13;&#10;') === 'Vidharbha Surgical Agencies' && E.niceName('GLENMARK PHARMACEUTICALS (M.P.)') === 'Glenmark Pharmaceuticals (M.P.)' && E.niceName('S.S.D SURGICAL') === 'S.S.D Surgical', [E.niceName('VIDHARBHA SURGICAL AGENCIES&#13;&#10;'), E.niceName('GLENMARK PHARMACEUTICALS (M.P.)'), E.niceName('S.S.D SURGICAL')]);
 check('"start with" is never a debt over a year old', !ins.some((x) => x.kind === 'overdue_total' && /Glenmark/i.test(x.action || '')), ins.filter((x) => x.kind === 'overdue_total'));
+check('the overall overdue point carries the customer it says to call', (() => { const o = ins.find((x) => x.kind === 'overdue_total'); return !o || !o.action || (o.party && o.action.includes(E.niceName(o.party))); })());
 check('every insight has a key and a title', ins.every((x) => x.key && x.title));
 const at = E.attention(ctx, { top: 3 });
 check('attention returns three', at.things_to_know.length === 3, at);
