@@ -33,6 +33,7 @@ const moneyModel = require('./moneyModel');
 const booksTools = require('./booksTools');
 const topics = require('../../app/js/margyn-topics.js');
 const { track } = require('./track');
+const jevRouter = require('./jevRouter');
 
 const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5-5';
 const MAX_TOOL_ITERATIONS = 5;
@@ -243,7 +244,27 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   const messages = await buildMessages(profileId, fromPhone, cleanText);
   // Without the Act permission the propose tool isn't offered at all, and
   // the prompt says so, so Margyn explains instead of trying.
-  const tools = canAct ? ALL_TOOLS : ALL_TOOLS.filter(t => !marginActions.isProposeAction(t.name));
+  const fullTools = canAct ? ALL_TOOLS : ALL_TOOLS.filter(t => !marginActions.isProposeAction(t.name));
+
+  // The front door (Jev, jevRouter.js; JEV_MODE_ROUTER, off by default). Live:
+  // a bare greeting / thanks / bye gets a fixed reply, and Claude gets only the
+  // tool groups this message needs. The model here is fixed, so Jev's depth is
+  // only logged. Shadow: logged beside today's turn. Any doubt: today's turn.
+  const routerMode = jevRouter.mode();
+  const earlier = messages.slice(0, -1).reverse().find(m => m.role === 'user');
+  const routeP = routerMode === 'off' ? Promise.resolve(null)
+    : jevRouter.route({ surface: 'whatsapp', text: cleanText, earlier: earlier && earlier.content, userId: profileId, name: sender && sender.name })
+      .catch((e) => { console.error('[jev-router] failed:', e.message); return null; });
+  const route = routerMode === 'live' ? await routeP : null;
+  if (route && route.apply.reply) {
+    jevRouter.logLine(route, { used: [], depthUsed: 'none', sent: 0, full: fullTools.length });
+    await persist({ profileId, phone: fromPhone }, 'assistant', route.apply.reply, null);
+    await sendReply(fromPhone, route.apply.reply);
+    return;
+  }
+  let tools = route && route.apply.groups ? jevRouter.selectTools(fullTools, route.apply.groups, 'whatsapp') : fullTools;
+  const toolsUsed = [];
+  let retried = false;
   // Instructions (cached, the same for every business) + this account's half:
   // who is texting, their access, and the cross-channel memory.
   const accountPart = `ACCOUNT\n- The business is ${companyName}.\n${senderLine(companyName, sender)}` + (canAct ? '' :
@@ -264,6 +285,15 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   };
 
   let finalText = '';
+  const baseLength = messages.length;
+  for (let pass = 0; pass < 2; pass++) {
+  if (pass === 1) {
+    // The front door trimmed the tools and the answer came back empty or
+    // "I can't see that": the same message again with every tool.
+    if (tools === fullTools || (finalText && !topics.looksUnanswered(finalText))) break;
+    console.log('[whatsappAgent] front door trimmed too much, retrying with every tool');
+    retried = true; tools = fullTools; finalText = ''; messages.length = baseLength;
+  }
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     let data;
     try {
@@ -276,16 +306,23 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
     const blocks = Array.isArray(data.content) ? data.content : [];
     const toolUses = blocks.filter(b => b.type === 'tool_use');
     const textOut = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    toolUses.forEach(t => toolsUsed.push(t.name));
 
-    await persist(
-      { profileId, phone: fromPhone },
-      'assistant',
-      textOut,
-      toolUses.length ? toolUses.map(t => ({ name: t.name, input: t.input })) : null
-    );
+    // A final answer that is about to be retried with every tool is not kept.
+    const willRetry = pass === 0 && tools !== fullTools && !toolUses.length && (!textOut || topics.looksUnanswered(textOut));
+    if (!willRetry) {
+      await persist(
+        { profileId, phone: fromPhone },
+        'assistant',
+        textOut,
+        toolUses.length ? toolUses.map(t => ({ name: t.name, input: t.input })) : null
+      );
+    }
 
     const proposal = canAct && toolUses.find(t => marginActions.isProposeAction(t.name));
     if (proposal) {
+      const r = await routeP;
+      if (r) jevRouter.logLine(r, { used: toolsUsed, depthUsed: 'fixed', sent: tools.length, full: fullTools.length, retry: retried });
       await handleProposal(proposal.input || {}, { profileId, fromPhone, textOut });
       return;
     }
@@ -305,6 +342,9 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
     finalText = textOut;
     break;
   }
+  }
+  const routed = await routeP;
+  if (routed) jevRouter.logLine(routed, { used: toolsUsed, depthUsed: 'fixed', sent: tools.length, full: fullTools.length, retry: retried });
 
   if (topics.isQuestion(cleanText)) {
     await track(profileId, 'question_asked', { channel: 'whatsapp', topic: topics.topicsOf(cleanText)[0], answered: !!finalText && !topics.looksUnanswered(finalText) });
@@ -869,4 +909,4 @@ async function persist(thread, role, content, toolCalls, waMessageId) {
   }
 }
 
-module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool };
+module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS };
