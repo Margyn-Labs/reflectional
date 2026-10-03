@@ -270,6 +270,8 @@ function computeAnalytics(input) {
   const asOf = now;
   const cut90 = new Date(asOf.getTime() - 90 * DAY);
   const win = { sales: 0, purchases: 0, direct_expense: 0, direct_income: 0, returns: 0 };   // last 90d
+  const bought30 = new Map();   // vendor -> purchases in the last 30 days (are suppliers tracked bill by bill?)
+  const cut30 = new Date(asOf.getTime() - 30 * DAY);
   let salesNoParty = 0;
 
   const items = {};        // item -> agg
@@ -310,7 +312,7 @@ function computeAnalytics(input) {
           if (a >= 0) { m.sales += a; voucherSales += a; if (in90) win.sales += a; }
           else { m.sales_returns += -a; voucherReturns += -a; if (in90) { win.returns += -a; } }
           break;
-        case 'purchases': m.purchases += -a; if (in90) win.purchases += -a; break;
+        case 'purchases': m.purchases += -a; if (in90) win.purchases += -a; if (dt >= cut30 && partyName && -a > 0) bought30.set(nameKey(partyName), (bought30.get(nameKey(partyName)) || 0) - a); break;
         case 'direct_expense': m.direct_expense += -a; if (in90) win.direct_expense += -a; break;
         case 'direct_income': m.direct_income += a; if (in90) win.direct_income += a; break;
         case 'opex': m.opex += -a; break;
@@ -527,11 +529,19 @@ function computeAnalytics(input) {
   const shortHistory = spanDays < 80;
   let dso = sales90 > 0 && !shortHistory ? r2((recv / sales90) * 90) : null;
   if (dso != null && dso > 1825) { dso = null; implausible = true; }
-  const dpo = win.purchases > 0 && !shortHistory ? r2((pay / win.purchases) * 90) : null;
+  // Supplier days only mean something when supplier bills are kept bill by bill in Tally. A supplier bought from
+  // in the last month almost always still has an open bill; if most of last month's purchases are from
+  // suppliers with no open bill at all, Tally isn't tracking them and "you pay in 5 days" would be invented.
+  const payParties = new Set(bills.filter((b) => b.direction === 'payable' && !b.advance && Math.abs(num(b.closing_balance)) > 0).map((b) => nameKey(b.party_name)));
+  const b30 = [...bought30.values()].reduce((x, y) => x + y, 0);
+  const covered30 = [...bought30.entries()].filter(([k]) => payParties.has(k)).reduce((x, [, v]) => x + v, 0);
+  const suppliersTracked = b30 <= 0 ? null : covered30 / b30 >= 0.4;
+  const dpo = win.purchases > 0 && !shortHistory && suppliersTracked !== false ? r2((pay / win.purchases) * 90) : null;
   const dio = stockVal != null && cogs90 > 0 && !shortHistory ? r2((stockVal / cogs90) * 90) : null;
   const working_capital = {
     receivables: r2(recv), receivables_overdue: r2(recvOverdue), payables: r2(pay),
     customer_advances: r2(custAdvances), vendor_advances: r2(vendorAdvances),
+    suppliers_tracked_billwise: suppliersTracked,
     stock_value: stockVal,
     cash: cash ? cash.total : null,
     dso_days: dso, dpo_days: dpo, dio_days: dio,

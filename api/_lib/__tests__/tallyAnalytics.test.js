@@ -217,4 +217,11 @@ check('empty input does not throw, says so', e.pnl.length === 0 && e.quality.con
   check('guess: "Direct Incomes - Scrap" still direct_income', guessBucket('x', 'Direct Incomes - Scrap') === 'direct_income');
 }
 
+// Supplier days only when suppliers are tracked bill by bill
+{
+  const v2 = vouchers.concat([V('Purchase', '9', '20260901', 'Supplier B', [['Supplier B', 118000, true], ['Purchase - Goods', -100000], ['Input CGST', -18000]])]);
+  const untracked = computeAnalytics({ ledgers, vouchers: v2, bills: bills.filter((b) => b.direction !== 'payable'), now });
+  check('no open supplier bills for last month\'s suppliers: no supplier days', untracked.working_capital.dpo_days == null && untracked.working_capital.suppliers_tracked_billwise === false, untracked.working_capital);
+  check('a supplier with an open bill is not called untracked', a.working_capital.suppliers_tracked_billwise !== false, a.working_capital);
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
