@@ -565,6 +565,7 @@ function moneyOwed(ctx, args) {
     const d = dailySales90(ctx);
     if (d > 0) out.what_faster_collection_frees = 'Every 10 days faster that customers pay frees about ' + inr(d * 10) + ' of cash (based on ' + inr(d) + ' of sales a day over the last 90 days).';
   } else if (wc.dpo_days != null) out.days_you_take_to_pay = Math.round(wc.dpo_days) + ' days on average';
+  else if (wc.suppliers_tracked_billwise === false) out.note = 'Most suppliers you bought from last month have no open bill in Tally, so supplier bills aren\'t kept bill by bill. This list is only the bills Tally does track, and how fast you pay suppliers can\'t be worked out from it.';
   return out;
 }
 

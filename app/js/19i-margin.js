@@ -188,7 +188,7 @@ function mgRenderMargin(){
     mgMarPanel('Where the money goes', 'Largest cost ledgers', '<table class="mg-grid"><thead><tr><th>Ledger</th><th>Type</th><th class="r">Amount (₹)</th><th class="r">% of sales</th></tr></thead><tbody>' + (costRows || '<tr><td colspan="4" class="mg-muted">Nothing yet.</td></tr>') + '</tbody></table>') +
     '<div class="mg-tiles four">' +
       mgMarTile('Owed to you', fmtINR(wc.receivables || 0, 'tile'), fmtINR(wc.receivables_overdue || 0, 'tile') + ' overdue', (wc.receivables_overdue || 0) > 0 ? 'bad' : 'flat', fmtINR(wc.receivables || 0)) +
-      mgMarTile('You owe', fmtINR(wc.payables || 0, 'tile'), wc.dpo_days == null ? '' : 'Paid in about ' + Math.round(wc.dpo_days) + ' days', 'flat', fmtINR(wc.payables || 0)) +
+      mgMarTile('You owe', fmtINR(wc.payables || 0, 'tile'), wc.dpo_days == null ? (wc.suppliers_tracked_billwise === false ? 'Supplier bills aren’t tracked bill by bill in Tally' : '') : 'Paid in about ' + Math.round(wc.dpo_days) + ' days', 'flat', fmtINR(wc.payables || 0)) +
       mgMarTile('Stock held', wc.stock_value == null ? '—' : fmtINR(wc.stock_value, 'tile'), wc.dio_days == null ? 'Days of stock not available' : Math.round(wc.dio_days) + ' days of stock', 'flat', wc.stock_value == null ? '' : fmtINR(wc.stock_value)) +
       mgMarTile('Cash cycle', wc.cash_conversion_days == null ? '—' : Math.round(wc.cash_conversion_days) + ' days', 'Days to pay + days of stock − days to be paid') +
     '</div>' +

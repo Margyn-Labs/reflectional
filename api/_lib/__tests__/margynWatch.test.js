@@ -175,6 +175,27 @@ const W = require('../margynWatch');
   const s = await W.signals(U);
   check('signals for the hub', s.ready && s.mode === 'on' && s.preview_available && s.template_ready && s.signals.length > 0, s);
 
+  console.log('only delivered sends count');
+  DB.profiles[0].preferences.margyn_watch.mode = 'on';
+  DB.margyn_signals = [];
+  DB.wa_deliveries = [];
+  r = await W.watchAccount(U, { slot: 'morning', dryRun: true });
+  const keys = r.chosen;
+  // Logged as sent to the owner yesterday, but WhatsApp never delivered it; reports are flowing (another message was delivered).
+  const ghost = (await require('../booksTools').contextFor(U)).ctx;
+  const firstIns = require('../booksEngine').insights(ghost).find((x) => x.kind === keys[0]), firstKey = firstIns.key;
+  DB.margyn_signals = [{ user_id: U, key: firstKey, kind: keys[0], status: 'sent', impact: firstIns.impact, last_sent_at: new Date(Date.now() - 86400000 * 1.5).toISOString(), sent_to: 'owner', sent_via: 'template' }];
+  DB.wa_deliveries = [{ user_id: U, kind: 'watch', message_id: 'x', sent_to: 'preview_copy', signal_keys: [], status: 'delivered', sent_at: new Date().toISOString() }];
+  r = await W.watchAccount(U, { slot: 'morning', dryRun: true });
+  check('a send WhatsApp never delivered does not count', r.chosen.includes(keys[0]), r);
+  DB.wa_deliveries.push({ user_id: U, kind: 'watch', message_id: 'y', sent_to: 'owner', signal_keys: [firstKey], status: 'delivered', sent_at: new Date(Date.now() - 86400000 * 1.5).toISOString() });
+  r = await W.watchAccount(U, { slot: 'morning', dryRun: true });
+  check('a delivered one does', !r.chosen.includes(keys[0]), r);
+  DB.wa_deliveries = [{ user_id: U, kind: 'watch', message_id: 'z', sent_to: 'owner', signal_keys: [firstKey], status: 'queued', sent_at: new Date(Date.now() - 86400000 * 1.5).toISOString() }];
+  r = await W.watchAccount(U, { slot: 'morning', dryRun: true });
+  check('no reports coming in at all: trust the log (never repeat every run)', !r.chosen.includes(keys[0]), r);
+  DB.wa_deliveries = [];
+
   console.log('every account');
   const all = await W.runWatchAll('morning');
   check('runs over Tally accounts', all.accounts === 1 && all.results.length === 1, all);

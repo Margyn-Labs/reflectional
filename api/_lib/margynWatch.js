@@ -231,7 +231,7 @@ async function saveState(userId, list, chosen, sentInfo, state) {
     return {
       user_id: userId, key: x.key, kind: x.kind, severity: x.severity, impact: Math.round(x.impact || 0),
       title: x.title, detail: x.detail || null, action: x.action || null, ask: x.ask || null,
-      status: p.status === 'muted' ? 'muted' : sent ? 'sent' : (p.status === 'sent' ? 'sent' : 'open'),
+      status: p.status === 'muted' ? 'muted' : sent ? 'sent' : (p.status === 'sent' && !p.unconfirmed ? 'sent' : 'open'),
       last_seen: nowIso,
       last_sent_at: sent ? nowIso : (p.last_sent_at || null),
       sent_count: (Number(p.sent_count) || 0) + (sent && sentInfo.to === 'owner' ? 1 : 0),
@@ -263,6 +263,7 @@ async function watchAccount(userId, opts) {
   let state;
   try { state = await selectRows('margyn_signals', `select=key,kind,status,impact,last_sent_at,sent_count,sent_via,sent_to&user_id=eq.${userId}&limit=1000`); }
   catch (e) { return { user: userId, skipped: 'margyn_signals table missing (run the SQL)' }; }
+  state = await onlyDelivered(userId, state);
 
   const profile = await prefsOf(userId);
   const mode = o.mode || modeOf(profile);
@@ -328,6 +329,24 @@ async function watchAccount(userId, opts) {
   if (!o.dryRun) await saveState(userId, list, chosen, sentInfo, state);
   return result;
 }
+/**
+ * A point only counts as sent if WhatsApp delivered it (or the send is under a day old and still waiting).
+ * On 3 Oct three updates were logged as sent to the owner and none arrived; without this, the owner's first
+ * real update would skip those points for weeks. Only applied once delivery reports are actually coming in
+ * for this account, so a missing webhook setting can never make Margyn repeat itself every run.
+ */
+async function onlyDelivered(userId, state) {
+  const dl = await deliveries.recent(userId, 60);
+  if (!dl || !dl.some((d) => ['delivered', 'read', 'failed'].includes(d.status))) return state;
+  const ok = new Set();
+  for (const d of dl) {
+    const fresh = Date.now() - Date.parse(d.sent_at) < DAY;
+    if (d.status === 'delivered' || d.status === 'read' || (d.status !== 'failed' && fresh)) for (const k of d.signal_keys || []) ok.add(d.sent_to + '|' + k);
+  }
+  return state.map((s) => (s.last_sent_at && (s.sent_to === 'owner' || s.sent_to === 'preview') && !ok.has(s.sent_to + '|' + s.key))
+    ? Object.assign({}, s, { last_sent_at: null, sent_to: null, unconfirmed: true }) : s);
+}
+
 function firstNameOf(profile) {
   return String(((profile && profile.preferences) || {}).display_name || '').trim().split(/\s+/)[0] || null;
 }
