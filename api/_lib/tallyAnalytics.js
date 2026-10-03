@@ -485,6 +485,40 @@ function computeAnalytics(input) {
   const cash = cashLedgers.length && !cashUnresolved ? { total: r2(cashTotal), ledgers: cashLedgers.length, derived_from_vouchers: cashDerived,
     note: cashDerived ? 'Tally returned no closing balance for ' + cashDerived + ' of these ledgers, so their balance is opening plus voucher movement.' : 'Closing balances as returned by Tally. Overdraft accounts excluded.' } : null;
 
+  // ----- cash, day by day (2026-10-04) -----
+  // Margyn's own saved readings only start when an account starts using Margyn, and a reading saved from wrong
+  // data stays wrong (Care Hygiene's 3 Oct readings said ₹4.38 L). The books have the whole year, so walk back
+  // from today's balance through every entry on the cash ledgers: the balance at the end of each day.
+  let cash_history = null;
+  if (cash) {
+    const cashKeys = new Set(cashLedgers.map((l) => nameKey(l.name)));
+    const dayMove = new Map();
+    for (const v of accounting) {
+      if (!v || v.is_cancelled === true) continue;
+      const dt = parseDate(v.date);
+      if (!dt) continue;
+      let m = 0;
+      for (const e of Array.isArray(v.entries) ? v.entries : []) if (e && e.ledger && cashKeys.has(nameKey(e.ledger))) m += debitPositive(e.amount);
+      if (m) { const k = dt.toISOString().slice(0, 10); dayMove.set(k, (dayMove.get(k) || 0) + m); }
+    }
+    const days = [...dayMove.keys()].sort();
+    if (days.length) {
+      const todayKey = new Date(todayIstMs(now)).toISOString().slice(0, 10);
+      const pts = [];
+      let bal = cashTotal, d = new Date(todayIstMs(now));
+      const first = Date.parse(days[0] + 'T00:00:00Z') - DAY;
+      // End-of-day balance for every day from the day before the first entry to today.
+      while (d.getTime() >= first) {
+        const k = d.toISOString().slice(0, 10);
+        pts.push({ date: k, cash: r2(bal) });
+        bal -= dayMove.get(k) || 0;
+        d = new Date(d.getTime() - DAY);
+      }
+      pts.reverse();
+      cash_history = { as_of: todayKey, basis: 'Today\'s cash in Tally, worked back through every entry on the bank and cash ledgers (end of each day).', points: pts };
+    }
+  }
+
   // How many balance-sheet ledgers came back with no balance at all (connector lesson).
   const BS = ['debtor', 'creditor', 'bank', 'bank_od', 'cash', 'stock', 'balance_sheet', 'tax'];
   const bsLedgers = ledgers.filter((l) => BS.includes(cls(l.name).bucket));
@@ -829,7 +863,7 @@ function computeAnalytics(input) {
     as_of: asOf.toISOString(),
     items_available: itemsAvailable,
     period, pnl, stock, cash, cost_structure,
-    working_capital, customers: customerTop,
+    working_capital, customers: customerTop, cash_history,
     // Entries already in Tally for a later date (EMIs, post-dated cheques): not in today's figures.
     entered_ahead: today.future.length ? {
       count: today.future.length,
