@@ -827,7 +827,15 @@ function cashAndDebt(ctx) {
   const interest = new Map();
   for (const r of ctx.rows) {
     if (!inPeriod(r, fy)) continue;
-    for (const l of r.lines) if (/interest/i.test(l.ledger) && (l.bucket === 'opex' || l.bucket === 'direct_expense' || l.bucket === 'other_income')) { if (l.bucket === 'other_income') continue; interest.set(l.ledger, (interest.get(l.ledger) || 0) - l.amount); }
+    for (const l of r.lines) if (/interest/i.test(l.ledger) && (l.bucket === 'opex' || l.bucket === 'direct_expense' || l.bucket === 'other_income')) interest.set(l.ledger, (interest.get(l.ledger) || 0) - l.amount);
+  }
+  // An interest ledger filed under income in Tally ("INTEREST ON OD" in Indirect Incomes) is still a cost when
+  // money goes out on it. Count it when it's a net cost this year; real interest earned (sweep interest) stays out.
+  const misfiled = [];
+  for (const [k, v] of [...interest.entries()]) {
+    const isIncomeGroup = ctx.cls(k) === 'other_income';
+    if (isIncomeGroup && v > 0) misfiled.push(k);
+    if (v <= 0) interest.delete(k);
   }
   const interestTotal = [...interest.values()].reduce((a, b) => a + b, 0);
   const cur = isoDay(ctx.today).slice(0, 7);
@@ -858,6 +866,7 @@ function cashAndDebt(ctx) {
   out.notes = [
     'Balances use Tally\'s figure where it sent one; otherwise the opening balance plus this year\'s entries.',
     later.length ? 'Balances are as of today: entries Tally already has for later dates are not counted yet.' : null,
+    misfiled.length ? misfiled.join(', ') + ' is filed under income in Tally but is interest you paid, so it\'s counted here. Worth asking your accountant to move it under expenses.' : null,
     loans.some((x) => /o\.?\s?d|overdraft|cash credit/i.test(x.name + ' ' + (x.group || ''))) ? 'The business runs on an overdraft. Margyn doesn\'t know the overdraft limit, so it can\'t say how much headroom is left; cash alone understates what you can draw.' : null
   ].filter(Boolean);
   return out;
