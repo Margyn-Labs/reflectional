@@ -155,7 +155,7 @@ function vxPackSummary(){
   if(!s0) return { month:mgMonthLabel(k), note:'No figures for that month.' };
   // The month's own P&L from the books, exactly as the pack shows it (a reading's revenue is not that month's).
   const s = typeof mgPackTallyPnl === 'function' && mgPackTallyPnl(k) ? Object.assign({}, s0, mgPackTallyPnl(k)) : s0;
-  const margin = Number(s.revenue) ? Number(s.net_profit) / Number(s.revenue) * 100 : null;
+  const margin = Number(s.revenue) && !s.costs_incomplete && !s.pl_in_progress ? Number(s.net_profit) / Number(s.revenue) * 100 : null;
   const band = s.pulse_score != null && typeof scoreBand === 'function' ? scoreBand(s.pulse_score) : null;
   return {
     cfo_pack_for_month:mgMonthLabel(k), note:'These are the figures in the CFO pack on screen, for that month. Quote these, not today\'s live figures.',
@@ -163,7 +163,8 @@ function vxPackSummary(){
     monthly_spend:vxInr(s.burn), gst_payable:vxInr(s.gst_payable),
     pulse_score:s.pulse_score != null ? s.pulse_score : null, pulse_band:band ? band.label : null,
     pulse_change_on_prior_month:p && p.pulse_score != null && s.pulse_score != null ? s.pulse_score - p.pulse_score : null,
-    revenue_change_pct:p && !s.pl_in_progress ? vxR1(vxPct(s.revenue, p.revenue)) : null, month_in_progress:!!s.pl_in_progress, cash_change_pct:p ? vxR1(vxPct(s.cash, p.cash)) : null
+    revenue_change_pct:p && !s.pl_in_progress ? vxR1(vxPct(s.revenue, p.revenue)) : null, month_in_progress:!!s.pl_in_progress,
+    costs_not_all_booked:s.costs_incomplete ? 'Running costs for this month look incomplete in Tally, so profit is overstated; say so if you quote it.' : null, cash_change_pct:p ? vxR1(vxPct(s.cash, p.cash)) : null
   };
 }
 /* The form open in the side panel right now: the New/Edit customer or vendor
@@ -1008,7 +1009,8 @@ const VX_VIEWS = {
       vxTableHtml([{ t:'' }, { t:'This month', r:1 }, { t:'Last month', r:1 }], rows) + vxMore('analytics', 'Open Reports'));
     if(hist.length > 1) vxDrawChart(card.querySelector('canvas'), { kind:'bar', labels:hist.map(x => vxMonth(x.created_at)), series:[{ name:'Revenue', values:hist.map(x => Number(x.revenue) || 0) }, { name:'Net profit', values:hist.map(x => Number(x.net_profit) || 0) }] });
     return { revenue:vxInr(s.revenue), net_profit:vxInr(s.net_profit), net_margin_pct:margin(s) == null ? null : +margin(s).toFixed(1),
-      revenue_change_pct:p && !s.pl_in_progress ? vxR1(vxPct(s.revenue, p.revenue)) : null, month_in_progress:!!s.pl_in_progress, profit_change_pct:p ? vxR1(vxPct(s.net_profit, p.net_profit)) : null,
+      revenue_change_pct:p && !s.pl_in_progress ? vxR1(vxPct(s.revenue, p.revenue)) : null, month_in_progress:!!s.pl_in_progress,
+    costs_not_all_booked:s.costs_incomplete ? 'Running costs for this month look incomplete in Tally, so profit is overstated; say so if you quote it.' : null, profit_change_pct:p ? vxR1(vxPct(s.net_profit, p.net_profit)) : null,
       cogs:z ? vxInr(z.cogs) : null, opex:z ? vxInr(z.opex) : null, months_charted:hist.length, as_of:mgAsOf() };
   },
   receivables(){ return vxMoneyView('recv'); },

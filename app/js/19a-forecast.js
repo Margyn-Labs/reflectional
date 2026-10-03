@@ -153,7 +153,7 @@ function mgForecastPanel(wide){
     '<span class="mg-aside">Opening ' + escapeHtml(fmtINR(f.opening, 'tile')) + ' · floor ' + escapeHtml(fmtINR(f.floor, 'tile')) + '</span>' +
     '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Adjust</button></div><div class="mg-panel-b">' +
     '<div class="mg-fc-callout' + (warn ? ' warn' : '') + '">' + (warn
-      ? 'Cash falls below your floor in week ' + (f.firstBelow + 1) + '. Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.'
+      ? (f.opening < f.floor ? 'Cash today is already below your floor of ' + escapeHtml(fmtINR(f.floor, 'tile')) + '.' : 'Cash falls below your floor in week ' + (f.firstBelow + 1) + '.') + ' Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.'
       : 'Stays above your floor for 13 weeks. Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.') + '</div>' +
     mgForecastChart(f, wide) +
     '<div class="mg-fine">' + escapeHtml(mgForecastSentence(f)) + ' <button class="mg-link" type="button" data-fc-adjust>Change the assumptions</button></div></div></div>';

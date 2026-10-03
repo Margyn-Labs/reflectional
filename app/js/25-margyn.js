@@ -554,8 +554,12 @@ function mgrNudgeRules(){
   try {
     const f = mgForecast();
     const od = typeof mgMar !== 'undefined' && mgMar && mgMar.funding && mgMar.funding.overdraft;
-    if(f && f.firstBelow >= 0 && f.firstBelow < 6) out.push({ key:'fc:below', text:name + 'cash looks set to drop below your floor in week ' + (f.firstBelow + 1) + ' (lowest ' + fmtINR(f.min, 'tile') + ').' + (od ? ' That counts bank balances only: you run on an overdraft, and its limit isn’t in Tally, so your real headroom may be higher.' : ''),
-      acts:[{ label:'Show cash', run:() => mgrShowView('cash') }, { label:'What can I do?', run:() => mgrAsk('Cash drops below my floor in week ' + (f.firstBelow + 1) + '. What are my options?') }] });
+    // Already under the floor today is a different sentence from "will drop below in week 1".
+    const under = f && f.opening < f.floor;
+    if(f && f.firstBelow >= 0 && f.firstBelow < 6) out.push({ key:'fc:below', text:name + (under
+        ? 'cash today (' + fmtINR(f.opening, 'tile') + ') is already below your floor of ' + fmtINR(f.floor, 'tile') + ', and the forecast’s lowest point is ' + fmtINR(f.min, 'tile') + ' in week ' + (f.minWeek + 1) + '.'
+        : 'cash looks set to drop below your floor in week ' + (f.firstBelow + 1) + ' (lowest ' + fmtINR(f.min, 'tile') + ').') + (od ? ' That counts bank balances only: you run on an overdraft, and its limit isn’t in Tally, so your real headroom may be higher.' : ''),
+      acts:[{ label:'Show cash', run:() => mgrShowView('cash') }, { label:'What can I do?', run:() => mgrAsk(under ? 'My cash is below my floor. What are my options?' : 'Cash drops below my floor in week ' + (f.firstBelow + 1) + '. What are my options?') }] });
   } catch(e){}
   try {
     // Only the invoices that are themselves 60+ days late (a customer's whole overdue balance counted the 31–60 day ones
