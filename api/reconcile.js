@@ -319,7 +319,8 @@ async function loadBooksPayments(userId, src) {
   // Tally: Receipt vouchers are the books-side payment record.
   const rows = await selectRows(
     'tally_vouchers',
-    `select=*&user_id=eq.${userId}&voucher_type=eq.Receipt&order=date.desc&limit=1000`
+    // Only receipts dated up to today: a post-dated cheque isn't money in yet.
+    `select=*&user_id=eq.${userId}&voucher_type=eq.Receipt&date=lte.${new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10)}&order=date.desc&limit=1000`
   ).catch(() => []);
   return rows.map((v) => ({
     ref: v.voucher_number || v.tally_guid,
@@ -355,7 +356,7 @@ async function loadBooksInvoices(userId, src) {
   }
   const rows = await selectRows(
     'tally_vouchers',
-    `select=*&user_id=eq.${userId}&voucher_type=eq.Sales&order=date.desc&limit=1000`
+    `select=*&user_id=eq.${userId}&voucher_type=eq.Sales&date=lte.${new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10)}&order=date.desc&limit=1000`
   ).catch(() => []);
   return rows.map((v) => ({
     ref: v.tally_guid,

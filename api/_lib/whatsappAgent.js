@@ -653,7 +653,7 @@ async function toolGetTally(ctx) {
     const s = String(vc.date || '');
     const iso = /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s;
     const ms = new Date(iso).getTime();
-    if (!Number.isNaN(ms) && ms >= cutoff) {
+    if (!Number.isNaN(ms) && ms >= cutoff && ms <= Date.now() + 5.5 * 3600000) {   // not entries dated later (EMIs entered ahead)
       const amt = Math.abs(Number(vc.amount) || 0);
       if (/sales/i.test(t)) sales30 += amt;
       if (/receipt/i.test(t)) receipts30 += amt;
