@@ -12,6 +12,7 @@
  */
 
 const E = require('./booksEngine');
+const FORMULAS = require('../../app/js/margyn-formulas.js');
 const { loadTallyBook } = require('./tallyData');
 
 const PERIOD = {
@@ -100,6 +101,11 @@ const TOOLS = [
     name: 'what_needs_attention',
     description: 'What deserves the owner\'s attention in the books right now, biggest and most urgent first: overdue money, bills over a year old, customers late against their own habit, regular customers who stopped ordering, customer concentration, the gap between getting paid and paying suppliers, commission share, expense jumps, an unfinished month, sales against the average, items sold below cost or with a likely unit mix-up, GST due, big receipts, possible duplicate entries, and whether Tally has stopped syncing. Use for "what should I worry about", "top 3 action items", "how is the business doing", "anything I should know", "what changed".',
     input_schema: { type: 'object', properties: { top: { type: 'integer', description: 'How many (default 6).' } }, additionalProperties: false }
+  },
+  {
+    name: 'how_its_calculated',
+    description: 'How a Margyn figure is worked out, the way an accountant explains it: what it is, the formula, which inputs and where they come from, its weight in the Pulse Score, and what can make it look off. Use for "how is my runway / Pulse Score / cash / margin / DSO calculated", "what is the formula", "where does this number come from", "why is the score low". figure in their words. With a how-Margyn-works question ("which source do you trust", "why do two screens differ", "do you use AI to calculate", "how fresh is this"), pass it as topic instead. Formulas only: get the live amounts from the other tools or the data you have, then work the sum through for them. (In the Margyn panel, explain does both at once.)',
+    input_schema: { type: 'object', properties: { figure: { type: 'string' }, topic: { type: 'string' } }, additionalProperties: false }
   }
 ];
 
@@ -128,6 +134,17 @@ async function contextFor(userId) {
 
 function has(name) { return NAMES.has(name); }
 
+/* Formulas aren't account data: no Tally needed, nobody's access limits them. */
+function howItsCalculated(input) {
+  const i = input || {};
+  if (i.figure) {
+    const d = FORMULAS.describe(i.figure);
+    if (d) return d;
+  }
+  if (i.topic || i.figure) { const h = FORMULAS.howTopic(i.topic || i.figure); return { topic: h.topic, answer: h.text }; }
+  return { figures: FORMULAS.KEYS.map((k) => FORMULAS.FIGURES[k].label), topics: Object.keys(FORMULAS.HOW) };
+}
+
 /* A team member's view permissions (teamAccess.js) apply to the books too: someone who can't see
    cash on the Cash page can't ask for it either. The owner (no member record) sees everything. */
 function allowed(name, input, perms) {
@@ -145,6 +162,7 @@ function allowed(name, input, perms) {
  */
 async function exec(name, input, userId, perms) {
   if (!NAMES.has(name)) return { error: 'Unknown tool ' + name };
+  if (name === 'how_its_calculated') return howItsCalculated(input);
   if (!allowed(name, input, perms)) return { error: 'Your access to this account doesn\'t include that part of the books. The account owner can change it under Settings > People.' };
   try {
     const { ctx } = await contextFor(userId);
@@ -159,7 +177,8 @@ async function exec(name, input, userId, perms) {
 
 /** The same tools in OpenAI Realtime's shape (voice). */
 function realtimeDefs() {
-  return TOOLS.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.input_schema }));
+  // Voice has explain (the formula plus the live figures on screen) instead of how_its_calculated.
+  return TOOLS.filter((t) => t.name !== 'how_its_calculated').map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.input_schema }));
 }
 
 const STEP_LABELS = {
@@ -170,7 +189,8 @@ const STEP_LABELS = {
   money_owed: 'Read who owes what in Tally',
   find_entries: 'Searched your Tally entries',
   cash_and_loans: 'Read cash, loans and interest',
-  what_needs_attention: 'Checked what needs your attention'
+  what_needs_attention: 'Checked what needs your attention',
+  how_its_calculated: 'Looked up how that is worked out'
 };
 
 module.exports = { TOOLS, has, exec, allowed, realtimeDefs, STEP_LABELS, contextFor };

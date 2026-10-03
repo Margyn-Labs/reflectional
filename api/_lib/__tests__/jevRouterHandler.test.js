@@ -53,7 +53,7 @@ const names = (b) => (b.tools || []).map(t => t.name);
   claudeCalls = []; claudeQueue = [text('Sharma owes the most.')];
   let r = await call(H, { message: 'who owes me the most, is Sharma Traders top?', history: [], depth: 'balanced' });
   check('live: reply comes back', r.code === 200 && r.body.reply === 'Sharma owes the most.', r);
-  check('live: Claude gets only the books tools (8 of 14)', claudeCalls.length === 1 && names(claudeCalls[0]).length === 8 && !names(claudeCalls[0]).includes('propose_action'), names(claudeCalls[0]));
+  check('live: Claude gets only the books tools (9 of 15)', claudeCalls.length === 1 && names(claudeCalls[0]).length === 9 && !names(claudeCalls[0]).includes('propose_action'), names(claudeCalls[0]));
   check('live: Balanced dropped to Quick (Haiku)', /haiku/.test(claudeCalls[0].model) && r.body.depth === 'quick');
   check('live: the last sent tool carries the cache mark', claudeCalls[0].tools[claudeCalls[0].tools.length - 1].cache_control);
   check('Jev never saw the customer name', !/sharma/i.test(JSON.stringify(jevCalls)));
@@ -81,18 +81,18 @@ const names = (b) => (b.tools || []).map(t => t.name);
   jevAnswers = answers({ g_imports: NO(0.9) });
   claudeCalls = []; claudeQueue = [text("I don't have that data yet."), text('Here it is.')];
   r = await call(H, { message: 'what came in from the forwarded stuff', history: [], depth: 'balanced' });
-  check('live: an "I can\'t see that" reply retries with all 14 tools', claudeCalls.length === 2 && names(claudeCalls[0]).length < 14 && names(claudeCalls[1]).length === 14 && r.body.reply === 'Here it is.', claudeCalls.map(names));
+  check('live: an "I can\'t see that" reply retries with all 15 tools', claudeCalls.length === 2 && names(claudeCalls[0]).length < 15 && names(claudeCalls[1]).length === 15 && r.body.reply === 'Here it is.', claudeCalls.map(names));
   check('live: the retry is logged', /retry=1/.test(logs[logs.length - 1]), logs[logs.length - 1]);
 
   // live: a short "yes" -> full set, Jev not asked
   jevCalls = []; claudeCalls = []; claudeQueue = [text('Done.')];
   await call(H, { message: 'haan kar do', history: [{ role: 'user', content: 'remind sharma' }, { role: 'assistant', content: 'Shall I send it?' }], depth: 'balanced' });
-  check('live: "haan kar do" goes with every tool and no Jev call', jevCalls.length === 0 && names(claudeCalls[0]).length === 14);
+  check('live: "haan kar do" goes with every tool and no Jev call', jevCalls.length === 0 && names(claudeCalls[0]).length === 15);
 
   // live: Jev down -> today's turn
   jevDown = true; claudeCalls = []; claudeQueue = [text('ok')];
   await call(H, { message: 'sales this month', history: [], depth: 'balanced' });
-  check('live: Jev outage = full tools at the asked depth', names(claudeCalls[0]).length === 14 && !/haiku/.test(claudeCalls[0].model));
+  check('live: Jev outage = full tools at the asked depth', names(claudeCalls[0]).length === 15 && !/haiku/.test(claudeCalls[0].model));
   jevDown = false;
 
   // live panel: a paused turn keeps its pick
@@ -113,7 +113,7 @@ const names = (b) => (b.tools || []).map(t => t.name);
   claudeCalls = []; logs.length = 0;
   claudeQueue = [{ content: [{ type: 'tool_use', id: 'a', name: 'money_owed', input: {} }, { type: 'tool_use', id: 'b', name: 'list_chase_targets', input: {} }], stop_reason: 'tool_use', usage: {} }, text('Done.')];
   r = await call(H, { message: 'who owes me', history: [], depth: 'balanced' });
-  check('shadow: Claude gets all 14 tools at Balanced', names(claudeCalls[0]).length === 14 && !/haiku/.test(claudeCalls[0].model));
+  check('shadow: Claude gets all 15 tools at Balanced', names(claudeCalls[0]).length === 15 && !/haiku/.test(claudeCalls[0].model));
   check('shadow: log compares the pick with what Claude used', logs.length === 1 && /chat shadow/.test(logs[0]) && /g=books/.test(logs[0]) && /miss=change\+chase|miss=chase\+change/.test(logs[0]), logs);
   jevAnswers = answers({ talk: CH('greeting', 0.99) }); claudeCalls = [];
   r = await call(H, { message: 'hello', history: [], depth: 'balanced' });

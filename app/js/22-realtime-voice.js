@@ -479,7 +479,7 @@ function vxWatchReply(){
 }
 /* Tools that only draw or move the screen. When Margyn already answered in
    full while calling them, a second reply is just "it's in the workspace now". */
-const VX_DISPLAY_TOOLS = ['show_view', 'show_note', 'show_table', 'show_chart', 'clear_workspace', 'navigate', 'open_party', 'filter_list', 'run_command', 'fill_form'];
+const VX_DISPLAY_TOOLS = ['show_view', 'show_note', 'show_table', 'show_chart', 'clear_workspace', 'navigate', 'open_party', 'filter_list', 'run_command', 'fill_form', 'press'];
 /* Tools that take seconds: say so on the panel, so a quiet moment reads as work, not a hang. */
 const VX_SLOW_TOOLS = { think:'Thinking it through…', propose_change:'Preparing the change…', save_form:'Saving…', confirm_pending_change:'Applying…' };
 let vxToolFailed = false;
@@ -702,7 +702,7 @@ function vxRecapCall(){
   const bg = Object.values(vxBgTasks).map(t => t.name + (t.about ? ' (' + t.about + ')' : ''));
   vxTellModel('Recap of this call so far, for your memory (do not read it out). The user asked, oldest first: ' + asks.map((a, i) => (i + 1) + ') ' + a.slice(0, 120)).join(' ') +
     (bg.length ? ' Still running in the background, you will be handed the result: ' + bg.join('; ') + '.' : '') +
-    ' If any of these is still unanswered or was cut short, come back to it when the moment is right.', false);
+    ' Always answer their newest message first, and answer it for what it is: never reply to an older question in its place. Only if an earlier ask is still open and they are not asking something new, offer to come back to it.', false);
 }
 
 /* ---------- screen awareness: tell Margyn when the user moves on their own ---------- */

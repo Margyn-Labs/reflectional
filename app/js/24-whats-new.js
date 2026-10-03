@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-03-explains-like-an-accountant', date:'3 Oct 2026', title:'Margyn explains every number',
+    items:[
+      { t:'Ask how any figure is worked out', what:'Margyn now shows the formula, the actual amounts that went into it, which system each one came from and whether your sources agree. Runway, cash, Pulse Score, margin, receivables, the cash forecast, GST, DSO and more.',
+        how:'Ask “How is my runway calculated?” or “Why is my Pulse Score 59?” in the Margyn panel, on a call or on WhatsApp.', act:'home' },
+      { t:'Margyn sees and works the whole screen', what:'On any page it can read what’s there, scroll, and press buttons like Save as PDF or a tab. Anything that changes your data still waits for your OK.',
+        how:'Say “What does this say?” or “Click Save as PDF”.', act:'home' }
+    ]
+  },
+  {
     id:'2026-10-03-follow-through', date:'3 Oct 2026', title:'Margyn comes back to you on its own',
     items:[
       { t:'Long answers report back', what:'When a question takes time, Margyn says it’s still on it after a few seconds and tells you the answer the moment it’s ready, on a call or in the panel, without you asking again. If you’ve looked away, a note by the Margyn button says it’s done.',

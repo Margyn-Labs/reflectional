@@ -65,7 +65,7 @@ const B = require('../booksTools');
   check('books tools are in Anthropic shape', B.TOOLS.every((t) => t.input_schema && t.input_schema.type === 'object' && t.description.length > 40));
   const M = await import('../../ask-margyn.js');
   const rt = new Set(M.REALTIME_TOOLS.map((t) => t.name));
-  check('voice has every books tool', B.TOOLS.every((t) => rt.has(t.name)));
+  check('voice has every books tool (formulas come through explain instead)', B.TOOLS.every((t) => rt.has(t.name) || t.name === 'how_its_calculated'));
   check('voice books tools are in Realtime shape', M.REALTIME_TOOLS.filter((t) => B.has(t.name)).every((t) => t.type === 'function' && t.parameters));
   check('panel screen tools do not duplicate books tools', !M.APP_TOOLS.some((t) => B.has(t.name)));
   const allNames = [...reg.getAgent().tools, ...M.APP_TOOLS].map((t) => t.name);

@@ -885,6 +885,24 @@ const REALTIME_TOOLS = [
   },
   {
     type: 'function',
+    name: 'explain',
+    description: 'How a figure is worked out, like an accountant would explain it: what it is, the formula, the live inputs from the current reading (each with its source and whether it is verified, a single-source signal or typed in), the sum worked through, its weight in the Pulse Score, and what can make it look off. Use for "how is X calculated", "why is my score / runway / cash this number", "where does this come from", "what is the formula", "why did it go down". figure is the figure in their words: "pulse score", "runway", "cash", "receivables", "forecast", "net margin", "gross margin", "monthly spend", "GST payable", "DSO", "capital readiness", a vital name, etc.',
+    parameters: { type: 'object', properties: { figure: { type: 'string' } }, required: ['figure'] }
+  },
+  {
+    type: 'function',
+    name: 'how_margyn_works',
+    description: 'How Margyn itself works, for "how did you build this", "where do your numbers come from", "which source do you trust", "why do two screens show different numbers", "do you calculate this with AI", "how fresh is this", "who can see my data". topic in their words.',
+    parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] }
+  },
+  {
+    type: 'function',
+    name: 'press',
+    description: 'Press a button, tab or link the user can see on the page or open side panel, by its words: "click Save as PDF", "open the Tally tab", "show more", "press Adjust". get_screen lists the buttons on screen. Buttons that change data or send something (approve, confirm, save, delete, send...) are refused: use propose_change / save_form so they confirm on the card. You cannot press the browser\'s own print or file windows.',
+    parameters: { type: 'object', properties: { label: { type: 'string' } }, required: ['label'] }
+  },
+  {
+    type: 'function',
     name: 'end_conversation',
     description: 'End the call when the user says goodbye or that they are done. Say a short sign-off first, then call this.',
     parameters: NO_ARGS
@@ -900,7 +918,8 @@ const REALTIME_TOOLS = [
 REALTIME_TOOLS.push(...booksTools.realtimeDefs());
 
 const APP_TOOL_KEEP = ['navigate', 'search_app', 'get_screen', 'get_overview', 'query_parties', 'open_party', 'filter_list', 'get_cash', 'get_gst', 'get_margin',
-  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close', 'scroll'];
+  'get_inbox', 'show_view', 'show_note', 'sync_source', 'get_sources', 'fill_form', 'save_form', 'clear_workspace', 'show_table', 'show_chart', 'run_command', 'close', 'scroll',
+  'explain', 'how_margyn_works', 'press'];
 const APP_TOOLS = REALTIME_TOOLS.filter(t => APP_TOOL_KEEP.includes(t.name))
   .map(t => ({ name: t.name, description: t.description.replace(/floating workspace next to the conversation/g, 'conversation as a card'), input_schema: t.parameters }));
 const APP_TOOL_NAMES = new Set(APP_TOOLS.map(t => t.name));
@@ -1097,7 +1116,9 @@ SHOW, DON'T GO
 - A filler line is only for think, propose_change and sync_source, which take a few seconds; everything else is instant, so just call it. think is slow (10-20 seconds): never use it for status or lookups the other tools answer (sources, figures, lists, a party, the CFO pack).
 - sync_source waits for the sync to finish. Before it returns, say only "Syncing now". Say it's done only when the tool says finished. If it says still running, say you'll tell them when it's done: the app will tell you, and then you tell them.
 - The CFO pack is one month's figures, not today's. To summarise it, use show_view "cfopack" (or the figures navigate returns for it), never get_overview.
-- When they say "this", "here" or "that one", call get_screen first.
+- When they say "this", "here" or "that one", or "what does this say", call get_screen first and answer from what it returns (its summary, page_text and buttons). Never say a page is empty unless get_screen or navigate says so.
+- "Click / press / tap <button>": call press with its words. "Save as PDF" on the CFO pack is press "Save as PDF" (or run_command print_cfo_pack); then tell them to choose Save as PDF in the print window and press Save there, because that window is the browser's own.
+- Small talk ("kya haal hai", "how are you") gets a short friendly answer in kind, then ask what they need. Always answer their newest message; never answer an older question in place of it.
 - If you didn't catch something (a stray word, background noise, a name you don't recognise, or something unrelated to what you were discussing), ask once, briefly. Never act on it.
 - Every request gets an answer, even if it's one short question back. Never go silent on them.
 - "Make a quick table" or "show a chart" with no detail: build it from the topic you were just discussing, now, with show_table or show_chart. Don't ask which columns.
@@ -1112,6 +1133,8 @@ ADDING THINGS
 
 NUMBERS
 - The person may not follow their finances closely: answer in plain words, the number first, then what it means for them.
+- EXPLAIN LIKE THEIR ACCOUNTANT. "How is this calculated", "why is it this number", "what's the formula", "where does it come from", "why did it drop": call explain with the figure, then walk them through it in speech: the number, the formula in one sentence, the two or three inputs with their amounts and where each came from (and whether sources agree), the result, and what it means or what would move it. If explain flags a caveat (a sign issue, a month with costs not booked, sources disagreeing), say it. Never make up a formula; if explain doesn't know the figure, say which ones you can explain.
+- "How do you work / where do your numbers come from / why do two screens differ / is this AI": call how_margyn_works.
 - For anything in the books (sales for any period, profit, costs, a customer's or vendor's story, product margins, who owes what, cash, overdraft, interest, GST, what needs attention) call the books tools: books_summary, books_breakdown, customer_or_vendor, products, money_owed, find_entries, cash_and_loans, what_needs_attention. They read every Tally entry, not the last 30 days. Never say the margin view or the full year isn't available.
 - Those tools give money as "₹1.32 Cr" or "₹41.2 L": say it as "one point three two crore", "forty-one lakh". Never turn crore into lakh.
 - Figures come from your tools, which read exactly what the app has loaded. The snapshot below is for your first sentence only; once you've called a tool, trust the tool.
@@ -1282,6 +1305,8 @@ Rules you must always follow:
 7. When explaining a finding, end with one concrete, specific next action where it's obvious from the data (e.g. which invoice to chase, which settlement metric to watch) — not generic advice like "monitor your cash flow."
 8. For any past figure (a month, a quarter, a customer's history) use the books tools. The "Past findings" list is only Margyn's own earlier alerts, up to 10; don't treat it as the limit of what you can see.
 
+EXPLAINING NUMBERS — when they ask how a figure is calculated, what the formula is, why a number is what it is, or where it comes from, call how_its_calculated (or explain, in the Margyn panel) and answer like their accountant: the number, the formula, each input with its amount and source, the worked sum, and any caveat. Never make up a formula.
+
 TAKING ACTION — you have tools that look things up (list_pending_import_suggestions, list_pending_agent_actions, list_open_ledger_items, list_chase_targets, get_chase_agent_config) and one tool, propose_action, that hands the user a confirm/cancel card. You never write anything yourself — propose_action only shows a card; the write happens only if the user clicks Confirm in the app.
 - Only call propose_action when the user is clearly asking you to change something ("approve that", "mark Acme paid", "pause the reminders", "stop chasing Ramesh", "log that I got paid 50k from X", "chase Acme now"). A plain question is never a reason to call it.
 - If their message is vague about which row they mean ("approve that import", "the Acme one"), use the matching list_* tool first to find the specific row and its id before calling propose_action — never guess an id, and never propose an action against more than one row unless the user explicitly asked to review several at once (use type: "list_for_review" for that, with payload.items listing each candidate — the user still confirms individually or picks from the list, never a blind "do them all").
@@ -1294,7 +1319,9 @@ DRIVING THE APP — this conversation is in the Margyn panel beside the app, and
 - For anything show_view doesn't cover, use show_table or show_chart with figures from your tools only. show_note for a written summary or next steps.
 - "Open", "go to", "take me to" mean navigate (or open_party for one customer/vendor). Also navigate when they need to work on that page themselves. Never navigate just to answer a question.
 - Live figures: get_overview, get_cash, get_gst, get_margin, get_inbox, query_parties, get_sources read exactly what's on their screen right now. Prefer them over the data block when they differ, and use them for anything the block doesn't carry (the cash forecast, per-customer lists, what's waiting).
-- "This", "here", "that one" means what's on screen: call get_screen first.
+- "This", "here", "that one", "what does this say" means what's on screen: call get_screen first and answer from its summary, page_text and buttons. Never say a page is empty unless a tool says so.
+- "Click / press <button>": call press. Buttons that change data are refused there; prepare those with propose_action.
+- EXPLAIN LIKE THEIR ACCOUNTANT: "how is X calculated", "why is it this number", "what's the formula", "where does it come from": call explain and lay it out: the number, the formula, each input with its amount and source (and whether sources agree), the worked sum, its weight in the Pulse Score, and any caveat it flags. Use a short table (show_table) when there are more than three inputs. "How do you work / why do two screens differ / is this AI": call how_margyn_works.
 - "Scroll down / up" or "go to <section>" means call scroll.
 - "Close this / that window / the side panel", "band karo", "hatao" means call close (target "top" unless they name one). You can close anything you or they opened.
 - Adding a customer or vendor: run_command "add_party" with the name opens the form; fill_form puts in details they give; save_form only after they say save / yes. New amounts owed with party and amount: propose_action create_ledger_item.
