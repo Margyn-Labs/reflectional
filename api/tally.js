@@ -42,7 +42,7 @@ const {
   selectRows
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
-const { computeAnalytics, PL_BUCKETS } = require('./_lib/tallyAnalytics');
+const { computeAnalytics, asOfToday, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 const { loadTallyBook, forgetTallyBook, pagedAll } = require('./_lib/tallyData');
@@ -183,6 +183,16 @@ async function handleSummary(req, res) {
       pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
     ]);
     bills = B.rows; vouchers = V.rows; ledgers = L.rows;
+    // Balances as of today: Tally's closing balances include entries already made for later dates
+    // (EMIs entered in advance), which made cash look ₹9.45 L lower than the bank. Back those out.
+    try {
+      const todayYmd = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
+      const F = await pagedAll('tally_vouchers', `select=date,is_cancelled,entries&install_id=in.${inList}&date=gt.${todayYmd}&order=date.asc,tally_guid.asc`, 2000);
+      if (F.rows.length) {
+        ledgers = asOfToday(ledgers, F.rows, Date.now()).ledgers;
+        vouchers = vouchers.filter((v) => !(String(v.date || '').replace(/-/g, '') > todayYmd));
+      }
+    } catch (e) { /* keep Tally's figures */ }
     try { bills = calibrateBills(bills, vouchers, { now: Date.now() }).bills; } catch (e) { /* keep stored labels */ }
   } catch (e) {
     return json(res, 500, { error: 'lookup_failed' });
