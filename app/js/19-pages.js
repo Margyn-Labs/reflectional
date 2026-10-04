@@ -153,6 +153,9 @@ function mgPosNote(dir){
     return 'Showing what this browser loaded. Margyn couldn’t reach the full position, so very large books may show only their first few hundred open items per source.';
   }
   const bits = [];
+  const tc = (P.coverage || {}).tally;
+  if(tc && tc.basis === 'supplier_ledgers') bits.push('Tally doesn’t keep your suppliers’ bills one by one, so what you owe each supplier is worked out from your purchases and payments, oldest bills paid first. Due dates are the bill date plus how long you usually take to pay that supplier' +
+    (Number(tc.advances) >= 1 ? '. ' + fmtINR(tc.advances) + ' paid ahead to suppliers is not netted off' : ''));
   Object.entries(P.coverage || {}).forEach(([s, c]) => { if(c.truncated) bits.push(MG_SRC_NAME[s] + ' has more than ' + c.cap.toLocaleString('en-IN') + ' open items; the first ' + c.rows.toLocaleString('en-IN') + ' are shown'); });
   Object.keys(P.errors || {}).forEach(s => bits.push(MG_SRC_NAME[s] + ' couldn’t be read just now, so it is left out'));
   return bits.length ? bits.join('. ') + '.' : '';
@@ -299,7 +302,7 @@ function mgRenderHome(){
   const payLateAmt = payLate.reduce((t, r) => t + r.amount, 0), payOldest = payLate.length ? -Math.min(...payLate.map(r => r.days)) : 0;
   const nOver = recv.filter(g => g.overdue > 0).length, nDue = pay.filter(g => ((g.by[g.primary] || {}).rows || []).some(r => r.days !== null && r.days >= 0 && r.days <= 7)).length;
   const billwise = typeof mgMar !== 'undefined' && mgMar && mgMar.working_capital ? mgMar.working_capital.suppliers_tracked_billwise : null;
-  const payNote = billwise === false ? 'Your suppliers aren’t kept bill by bill in Tally, so due dates are a guess'
+  const payNote = billwise === false ? (payLateAmt > 0 ? fmtINR(payLateAmt, 'tile') + ' past when you usually pay' : 'Due dates from when you usually pay each supplier')
     : (payLateAmt > 0 ? fmtINR(payLateAmt, 'tile') + ' already overdue (oldest ' + payOldest + ' days)' : nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay');
   const live = mgLiveCount();
   const srcLine = 'Reconciled · ' + (live ? live + ' source' + (live === 1 ? '' : 's') + ' live' : 'self-entered');

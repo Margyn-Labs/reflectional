@@ -519,7 +519,23 @@ function findEntries(ctx, args) {
 /* ---------------- bills: who owes what ---------------- */
 
 const AGE_BUCKETS = [['not yet due', -Infinity, 0], ['1-30 days late', 1, 30], ['31-60 days late', 31, 60], ['61-90 days late', 61, 90], ['91-180 days late', 91, 180], ['181-365 days late', 181, 365], ['over a year late', 366, Infinity]];
+/** Suppliers not kept bill by bill in Tally: what each is owed, rebuilt from the entries (cashFlowModel). */
+function supplierLedgerBills(ctx) {
+  if (ctx._supOpen === undefined) {
+    const wc = (ctx.analytics && ctx.analytics.working_capital) || {};
+    ctx._supOpen = wc.suppliers_tracked_billwise === false ? require('./cashFlowModel').supplierOpenItems(ctx) : null;
+  }
+  return ctx._supOpen;
+}
 function billRows(ctx, direction) {
+  const led = direction === 'payable' ? supplierLedgerBills(ctx) : null;
+  if (led) {
+    const t = ctx.today.getTime();
+    return led.items.map((b) => {
+      const due = A.parseDate(b.due_day);
+      return { party: b.party, ref: b.ref, date: b.bill_day ? A.parseDate(b.bill_day) : null, due, amount: b.amount, late: due ? Math.max(0, Math.round((t - due.getTime()) / 86400000)) : 0 };
+    }).filter((b) => b.amount >= 1);
+  }
   return ctx.bills.filter((b) => !b.advance && (direction === 'payable' ? b.direction === 'payable' : b.direction !== 'payable'))
     .map((b) => ({ party: b.party_name || 'Unknown', ref: b.bill_ref || null, date: A.parseDate(b.bill_date), due: A.parseDate(b.due_date), amount: Math.abs(num(b.closing_balance)), late: b.overdue_days == null ? 0 : num(b.overdue_days) }))
     .filter((b) => b.amount >= 1);
@@ -570,7 +586,12 @@ function moneyOwed(ctx, args) {
     const d = dailySales90(ctx);
     if (d > 0) out.what_faster_collection_frees = 'Every 10 days faster that customers pay frees about ' + inr(d * 10) + ' of cash (based on ' + inr(d) + ' of sales a day over the last 90 days).';
   } else if (wc.dpo_days != null) out.days_you_take_to_pay = Math.round(wc.dpo_days) + ' days on average';
-  else if (wc.suppliers_tracked_billwise === false) out.note = 'Most suppliers you bought from last month have no open bill in Tally, so supplier bills aren\'t kept bill by bill. This list is only the bills Tally does track, and how fast you pay suppliers can\'t be worked out from it.';
+  else if (wc.suppliers_tracked_billwise === false) {
+    const led = supplierLedgerBills(ctx);
+    out.source = sourceLine(ctx) + ' Worked out from each supplier\'s purchases and payments.';
+    out.note = 'Tally doesn\'t keep these suppliers\' bills one by one, so each supplier\'s payments were matched to their oldest purchases first; what is left is what you owe. "Days late" counts from when you usually pay that supplier, not a due date in Tally.' +
+      (led && led.advances >= 1 ? ' Separately, ' + inr(led.advances) + ' was paid ahead to suppliers and isn\'t netted off.' : '');
+  }
   return out;
 }
 

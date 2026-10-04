@@ -134,8 +134,9 @@
       label: 'Payables', aliases: ['payables', 'what i owe', 'bills due', 'creditors'],
       what: 'What you owe vendors, one line per vendor, same rules as receivables.',
       formula: 'One line per vendor from the most trusted source, others compared not added. "Due in 30 days" (the vital) = bills whose due date is within 30 days, plus bills with no due date.',
+      notes: ['When Tally doesn\'t keep supplier bills one by one (most suppliers bought from last month have no open bill), Tally\'s few stray bills are not used. Each supplier\'s open bills are rebuilt from the entries: opening balance first, then purchases; payments, returns and debit notes settle the oldest first. Due date = bill date + how many days you usually take to pay that supplier (else everyone\'s usual); a balance carried from last year is dated 1 April. Money paid ahead to a supplier is shown apart, never netted against what you owe others.'],
       inputs: ['paySoon'],
-      code: '19-pages.js mgMoneyGroups; 15-scoring.js tallyInputCandidates', page: 'payables'
+      code: '19-pages.js mgMoneyGroups; 15-scoring.js tallyInputCandidates; api/_lib/moneyModel.js loadTally; cashFlowModel.js supplierOpenItems', page: 'payables'
     },
     gst_payable: {
       label: 'GST payable', aliases: ['gst payable', 'gst due', 'how much gst'],
@@ -150,7 +151,7 @@
       what: 'Your cash at the end of each of the next 13 weeks, learned from how money has actually moved in your books, with a range.',
       formula: 'Learned from every entry this year: each customer\'s open invoices arrive the way that customer has actually paid (Kaplan-Meier on their history, counting invoices still open as not paid yet), new sales at your recent weekly pace collected on the same curve, suppliers either on their open bills or at your recent weekly pace (whichever predicted your past weeks better), payments made every month on their usual day, entries already made for later dates on their dates, GST on the 20th sized by what you have actually paid against the books\' estimate. Cash is before loans, overdraft and transfers. The forecast is re-made as of each of your past 12 weeks with only what was known then and checked against what happened; if customers kept paying less than it expected, money in is scaled to match, and the range shown is ± 1.28 × how far off it has typically been at that distance (about 8 in 10).',
       inputs: ['cash', 'revenue', 'burn', 'gstPayable'],
-      notes: ['Floor = two weeks of spend (monthly spend ÷ 2). The forecast flags the first week below it.',
+      notes: ['Floor = the low end of your cash over the last 90 days from the books (the lowest tenth of days), or two weeks of spend (monthly spend ÷ 2) without that history. You can set your own. The forecast flags the first week below it.',
         'Choose "My own assumptions" on Home → Adjust to set the figures yourself: each customer invoice on its due date + 15 days, ones over 90 days late left out as doubtful, new sales from when today\'s open invoices would be collected, vendor bills on their due date, spend not in bills spread weekly, new bills from week 5, GST on the 20th.',
         'Pure arithmetic; the AI never touches it.'],
       code: '19a-forecast.js mgForecast, mgFcData; cashFlowModel.js build, forecast, selfCheck', page: 'cash'

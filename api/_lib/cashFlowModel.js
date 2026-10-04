@@ -193,7 +193,7 @@ function partyHabits(ctx, cutMs, bucket) {
       if (amount < 0) {   // they owe more / we owe more (an invoice or a bill)
         let amt = -amount;
         if (p.advance > 0) { const use = Math.min(p.advance, amt); p.advance -= use; amt -= use; if (cashIn === false && use > 0) p.samples.push({ v: 0, w: use, at: ms }); }
-        if (amt > 0.5) p.open.push({ ms, amt });
+        if (amt > 0.5) p.open.push({ ms, amt, ref: r.number || null });
       } else if (amount > 0) {   // settled (or a credit/debit note, a write-off)
         let amt = amount;
         if (cashIn) p.lastReceiptMs = ms;
@@ -212,6 +212,38 @@ function partyHabits(ctx, cutMs, bucket) {
   return { parties, pool };
 }
 const customerHabits = (ctx, cutMs) => partyHabits(ctx, cutMs, 'debtor');
+
+/**
+ * What is owed to each supplier today, bill by bill, rebuilt from the entries (2026-10-04).
+ * For books where Tally doesn't keep supplier bills one by one (working_capital.suppliers_tracked_billwise ===
+ * false): Tally's bill list then holds a handful of stray bills (Care Hygiene: 5 vendors, ₹25 L) while the
+ * supplier ledgers carry the real balance (₹1.4 Cr+). Each supplier's payments, returns and debit notes settle
+ * their oldest bills first (the same FIFO the forecast learns supplier habits from), what's left is open.
+ * Expected payment date = bill date + how long this business usually takes to pay that supplier (its own
+ * history, else everyone's). A balance carried from last year has no bill date: dated the start of the year.
+ * Money paid ahead to a supplier is reported apart, never netted against what is owed to others.
+ * Returns { items: [{ party, ref, amount, bill_day|null, due_day, carried }], total, advances, usual_days }.
+ */
+function supplierOpenItems(ctx) {
+  const sup = partyHabits(ctx, Infinity, 'creditor');
+  const today = ctx.today instanceof Date ? ctx.today : new Date(ctx.today);
+  const fyStart = Date.UTC(today.getUTCMonth() >= 3 ? today.getUTCFullYear() : today.getUTCFullYear() - 1, 3, 1);
+  const items = [];
+  let total = 0, advances = 0;
+  for (const p of sup.parties.values()) {
+    advances += p.advance;
+    if (!p.open.length) continue;
+    const h = habitOf(p, sup.pool);
+    const usual = h.p50 != null ? h.p50 : 30;
+    for (const b of p.open) {
+      if (b.amt < 1) continue;
+      total += b.amt;
+      items.push({ party: p.name, ref: b.ms == null ? 'Carried from last year' : (b.ref || null), amount: Math.round(b.amt * 100) / 100,
+        bill_day: b.ms == null ? null : dayKey(b.ms), due_day: dayKey(b.ms == null ? fyStart : b.ms + usual * DAY), carried: b.ms == null, usual_days: usual });
+    }
+  }
+  return { items, total: r0(total), advances: r0(advances) };
+}
 
 function habitOf(p, pool) {
   const own = p && p.samples.length >= 3 && p.samples.reduce((t, s) => t + s.w, 0) > 0;
@@ -732,4 +764,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, accuracyFromRuns, supplierOpenItems, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };

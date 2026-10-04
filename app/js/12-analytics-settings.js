@@ -67,7 +67,7 @@ function renderAnalyticsView(){
     });
     // Missing running costs change spend, profit and margin, not revenue.
     const costsMatter = metrics.some(m => m === 'spend' || m === 'netprofit' || m === 'margin');
-    const labels = P.map(p => p.label + (MG_REPORTS.FLOW[metrics[0]] && p.in_progress ? ' (so far)' : costsMatter && p.costs_incomplete ? ' *' : ''));
+    const labels = P.map(p => p.label + (metrics.some(m => MG_REPORTS.FLOW[m]) && p.in_progress ? ' (so far)' : costsMatter && p.costs_incomplete ? ' *' : ''));
     const ch = MG_REPORTS.lastChange(P, metrics[0]);
     const groupLabel = (M0.group || 'Month').toLowerCase();
     const wide = metrics.length > 1;

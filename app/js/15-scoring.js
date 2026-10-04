@@ -209,6 +209,16 @@ function tallyInputCandidates(){
   } else {
     put('paySoon', b.payable_total);
   }
+  // Suppliers Tally doesn't keep bill by bill: its bill list is a few stray bills (₹25 L at Care Hygiene against
+  // ₹1.6 Cr owed), so Payables due, runway and days payable were built on them. The server position rebuilds each
+  // supplier's bills from the entries (moneyModel.js); use what it says is due within 30 days, overdue included.
+  try {
+    const P = typeof mgPos !== 'undefined' && mgPos && mgPos.payables;
+    if(P && P.coverage && P.coverage.tally && P.coverage.tally.basis === 'supplier_ledgers'){
+      const soon = P.groups.filter(g => g.primary === 'tally').reduce((t, g) => t + ((g.by.tally && g.by.tally.rows) || []).filter(r => r.days === null || r.days <= 30).reduce((a, r) => a + (Number(r.amount) || 0), 0), 0);
+      put('paySoon', soon);
+    }
+  } catch(e){ /* keep the bill figures */ }
   put('revenue', v.sales_30d);
   // Revenue, burn and profit from Tally's own monthly P&L, averaged over up to six
   // closed months: the latest month is often missing late-booked expenses (salaries, rent).

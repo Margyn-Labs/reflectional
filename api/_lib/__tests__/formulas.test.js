@@ -29,7 +29,7 @@ const F = require('../../../app/js/margyn-formulas.js');
   check('the learned forecast text matches the model (12 past weeks, ± 1.28 ×, Kaplan-Meier)', /back <= 84/.test(cfm) && /1\.28 \* s/.test(cfm) && /survivalFrom/.test(cfm) &&
     /12 weeks/.test(F.FIGURES.forecast.formula) && /1\.28/.test(F.FIGURES.forecast.formula) && /Kaplan-Meier/.test(F.FIGURES.forecast.formula));
   const fc = read('app/js/19a-forecast.js');
-  check('...and the code still has them', /collectDelay:15/.test(fc) && /doubtfulAfter:90/.test(fc) && /billsStart:5/.test(fc) && /getDate\(\) === 20/.test(fc) && /floor:Math.round\(burn \/ 2\)/.test(fc));
+  check('...and the code still has them', /collectDelay:15/.test(fc) && /doubtfulAfter:90/.test(fc) && /billsStart:5/.test(fc) && /getDate\(\) === 20/.test(fc) && /floor:Math.round\(usualLow != null \? usualLow : burn \/ 2\)/.test(fc) && /pts\[Math.floor\(pts.length \* 0.1\)\]/.test(fc) && /lowest tenth/.test(fcOwn) && /two weeks of spend/.test(fcOwn));
   check('capital readiness multipliers match the code', /pulse_score >= 70 \? 3 : latest.pulse_score >= 40 \? 2 : 1/.test(read('app/js/08-khata.js')) && /mid\*0\.8/.test(read('app/js/08-khata.js')));
   check('Tally cash leaves out overdraft / cash credit / loans', /overdraft\|occ\|cash credit\|loan/.test(scoring) && /Overdraft, cash credit and loan ledgers are left out/.test(F.FIGURES.cash.formula));
   check('costs-incomplete rule is 40% of the usual', /0\.4 \* median/.test(read('api/_lib/tallyAnalytics.js')) && /under 40%/.test(F.FIGURES.burn.formula));

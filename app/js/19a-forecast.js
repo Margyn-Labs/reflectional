@@ -25,7 +25,7 @@
    on the due date, new sales = latest monthly revenue from the week today's
    open invoices are used up (receivables / weekly sales), spend not in bills = monthly spend minus bills due in
    30 days, new bills = the rest from week 5, GST = latest GST payable,
-   floor = two weeks of spend. Week 1 is this week.
+   floor = the low end of the last 90 days' cash from the books (else two weeks of spend). Week 1 is this week.
    Settings are saved to the account (profiles.preferences.forecast, see 19c-prefs.js).
 
    2026-10-04: by default the forecast is LEARNED from the books instead (api/_lib/cashFlowModel.js, sent as
@@ -54,6 +54,11 @@ function mgFcData(){
   // Opening cash: today's balance in the books when Tally is where cash comes from (19i-margin.js).
   const prov = s.input_provenance && s.input_provenance.cash;
   const live = prov && prov.source === 'tally' && typeof mgMar !== 'undefined' && mgMar && !mgMarCompany && mgMar.cash && mgMar.cash.total != null ? Number(mgMar.cash.total) : null;
+  // Floor: where this business's cash usually bottoms out (lowest tenth of the last 90 days, from the books).
+  // Two weeks of spend (₹1.2 Cr at Care Hygiene, whose cash sits around ₹8 L on an overdraft) kept "below your
+  // floor" on permanently, so it warned about nothing. Two weeks of spend stays the fallback without history.
+  const pts = live != null && mgMar.cash_history && Array.isArray(mgMar.cash_history.points) ? mgMar.cash_history.points.slice(-90).map(p => Number(p.cash)).filter(isFinite).sort((a, b) => a - b) : [];
+  const usualLow = pts.length >= 30 ? Math.max(0, pts[Math.floor(pts.length * 0.1)]) : null;
   return {
     cash:live != null && isFinite(live) ? live : (Number(s.cash) || 0), asOf:live != null ? (mgMar.as_of || s.created_at) : s.created_at,
     defaults:{
@@ -61,11 +66,11 @@ function mgFcData(){
       // Week numbers are as people count them: week 1 is this week.
       salesMonthly:Math.round(revenue), salesStart:Math.max(1, Math.min(13, Math.floor(cover) + 1)),
       fixedMonthly:Math.round(fixed), billsMonthly:Math.round(Math.max(0, burn - fixed)), billsStart:5,
-      gstMonthly:Math.round(Number(s.gst_payable) || 0), floor:Math.round(burn / 2)
+      gstMonthly:Math.round(Number(s.gst_payable) || 0), floor:Math.round(usualLow != null ? usualLow : burn / 2)
     },
     origin:{
       salesMonthly:'your latest monthly revenue', salesStart:'when your open invoices have been collected', fixedMonthly:'monthly spend less bills due in 30 days',
-      billsMonthly:'the rest of your monthly spend', gstMonthly:'your latest GST payable', floor:'two weeks of spend'
+      billsMonthly:'the rest of your monthly spend', gstMonthly:'your latest GST payable', floor:usualLow != null ? 'the low end of your cash over the last 90 days' : 'two weeks of spend'
     }
   };
 }
@@ -288,7 +293,7 @@ function mgPositionHistoryPanel(){
     '<div class="mg-panel-b"><div class="mg-histgrid">' +
     mgHistMini('Cash', h, 'cash', tile, 'Bank and cash, not counting the overdraft.') +
     mgHistMini('Customers owe you', h, 'receivables', tile, '') +
-    mgHistMini('You owe suppliers', h, 'payables', tile, '') +
+    mgHistMini('You owe suppliers', h, 'payables', tile, 'Net of money paid ahead to suppliers.') +
     mgHistMini('Days to collect', h, 'days_to_collect', n => Math.round(n) + ' days', 'What customers owe ÷ the last 90 days’ sales per day.') +
     '</div></div></div>';
 }

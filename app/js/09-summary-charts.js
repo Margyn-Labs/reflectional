@@ -102,8 +102,12 @@ function _rdBuildConfig(spec){
   const monoF = 'IBM Plex Mono, monospace';
   const anyBar = series.some(s => (s.type || spec.type) === 'bar' || spec.type === 'bar' || spec.type === 'combo');
   const datasets = series.map((s, i) => {
-    const stype = s.type || (spec.type === 'combo' ? (i === 0 ? 'bar' : 'line') : spec.type);
+    let stype = s.type || (spec.type === 'combo' ? (i === 0 ? 'bar' : 'line') : spec.type);
+    // A % (or score) next to rupee bars is drawn as a line with dots on its own axis: as a bar it rose from the
+    // right axis' 0% at the bottom and read as a rupee bar crossing ₹0 into "−₹2 Cr" (Reports, 4 Oct).
+    if(stype === 'bar' && (s.unit || 'inr') !== 'inr' && series.some(x => (x.unit || 'inr') === 'inr')) stype = 'line';
     const isBar = stype === 'bar';
+    const isDot = !isBar && (s.unit || 'inr') !== 'inr' && series.some(x => (x.unit || 'inr') === 'inr');
     const isArea = stype === 'area';
     return {
       label: s.name || ('Series ' + (i+1)),
@@ -123,7 +127,8 @@ function _rdBuildConfig(spec){
       tension: 0.32,
       cubicInterpolationMode: 'monotone',
       fill: isArea ? 'origin' : false,
-      pointRadius: 0,
+      pointRadius: isDot ? 3.5 : 0,
+      pointBackgroundColor: s.color,
       pointHoverRadius: 4,
       pointHoverBackgroundColor: s.color,
       pointHoverBorderColor: '#fff',
