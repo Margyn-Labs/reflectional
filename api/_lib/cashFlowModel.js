@@ -305,19 +305,24 @@ function recurringPayments(events, todayMs, exclude) {
 
 /* ------------------------------------------------------------------ 5. pace */
 
-/** Median of the last 8 complete weeks (Mon–Sun) of a daily amount map, before `todayMs`. */
+/**
+ * Median of the last 8 complete weeks (Mon–Sun) of a daily amount map, before `todayMs`, and how the money
+ * falls across the week (share per weekday, Mon = 0), so payment days (suppliers paid on Fridays) land on them.
+ */
 function weeklyPace(amountByMs, todayMs) {
   const dow = (new Date(todayMs).getUTCDay() + 6) % 7;
   const weekStart = todayMs - dow * DAY;
-  const weeks = [];
+  const weeks = [], byDow = new Array(7).fill(0);
   for (let w = 1; w <= 8; w++) {
     const from = weekStart - w * 7 * DAY, to = from + 7 * DAY;
     let t = 0;
-    for (const [ms, a] of amountByMs) if (ms >= from && ms < to) t += a;
+    for (const [ms, a] of amountByMs) if (ms >= from && ms < to) { t += a; byDow[(new Date(ms).getUTCDay() + 6) % 7] += a; }
     weeks.push(t);
   }
-  return { median: median(weeks), weeks };
+  const tot = byDow.reduce((a, b) => a + b, 0);
+  return { median: median(weeks), weeks, dowShare: tot > 0 ? byDow.map((x) => x / tot) : new Array(7).fill(1 / 7) };
 }
+const dowOf = (ms) => (new Date(ms).getUTCDay() + 6) % 7;
 
 /* ------------------------------------------------------------------ 4–6. the forecast */
 
@@ -448,8 +453,9 @@ function forecast(ctx, o) {
   }
   const supPace = weeklyPace(supByMs, asOfMs), otherPace = weeklyPace(otherByMs, asOfMs);
   for (const s of SCEN) for (let d = 0; d < HORIZON_DAYS; d++) {
-    put(s, 'out', d, supPace.median / 7 * (s === 'low' ? 1.1 : s === 'high' ? 0.95 : 1), 'suppliers');
-    put(s, 'out', d, otherPace.median / 7, 'running_costs');
+    const wd = dowOf(asOfMs + d * DAY);
+    put(s, 'out', d, supPace.median * supPace.dowShare[wd] * (s === 'low' ? 1.1 : s === 'high' ? 0.95 : 1), 'suppliers');
+    put(s, 'out', d, otherPace.median * otherPace.dowShare[wd], 'running_costs');
   }
 
   // --- money out: GST on the 20th: the books' estimate, calibrated by what was actually paid ---
@@ -543,10 +549,15 @@ function selfCheck(ctx) {
       const end = cashAt.get(dayKey(asOfMs + (h - 1) * DAY));
       if (end == null) continue;
       let fin = 0, cin = 0;
+      const act = { suppliers: 0, running_costs: 0, tax: 0, other: 0 };
       for (const e of events) {
         if (e.ms < asOfMs || e.ms >= asOfMs + h * DAY) continue;
         if (e.category === 'transfers_loans' && !recKeys.has(keyOf(e.ledger))) fin += e.amount;
         else if (e.category === 'customers' && e.amount > 0) cin += e.amount;
+        else if (e.category === 'suppliers') act.suppliers += e.amount;
+        else if (e.category === 'tax') act.tax += e.amount;
+        else if (e.category === 'running_costs' || recKeys.has(keyOf(e.ledger))) act.running_costs += e.amount;
+        else act.other += e.amount;
       }
       const P = (k) => (fc.trace.parts_daily[k] || []).slice(0, h).reduce((t, x) => t + x, 0);
       const pIn = P('customers_open') + P('customers_new');
@@ -554,7 +565,10 @@ function selfCheck(ctx) {
       (errs[h] || (errs[h] = [])).push(err);
       if (h === 28) { predIn += pIn; actIn += cin; inRuns++;
         Object.assign(row, { horizon_days: 28, predicted_cash: r0(fc.daily.close[27]), actual_cash: r0(end), loans_and_transfers: r0(fin), cash_error: r0(err),
-          predicted_customer_in: r0(pIn), actual_customer_in: r0(cin) }); }
+          predicted_customer_in: r0(pIn), actual_customer_in: r0(cin),
+          // Each kind of money, predicted vs actual (signed: out is negative), to see where a miss comes from.
+          by_kind: { suppliers: [r0(P('suppliers')), r0(act.suppliers)], running_costs: [r0(P('recurring') + P('running_costs')), r0(act.running_costs)],
+            tax: [r0(P('gst')), r0(act.tax)], other: [0, r0(act.other)] } }); }
     }
     if (row.horizon_days) checks.push(row);
   }
