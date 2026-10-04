@@ -103,6 +103,7 @@ function _rdBuildConfig(spec){
   const anyBar = series.some(s => (s.type || spec.type) === 'bar' || spec.type === 'bar' || spec.type === 'combo');
   const datasets = series.map((s, i) => {
     let stype = s.type || (spec.type === 'combo' ? (i === 0 ? 'bar' : 'line') : spec.type);
+    const axisType = stype;   // the axis follows the series as given, before a % next to ₹ bars becomes a line
     // A % (or score) next to rupee bars is drawn as a line with dots on its own axis: as a bar it rose from the
     // right axis' 0% at the bottom and read as a rupee bar crossing ₹0 into "−₹2 Cr" (Reports, 4 Oct).
     if(stype === 'bar' && (s.unit || 'inr') !== 'inr' && series.some(x => (x.unit || 'inr') === 'inr')) stype = 'line';
@@ -115,7 +116,7 @@ function _rdBuildConfig(spec){
       spanGaps: true,
       _unit: s.unit || 'inr',
       type: isBar ? 'bar' : 'line',
-      yAxisID: axisFor({ unit: s.unit || 'inr', type: stype }),
+      yAxisID: axisFor({ unit: s.unit || 'inr', type: axisType }),
       order: isBar ? 2 : 1,
       borderColor: s.color,
       backgroundColor: isBar ? s.color : (isArea ? _hexA(s.color, 0.14) : s.color),
