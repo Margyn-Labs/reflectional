@@ -93,6 +93,11 @@ check('sales pace learned (Alpha ₹3.54 L + Beta ₹2.36 L + Gamma ₹1.77 L a 
 check('supplier pace learned (₹2.4 L a week)', out.drivers.pace.suppliers_weekly === 240000, out.drivers.pace);
 check('range: cautious ≤ likely ≤ hopeful at week 13', out.weeks[12].low <= out.weeks[12].close && out.weeks[12].close <= out.weeks[12].high, out.weeks[12]);
 check('daily path has 91 days', out.daily.close.length === 91);
+const supDays = CF.forecast(ctx, { asOfMs: today, opening: 0, trace: true }).trace.parts_daily.suppliers;
+const friday = supDays.filter((x, d) => new Date(today + d * DAY).getUTCDay() === 5).reduce((a, b) => a + b, 0), allSup = supDays.reduce((a, b) => a + b, 0);
+check('supplier payments land on Fridays, the day this business pays them', Math.abs(friday / allSup - 1) < 0.01, [friday, allSup]);
+const sc0 = out.self_check.checks[0];
+check('self-check scores each kind of money (suppliers, running costs, tax)', sc0.by_kind && Math.abs(sc0.by_kind.suppliers[0] - sc0.by_kind.suppliers[1]) < 0.05 * Math.abs(sc0.by_kind.suppliers[1]), sc0.by_kind);
 // A steady business: the forecast should drift the way the bank actually did over the last 8 weeks.
 const cp = ctx.analytics.cash_history.points, wasCash = cp[cp.length - 1 - 56].cash, nowCash = cp[cp.length - 1].cash;
 const bookDrift = (nowCash - wasCash) / 8, drift = (out.weeks[12].close - out.opening) / 13;
