@@ -105,7 +105,9 @@ const W = require('../margynWatch');
   check('found findings', r.found > 0, r);
   check('not sent: no session and no template', !r.sent && /24 hours/.test(r.not_sent || ''), r);
   check('nothing reached Gupshup', sent.length === 0, sent);
-  check('findings kept for the app', DB.margyn_signals.length === r.found && DB.margyn_signals.every((s) => s.status === 'open'), DB.margyn_signals);
+  const kept = DB.margyn_signals.filter((s) => !s.key.startsWith('snap:'));
+  check('findings kept for the app', kept.length === r.found && kept.every((s) => s.status === 'open'), kept);
+  check('the morning snapshot is kept for the next update', DB.margyn_signals.some((s) => s.key === 'snap:morning' && s.status === 'resolved' && JSON.parse(s.detail).recv_total === 9000000));
 
   console.log('owner texted Margyn an hour ago: free text goes out');
   DB.whatsapp_conversations.push({ profile_id: U, role: 'user', content: 'hi', from_phone: '919324000000', created_at: new Date(Date.now() - 3600000).toISOString() });
@@ -195,6 +197,42 @@ const W = require('../margynWatch');
   r = await W.watchAccount(U, { slot: 'morning', dryRun: true });
   check('no reports coming in at all: trust the log (never repeat every run)', !r.chosen.includes(keys[0]), r);
   DB.wa_deliveries = [];
+
+  console.log('the day\'s cadence: detailed morning, changes-only afternoon, evening follow-ups');
+  DB.margyn_signals = []; DB.wa_deliveries = []; DB.watch_pending = [];
+  DB.profiles[0].preferences.margyn_watch.mode = 'on';
+  DB.whatsapp_conversations = [{ profile_id: U, role: 'user', content: 'hi', from_phone: '919324000000', created_at: new Date(Date.now() - 3600000).toISOString() }];
+  const lastText = () => { const m = sent[sent.length - 1].message; try { return JSON.parse(m).text; } catch (e) { return m; } };
+  let n = sent.length;
+  r = await W.watchAccount(U, { slot: 'morning' });
+  const am = lastText();
+  check('morning goes out', r.sent && sent.length === n + 1, r);
+  check('morning: where you stand, yesterday, this week', /\*Where you stand\*/.test(am) && /Customers owe you ₹90 L; ₹90 L of it is more than a month late/.test(am) && /\*Yesterday\*/.test(am), am);
+  check('morning: every point says why now, the backing and what to do', /Why now: /.test(am) && /Backing: /.test(am) && /Next: /.test(am), am);
+  check('an actionable point about a customer wins over a background fact about them', /more than a month late/.test(am.split('things that need you')[1] || am.split('One thing that needs you')[1] || '') && !/100% of your sales/.test(am), am);
+  check('morning promises the evening check', /check back this evening/.test(am), am);
+  n = sent.length;
+  r = await W.watchAccount(U, { slot: 'afternoon' });
+  check('afternoon with nothing changed sends nothing', !r.sent && r.quiet && sent.length === n, r);
+  // Big Co pays ₹40 L today; Tally syncs.
+  const todayIso = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+  DB.tally_ledgers.push({ name: 'HDFC Bank', parent: 'Bank Accounts' });
+  DB.tally_vouchers.push({ tally_guid: 'r1', voucher_type: 'Receipt', voucher_number: 'R1', date: todayIso, party_name: 'Big Co', amount: 4000000, is_cancelled: false,
+    entries: [{ ledger: 'Big Co', amount: 4000000, is_party: true }, { ledger: 'HDFC Bank', amount: -4000000 }] });
+  DB.tally_bills[0].closing_balance = 5000000;
+  DB.tally_installs[0].last_sync_at = new Date().toISOString();
+  r = await W.watchAccount(U, { slot: 'afternoon' });
+  const pm = lastText();
+  check('afternoon: only the change, tied to the morning point', r.sent && /^Quick update Mihir\./.test(pm) && /✅ Big Co paid ₹40 L \(point 1 this morning\)\. ₹50 L still open/.test(pm) && !/Where you stand/.test(pm), pm);
+  n = sent.length;
+  r = await W.watchAccount(U, { slot: 'afternoon' });
+  check('...and does not say it again', !r.sent && sent.length === n, r);
+  r = await W.watchAccount(U, { slot: 'evening' });
+  const ev = lastText();
+  check('evening goes out', r.sent, r);
+  check('evening: today\'s money', /\*Today\*\nIn: ₹40 L \(Big Co ₹40 L\)\./.test(ev), ev);
+  check('evening: follows up on the morning point', /\*This morning's points\*\n1\. ✅ Big Co: paid ₹40 L today\. ₹50 L still open/.test(ev), ev);
+  check('evening template headline counts what is still open', /^Evening wrap: ₹40 L came in today; 1 of this morning's 1 point is still open\.$/.test(r.headline), r);
 
   console.log('every account');
   const all = await W.runWatchAll('morning');
