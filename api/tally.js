@@ -350,10 +350,20 @@ async function handleAnalytics(req, res) {
   try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
   // The 13-week forecast learned from how money actually moved (cashFlowModel.js), graded by its own past runs,
   // and today's run kept so tomorrow's can be graded (forecastStore.js). Never blocks the page.
-  let forecast_v2 = null;
+  let forecast_v2 = null, ctxB = null;
+  try { ctxB = prepareBooks(book, { analytics: out }); } catch (e) { console.error('[tally] prepare failed:', e.message); }
+  // Suppliers Tally doesn't keep bill by bill: what you owe is each supplier's balance rebuilt from the entries
+  // (cashFlowModel.supplierOpenItems), the same figure the Payables page shows, not the few stray bills Tally has.
+  const wc = out.working_capital || {};
+  if (ctxB && wc.suppliers_tracked_billwise === false) {
+    try {
+      const led = cashFlow.supplierOpenItems(ctxB);
+      Object.assign(wc, { payables_billwise: wc.payables, payables: led.total, supplier_advances: led.advances, payables_basis: 'supplier_ledgers' });
+    } catch (e) { console.error('[tally] supplier ledgers failed:', e.message); }
+  }
   try {
     const [promises, runs] = await Promise.all([forecastStore.promises(user.id), forecastStore.pastRuns(user.id)]);
-    forecast_v2 = cashFlow.build(prepareBooks(book, { analytics: out }), { promises, pastRuns: runs });
+    forecast_v2 = cashFlow.build(ctxB || prepareBooks(book, { analytics: out }), { promises, pastRuns: runs });
     if (forecast_v2 && !(req.query && req.query.company)) await forecastStore.recordDaily(user.id, forecast_v2);
   } catch (e) { console.error('[tally] forecast failed:', e.message); }
   return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra,

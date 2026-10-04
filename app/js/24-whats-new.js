@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-payables-from-supplier-balances', date:'4 Oct 2026', title:'Everything you owe suppliers, not just a few bills',
+    items:[
+      { t:'Payables from your supplier balances', what:'If Tally doesn’t keep your suppliers’ bills one by one, Payables used to show only the few bills Tally did keep. Margyn now works out what you owe each supplier from your purchases and payments, oldest bills paid first, so every supplier shows up.',
+        how:'Payables, or ask Margyn “what do I owe suppliers?”', act:'payables' },
+      { t:'A cash floor that fits your business', what:'The forecast now warns you when cash is set to fall below where it usually bottoms out, instead of two weeks of spend. Set your own in Adjust.',
+        how:'Cash → 13-week cash forecast → Adjust.', act:'cash' },
+      { t:'Clearer report charts', what:'Margin now shows as dots on its own % scale beside the rupee bars, and the current month is marked “so far”.',
+        how:'Reports.', act:'reports' }
+    ]
+  },
+  {
     id:'2026-10-04-forecast-learned', date:'4 Oct 2026', title:'A cash forecast that learns from your books',
     items:[
       { t:'Learned, not assumed', what:'The 13-week forecast now learns from every entry in your books: how each customer actually pays (even the slow ones), how you pay suppliers, what you pay every month, and EMIs already entered for later dates.',

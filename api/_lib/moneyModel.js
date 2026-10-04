@@ -28,6 +28,8 @@
 
 const { selectRows, selectAllRows, rpc } = require('./supabaseRest');
 const { calibrateBills } = require('./tallyBills');
+const { loadTallyBook } = require('./tallyData');
+const { supplierOpenItems } = require('./cashFlowModel');
 
 const SRC_ORDER = ['zoho', 'tally', 'odoo', 'manual'];
 const SRC_NAME = { zoho: 'Zoho Books', tally: 'Tally', odoo: 'Odoo', manual: 'Manual entries' };
@@ -213,7 +215,33 @@ async function loadTallyBills(accountId) {
   return p;
 }
 
+/* Suppliers Tally doesn't keep bill by bill (2026-10-04). Then Tally's bill list holds a few stray supplier bills
+   (Care Hygiene: 5 vendors, ₹25 L) while the supplier ledgers carry the real balance (₹1.4 Cr+). Rebuild each
+   supplier's open bills from the entries instead (cashFlowModel.supplierOpenItems, the same FIFO the forecast
+   uses), so Payables, Home, Margin and Margyn's answers all say the same thing. null = bill-wise is fine. */
+async function loadTallySupplierLedgers(accountId) {
+  const book = await loadTallyBook(accountId);
+  if (!book || !book.connected) return null;
+  const { prepare } = require('./booksEngine');
+  const ctx = prepare(book);
+  const wc = (ctx.analytics && ctx.analytics.working_capital) || {};
+  if (wc.suppliers_tracked_billwise !== false) return null;
+  return supplierOpenItems(ctx);
+}
+
 async function loadTally(accountId, dir) {
+  if (dir === 'pay') {
+    let led = null;
+    try { led = await loadTallySupplierLedgers(accountId); }
+    catch (e) { console.error('[moneyModel] supplier ledgers:', e.message); }
+    if (led) {
+      return {
+        rows: led.items.filter((b) => b.amount > 0.5).map((b) => ({ party: b.party || 'Unknown', amount: b.amount, due: b.due_day, ref: b.ref, src: 'tally' })),
+        truncated: false,
+        basis: 'supplier_ledgers', advances: led.advances
+      };
+    }
+  }
   const { bills, truncated } = await loadTallyBills(accountId);
   const want = dir === 'recv' ? 'receivable' : 'payable';
   return {
@@ -262,6 +290,7 @@ async function loadRows(accountId, dir, ctx = {}) {
     if (r.status === 'fulfilled') {
       rows.push(...r.value.rows);
       coverage[n] = { rows: r.value.rows.length, truncated: r.value.truncated, cap: MAX_ROWS };
+      if (r.value.basis) Object.assign(coverage[n], { basis: r.value.basis, advances: r.value.advances });
     } else {
       errors[n] = String((r.reason && r.reason.message) || r.reason).slice(0, 200);
     }

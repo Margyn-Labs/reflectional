@@ -190,6 +190,22 @@ check('receivables today = what customers owe', out.receivables_today === Math.r
 const lastW = out.history[out.history.length - 1];
 check('days to collect ≈ 45 (mix of 30 and 60)', lastW.days_to_collect >= 38 && lastW.days_to_collect <= 52, lastW);
 
+// ---------- suppliers not kept bill by bill ----------
+// No supplier bills in Tally (bills: []), so what is owed comes from the supplier ledger, oldest bills paid first.
+check('suppliers flagged as not bill-wise', ctx.analytics.working_capital.suppliers_tracked_billwise === false, ctx.analytics.working_capital);
+const so = CF.supplierOpenItems(ctx);
+check('supplier open items add up to the supplier balance', so.total === Math.round(-bal.Supplier) && so.advances === 0, [so.total, -bal.Supplier]);
+check('open supplier bills are the newest ones, dated, with a due date after the bill', so.items.length > 0 && so.items.every((b) => b.bill_day && b.due_day >= b.bill_day && !b.carried), so.items.slice(0, 3));
+const owed = E.moneyOwed(ctx, { direction: 'payable' });
+check('Margyn\'s answer on what you owe uses the supplier balance', owed.total === E.inr(so.total) && /one by one/.test(owed.note || ''), owed);
+// A balance carried from last year (no bill date) and a supplier paid ahead.
+const book2 = Object.assign({}, book, { ledgers: L.map((l) => l.name === 'Supplier' ? Object.assign({}, l, { opening_balance: 300000, closing_balance: l.closing_balance + 300000 }) : l)
+  .concat([{ name: 'Ahead Co', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: 50000 }]),
+  vouchers: V.concat([{ tally_guid: 'adv1', voucher_type: 'Payment', voucher_number: 'A1', date: '2026-09-01', party_name: 'Ahead Co', amount: 50000, is_cancelled: false, entries: [{ ledger: 'Ahead Co', amount: -50000, is_party: true }, { ledger: 'Bank', amount: 50000 }] }]) });
+const so2 = CF.supplierOpenItems(E.prepare(book2, { now: NOW }));
+check('paid ahead to a supplier is kept apart, not netted', so2.advances === 50000, so2.advances);
+check('a balance carried from last year counts, settled first', so2.total === so.total + 300000, [so2.total, so.total]);
+
 // ---------- doubtful + accuracy ----------
 const old = CF.forecast(ctx, { asOfMs: today, opening: 0, openItems: [{ party: 'Alpha', amt: 100000, ageDays: 500 }] });
 check('a 500-day-old invoice is left out as doubtful', old.drivers.doubtful.amount === 100000);
