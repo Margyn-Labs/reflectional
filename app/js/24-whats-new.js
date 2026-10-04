@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-forecast-learned', date:'4 Oct 2026', title:'A cash forecast that learns from your books',
+    items:[
+      { t:'Learned, not assumed', what:'The 13-week forecast now learns from every entry in your books: how each customer actually pays (even the slow ones), how you pay suppliers, what you pay every month, and EMIs already entered for later dates.',
+        how:'Cash → 13-week cash forecast.', act:'cash' },
+      { t:'It checks itself', what:'Margyn re-makes the forecast as of each of your past weeks, using only what was known then, and compares it with what actually happened. The shaded range is as wide as it has really been off.',
+        how:'Cash → How Margyn built this → Its track record.', act:'cash' },
+      { t:'Week by week this year', what:'Cash, what customers owe, what you owe suppliers and days to collect, at the end of every week this year.',
+        how:'Cash → Week by week this year.', act:'cash' },
+      { t:'Your own assumptions are still there', what:'Prefer to set the figures yourself? Switch the forecast to “My own assumptions”.',
+        how:'Home or Cash → forecast → Adjust.', act:'cash' }
+    ]
+  },
+  {
     id:'2026-10-04-figures-from-the-books', date:'4 Oct 2026', title:'Every figure now agrees with your books',
     items:[
       { t:'Cash history from your books', what:'Cash, its change and the cash chart now come from your books day by day, so an old reading can’t make cash look like it jumped or fell. Runway and the Pulse Score follow.',

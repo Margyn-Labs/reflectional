@@ -307,3 +307,12 @@ body.mg-member #setDeleteAccount, body.mg-member #deleteAccountBtn{ display:none
 .mg-ins-li:last-child{ border-bottom:0; }
 .mg-ins-li .mg-dot{ margin-top:6px; }
 .mg-ins-li .mg-li-t{ font-weight:600; }
+
+/* Cash page: week by week this year, four small charts each on its own scale (19a-forecast.js mgPositionHistoryPanel) */
+.mg-histgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.mg-histmini-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:var(--f12);color:var(--text-2);margin-bottom:2px}
+.mg-histmini-h b{font-size:var(--f13);color:var(--text-0);font-variant-numeric:tabular-nums}
+@media (max-width:900px){.mg-histgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.mg-histgrid{grid-template-columns:1fr}}
+#mgFcHow ul.mg-fine{margin:6px 0 0 18px;padding:0}
+#mgFcHow ul.mg-fine li{margin:2px 0}

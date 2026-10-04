@@ -20,12 +20,18 @@ const sale = (date, party, amt) => { const tax = Math.round(amt * 0.18); v('Sale
 const receipt = (date, party, amt) => { v('Receipt', date, party, [{ ledger: party, amount: amt, is_party: true }, { ledger: 'Bank', amount: -amt }]); bal[party] -= amt; bal.Bank += amt; };
 const pay = (date, ledger, amt, party) => { v('Payment', date, party || null, [{ ledger, amount: -amt, is_party: !!party }, { ledger: 'Bank', amount: amt }]); bal.Bank -= amt; if (party) bal[party] += amt; };
 const today = D('2026-10-04');
+let gammaOpen = [];
 for (let t = D('2026-04-01'); t < today; t += DAY) {
   const d = new Date(t), dow = d.getUTCDay(), dom = d.getUTCDate(), ds = iso(t);
   if (dow === 1) { const a = sale(ds, 'Alpha', 300000); if (t + 30 * DAY < today) receipt(iso(t + 30 * DAY), 'Alpha', a); }
   if (dow === 3) { const b = sale(ds, 'Beta', 200000); if (t + 60 * DAY < today) receipt(iso(t + 60 * DAY), 'Beta', b); }
-  // Gamma pays unevenly: 20, 45, 70 or 110 days, so at any time some of its invoices are past its usual day.
-  if (dow === 4) { const k = Math.round((t - D('2026-04-01')) / DAY / 7) % 4, lag = [20, 45, 70, 110][k]; const c = sale(ds, 'Gamma', 150000); if (t + lag * DAY < today) receipt(iso(t + lag * DAY), 'Gamma', c); }
+  // Gamma pays unevenly but in order: every fourth Thursday it clears everything older than 20 days in one go
+  // (so invoices wait 20 to 48 days), and at any time some are past its usual day.
+  if (dow === 4) {
+    const k = Math.round((t - D('2026-04-01')) / DAY / 7);
+    if (k % 4 === 3) { const due = gammaOpen.filter((x) => t - x.t >= 20 * DAY); if (due.length) { receipt(ds, 'Gamma', due.reduce((a, x) => a + x.amt, 0)); gammaOpen = gammaOpen.filter((x) => t - x.t < 20 * DAY); } }
+    gammaOpen.push({ t, amt: sale(ds, 'Gamma', 150000) });
+  }
   if (dow === 2) { v('Purchase', ds, 'Supplier', [{ ledger: 'Supplier', amount: 250000, is_party: true }, { ledger: 'Purchases', amount: -250000 }]); bal.Supplier -= 250000; }
   if (dow === 5) pay(ds, 'Supplier', 240000, 'Supplier');
   if (dom === 1) pay(ds, 'Salary', 400000);
@@ -119,7 +125,8 @@ const worst = Math.max(...sc.checks.map((c) => Math.abs(c.actual_customer_in - c
 check('it predicted its own past within 10% on customer money in, every week', worst < 0.10, sc.checks);
 const cashMiss = sc.checks.reduce((t, c) => t + Math.abs(c.cash_error) / c.actual_cash, 0) / sc.checks.length;
 console.log(`  self-check: ${sc.runs} runs, 4-week cash miss ${(cashMiss * 100).toFixed(1)}% avg, factor ${sc.collection_factor}`);
-check('4 weeks out, cash missed by under 3% on average', cashMiss < 0.03, cashMiss);
+// Gamma's whole month lands on one day, so whether it falls inside a 4-week window moves cash by ~₹6 L.
+check('4 weeks out, cash missed by under 4% on average', cashMiss < 0.04, cashMiss);
 check('learned factor stays in bounds', sc.collection_factor >= 0.6 && sc.collection_factor <= 1.3);
 check('misses measured at 1, 2, 4 and 8 weeks', [1, 2, 4, 8].every((w) => sc.error_by_week[w] && sc.error_by_week[w].runs >= 3), sc.error_by_week);
 check('range comes from its own past misses and widens with time', out.band_basis === 'past_misses' && (out.weeks[12].high - out.weeks[12].low) > (out.weeks[0].high - out.weeks[0].low) && out.weeks.every((w) => w.low <= w.close && w.close <= w.high), out.weeks.map((w) => [w.low, w.close, w.high]).slice(0, 3));
@@ -144,9 +151,16 @@ for (const h of [7, 28, 56]) {
   const mape = bt.reduce((t, r) => t + Math.abs(r.err), 0) / bt.length, bias = bt.reduce((t, r) => t + r.err, 0) / bt.length;
   if (process.env.BT) console.log(JSON.stringify(bt.map((r) => [r.as_of, r.pred, r.act, r.out])));
   console.log(`  backtest ${h}d: ${bt.length} runs, avg miss ${(mape * 100).toFixed(1)}%, bias ${(bias * 100).toFixed(1)}%`);
-  // A single week is lumpy (Gamma pays two invoices some weeks), so at 7 days only the size of the miss is held.
-  check(`customer money in over ${h} days: avg miss under ${h === 7 ? 25 : 8}%` + (h === 7 ? '' : ' and no lean over 6%'), mape < (h === 7 ? 0.25 : 0.08) && (h === 7 || Math.abs(bias) < 0.06), bt.slice(0, 4));
+  // A single week is lumpy (Gamma pays a month's invoices in one go), so at 7 days only the size of the miss is held.
+  check(`customer money in over ${h} days: avg miss under ${h === 7 ? 35 : 8}%` + (h === 7 ? '' : ' and no lean over 6%'), mape < (h === 7 ? 0.35 : 0.08) && (h === 7 || Math.abs(bias) < 0.06), bt.slice(0, 4));
 }
+
+// A perfectly regular business (no Gamma): the self-check should be close to exact. An invoice exactly as old as
+// the customer's usual day is due today, not "older than anything seen" (it was half-counted: -13% every week).
+const regular = E.prepare(Object.assign({}, book, { vouchers: V.filter((x) => x.party_name !== 'Gamma') }), { now: NOW });
+const rsc = CF.build(regular, {}).self_check;
+const rworst = Math.max(...rsc.checks.map((c) => Math.abs(c.predicted_customer_in - c.actual_customer_in) / c.actual_customer_in));
+check('a regular business: customer money in predicted within 2% every week', rworst < 0.02, rsc.checks.map((c) => [c.predicted_customer_in, c.actual_customer_in]));
 
 // ---------- history ----------
 check('weekly history of cash, receivables, payables', out.history.length > 20 && out.history.every((w) => w.cash != null && w.receivables != null));

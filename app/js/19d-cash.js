@@ -146,7 +146,7 @@ function mgRenderCash(){
     mgTile({ label:'Runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less payables due, over monthly spend',
       delta:(rNow != null && rPrev != null) ? rNow - rPrev : null, deltaText:(rNow != null && rPrev != null) ? Math.abs(rNow - rPrev).toFixed(1) + ' months' : '', goodUp:true, src:'Reconciled', go:'pulse' }) +
     mgTile({ label:'Lowest point in 13 weeks', value:f ? fmtINR(f.min, 'tile') : 'n/a', full:f ? fmtINR(f.min) : '',
-      note:f ? 'Week ' + (f.minWeek + 1) + (f.min < f.floor ? ', below your floor' : ', above your floor') : '', src:'Your forecast assumptions', go:'cash' }) + '</div>';
+      note:f ? 'Week ' + (f.minWeek + 1) + (f.min < f.floor ? ', below your floor' : ', above your floor') : '', src:f && f.learned ? 'Learned from your books' : 'Your forecast assumptions', go:'cash' }) + '</div>';
 
   // ---- where the cash is ----
   let rows = '';
@@ -191,7 +191,9 @@ function mgRenderCash(){
   // ---- forecast ----
   let fc;
   if(!s) fc = '';
-  else if(f && f.st.enabled) fc = mgForecastPanel(window.innerWidth > 900) + '<div class="mg-panel"><div class="mg-panel-h"><h2>Week by week</h2><span class="mg-aside">Closing cash under your assumptions</span></div>' + mgForecastTable(f) + '</div>';
+  else if(f && f.st.enabled) fc = mgForecastPanel(window.innerWidth > 900) + '<div class="mg-panel"><div class="mg-panel-h"><h2>Week by week</h2><span class="mg-aside">' +
+    (f.learned ? 'Closing cash, learned from your books, before loans and overdraft' : 'Closing cash under your assumptions') + '</span></div>' + mgForecastTable(f) + '</div>' + mgForecastHowPanel(f);
+  if(s && typeof mgPositionHistoryPanel === 'function') fc += mgPositionHistoryPanel();
   else fc = '<div class="mg-panel"><div class="mg-panel-h"><h2>13-week cash forecast</h2><button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Adjust</button></div><div class="mg-empty">The forecast is switched off. Open Adjust and tick “Show the forecast” to turn it back on.</div></div>';
 
   // ---- settlements ----

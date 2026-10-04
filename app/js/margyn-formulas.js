@@ -147,11 +147,13 @@
     },
     forecast: {
       label: '13-week cash forecast', aliases: ['forecast', 'cash forecast', '13 week', 'cash dip', 'when will cash run out'],
-      what: 'Your cash at the end of each of the next 13 weeks.',
-      formula: 'Each week: closing cash = last week\'s closing cash + customer invoices collected (each on its due date + 15 days; ones over 90 days late are left out as doubtful) + new sales collected (your monthly revenue spread weekly, starting once today\'s open invoices would be collected) − vendor bills paid on their due date (overdue ones this week) − spend that isn\'t in bills (monthly spend − bills due in 30 days, spread weekly) − new bills (the rest of your spend, from week 5) − GST on the 20th. Week 1 starts from today\'s cash.',
+      what: 'Your cash at the end of each of the next 13 weeks, learned from how money has actually moved in your books, with a range.',
+      formula: 'Learned from every entry this year: each customer\'s open invoices arrive the way that customer has actually paid (Kaplan-Meier on their history, counting invoices still open as not paid yet), new sales at your recent weekly pace collected on the same curve, suppliers either on their open bills or at your recent weekly pace (whichever predicted your past weeks better), payments made every month on their usual day, entries already made for later dates on their dates, GST on the 20th sized by what you have actually paid against the books\' estimate. Cash is before loans, overdraft and transfers. The forecast is re-made as of each of your past 12 weeks with only what was known then and checked against what happened; if customers kept paying less than it expected, money in is scaled to match, and the range shown is ± 1.28 × how far off it has typically been at that distance (about 8 in 10).',
       inputs: ['cash', 'revenue', 'burn', 'gstPayable'],
-      notes: ['Floor = two weeks of spend (monthly spend ÷ 2). The forecast flags the first week below it.', 'Every assumption can be changed on Home → Adjust (collection delay, doubtful after, sales, spend, GST, floor).', 'Pure arithmetic; the AI never touches it.'],
-      code: '19a-forecast.js mgForecast, mgFcData', page: 'cash'
+      notes: ['Floor = two weeks of spend (monthly spend ÷ 2). The forecast flags the first week below it.',
+        'Choose "My own assumptions" on Home → Adjust to set the figures yourself: each customer invoice on its due date + 15 days, ones over 90 days late left out as doubtful, new sales from when today\'s open invoices would be collected, vendor bills on their due date, spend not in bills spread weekly, new bills from week 5, GST on the 20th.',
+        'Pure arithmetic; the AI never touches it.'],
+      code: '19a-forecast.js mgForecast, mgFcData; cashFlowModel.js build, forecast, selfCheck', page: 'cash'
     },
     dso: {
       label: 'Days sales outstanding (DSO)', aliases: ['dso', 'days to get paid', 'collection days'],

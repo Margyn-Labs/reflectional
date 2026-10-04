@@ -370,6 +370,7 @@ const VX_TOOLS = {
         drops_below_floor_in_week:f.firstBelow >= 0 ? f.firstBelow + 1 : null,
         week_by_week_close_inr:f.close.map(Math.round), assumptions:mgForecastSentence(f)
       };
+      if(f && f.learned) Object.assign(out.forecast_13_weeks, { learned_from_books:true, before_loans_and_overdraft:true, week_13_range:vxInr(f.low[12]) + ' to ' + vxInr(f.high[12]), track_record:mgFcTrackLine(f.v) });
     } catch(e){}
     return out;
   },
@@ -827,7 +828,15 @@ const VX_TOOLS = {
         case 'forecast': {
           const f = mgForecast(); if(!f) break;
           out.worked = { starting_cash:vxInr(f.opening), lowest:vxInr(f.min) + ' in week ' + (f.minWeek + 1), week_13:vxInr(f.close[12]), floor:vxInr(f.floor), first_week_below_floor:f.firstBelow >= 0 ? f.firstBelow + 1 : 'none', left_out_as_doubtful:vxInr(f.doubtful), due_after_13_weeks:vxInr(f.beyond) };
-          out.assumptions_in_use = { collection_delay_days:f.st.collectDelay, doubtful_after_days:f.st.doubtfulAfter, new_sales_monthly:vxInr(f.st.salesMonthly) + ' from week ' + f.st.salesStart, spend_not_in_bills_monthly:vxInr(f.st.fixedMonthly), new_bills_monthly:vxInr(f.st.billsMonthly) + ' from week ' + f.st.billsStart, gst_monthly:vxInr(f.st.gstMonthly) };
+          if(f.learned){
+            const dr = f.v.drivers || {}, sc = f.v.self_check || {};
+            out.how_it_is_made = 'Learned from the books (api/_lib/cashFlowModel.js), cash before loans, overdraft and transfers: ' + mgForecastSentence(f);
+            out.range_week_13 = vxInr(f.low[12]) + ' to ' + vxInr(f.high[12]);
+            out.track_record = mgFcTrackLine(f.v) || 'not enough history to check yet';
+            out.supplier_method = (dr.suppliers || {}).method === 'bills' ? 'open bills, paid as quickly as usual' : 'recent weekly pace';
+            out.notes = f.v.notes || [];
+            if(sc.supplier_miss) out.supplier_method_checked = 'average 4-week miss: open bills ' + vxInr(sc.supplier_miss.bills) + ', weekly pace ' + vxInr(sc.supplier_miss.pace);
+          } else out.assumptions_in_use = { collection_delay_days:f.st.collectDelay, doubtful_after_days:f.st.doubtfulAfter, new_sales_monthly:vxInr(f.st.salesMonthly) + ' from week ' + f.st.salesStart, spend_not_in_bills_monthly:vxInr(f.st.fixedMonthly), new_bills_monthly:vxInr(f.st.billsMonthly) + ' from week ' + f.st.billsStart, gst_monthly:vxInr(f.st.gstMonthly) };
           break;
         }
         case 'dso': ['dso', 'dpo', 'ccc'].forEach(m => { const x = metricValue(m, s); out[m] = x == null ? 'n/a' : Math.round(x) + ' days'; }); break;

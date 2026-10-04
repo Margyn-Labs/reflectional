@@ -1,7 +1,8 @@
 /**
  * Accuracy of the learned forecast (api/_lib/cashFlowModel.js) on a realistic book: 250 customers trading since
  * Oct 2025, so the year's book opens with last year's balances (no dates), like Tally. Two ways of paying:
- * anything from 15 to 135 days ('uniform'), and each customer around their own habit with a late tail ('habit').
+ * anything from 15 to 135 days ('uniform': invoices are often paid out of order, which oldest-first matching
+ * can't see), and each customer around their own habit with a late tail ('habit').
  * The self-check runs the model as of every past week and scores 4 weeks of customer money in and cash.
  * Zero-dep, seeded (same numbers every run). Run: node api/_lib/__tests__/cashFlowAccuracy.test.js
  */
