@@ -215,33 +215,53 @@ async function loadTallyBills(accountId) {
   return p;
 }
 
-/* Suppliers Tally doesn't keep bill by bill (2026-10-04). Then Tally's bill list holds a few stray supplier bills
-   (Care Hygiene: 5 vendors, ₹25 L) while the supplier ledgers carry the real balance (₹1.4 Cr+). Rebuild each
-   supplier's open bills from the entries instead (cashFlowModel.supplierOpenItems, the same FIFO the forecast
-   uses), so Payables, Home, Margin and Margyn's answers all say the same thing. null = bill-wise is fine. */
-async function loadTallySupplierLedgers(accountId) {
-  const book = await loadTallyBook(accountId);
-  if (!book || !book.connected) return null;
-  const { prepare } = require('./booksEngine');
-  const ctx = prepare(book);
-  const wc = (ctx.analytics && ctx.analytics.working_capital) || {};
-  if (wc.suppliers_tracked_billwise !== false) return null;
-  return supplierOpenItems(ctx);
+/* Tally, read through the same prepared books every other reader uses (booksEngine.prepare), shared by the
+   two directions of one position for a few seconds:
+   - customers: bills lined up with their ledger balances (billTieOut.js): paid bills never knocked off are
+     set aside, money owed that Tally never split into bills is added from the entries (4 Oct 2026);
+   - suppliers Tally doesn't keep bill by bill: Tally's bill list is a few stray bills (Care Hygiene: 5
+     vendors, ₹25 L, against ₹1.6 Cr owed), so each supplier's open bills are rebuilt from the entries
+     (cashFlowModel.supplierOpenItems, the FIFO the forecast uses).
+   Payables, Receivables, Home, Margin and Margyn's answers then all say the same thing. */
+const tallyCtxCache = new Map();
+function loadTallyCtx(accountId) {
+  const hit = tallyCtxCache.get(accountId);
+  if (hit && Date.now() - hit.at < 5000) return hit.p;
+  const p = (async () => {
+    const book = await loadTallyBook(accountId);
+    if (!book || !book.connected) return null;
+    const { prepare } = require('./booksEngine');
+    return prepare(book);
+  })();
+  tallyCtxCache.set(accountId, { at: Date.now(), p });
+  p.catch(() => tallyCtxCache.delete(accountId));
+  return p;
 }
 
 async function loadTally(accountId, dir) {
-  if (dir === 'pay') {
-    let led = null;
-    try { led = await loadTallySupplierLedgers(accountId); }
-    catch (e) { console.error('[moneyModel] supplier ledgers:', e.message); }
-    if (led) {
+  let ctx = null;
+  try { ctx = await loadTallyCtx(accountId); }
+  catch (e) { console.error('[moneyModel] tally books:', e.message); }
+  if (ctx) {
+    const wc = (ctx.analytics && ctx.analytics.working_capital) || {};
+    if (dir === 'pay' && wc.suppliers_tracked_billwise === false) {
+      const led = supplierOpenItems(ctx);
       return {
         rows: led.items.filter((b) => b.amount > 0.5).map((b) => ({ party: b.party || 'Unknown', amount: b.amount, due: b.due_day, ref: b.ref, src: 'tally' })),
-        truncated: false,
-        basis: 'supplier_ledgers', advances: led.advances
+        truncated: false, basis: 'supplier_ledgers', advances: led.advances
       };
     }
+    const want = dir === 'recv' ? 'receivable' : 'payable';
+    const out = {
+      rows: ctx.bills.filter((b) => b.direction === want && !b.advance)
+        .map((b) => ({ party: b.party_name || 'Unknown', amount: Math.abs(num(b.closing_balance)), due: b.due_date || null, ref: b.bill_ref || null, src: 'tally' }))
+        .filter((r) => r.amount > 0),
+      truncated: !!(ctx.book && ctx.book.caps && ctx.book.caps.bills && ctx.book.caps.bills.truncated)
+    };
+    if (dir === 'recv' && ctx.billTie && (ctx.billTie.trimmed.parties || ctx.billTie.added.parties)) Object.assign(out, { basis: 'bills_tied_to_ledgers', tie: ctx.billTie });
+    return out;
   }
+  // Books couldn't be read: Tally's bill list as stored.
   const { bills, truncated } = await loadTallyBills(accountId);
   const want = dir === 'recv' ? 'receivable' : 'payable';
   return {
@@ -290,7 +310,7 @@ async function loadRows(accountId, dir, ctx = {}) {
     if (r.status === 'fulfilled') {
       rows.push(...r.value.rows);
       coverage[n] = { rows: r.value.rows.length, truncated: r.value.truncated, cap: MAX_ROWS };
-      if (r.value.basis) Object.assign(coverage[n], { basis: r.value.basis, advances: r.value.advances });
+      if (r.value.basis) Object.assign(coverage[n], { basis: r.value.basis, advances: r.value.advances, tie: r.value.tie });
     } else {
       errors[n] = String((r.reason && r.reason.message) || r.reason).slice(0, 200);
     }
@@ -303,7 +323,7 @@ async function loadRows(accountId, dir, ctx = {}) {
  * see (see actor.js); a direction left out is simply not returned.
  */
 async function positionForAccount(accountId, { dirs = ['recv', 'pay'], withRows = true, now = new Date() } = {}) {
-  tallyBillCache.delete(accountId);   // one fresh read per position; the two directions then share it
+  tallyBillCache.delete(accountId); tallyCtxCache.delete(accountId);   // one fresh read per position; the two directions then share it
   const today = todayIST(now);
   const zohoOrg = await zohoOrgRef(accountId).catch(() => null);
   const out = { as_of: today, rules: 'Zoho > Tally > Odoo > manual; agree within 2% or Rs 1; source totals never added' };

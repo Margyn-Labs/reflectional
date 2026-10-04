@@ -219,6 +219,16 @@ function tallyInputCandidates(){
       put('paySoon', soon);
     }
   } catch(e){ /* keep the bill figures */ }
+  // Customers: when their bills were lined up with ledger balances (moneyModel / billTieOut.js), receivables and
+  // the 90+ share come from that same list.
+  try {
+    const R = typeof mgPos !== 'undefined' && mgPos && mgPos.receivables;
+    if(R && R.coverage && R.coverage.tally && R.coverage.tally.basis === 'bills_tied_to_ledgers'){
+      const rows = R.groups.filter(g => g.primary === 'tally').flatMap(g => (g.by.tally && g.by.tally.rows) || []);
+      put('recvTotal', rows.reduce((a, r) => a + (Number(r.amount) || 0), 0));
+      put('recv90', rows.filter(r => r.days !== null && r.days < -90).reduce((a, r) => a + (Number(r.amount) || 0), 0));
+    }
+  } catch(e){ /* keep the bill figures */ }
   put('revenue', v.sales_30d);
   // Revenue, burn and profit from Tally's own monthly P&L, averaged over up to six
   // closed months: the latest month is often missing late-booked expenses (salaries, rent).

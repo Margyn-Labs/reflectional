@@ -156,6 +156,12 @@ function mgPosNote(dir){
   }
   const bits = [];
   const tc = (P.coverage || {}).tally;
+  if(tc && tc.basis === 'bills_tied_to_ledgers' && tc.tie){
+    const t = tc.tie, parts = [];
+    if(t.trimmed && t.trimmed.parties) parts.push(fmtINR(t.trimmed.amount) + ' of bills for ' + t.trimmed.parties + ' customer' + (t.trimmed.parties === 1 ? '' : 's') + ' is already paid according to their ledger (the bills were never knocked off in Tally), so the oldest are left out');
+    if(t.added && t.added.parties) parts.push(fmtINR(t.added.amount) + ' owed by ' + t.added.parties + ' customer' + (t.added.parties === 1 ? '' : 's') + ' isn’t split into bills in Tally, so it is shown from their entries');
+    bits.push('Each customer’s total follows their ledger balance in Tally: ' + parts.join('; '));
+  }
   if(tc && tc.basis === 'supplier_ledgers') bits.push('Tally doesn’t keep your suppliers’ bills one by one, so what you owe each supplier is worked out from your purchases and payments, oldest bills paid first. Due dates are the bill date plus how long you usually take to pay that supplier' +
     (Number(tc.advances) >= 1 ? '. ' + fmtINR(tc.advances) + ' paid ahead to suppliers is not netted off' : ''));
   Object.entries(P.coverage || {}).forEach(([s, c]) => { if(c.truncated) bits.push(MG_SRC_NAME[s] + ' has more than ' + c.cap.toLocaleString('en-IN') + ' open items; the first ' + c.rows.toLocaleString('en-IN') + ' are shown'); });

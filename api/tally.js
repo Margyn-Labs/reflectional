@@ -364,6 +364,15 @@ async function handleAnalytics(req, res) {
       Object.assign(wc, { payables_billwise: wc.payables, payables: led.total, supplier_advances: led.advances, payables_basis: 'supplier_ledgers' });
     } catch (e) { console.error('[tally] supplier ledgers failed:', e.message); }
   }
+  // Customers: owed = their bills lined up with their ledger balances (billTieOut.js), the same list Receivables shows.
+  if (ctxB && ctxB.billTie && (ctxB.billTie.trimmed.parties || ctxB.billTie.added.parties)) {
+    const recvB = ctxB.bills.filter((b) => b.direction !== 'payable' && !b.advance);
+    const tot = recvB.reduce((a, b) => a + Math.abs(Number(b.closing_balance) || 0), 0);
+    const od = recvB.filter((b) => Number(b.overdue_days) > 0).reduce((a, b) => a + Math.abs(Number(b.closing_balance) || 0), 0);
+    Object.assign(wc, { receivables_billwise: wc.receivables, receivables: Math.round(tot * 100) / 100, receivables_overdue: Math.round(od * 100) / 100, receivables_basis: 'bills_tied_to_ledgers', bill_tie: ctxB.billTie });
+    const t = ctxB.billTie;
+    out.quality.reasons.push(`What customers owe follows their ledger balances: ${t.trimmed.parties ? `₹${t.trimmed.amount.toLocaleString('en-IN')} of bills for ${t.trimmed.parties} customers is already paid by their ledgers (not knocked off in Tally)` : ''}${t.trimmed.parties && t.added.parties ? '; ' : ''}${t.added.parties ? `₹${t.added.amount.toLocaleString('en-IN')} owed by ${t.added.parties} customers isn't split into bills in Tally, so it is taken from their entries` : ''}.`);
+  }
   try {
     const [promises, runs] = await Promise.all([forecastStore.promises(user.id), forecastStore.pastRuns(user.id)]);
     forecast_v2 = cashFlow.build(ctxB || prepareBooks(book, { analytics: out }), { promises, pastRuns: runs });
@@ -803,8 +812,25 @@ async function handleHealth(req, res) {
   if (t.version) patch.tally_version = String(t.version).slice(0, 40);
   if (t.edition) patch.tally_edition = String(t.edition).slice(0, 20);
   if (typeof body.company === 'string' && body.company.trim()) patch.company_name = body.company.trim().slice(0, 120);
+  // A sync that stopped early (Tally closed, PC asleep) reports no counts. Keep the last report's Tally counts
+  // (ledgers, monthly vouchers, bills) beside the new errors, dated, instead of wiping them (4 Oct 2026: Care
+  // Hygiene's only report was a failed one, so "does Margyn have everything Tally holds?" had no answer).
+  let diagnostics = body;
   try {
-    await updateRows('tally_installs', `id=eq.${inst.id}`, Object.assign({}, patch, { diagnostics: body }));
+    const prevRows = await selectRows('tally_installs', `select=diagnostics&id=eq.${inst.id}&limit=1`);
+    const prev = prevRows && prevRows[0] && prevRows[0].diagnostics && typeof prevRows[0].diagnostics === 'object' ? prevRows[0].diagnostics : null;
+    if (prev) {
+      diagnostics = Object.assign({}, body);
+      const kept = {};
+      const hasMonths = (d) => d && d.vouchers && d.vouchers.months && Object.keys(d.vouchers.months).length;
+      if (!hasMonths(body) && hasMonths(prev)) { diagnostics.vouchers = Object.assign({}, prev.vouchers, body.vouchers ? { last_attempt: body.vouchers } : {}); kept.vouchers = (prev.kept_from && prev.kept_from.vouchers) || prev.at || null; }
+      if (!(body.ledgers && body.ledgers.received != null) && prev.ledgers && prev.ledgers.received != null) { diagnostics.ledgers = prev.ledgers; kept.ledgers = (prev.kept_from && prev.kept_from.ledgers) || prev.at || null; }
+      if (!body.bills && prev.bills) { diagnostics.bills = prev.bills; kept.bills = (prev.kept_from && prev.kept_from.bills) || prev.at || null; }
+      if (Object.keys(kept).length) diagnostics.kept_from = kept;
+    }
+  } catch (e) { /* column missing or read failed: store the report as sent */ }
+  try {
+    await updateRows('tally_installs', `id=eq.${inst.id}`, Object.assign({}, patch, { diagnostics }));
   } catch (e) {
     // diagnostics column not migrated yet: keep the product facts at least
     await updateRows('tally_installs', `id=eq.${inst.id}`, patch).catch(() => {});
