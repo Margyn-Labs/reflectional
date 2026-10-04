@@ -31,7 +31,12 @@ async function mgLoadMargin(force){
     const moved = mgApplyCashHistory(typeof snapshots !== 'undefined' ? snapshots : null);
     if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView !== 'margin' && (moved || ['home', 'cash', 'reports', 'cfopack'].includes(mgCurrentView))) mgRenderOwn(mgCurrentView);
   } catch(e){ mgMarErr = true; console.error('[margyn] margin:', e.message); }
-  finally { mgMarBusy = false; if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'margin') mgRenderMargin(); }
+  finally {
+    mgMarBusy = false;
+    if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'margin') mgRenderMargin();
+    // Reports (view 'analytics') opened while the books were still loading said "Reading your books…" for good.
+    if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'analytics' && typeof renderAnalyticsView === 'function') renderAnalyticsView();
+  }
 }
 
 /* Cash, day by day, from the books (tallyAnalytics cash_history, 2026-10-04).
