@@ -14,7 +14,7 @@ const D = (s) => Date.parse(s + 'T00:00:00Z');
 
 // ---------- a business, Apr 1 – Oct 3 ----------
 const V = []; let g = 0;
-const bal = { Bank: 2000000, Alpha: 0, Beta: 0, Supplier: 0 };
+const bal = { Bank: 2000000, Alpha: 0, Beta: 0, Gamma: 0, Supplier: 0 };
 const v = (type, date, party, entries, extra) => { V.push(Object.assign({ tally_guid: 'g' + (++g), voucher_type: type, voucher_number: String(g), date, party_name: party, amount: Math.abs(entries[0].amount), is_cancelled: false, entries }, extra || {})); };
 const sale = (date, party, amt) => { const tax = Math.round(amt * 0.18); v('Sales', date, party, [{ ledger: party, amount: -(amt + tax), is_party: true }, { ledger: 'Sales', amount: amt }, { ledger: 'Output GST', amount: tax }]); bal[party] += amt + tax; return amt + tax; };
 const receipt = (date, party, amt) => { v('Receipt', date, party, [{ ledger: party, amount: amt, is_party: true }, { ledger: 'Bank', amount: -amt }]); bal[party] -= amt; bal.Bank += amt; };
@@ -24,6 +24,8 @@ for (let t = D('2026-04-01'); t < today; t += DAY) {
   const d = new Date(t), dow = d.getUTCDay(), dom = d.getUTCDate(), ds = iso(t);
   if (dow === 1) { const a = sale(ds, 'Alpha', 300000); if (t + 30 * DAY < today) receipt(iso(t + 30 * DAY), 'Alpha', a); }
   if (dow === 3) { const b = sale(ds, 'Beta', 200000); if (t + 60 * DAY < today) receipt(iso(t + 60 * DAY), 'Beta', b); }
+  // Gamma pays unevenly: 20, 45, 70 or 110 days, so at any time some of its invoices are past its usual day.
+  if (dow === 4) { const k = Math.round((t - D('2026-04-01')) / DAY / 7) % 4, lag = [20, 45, 70, 110][k]; const c = sale(ds, 'Gamma', 150000); if (t + lag * DAY < today) receipt(iso(t + lag * DAY), 'Gamma', c); }
   if (dow === 2) { v('Purchase', ds, 'Supplier', [{ ledger: 'Supplier', amount: 250000, is_party: true }, { ledger: 'Purchases', amount: -250000 }]); bal.Supplier -= 250000; }
   if (dow === 5) pay(ds, 'Supplier', 240000, 'Supplier');
   if (dom === 1) pay(ds, 'Salary', 400000);
@@ -35,7 +37,7 @@ V.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 for (const m of ['2026-10-10', '2026-11-10', '2026-12-10']) V.push({ tally_guid: 'emi' + m, voucher_type: 'Payment', voucher_number: 'E', date: m, party_name: null, amount: 50000, is_cancelled: false, entries: [{ ledger: 'Kotak Loan', amount: -50000 }, { ledger: 'Bank', amount: 50000 }] });
 // Balances as Tally gives them ('same' convention: debit negative, like the entries) for the whole year,
 // including the EMIs entered ahead. P&L ledgers carry closings too, so the engine can see which way they run.
-const GROUP = { Bank: 'Bank Accounts', Alpha: 'Sundry Debtors', Beta: 'Sundry Debtors', Supplier: 'Sundry Creditors', Sales: 'Sales Accounts',
+const GROUP = { Bank: 'Bank Accounts', Alpha: 'Sundry Debtors', Beta: 'Sundry Debtors', Gamma: 'Sundry Debtors', Supplier: 'Sundry Creditors', Sales: 'Sales Accounts',
   Purchases: 'Purchase Accounts', 'Output GST': 'Duties & Taxes', 'GST Payable': 'Duties & Taxes', Salary: 'Indirect Expenses',
   Rent: 'Indirect Expenses', 'Kotak Loan': 'Secured Loans' };
 const OPEN = { Bank: -2000000, 'Kotak Loan': 1000000 };
@@ -69,7 +71,7 @@ const H = CF.customerHabits(ctx, today - 1);
 const hA = CF.habitOf(H.parties.get('alpha'), H.pool), hB = CF.habitOf(H.parties.get('beta'), H.pool);
 check('Alpha pays in ~30 days (learned)', hA.own && hA.p50 === 30, hA);
 check('Beta pays in ~60 days (learned)', hB.own && hB.p50 === 60, hB);
-check('open invoices rebuilt = what they owe', Math.round([...H.parties.values()].reduce((t, p) => t + p.open.reduce((s, x) => s + x.amt, 0), 0)) === Math.round(bal.Alpha + bal.Beta));
+check('open invoices rebuilt = what they owe', Math.round([...H.parties.values()].reduce((t, p) => t + p.open.reduce((s, x) => s + x.amt, 0), 0)) === Math.round(bal.Alpha + bal.Beta + bal.Gamma));
 
 // ---------- 3. recurring ----------
 const rec = CF.recurringPayments(ev, today - 1, new Set(['kotak loan']));
@@ -85,25 +87,56 @@ check('13 weeks, from today', out.weeks.length === 13 && out.weeks[0].from === '
 check('opens on today\'s cash', out.opening === Math.round(bal.Bank));
 check('EMIs on their dates', out.drivers.known_ahead.length === 3 && out.parts.known_ahead === -150000, out.parts);
 check('salary and rent scheduled (recurring)', out.drivers.recurring.some((r) => r.ledger === 'Salary') && out.parts.recurring < -1000000, out.parts);
-check('GST from the books on the 20th', out.drivers.gst_next && out.parts.gst < 0, out.drivers.gst_next);
+check('GST on the 20th, sized by what this business actually pays (₹1.5 L), not just the books\' estimate', out.drivers.gst_next && out.drivers.gst_next.date === '2026-10-20' && Math.abs(out.drivers.gst_next.amount - 150000) < 15000 && out.drivers.gst_next.books_estimate > 150000, out.drivers.gst_next);
 check('promise counted on its date', out.parts.promised === 236000, out.parts);
-check('sales pace learned (Alpha ₹3.54 L + Beta ₹2.36 L a week)', out.drivers.pace.sales_weekly === 590000, out.drivers.pace);
+check('sales pace learned (Alpha ₹3.54 L + Beta ₹2.36 L + Gamma ₹1.77 L a week)', out.drivers.pace.sales_weekly === 767000, out.drivers.pace);
 check('supplier pace learned (₹2.4 L a week)', out.drivers.pace.suppliers_weekly === 240000, out.drivers.pace);
 check('range: cautious ≤ likely ≤ hopeful at week 13', out.weeks[12].low <= out.weeks[12].close && out.weeks[12].close <= out.weeks[12].high, out.weeks[12]);
 check('daily path has 91 days', out.daily.close.length === 91);
-// A steady business: weekly net ≈ sales 5.9 L − suppliers 2.4 L − salary/rent ~1.15 L/wk − GST ~0.35 L/wk ≈ +2 L/wk.
-const drift = (out.weeks[12].close - out.opening) / 13;
-check('steady business drifts the way its books do (+₹1.5–2.6 L a week)', drift > 150000 && drift < 260000, drift);
+// A steady business: the forecast should drift the way the bank actually did over the last 8 weeks.
+const cp = ctx.analytics.cash_history.points, wasCash = cp[cp.length - 1 - 56].cash, nowCash = cp[cp.length - 1].cash;
+const bookDrift = (nowCash - wasCash) / 8, drift = (out.weeks[12].close - out.opening) / 13;
+check('steady business drifts the way its bank did (within 15%)', Math.abs(drift - bookDrift) / Math.abs(bookDrift) < 0.15, [drift, bookDrift]);
 
 // ---------- 7. self-check ----------
-check('self-check ran 3 times on the past', out.self_check.checks.length === 3, out.self_check);
-const worst = Math.max(...out.self_check.checks.map((c) => Math.abs(c.actual_customer_in - c.predicted_customer_in) / c.actual_customer_in));
-check('it predicted its own past within 25% on customer money in', worst < 0.25, out.self_check.checks);
-check('learned factor stays in bounds', out.self_check.collection_factor >= 0.6 && out.self_check.collection_factor <= 1.3);
+const sc = out.self_check;
+check('self-check ran on every past week it could (8+)', sc.runs >= 8 && sc.checks.every((c) => c.horizon_days === 28), sc.runs);
+const worst = Math.max(...sc.checks.map((c) => Math.abs(c.actual_customer_in - c.predicted_customer_in) / c.actual_customer_in));
+check('it predicted its own past within 10% on customer money in, every week', worst < 0.10, sc.checks);
+const cashMiss = sc.checks.reduce((t, c) => t + Math.abs(c.cash_error) / c.actual_cash, 0) / sc.checks.length;
+console.log(`  self-check: ${sc.runs} runs, 4-week cash miss ${(cashMiss * 100).toFixed(1)}% avg, factor ${sc.collection_factor}`);
+check('4 weeks out, cash missed by under 3% on average', cashMiss < 0.03, cashMiss);
+check('learned factor stays in bounds', sc.collection_factor >= 0.6 && sc.collection_factor <= 1.3);
+check('misses measured at 1, 2, 4 and 8 weeks', [1, 2, 4, 8].every((w) => sc.error_by_week[w] && sc.error_by_week[w].runs >= 3), sc.error_by_week);
+check('range comes from its own past misses and widens with time', out.band_basis === 'past_misses' && (out.weeks[12].high - out.weeks[12].low) > (out.weeks[0].high - out.weeks[0].low) && out.weeks.every((w) => w.low <= w.close && w.close <= w.high), out.weeks.map((w) => [w.low, w.close, w.high]).slice(0, 3));
+
+// ---------- accuracy: forecast as of every past week, scored part by part against what happened ----------
+function backtest(h) {
+  const res = [];
+  for (let asOf = today - h * DAY; asOf >= D('2026-06-15'); asOf -= 7 * DAY) {
+    const fc = CF.forecast(ctx, { asOfMs: asOf, opening: 0, trace: true });
+    const P = (k) => (fc.trace.parts_daily[k] || []).slice(0, h).reduce((t, x) => t + x, 0);
+    const win = ev.filter((e) => e.ms >= asOf && e.ms < asOf + h * DAY);
+    const A = (f) => win.filter(f).reduce((t, e) => t + e.amount, 0);
+    const pred = P('customers_open') + P('customers_new');
+    const act = A((e) => e.category === 'customers');
+    res.push({ as_of: iso(asOf), pred: Math.round(pred), act: Math.round(act), err: (pred - act) / act,
+      out: { sup: [Math.round(P('suppliers')), A((e) => e.category === 'suppliers')], run: [Math.round(P('recurring') + P('running_costs')), A((e) => e.category === 'running_costs')], tax: [Math.round(P('gst')), A((e) => e.category === 'tax')] } });
+  }
+  return res;
+}
+for (const h of [7, 28, 56]) {
+  const bt = backtest(h);
+  const mape = bt.reduce((t, r) => t + Math.abs(r.err), 0) / bt.length, bias = bt.reduce((t, r) => t + r.err, 0) / bt.length;
+  if (process.env.BT) console.log(JSON.stringify(bt.map((r) => [r.as_of, r.pred, r.act, r.out])));
+  console.log(`  backtest ${h}d: ${bt.length} runs, avg miss ${(mape * 100).toFixed(1)}%, bias ${(bias * 100).toFixed(1)}%`);
+  // A single week is lumpy (Gamma pays two invoices some weeks), so at 7 days only the size of the miss is held.
+  check(`customer money in over ${h} days: avg miss under ${h === 7 ? 25 : 8}%` + (h === 7 ? '' : ' and no lean over 6%'), mape < (h === 7 ? 0.25 : 0.08) && (h === 7 || Math.abs(bias) < 0.06), bt.slice(0, 4));
+}
 
 // ---------- history ----------
 check('weekly history of cash, receivables, payables', out.history.length > 20 && out.history.every((w) => w.cash != null && w.receivables != null));
-check('receivables today = what customers owe', out.receivables_today === Math.round(bal.Alpha + bal.Beta), [out.receivables_today, bal.Alpha + bal.Beta]);
+check('receivables today = what customers owe', out.receivables_today === Math.round(bal.Alpha + bal.Beta + bal.Gamma), [out.receivables_today, bal.Alpha + bal.Beta + bal.Gamma]);
 const lastW = out.history[out.history.length - 1];
 check('days to collect ≈ 45 (mix of 30 and 60)', lastW.days_to_collect >= 38 && lastW.days_to_collect <= 52, lastW);
 
