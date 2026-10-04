@@ -159,7 +159,8 @@ const monthKey = (dt) => dt.toISOString().slice(0, 7);
 const DAY = 86400000;
 
 // Day Book also lists vouchers with no accounting effect. Never count these.
-const NON_ACCOUNTING = /\b(sales|purchase)\s*orders?\b|delivery\s*note|receipt\s*note|rejections?\s*(in|out)|memorandum|stock\s*journal|physical\s*stock|job\s*work|material\s*(in|out)|reversing\s*journal|manufacturing\s*journal|stock\s*transfer|payroll|attendance/i;
+const NON_ACCOUNTING = /\b(sales|purchase)\s*orders?\b|delivery\s*note|receipt\s*note|rejections?\s*(in|out)|memorandum|stock\s*journal|physical\s*stock|job\s*work|material\s*(in|out)|reversing\s*journal|manufacturing\s*journal|stock\s*transfer|attendance/i;
+// Payroll is NOT here: Tally payroll vouchers post salaries to the books (2026-10-04). Attendance doesn't.
 const isNonAccounting = (t) => NON_ACCOUNTING.test(t || '');
 const isCreditNote = (t) => /credit\s*note|sales?\s*returns?/i.test(t || '');
 const isDebitNote = (t) => /debit\s*note|purchases?\s*returns?/i.test(t || '');

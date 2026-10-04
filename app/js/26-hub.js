@@ -33,15 +33,17 @@ async function mgHubLoad(force){
   if(typeof currentUser === 'undefined' || !currentUser) return;
   mgHub.busy = true;
   try {
-    let q = sbClient.from('chat_messages').select('role,content,thread_key,created_at').eq('user_id', currentUser.id);
-    if(typeof mgChatScope === 'function') q = mgChatScope(q);
-    const chat = await q.order('created_at', { ascending:true }).limit(3000);
-    mgHub.chat = (chat && chat.data) || [];
+    // The newest 3,000, oldest first. Asking oldest-first with .limit(3000) got the OLDEST 1,000 (the database's
+    // per-request ceiling), so once there were more, the latest conversations vanished from the hub.
+    const mk = () => { let q = sbClient.from('chat_messages').select('role,content,thread_key,created_at').eq('user_id', currentUser.id); if(typeof mgChatScope === 'function') q = mgChatScope(q); return q.order('created_at', { ascending:false }); };
+    const chat = await sbAll(mk, 3000);
+    mgHub.chat = ((chat && chat.data) || []).reverse();
     // The owner's own WhatsApp chat only: other people on the account have their own threads with Margyn,
     // the same way app conversations are kept per person (mgChatScope).
     const mine = String((currentProfile && currentProfile.whatsapp_phone) || '').replace(/[^\d]/g, '');
     const owner = typeof mgActor === 'undefined' || !mgActor || mgActor.isOwner;
-    const wa = owner ? await sbClient.from('whatsapp_conversations').select('role,content,created_at,from_phone').order('created_at', { ascending:true }).limit(3000) : null;
+    const wa = owner ? await sbAll(() => sbClient.from('whatsapp_conversations').select('role,content,created_at,from_phone').order('created_at', { ascending:false }), 3000) : null;
+    if(wa && wa.data) wa.data.reverse();
     const last10 = (x) => String(x || '').replace(/[^\d]/g, '').slice(-10);
     mgHub.wa = ((wa && !wa.error && wa.data) || []).filter(m => !m.from_phone || (mine && last10(m.from_phone) === last10(mine)));
   } catch(e){ console.warn('[margyn] hub:', e.message); mgHub.chat = mgHub.chat || []; mgHub.wa = mgHub.wa || []; }

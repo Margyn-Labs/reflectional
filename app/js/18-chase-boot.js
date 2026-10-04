@@ -124,7 +124,7 @@ async function persistChase(mode){
 async function loadChaseTargets(){
   if(!currentUser) return;
   try {
-    const { data, error } = await sbClient.from('whatsapp_chase_targets').select('*').eq('user_id', currentUser.id);
+    const { data, error } = await sbAll(() => sbClient.from('whatsapp_chase_targets').select('*').eq('user_id', currentUser.id).order('id', { ascending:true }));
     if(error) throw error;
     chaseTargets = data || [];
   } catch(e){ console.error('[margyn] loadChaseTargets:', e); chaseTargets = []; }

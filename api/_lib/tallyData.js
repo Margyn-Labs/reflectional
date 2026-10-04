@@ -105,6 +105,8 @@ async function loadTallyBook(userId, opts) {
     agentVersion: (inst.chosen.find((i) => i.agent_version) || {}).agent_version || null,
     diagnostics: (inst.chosen.find((i) => i.diagnostics) || {}).diagnostics || null,
     ledgers: L.rows, bills: B.rows, vouchers: V.rows, truncated: V.truncated,
+    // Read caps (5,000 ledgers, 10,000 bills, 20,000 vouchers): the completeness check says when one is hit.
+    caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: 20000, truncated: V.truncated } },
     overrides, aiPlaced, syncRuns
   };
   _cache.set(key, { at: Date.now(), book });

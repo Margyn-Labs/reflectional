@@ -224,6 +224,20 @@ async function routeFor(session){
   await refreshAll();
   if(typeof mgApplyActor === 'function') mgApplyActor();
 }
+/* Every row a query matches, past the database's 1,000-row ceiling (a plain .limit(3000) still returns
+   1,000). `make` builds a fresh query each call; pages of 1,000 via .range(), up to `max`. Same { data, error }
+   shape as a supabase-js call. */
+async function sbAll(make, max){
+  max = max || 20000;
+  const out = [];
+  for(let from = 0; from < max; from += 1000){
+    const { data, error } = await make().range(from, Math.min(from + 999, max - 1));
+    if(error) return { data:out.length ? out : null, error };
+    out.push(...(data || []));
+    if(!data || data.length < 1000) break;
+  }
+  return { data:out, error:null };
+}
 async function loadProfile(){
   const { data, error } = await sbClient.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
   if(error){ console.error('[margyn] loadProfile:', error); return null; }

@@ -152,9 +152,8 @@ async function loadAllThreadSummaries(){
   // ones ate most of that window. Not a perfect fix (a proper one would
   // be a small Postgres view doing DISTINCT ON thread_key server-side),
   // but comfortably covers real usage without a new migration.
-  let q = sbClient.from('chat_messages').select('*').eq('user_id', currentUser.id);
-  if(typeof mgChatScope === 'function') q = mgChatScope(q);
-  const { data, error } = await q.order('created_at', { ascending:false }).limit(3000);
+  const mk = () => { let q = sbClient.from('chat_messages').select('*').eq('user_id', currentUser.id); if(typeof mgChatScope === 'function') q = mgChatScope(q); return q.order('created_at', { ascending:false }); };
+  const { data, error } = await sbAll(mk, 3000);   // .limit(3000) alone stopped at 1,000
   if(error){ console.error('[margyn] loadAllThreadSummaries:', error); return []; }
   const seen = new Map();
   data.forEach(m => { if(!seen.has(m.thread_key)) seen.set(m.thread_key, m); });
