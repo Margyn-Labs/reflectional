@@ -50,7 +50,7 @@ for (const mode of ['uniform', 'habit']) {
   const miss = errs.reduce((t, e) => t + Math.abs(e), 0) / errs.length, lean = errs.reduce((t, e) => t + e, 0) / errs.length;
   const flow = sc.checks.reduce((t, c) => t + c.actual_customer_in, 0) / sc.checks.length;
   const cashMiss = sc.checks.reduce((t, c) => t + Math.abs(c.cash_error), 0) / sc.checks.length / flow;
-  console.log(`  ${mode}: ${ctx.rows.length} entries, ${ms} ms, ${sc.runs} runs, customer money in: miss ${(miss * 100).toFixed(1)}% lean ${(lean * 100).toFixed(1)}%, cash miss ${(cashMiss * 100).toFixed(1)}% of a month's collections, factor ${sc.collection_factor}`);
+  console.log(`  ${mode}: ${ctx.rows.length} entries, ${ms} ms, ${sc.runs} runs, customer money in: miss ${(miss * 100).toFixed(1)}% lean ${(lean * 100).toFixed(1)}%, cash miss ${(cashMiss * 100).toFixed(1)}% of a month's collections, factor ${sc.collection_factor}, suppliers by ${sc.supplier_method} ${JSON.stringify(sc.supplier_miss)}`);
   check(`${mode}: balances read the right way round`, ctx.analytics.quality.balance_sign.effective === 'same');
   check(`${mode}: self-check ran on 8+ past weeks`, sc.runs >= 8);
   check(`${mode}: 4-week customer money in, avg miss under 6%`, miss < 0.06, errs);

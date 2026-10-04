@@ -93,7 +93,10 @@ check('sales pace learned (Alpha ₹3.54 L + Beta ₹2.36 L + Gamma ₹1.77 L a 
 check('supplier pace learned (₹2.4 L a week)', out.drivers.pace.suppliers_weekly === 240000, out.drivers.pace);
 check('range: cautious ≤ likely ≤ hopeful at week 13', out.weeks[12].low <= out.weeks[12].close && out.weeks[12].close <= out.weeks[12].high, out.weeks[12]);
 check('daily path has 91 days', out.daily.close.length === 91);
-const supDays = CF.forecast(ctx, { asOfMs: today, opening: 0, trace: true }).trace.parts_daily.suppliers;
+// This business pays a fixed ₹2.4 L every Friday whatever was billed: the self-check should find that weekly pace
+// beats bill-by-bill timing here, and the forecast should pay suppliers on Fridays.
+check('self-check picks the supplier method that predicted this business better (weekly pace)', out.self_check.supplier_method === 'pace' && out.drivers.suppliers.method === 'pace', [out.self_check.supplier_method, out.self_check.supplier_miss]);
+const supDays = CF.forecast(ctx, { asOfMs: today, opening: 0, trace: true, supplierMethod: out.self_check.supplier_method }).trace.parts_daily.suppliers;
 const friday = supDays.filter((x, d) => new Date(today + d * DAY).getUTCDay() === 5).reduce((a, b) => a + b, 0), allSup = supDays.reduce((a, b) => a + b, 0);
 check('supplier payments land on Fridays, the day this business pays them', Math.abs(friday / allSup - 1) < 0.01, [friday, allSup]);
 const sc0 = out.self_check.checks[0];
@@ -102,6 +105,12 @@ check('self-check scores each kind of money (suppliers, running costs, tax)', sc
 const cp = ctx.analytics.cash_history.points, wasCash = cp[cp.length - 1 - 56].cash, nowCash = cp[cp.length - 1].cash;
 const bookDrift = (nowCash - wasCash) / 8, drift = (out.weeks[12].close - out.opening) / 13;
 check('steady business drifts the way its bank did (within 15%)', Math.abs(drift - bookDrift) / Math.abs(bookDrift) < 0.15, [drift, bookDrift]);
+
+// GST paid from an account that isn't cash (Care Hygiene: no GST out of the bank in Jul–Sep): still listed as due,
+// not taken from cash.
+const noGst = E.prepare(Object.assign({}, book, { vouchers: V.filter((x) => !x.entries.some((e) => e.ledger === 'GST Payable')) }), { now: NOW });
+const ng = CF.build(noGst, {});
+check('GST paid from elsewhere: listed as due, not taken from cash', ng.drivers.gst_next && ng.drivers.gst_next.paid_from_elsewhere === true && ng.drivers.gst_next.books_estimate > 0 && !ng.parts.gst, [ng.drivers.gst_next, ng.parts.gst]);
 
 // ---------- 7. self-check ----------
 const sc = out.self_check;
