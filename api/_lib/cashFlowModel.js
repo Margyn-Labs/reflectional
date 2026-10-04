@@ -229,8 +229,10 @@ function habitOf(p, pool) {
  */
 function survivalFrom(paid, open, age) {
   const items = [];
-  for (const x of paid) if (x.v > age && x.w > 0) items.push({ t: x.v - age, w: x.w, e: 1 });
-  for (const x of open) if (x.v > age && x.w > 0) items.push({ t: x.v - age, w: x.w, e: 0 });
+  // Paid on or after this age (day 0 = today: an invoice exactly as old as the customer's usual day is due now).
+  // Still-open invoices are known unpaid up to the age they had yesterday (the cut), so they count from there.
+  for (const x of paid) if (x.v >= age && x.w > 0) items.push({ t: x.v - age, w: x.w, e: 1 });
+  for (const x of open) if (x.v >= age && x.w > 0) items.push({ t: x.v - age, w: x.w, e: 0 });
   if (items.filter((x) => x.e).length < 3) return null;
   items.sort((a, b) => a.t - b.t);
   let atRisk = items.reduce((t, x) => t + x.w, 0), S = 1;
@@ -242,10 +244,15 @@ function survivalFrom(paid, open, age) {
     if (d > 0 && atRisk > 0) { const p = S * d / atRisk; pmf.push([t, p]); S -= p; }
     atRisk -= gone;
   }
-  return { pmf, unpaid: Math.max(0, S) };
+  const left = Math.max(0, S);
+  // What's left is slower than any invoice seen paid (still open past the slowest one): not counted in 13 weeks.
+  return { pmf, unpaid: left };
 }
-/** Open invoices at the cut as censored samples: [{v: age in days, w: amount}]. */
-function openAges(p, cutMs) { return (p ? p.open : []).filter((x) => x.ms != null).map((x) => ({ v: Math.round((cutMs - x.ms) / DAY), w: x.amt })); }
+/**
+ * Open invoices at the cut as censored samples: [{v: days, w: amount}]. The cut is the end of yesterday, so an
+ * invoice open then is known unpaid only through yesterday's age (whether today's payment comes isn't seen yet).
+ */
+function openAges(p, cutMs) { return (p ? p.open : []).filter((x) => x.ms != null).map((x) => ({ v: Math.floor((cutMs - x.ms) / DAY), w: x.amt })); }
 function arrival(p, habits, age, cutMs) {
   const memo = habits.memo || (habits.memo = new Map());
   if (p && p.samples.length >= 3) {
@@ -560,7 +567,7 @@ function forecast(ctx, o) {
       pace: { sales_weekly: r0(salesPace.median), suppliers_weekly: r0(supPace.median), purchases_weekly: r0(purchPace.median), running_costs_weekly: r0(otherPace.median) },
       suppliers: { method: supMethod, by_supplier: bySupplier, open_bills: r0(supOpen), undated_left_out: r0(supUndated),
         pay_days: supFresh ? { p25: Number.isFinite(arrivalPct(supFresh, 0.25)) ? arrivalPct(supFresh, 0.25) : null, p50: Number.isFinite(arrivalPct(supFresh, 0.5)) ? arrivalPct(supFresh, 0.5) : null, p75: Number.isFinite(arrivalPct(supFresh, 0.75)) ? arrivalPct(supFresh, 0.75) : null } : null },
-      collection_days: { p25: Number.isFinite(q[0]) ? q[0] : null, p50: Number.isFinite(q[1]) ? q[1] : null, p75: Number.isFinite(q[2]) ? q[2] : null, never_share: Math.round(fresh.unpaid * 100) / 100 },
+      collection_days: { p25: Number.isFinite(q[0]) ? q[0] : null, p50: Number.isFinite(q[1]) ? q[1] : null, p75: Number.isFinite(q[2]) ? q[2] : null, slower_than_seen_share: Math.round(fresh.unpaid * 100) / 100 },
       gst_next: gstNext
     }
   };
@@ -679,13 +686,14 @@ function build(ctx, o) {
   } else fc.band_basis = 'customer_spread';
   const hist = positionHistory(ctx);
   const notes = [];
-  if (check.collection_factor !== 1) notes.push(`Run on each of the last ${check.runs} weeks and checked against what happened, customers paid ${Math.round(check.collection_factor * 100)}% of what it expected, so money in from customers is scaled to match.`);
+  const nice = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return d + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]; };
+  if (Math.abs(check.collection_factor - 1) >= 0.03) notes.push(`Run on each of the last ${check.runs} weeks and checked against what happened, customers paid ${Math.round(check.collection_factor * 100)}% of what it expected, so money in from customers is scaled to match.`);
   const m4 = check.error_by_week[4];
   if (m4) notes.push(`Four weeks out it has typically been off by ₹${m4.typical_miss.toLocaleString('en-IN')} on your cash (before loans and overdraft), so the range shown is that wide.`);
   if (fc.drivers.doubtful.amount) notes.push(`₹${fc.drivers.doubtful.amount.toLocaleString('en-IN')} owed for more than six months (or far longer than that customer usually takes) is left out.`);
   const g = fc.drivers.gst_next;
-  if (g && g.paid_from_elsewhere) notes.push(`GST: your books show about ₹${g.books_estimate.toLocaleString('en-IN')} due on ${g.date}, but for the last three months no GST went out of the accounts counted as cash here (it was paid from somewhere else, such as your overdraft), so it isn’t taken from this forecast.`);
-  else if (g && g.paid_vs_estimate !== 1) notes.push(`GST: you’ve actually paid about ${Math.round(g.paid_vs_estimate * 100)}% of what your books estimated in recent months, so ₹${g.amount.toLocaleString('en-IN')} is expected on ${g.date}.`);
+  if (g && g.paid_from_elsewhere) notes.push(`GST: your books show about ₹${g.books_estimate.toLocaleString('en-IN')} due on ${nice(g.date)}, but for the last three months no GST went out of the accounts counted as cash here (it was paid from somewhere else, such as your overdraft), so it isn’t taken from this forecast.`);
+  else if (g && g.paid_vs_estimate !== 1) notes.push(`GST: you’ve actually paid about ${Math.round(g.paid_vs_estimate * 100)}% of what your books estimated in recent months, so ₹${g.amount.toLocaleString('en-IN')} is expected on ${nice(g.date)}.`);
   if (check.supplier_miss) notes.push(check.supplier_method === 'pace'
     ? `Supplier payments follow your recent weekly pace: on your last ${check.runs} weeks that predicted them better than bill-by-bill timing.`
     : `Supplier payments follow each supplier’s open bills and how quickly you usually pay them: on your last ${check.runs} weeks that predicted them better than a weekly average.`);

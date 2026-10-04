@@ -168,7 +168,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(250);
   ok(/13-week cash forecast/.test(await p.textContent('#view-home')), 'Home shows the 13-week forecast');
   await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
-  ok(await p.isVisible('.mg-drawer') && (await p.$$('.mg-drawer input[data-fc]')).length === 11, 'Adjust opens the assumptions (11 inputs)');
+  ok(await p.isVisible('.mg-drawer') && (await p.$$('.mg-drawer input[data-fc]')).length === 13, 'Adjust opens the assumptions (2 ways to make it + 11 inputs)');
   await p.fill('.mg-drawer input[data-fc="collectDelay"]', '60'); await p.waitForTimeout(200);
   ok(/pay 60 days after/.test(await p.textContent('#view-home .mg-fine')), 'changing an assumption updates the forecast live');
   await p.uncheck('.mg-drawer input[data-fc="enabled"]'); await p.waitForTimeout(200);

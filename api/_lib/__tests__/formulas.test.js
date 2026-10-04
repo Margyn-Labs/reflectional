@@ -23,7 +23,11 @@ const F = require('../../../app/js/margyn-formulas.js');
   check('Pulse weights match VITAL_WEIGHTS', JSON.stringify(F.WEIGHTS) === JSON.stringify(weights), { weights });
   check('tolerance matches CONFLICT_TOLERANCE', F.TOLERANCE === tol);
   check('the Pulse formula text carries every weight', Object.keys(weights).every(l => F.FIGURES.pulse_score.formula.includes(Math.round(weights[l] * 100) + '% × ' + l.replace(' (30d)', '').replace('Payables Due', 'Payables Due'))), F.FIGURES.pulse_score.formula);
-  check('the forecast text quotes its real defaults', /\+ 15 days/.test(F.FIGURES.forecast.formula) && /90 days/.test(F.FIGURES.forecast.formula) && /week 5/.test(F.FIGURES.forecast.formula) && /20th/.test(F.FIGURES.forecast.formula));
+  const fcOwn = F.FIGURES.forecast.notes.join(' ');
+  check('the forecast text quotes its own-assumption defaults', /\+ 15 days/.test(fcOwn) && /90 days/.test(fcOwn) && /week 5/.test(fcOwn) && /20th/.test(fcOwn));
+  const cfm = read('api/_lib/cashFlowModel.js');
+  check('the learned forecast text matches the model (12 past weeks, ± 1.28 ×, Kaplan-Meier)', /back <= 84/.test(cfm) && /1\.28 \* s/.test(cfm) && /survivalFrom/.test(cfm) &&
+    /12 weeks/.test(F.FIGURES.forecast.formula) && /1\.28/.test(F.FIGURES.forecast.formula) && /Kaplan-Meier/.test(F.FIGURES.forecast.formula));
   const fc = read('app/js/19a-forecast.js');
   check('...and the code still has them', /collectDelay:15/.test(fc) && /doubtfulAfter:90/.test(fc) && /billsStart:5/.test(fc) && /getDate\(\) === 20/.test(fc) && /floor:Math.round\(burn \/ 2\)/.test(fc));
   check('capital readiness multipliers match the code', /pulse_score >= 70 \? 3 : latest.pulse_score >= 40 \? 2 : 1/.test(read('app/js/08-khata.js')) && /mid\*0\.8/.test(read('app/js/08-khata.js')));
