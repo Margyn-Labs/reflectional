@@ -162,11 +162,13 @@ function positionHistory(ctx) {
 /* ------------------------------------------------------------------ 2. how customers pay */
 
 /**
- * FIFO: each customer's receipts and credits settle their oldest open invoices first.
+ * FIFO: each customer's receipts and credits settle their oldest open invoices first (and each supplier's
+ * payments their oldest bills, with bucket 'creditor').
  * Only entries on or before `cutMs` are used, so the same function rebuilds the past (for self-checks).
  * Returns { parties: Map key -> { name, open:[{ms|null, amt}], samples:[{v:days, w:amt}], lastReceiptMs }, pool:[{v,w}] }.
  */
-function customerHabits(ctx, cutMs) {
+function partyHabits(ctx, cutMs, bucket) {
+  const want = bucket || 'debtor', sg = want === 'creditor' ? -1 : 1;   // a supplier's bill is a credit
   const debitPos = balanceSign(ctx);
   const parties = new Map();
   const P = (name) => {
@@ -175,8 +177,8 @@ function customerHabits(ctx, cutMs) {
     return parties.get(k);
   };
   for (const l of ctx.ledgers || []) {
-    if (ctx.cls(l.name) !== 'debtor' || l.opening_balance == null) continue;
-    const ob = debitPos(l.opening_balance);
+    if (ctx.cls(l.name) !== want || l.opening_balance == null) continue;
+    const ob = sg * debitPos(l.opening_balance);
     if (ob > 0.5) P(l.name).open.push({ ms: null, amt: ob });   // carried from last year: date unknown
     else if (ob < -0.5) P(l.name).advance += -ob;
   }
@@ -185,14 +187,14 @@ function customerHabits(ctx, cutMs) {
     if (ms > cutMs) break;   // rows are in date order
     const cashIn = r.lines.some((l) => CASH.has(l.bucket));
     for (const l of r.lines) {
-      if (l.bucket !== 'debtor') continue;
-      const p = P(l.ledger);
-      if (l.amount < 0) {   // debit: they owe more (an invoice)
-        let amt = -l.amount;
+      if (l.bucket !== want) continue;
+      const p = P(l.ledger), amount = sg * l.amount;
+      if (amount < 0) {   // they owe more / we owe more (an invoice or a bill)
+        let amt = -amount;
         if (p.advance > 0) { const use = Math.min(p.advance, amt); p.advance -= use; amt -= use; if (cashIn === false && use > 0) p.samples.push({ v: 0, w: use }); }
         if (amt > 0.5) p.open.push({ ms, amt });
-      } else if (l.amount > 0) {   // credit: paid (or a credit note / write-off)
-        let amt = l.amount;
+      } else if (amount > 0) {   // settled (or a credit/debit note, a write-off)
+        let amt = amount;
         if (cashIn) p.lastReceiptMs = ms;
         while (amt > 0.5 && p.open.length) {
           const inv = p.open[0], use = Math.min(inv.amt, amt);
@@ -208,6 +210,7 @@ function customerHabits(ctx, cutMs) {
   for (const p of parties.values()) pool.push(...p.samples);
   return { parties, pool };
 }
+const customerHabits = (ctx, cutMs) => partyHabits(ctx, cutMs, 'debtor');
 
 function habitOf(p, pool) {
   const own = p && p.samples.length >= 3 && p.samples.reduce((t, s) => t + s.w, 0) > 0;
@@ -444,19 +447,59 @@ function forecast(ctx, o) {
     }
   }
 
-  // --- money out: suppliers and other running costs, at their recent pace ---
-  const supByMs = new Map(), otherByMs = new Map();
+  // --- money out: suppliers, the way this business pays them ---
+  // Open bills (rebuilt oldest-first per supplier) on each supplier's learned payment curve, and new purchases
+  // at their recent pace on the same curve. Payments that don't go through a supplier account (bought for cash)
+  // follow their own recent pace. With too little supplier history, all supplier payments follow the pace.
+  const sup = partyHabits(ctx, cut, 'creditor');
+  const supFresh = arrival(null, sup, 0, cut);
+  const supByMs = new Map(), directByMs = new Map(), otherByMs = new Map();
   for (const e of events) {
-    if (e.amount >= 0) continue;
-    if (e.category === 'suppliers' && !recurringKeys.has(keyOf(e.ledger))) supByMs.set(e.ms, (supByMs.get(e.ms) || 0) - e.amount);
-    if (e.category === 'running_costs' && !recurringKeys.has(keyOf(e.ledger))) otherByMs.set(e.ms, (otherByMs.get(e.ms) || 0) - e.amount);
+    if (e.amount >= 0 || recurringKeys.has(keyOf(e.ledger))) continue;
+    if (e.category === 'suppliers') { supByMs.set(e.ms, (supByMs.get(e.ms) || 0) - e.amount); if (ctx.cls(e.ledger) !== 'creditor') directByMs.set(e.ms, (directByMs.get(e.ms) || 0) - e.amount); }
+    if (e.category === 'running_costs') otherByMs.set(e.ms, (otherByMs.get(e.ms) || 0) - e.amount);
   }
   const supPace = weeklyPace(supByMs, asOfMs), otherPace = weeklyPace(otherByMs, asOfMs);
-  for (const s of SCEN) for (let d = 0; d < HORIZON_DAYS; d++) {
-    const wd = dowOf(asOfMs + d * DAY);
-    put(s, 'out', d, supPace.median * supPace.dowShare[wd] * (s === 'low' ? 1.1 : s === 'high' ? 0.95 : 1), 'suppliers');
-    put(s, 'out', d, otherPace.median * otherPace.dowShare[wd], 'running_costs');
+  const purchByMs = new Map();
+  for (const r of rows) {
+    if (r.kind !== 'purchase' && r.kind !== 'debit_note') continue;
+    const ms = r.dt.getTime();
+    purchByMs.set(ms, (purchByMs.get(ms) || 0) + (r.kind === 'purchase' ? r.total : -r.total));
   }
+  const purchPace = weeklyPace(purchByMs, asOfMs), directPace = weeklyPace(directByMs, asOfMs);
+  // Two ways to forecast supplier payments, both computed; the self-check scores both on these books and the
+  // live forecast uses whichever has predicted this business's supplier payments better (o.supplierMethod).
+  const alt = { bills: SCEN.reduce((m, x) => { m[x] = new Array(HORIZON_DAYS).fill(0); return m; }, {}), pace: SCEN.reduce((m, x) => { m[x] = new Array(HORIZON_DAYS).fill(0); return m; }, {}) };
+  const add = (method, scen, d, amt) => { const i = Math.round(d); if (i >= 0 && i < HORIZON_DAYS && amt) alt[method][scen][i] += amt; };
+  let supOpen = 0, supUndated = 0;
+  const billsOk = !!(supFresh && purchPace.median > 0);
+  if (billsOk) {
+    for (const p of sup.parties.values()) for (const b of p.open) {
+      if (recurringKeys.has(keyOf(p.name))) continue;
+      if (b.ms == null) { supUndated += b.amt; continue; }   // carried from last year, date unknown: left out, said
+      const arr = arrival(p, sup, Math.max(0, Math.round((asOfMs - b.ms) / DAY)), cut);
+      supOpen += b.amt;
+      if (arr) {
+        for (const [t, pr] of arr.pmf) add('bills', 'mid', t, b.amt * pr);
+        const early = arrivalPct(arr, 0.25), late = arrivalPct(arr, 0.75);
+        if (early < Infinity) add('bills', 'low', early, b.amt);
+        if (late < Infinity) add('bills', 'high', late, b.amt);
+      } else for (const x of SCEN) for (let d = 7; d <= 55; d++) add('bills', x, d, b.amt / 49);
+    }
+    for (const x of SCEN) {
+      const perDay = purchPace.median / 7 * (x === 'low' ? 1.1 : x === 'high' ? 0.95 : 1);
+      for (let d = 0; d < HORIZON_DAYS; d++) {
+        for (const [t, pr] of supFresh.pmf) add('bills', x, d + t, perDay * pr);
+        add('bills', x, d, directPace.median * directPace.dowShare[dowOf(asOfMs + d * DAY)]);
+      }
+    }
+  }
+  for (const x of SCEN) for (let d = 0; d < HORIZON_DAYS; d++) add('pace', x, d, supPace.median * supPace.dowShare[dowOf(asOfMs + d * DAY)] * (x === 'low' ? 1.1 : x === 'high' ? 0.95 : 1));
+  const supMethod = o.supplierMethod === 'bills' && billsOk ? 'bills' : o.supplierMethod === 'pace' || !billsOk ? 'pace' : 'bills';
+  for (const x of SCEN) alt[supMethod][x].forEach((amt, d) => put(x, 'out', d, amt, 'suppliers'));
+  if (o.trace) for (const m of ['bills', 'pace']) partsDaily['suppliers_' + m] = alt[m].mid.map((v) => -v);
+  const bySupplier = supMethod === 'bills';
+  for (const x of SCEN) for (let d = 0; d < HORIZON_DAYS; d++) put(x, 'out', d, otherPace.median * otherPace.dowShare[dowOf(asOfMs + d * DAY)], 'running_costs');
 
   // --- money out: GST on the 20th: the books' estimate, calibrated by what was actually paid ---
   // A month's GST is paid the next month. Over the last three months, what went out as tax against what the
@@ -471,7 +514,12 @@ function forecast(ctx, o) {
     if (!est) continue;
     estSum += Math.max(0, num(est.net_payable_estimate)); paidSum += taxPaidIn(payMonth);
   }
-  const gstRatio = estSum > 0 && paidSum > 0 ? Math.max(0.3, Math.min(1.5, paidSum / estSum)) : 1;
+  // No GST out of these accounts for months that had GST to pay: it's paid from elsewhere (the overdraft, say),
+  // so it isn't taken from cash here; it is still listed as due.
+  let estMonths = 0;
+  for (let m = 1; m <= 3; m++) { const est = gstAll.find((g) => g.month === addMonths(addMonths(monthKey(asOfMs), -m), -1)); if (est && num(est.net_payable_estimate) > 0) estMonths++; }
+  const gstRatio = estSum > 0 && estMonths >= 2 ? Math.max(0, Math.min(1.5, paidSum / estSum)) : 1;
+  const gstElsewhere = gstRatio < 0.1;
   const gstTypical = median(gstRows.slice(-3).map((g) => Math.max(0, num(g.net_payable_estimate)))) * gstRatio;
   const taxPaidThisMonth = taxPaidIn(monthKey(asOfMs));
   let gstNext = null;
@@ -480,9 +528,10 @@ function forecast(ctx, o) {
     if (when < asOfMs) continue;
     let amt = m === 0 && lastGst ? Math.max(0, num(lastGst.net_payable_estimate)) * gstRatio : gstTypical;
     if (m === 0) amt = Math.max(0, amt - taxPaidThisMonth);
-    if (!gstNext && lastGst) gstNext = { month: m === 0 ? lastGst.month : addMonths(monthKey(when), -1), date: dayKey(when), amount: r0(amt),
-      books_estimate: r0(m === 0 ? num(lastGst.net_payable_estimate) : gstTypical / gstRatio), paid_vs_estimate: Math.round(gstRatio * 100) / 100 };
-    for (const s of SCEN) put(s, 'out', Math.round((when - asOfMs) / DAY), amt, 'gst');
+    const bookEst = m === 0 && lastGst ? Math.max(0, num(lastGst.net_payable_estimate)) : median(gstRows.slice(-3).map((g) => Math.max(0, num(g.net_payable_estimate))));
+    if (!gstNext && lastGst) gstNext = { month: m === 0 ? lastGst.month : addMonths(monthKey(when), -1), date: dayKey(when), amount: r0(gstElsewhere ? 0 : amt),
+      books_estimate: r0(bookEst), paid_vs_estimate: Math.round(gstRatio * 100) / 100, paid_from_elsewhere: gstElsewhere };
+    if (!gstElsewhere) for (const s of SCEN) put(s, 'out', Math.round((when - asOfMs) / DAY), amt, 'gst');
   }
 
   // --- roll up ---
@@ -508,7 +557,9 @@ function forecast(ctx, o) {
       doubtful: { amount: r0(doubtful.amount), parties: [...doubtful.parties.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([party, amt]) => ({ party, amount: r0(amt) })) },
       recurring: recurring.slice(0, 12),
       known_ahead: known.slice(0, 12).map((e) => ({ date: e.day, amount: r0(e.amount), ledger: e.ledger, party: e.party })),
-      pace: { sales_weekly: r0(salesPace.median), suppliers_weekly: r0(supPace.median), running_costs_weekly: r0(otherPace.median) },
+      pace: { sales_weekly: r0(salesPace.median), suppliers_weekly: r0(supPace.median), purchases_weekly: r0(purchPace.median), running_costs_weekly: r0(otherPace.median) },
+      suppliers: { method: supMethod, by_supplier: bySupplier, open_bills: r0(supOpen), undated_left_out: r0(supUndated),
+        pay_days: supFresh ? { p25: Number.isFinite(arrivalPct(supFresh, 0.25)) ? arrivalPct(supFresh, 0.25) : null, p50: Number.isFinite(arrivalPct(supFresh, 0.5)) ? arrivalPct(supFresh, 0.5) : null, p75: Number.isFinite(arrivalPct(supFresh, 0.75)) ? arrivalPct(supFresh, 0.75) : null } : null },
       collection_days: { p25: Number.isFinite(q[0]) ? q[0] : null, p50: Number.isFinite(q[1]) ? q[1] : null, p75: Number.isFinite(q[2]) ? q[2] : null, never_share: Math.round(fresh.unpaid * 100) / 100 },
       gst_next: gstNext
     }
@@ -529,12 +580,12 @@ function forecast(ctx, o) {
  */
 function selfCheck(ctx) {
   const pts = (((ctx.analytics || {}).cash_history) || {}).points || [];
-  const none = { checks: [], collection_factor: 1, error_by_week: {}, runs: 0 };
+  const none = { checks: [], collection_factor: 1, error_by_week: {}, runs: 0, supplier_method: 'bills', supplier_miss: null };
   if (pts.length < 98) return none;
   const cashAt = new Map(pts.map((p) => [p.date, num(p.cash)]));
   const todayMs = ctx.today.getTime(), firstMs = dayMs(pts[0].date);
   const events = cashEvents(ctx);
-  const checks = [], errs = {};
+  const checks = [], errs = {}, supErr = { bills: 0, pace: 0 };
   let predIn = 0, actIn = 0, inRuns = 0;
   for (let back = 7; back <= 84; back += 7) {
     const asOfMs = todayMs - back * DAY;
@@ -561,10 +612,15 @@ function selfCheck(ctx) {
       }
       const P = (k) => (fc.trace.parts_daily[k] || []).slice(0, h).reduce((t, x) => t + x, 0);
       const pIn = P('customers_open') + P('customers_new');
-      const err = fc.daily.close[h - 1] - (end - fin);
-      (errs[h] || (errs[h] = [])).push(err);
+      if (h === 28) for (const m of ['bills', 'pace']) supErr[m] += Math.abs(P('suppliers_' + m) - act.suppliers);
+      // The cash miss with each supplier method (the run used bills when it could; swap in pace's payments).
+      const usedBills = !!(fc.drivers.suppliers && fc.drivers.suppliers.method === 'bills');
+      const errB = fc.daily.close[h - 1] - (end - fin);
+      const errP = usedBills ? errB - P('suppliers_bills') + P('suppliers_pace') : errB;
+      (errs[h] || (errs[h] = [])).push({ bills: errB, pace: errP });
+      const err = errB;
       if (h === 28) { predIn += pIn; actIn += cin; inRuns++;
-        Object.assign(row, { horizon_days: 28, predicted_cash: r0(fc.daily.close[27]), actual_cash: r0(end), loans_and_transfers: r0(fin), cash_error: r0(err),
+        Object.assign(row, { horizon_days: 28, predicted_cash: r0(fc.daily.close[27]), actual_cash: r0(end), loans_and_transfers: r0(fin), cash_error: r0(err), _errP: errP, _supP: P('suppliers_pace'), _supB: P('suppliers_bills'),
           predicted_customer_in: r0(pIn), actual_customer_in: r0(cin),
           // Each kind of money, predicted vs actual (signed: out is negative), to see where a miss comes from.
           by_kind: { suppliers: [r0(P('suppliers')), r0(act.suppliers)], running_costs: [r0(P('recurring') + P('running_costs')), r0(act.running_costs)],
@@ -572,11 +628,21 @@ function selfCheck(ctx) {
     }
     if (row.horizon_days) checks.push(row);
   }
+  // Supplier payments: the way that predicted them better over these runs (bills by default when tied or untested).
+  const supplier_method = inRuns >= 3 && supErr.pace < 0.9 * supErr.bills ? 'pace' : 'bills';
   let factor = 1;
   if (inRuns >= 2 && predIn > 0) { const raw = actIn / predIn; factor = Math.max(0.6, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
   const error_by_week = {};
-  for (const [h, a] of Object.entries(errs)) if (a.length >= 3) error_by_week[Math.round(h / 7)] = { runs: a.length, typical_miss: r0(Math.sqrt(a.reduce((t, x) => t + x * x, 0) / a.length)), lean: r0(a.reduce((t, x) => t + x, 0) / a.length) };
-  return { checks, collection_factor: Math.round(factor * 100) / 100, error_by_week, runs: checks.length };
+  for (const [h, all] of Object.entries(errs)) {
+    const a = all.map((x) => x[supplier_method]);
+    if (a.length >= 3) error_by_week[Math.round(h / 7)] = { runs: a.length, typical_miss: r0(Math.sqrt(a.reduce((t, x) => t + x * x, 0) / a.length)), lean: r0(a.reduce((t, x) => t + x, 0) / a.length) };
+  }
+  for (const c of checks) {
+    if (supplier_method === 'pace') { c.cash_error = r0(c._errP); c.predicted_cash = r0(c.actual_cash - c.loans_and_transfers + c._errP); c.by_kind.suppliers[0] = r0(c._supP); }
+    delete c._errP; delete c._supP; delete c._supB;
+  }
+  return { checks, collection_factor: Math.round(factor * 100) / 100, error_by_week, runs: checks.length, supplier_method,
+    supplier_miss: inRuns ? { bills: r0(supErr.bills / inRuns), pace: r0(supErr.pace / inRuns) } : null };
 }
 
 /** The live range from the self-check's misses: ± 1.28 × typical miss, interpolated between measured weeks, grown with √time beyond. */
@@ -604,7 +670,7 @@ function build(ctx, o) {
   // Today's open invoices are rebuilt oldest-first from the entries, the same way as in every self-check run,
   // so what the live forecast does is exactly what was scored on these books.
   const openItems = opts.openItems || null;
-  const fc = forecast(ctx, { asOfMs: todayMs, opening: num(cash.total), openItems, promises: opts.promises || [], collectionFactor: check.collection_factor, useFuture: true });
+  const fc = forecast(ctx, { asOfMs: todayMs, opening: num(cash.total), openItems, promises: opts.promises || [], collectionFactor: check.collection_factor, supplierMethod: check.supplier_method, useFuture: true });
   // The range: as wide as this forecast has actually missed on these books (self-check), when it has enough runs.
   if (Object.keys(check.error_by_week).length >= 2) {
     fc.band_basis = 'past_misses';
@@ -617,7 +683,12 @@ function build(ctx, o) {
   const m4 = check.error_by_week[4];
   if (m4) notes.push(`Four weeks out it has typically been off by ₹${m4.typical_miss.toLocaleString('en-IN')} on your cash (before loans and overdraft), so the range shown is that wide.`);
   if (fc.drivers.doubtful.amount) notes.push(`₹${fc.drivers.doubtful.amount.toLocaleString('en-IN')} owed for more than six months (or far longer than that customer usually takes) is left out.`);
-  if (((ctx.analytics || {}).working_capital || {}).suppliers_tracked_billwise === false) notes.push('Your suppliers aren’t kept bill by bill, so supplier payments follow your recent weekly pace rather than due dates.');
+  const g = fc.drivers.gst_next;
+  if (g && g.paid_from_elsewhere) notes.push(`GST: your books show about ₹${g.books_estimate.toLocaleString('en-IN')} due on ${g.date}, but for the last three months no GST went out of the accounts counted as cash here (it was paid from somewhere else, such as your overdraft), so it isn’t taken from this forecast.`);
+  else if (g && g.paid_vs_estimate !== 1) notes.push(`GST: you’ve actually paid about ${Math.round(g.paid_vs_estimate * 100)}% of what your books estimated in recent months, so ₹${g.amount.toLocaleString('en-IN')} is expected on ${g.date}.`);
+  if (check.supplier_miss) notes.push(check.supplier_method === 'pace'
+    ? `Supplier payments follow your recent weekly pace: on your last ${check.runs} weeks that predicted them better than bill-by-bill timing.`
+    : `Supplier payments follow each supplier’s open bills and how quickly you usually pay them: on your last ${check.runs} weeks that predicted them better than a weekly average.`);
   notes.push('Loan drawdowns, overdraft movements and transfers are left out unless they repeat monthly or are already entered for a later date.');
   return { version: 2, ...fc, history: hist ? hist.weeks : [], receivables_today: hist ? hist.receivables_today : null, payables_today: hist ? hist.payables_today : null,
     self_check: check, notes, accuracy: accuracyFromRuns(opts.pastRuns || [], (ctx.analytics.cash_history || {}).points || []) };
@@ -642,4 +713,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, cashEvents, futureEvents, positionHistory, customerHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, accuracyFromRuns, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
