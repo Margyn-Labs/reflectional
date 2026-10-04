@@ -29,6 +29,7 @@
 
 const DAY = 86400000;
 const HORIZON_DAYS = 91;
+const HALF_LIFE = 60;   // days: a payment this long ago counts half as much as one today when learning habits
 const WEEKS = 13;
 const CASH = new Set(['bank', 'cash']);
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -191,14 +192,14 @@ function partyHabits(ctx, cutMs, bucket) {
       const p = P(l.ledger), amount = sg * l.amount;
       if (amount < 0) {   // they owe more / we owe more (an invoice or a bill)
         let amt = -amount;
-        if (p.advance > 0) { const use = Math.min(p.advance, amt); p.advance -= use; amt -= use; if (cashIn === false && use > 0) p.samples.push({ v: 0, w: use }); }
+        if (p.advance > 0) { const use = Math.min(p.advance, amt); p.advance -= use; amt -= use; if (cashIn === false && use > 0) p.samples.push({ v: 0, w: use, at: ms }); }
         if (amt > 0.5) p.open.push({ ms, amt });
       } else if (amount > 0) {   // settled (or a credit/debit note, a write-off)
         let amt = amount;
         if (cashIn) p.lastReceiptMs = ms;
         while (amt > 0.5 && p.open.length) {
           const inv = p.open[0], use = Math.min(inv.amt, amt);
-          if (cashIn && inv.ms != null) p.samples.push({ v: Math.max(0, Math.round((ms - inv.ms) / DAY)), w: use });
+          if (cashIn && inv.ms != null) p.samples.push({ v: Math.max(0, Math.round((ms - inv.ms) / DAY)), w: use, at: ms });
           inv.amt -= use; amt -= use;
           if (inv.amt <= 0.5) p.open.shift();
         }
@@ -227,11 +228,14 @@ function habitOf(p, pool) {
  * customer's usual day belongs to their slow tail, and the tail says how slow.
  * Returns { pmf: [[days, prob]...], unpaid: prob it isn't paid within anything seen } or null with too little history.
  */
-function survivalFrom(paid, open, age) {
+function survivalFrom(paid, open, age, cutMs) {
   const items = [];
   // Paid on or after this age (day 0 = today: an invoice exactly as old as the customer's usual day is due now).
   // Still-open invoices are known unpaid up to the age they had yesterday (the cut), so they count from there.
-  for (const x of paid) if (x.v >= age && x.w > 0) items.push({ t: x.v - age, w: x.w, e: 1 });
+  // Recent payments count more than old ones (half as much every HALF_LIFE days): customers who are slowing
+  // down (or speeding up) show in the forecast within weeks, not at the end of the year.
+  const wOf = (x) => x.w * (x.at != null && cutMs != null ? Math.pow(0.5, Math.max(0, cutMs - x.at) / DAY / HALF_LIFE) : 1);
+  for (const x of paid) if (x.v >= age && x.w > 0) items.push({ t: x.v - age, w: wOf(x), e: 1 });
   for (const x of open) if (x.v >= age && x.w > 0) items.push({ t: x.v - age, w: x.w, e: 0 });
   if (items.filter((x) => x.e).length < 3) return null;
   items.sort((a, b) => a.t - b.t);
@@ -257,12 +261,12 @@ function arrival(p, habits, age, cutMs) {
   const memo = habits.memo || (habits.memo = new Map());
   if (p && p.samples.length >= 3) {
     const k = keyOf(p.name) + '|' + age;
-    if (!memo.has(k)) memo.set(k, survivalFrom(p.samples, openAges(p, cutMs), age));
+    if (!memo.has(k)) memo.set(k, survivalFrom(p.samples, openAges(p, cutMs), age, cutMs));
     if (memo.get(k)) return memo.get(k);
   }
   if (!habits.poolOpen) { habits.poolOpen = []; for (const q of habits.parties.values()) habits.poolOpen.push(...openAges(q, cutMs)); }
   const k = '*|' + age;
-  if (!memo.has(k)) memo.set(k, survivalFrom(habits.pool, habits.poolOpen, age));
+  if (!memo.has(k)) memo.set(k, survivalFrom(habits.pool, habits.poolOpen, age, cutMs));
   return memo.get(k);
 }
 /** Days to wait at a probability (0.25 / 0.5 / 0.75 of the eventual money), Infinity if not reached. */
@@ -503,7 +507,8 @@ function forecast(ctx, o) {
   }
   for (const x of SCEN) for (let d = 0; d < HORIZON_DAYS; d++) add('pace', x, d, supPace.median * supPace.dowShare[dowOf(asOfMs + d * DAY)] * (x === 'low' ? 1.1 : x === 'high' ? 0.95 : 1));
   const supMethod = o.supplierMethod === 'bills' && billsOk ? 'bills' : o.supplierMethod === 'pace' || !billsOk ? 'pace' : 'bills';
-  for (const x of SCEN) alt[supMethod][x].forEach((amt, d) => put(x, 'out', d, amt, 'suppliers'));
+  const sf = o.supplierFactor || 1;
+  for (const x of SCEN) alt[supMethod][x].forEach((amt, d) => put(x, 'out', d, amt * sf, 'suppliers'));
   if (o.trace) for (const m of ['bills', 'pace']) partsDaily['suppliers_' + m] = alt[m].mid.map((v) => -v);
   const bySupplier = supMethod === 'bills';
   for (const x of SCEN) for (let d = 0; d < HORIZON_DAYS; d++) put(x, 'out', d, otherPace.median * otherPace.dowShare[dowOf(asOfMs + d * DAY)], 'running_costs');
@@ -587,12 +592,12 @@ function forecast(ctx, o) {
  */
 function selfCheck(ctx) {
   const pts = (((ctx.analytics || {}).cash_history) || {}).points || [];
-  const none = { checks: [], collection_factor: 1, error_by_week: {}, runs: 0, supplier_method: 'bills', supplier_miss: null };
+  const none = { checks: [], collection_factor: 1, error_by_week: {}, runs: 0, supplier_method: 'bills', supplier_factor: 1, supplier_miss: null };
   if (pts.length < 98) return none;
   const cashAt = new Map(pts.map((p) => [p.date, num(p.cash)]));
   const todayMs = ctx.today.getTime(), firstMs = dayMs(pts[0].date);
   const events = cashEvents(ctx);
-  const checks = [], errs = {}, supErr = { bills: 0, pace: 0 };
+  const checks = [], errs = {}, supErr = { bills: 0, pace: 0 }, supPred = { bills: 0, pace: 0 }, supAct = { bills: 0, pace: 0 };
   let predIn = 0, actIn = 0, inRuns = 0;
   for (let back = 7; back <= 84; back += 7) {
     const asOfMs = todayMs - back * DAY;
@@ -619,7 +624,8 @@ function selfCheck(ctx) {
       }
       const P = (k) => (fc.trace.parts_daily[k] || []).slice(0, h).reduce((t, x) => t + x, 0);
       const pIn = P('customers_open') + P('customers_new');
-      if (h === 28) for (const m of ['bills', 'pace']) supErr[m] += Math.abs(P('suppliers_' + m) - act.suppliers);
+      if (h === 28 || h === 56) for (const m of ['bills', 'pace']) supErr[m] += Math.abs(P('suppliers_' + m) - act.suppliers);
+      if (h === 28) for (const m of ['bills', 'pace']) { supPred[m] += -P('suppliers_' + m); supAct[m] += -act.suppliers; }
       // The cash miss with each supplier method (the run used bills when it could; swap in pace's payments).
       const usedBills = !!(fc.drivers.suppliers && fc.drivers.suppliers.method === 'bills');
       const errB = fc.daily.close[h - 1] - (end - fin);
@@ -635,8 +641,12 @@ function selfCheck(ctx) {
     }
     if (row.horizon_days) checks.push(row);
   }
-  // Supplier payments: the way that predicted them better over these runs (bills by default when tied or untested).
+  // Supplier payments: the way that predicted them better over these runs, 4 and 8 weeks out (bills by default
+  // when tied or untested); and if even that way kept paying out more or less than it expected, the same
+  // correction as for customers (shrunk toward 1 with few runs, bounded 0.7–1.3).
   const supplier_method = inRuns >= 3 && supErr.pace < 0.9 * supErr.bills ? 'pace' : 'bills';
+  let supplier_factor = 1;
+  if (inRuns >= 2 && supPred[supplier_method] > 0) { const raw = supAct[supplier_method] / supPred[supplier_method]; supplier_factor = Math.max(0.7, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
   let factor = 1;
   if (inRuns >= 2 && predIn > 0) { const raw = actIn / predIn; factor = Math.max(0.6, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
   const error_by_week = {};
@@ -648,7 +658,7 @@ function selfCheck(ctx) {
     if (supplier_method === 'pace') { c.cash_error = r0(c._errP); c.predicted_cash = r0(c.actual_cash - c.loans_and_transfers + c._errP); c.by_kind.suppliers[0] = r0(c._supP); }
     delete c._errP; delete c._supP; delete c._supB;
   }
-  return { checks, collection_factor: Math.round(factor * 100) / 100, error_by_week, runs: checks.length, supplier_method,
+  return { checks, collection_factor: Math.round(factor * 100) / 100, error_by_week, runs: checks.length, supplier_method, supplier_factor: Math.round(supplier_factor * 100) / 100,
     supplier_miss: inRuns ? { bills: r0(supErr.bills / inRuns), pace: r0(supErr.pace / inRuns) } : null };
 }
 
@@ -677,7 +687,7 @@ function build(ctx, o) {
   // Today's open invoices are rebuilt oldest-first from the entries, the same way as in every self-check run,
   // so what the live forecast does is exactly what was scored on these books.
   const openItems = opts.openItems || null;
-  const fc = forecast(ctx, { asOfMs: todayMs, opening: num(cash.total), openItems, promises: opts.promises || [], collectionFactor: check.collection_factor, supplierMethod: check.supplier_method, useFuture: true });
+  const fc = forecast(ctx, { asOfMs: todayMs, opening: num(cash.total), openItems, promises: opts.promises || [], collectionFactor: check.collection_factor, supplierMethod: check.supplier_method, supplierFactor: check.supplier_factor, useFuture: true });
   // The range: as wide as this forecast has actually missed on these books (self-check), when it has enough runs.
   if (Object.keys(check.error_by_week).length >= 2) {
     fc.band_basis = 'past_misses';
@@ -694,6 +704,7 @@ function build(ctx, o) {
   const g = fc.drivers.gst_next;
   if (g && g.paid_from_elsewhere) notes.push(`GST: your books show about ₹${g.books_estimate.toLocaleString('en-IN')} due on ${nice(g.date)}, but for the last three months no GST went out of the accounts counted as cash here (it was paid from somewhere else, such as your overdraft), so it isn’t taken from this forecast.`);
   else if (g && g.paid_vs_estimate !== 1) notes.push(`GST: you’ve actually paid about ${Math.round(g.paid_vs_estimate * 100)}% of what your books estimated in recent months, so ₹${g.amount.toLocaleString('en-IN')} is expected on ${nice(g.date)}.`);
+  if (Math.abs((check.supplier_factor || 1) - 1) >= 0.03) notes.push(`On those weeks you paid suppliers ${Math.round(check.supplier_factor * 100)}% of what it expected, so supplier payments are scaled to match.`);
   if (check.supplier_miss) notes.push(check.supplier_method === 'pace'
     ? `Supplier payments follow your recent weekly pace: on your last ${check.runs} weeks that predicted them better than bill-by-bill timing.`
     : `Supplier payments follow each supplier’s open bills and how quickly you usually pay them: on your last ${check.runs} weeks that predicted them better than a weekly average.`);

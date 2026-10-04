@@ -162,6 +162,28 @@ const rsc = CF.build(regular, {}).self_check;
 const rworst = Math.max(...rsc.checks.map((c) => Math.abs(c.predicted_customer_in - c.actual_customer_in) / c.actual_customer_in));
 check('a regular business: customer money in predicted within 2% every week', rworst < 0.02, rsc.checks.map((c) => [c.predicted_customer_in, c.actual_customer_in]));
 
+// A customer who has slowed down: paid in 30 days until July, in 50 days since. The forecast should follow the
+// recent habit, not the year's average.
+{
+  const VV = [], OPEN = {}; let gg = 0;
+  const add = (type, date, party, entries) => { VV.push({ tally_guid: 'd' + (++gg), voucher_type: type, date, party_name: party, amount: Math.abs(entries[0].amount), is_cancelled: false, entries }); for (const e of entries) OPEN[e.ledger] = (OPEN[e.ledger] || 0) + e.amount; };
+  for (let t = D('2026-04-01'); t < today; t += DAY) {
+    if (new Date(t).getUTCDay() !== 1) continue;
+    const lag = t < D('2026-07-01') ? 30 : 50;
+    add('Sales', iso(t), 'Slowing', [{ ledger: 'Slowing', amount: -100000, is_party: true }, { ledger: 'Sales', amount: 100000 }]);
+    if (t + lag * DAY < today) add('Receipt', iso(t + lag * DAY), 'Slowing', [{ ledger: 'Slowing', amount: 100000, is_party: true }, { ledger: 'Bank', amount: -100000 }]);
+    add('Purchase', iso(t), 'Supplier', [{ ledger: 'Supplier', amount: 60000, is_party: true }, { ledger: 'Purchases', amount: -60000 }]);
+  }
+  VV.sort((a, b) => (a.date < b.date ? -1 : 1));
+  const LL = [['Bank', 'Bank Accounts'], ['Slowing', 'Sundry Debtors'], ['Supplier', 'Sundry Creditors'], ['Sales', 'Sales Accounts'], ['Purchases', 'Purchase Accounts']]
+    .map(([name, parent]) => ({ name, parent, opening_balance: name === 'Bank' ? -1000000 : 0, closing_balance: (name === 'Bank' ? -1000000 : 0) + (OPEN[name] || 0) }));
+  const dctx = E.prepare({ connected: true, ledgers: LL, vouchers: VV, bills: [], overrides: {}, syncRuns: [] }, { now: NOW });
+  const dh = CF.customerHabits(dctx, today - 1);
+  const fresh = CF.survivalFrom(dh.pool, [], 0, today - 1);
+  const mid = (() => { let acc = 0; for (const [t, pr] of fresh.pmf) { acc += pr; if (acc >= 0.5) return t; } return null; })();
+  check('a customer who slowed from 30 to 50 days: learned as ~50 now, not the year\'s mix', mid === 50, fresh.pmf.slice(0, 4));
+}
+
 // ---------- history ----------
 check('weekly history of cash, receivables, payables', out.history.length > 20 && out.history.every((w) => w.cash != null && w.receivables != null));
 check('receivables today = what customers owe', out.receivables_today === Math.round(bal.Alpha + bal.Beta + bal.Gamma), [out.receivables_today, bal.Alpha + bal.Beta + bal.Gamma]);
