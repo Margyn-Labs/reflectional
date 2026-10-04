@@ -97,22 +97,24 @@ function mgLoadPosition(){
       mgPos = await res.json(); mgPosSigAt = sig; mgPosFailed = false;
     } catch(e){ mgPosFailed = true; console.error('[margyn] position:', e.message); }
     finally { mgPosBusy = null; }
+    // Arrived after the app stopped waiting for it at start-up: redraw the page on screen with it.
+    if(!mgPosFailed && typeof mgFirstLoadDone !== 'undefined' && mgFirstLoadDone) mgPosRedraw();
   })();
   return mgPosBusy;
 }
 /* Re-draw the page on screen once a fresher position arrives, unless the
    person is typing in it. */
+function mgPosRedraw(){
+  if(mgPosFailed || mgPosSigAt !== mgPosSig()) return;
+  const P = typeof MG_PAGES !== 'undefined' && MG_PAGES[mgCurrentView];
+  const host = document.getElementById('view-' + mgCurrentView);
+  const ae = document.activeElement;
+  const typing = !!(host && ae && ae.matches && ae.matches('input,textarea,select') && host.contains(ae));
+  if(P && P.own && host && !typing) mgRenderOwn(mgCurrentView);
+}
 function mgPosRefreshSoon(){
   clearTimeout(mgPosTimer);
-  mgPosTimer = setTimeout(async () => {
-    await mgLoadPosition();
-    if(mgPosFailed || mgPosSigAt !== mgPosSig()) return;
-    const P = typeof MG_PAGES !== 'undefined' && MG_PAGES[mgCurrentView];
-    const host = document.getElementById('view-' + mgCurrentView);
-    const ae = document.activeElement;
-    const typing = !!(host && ae && ae.matches && ae.matches('input,textarea,select') && host.contains(ae));
-    if(P && P.own && host && !typing) mgRenderOwn(mgCurrentView);
-  }, 400);
+  mgPosTimer = setTimeout(async () => { await mgLoadPosition(); }, 400);
 }
 function mgPosFor(dir){
   if(!mgPos) return null;

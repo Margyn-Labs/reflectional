@@ -360,7 +360,9 @@ async function refreshAll(){
   if((typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected)) && typeof mgLoadMargin === 'function' && !mgMar) mgLoadMargin();
   // The reconciled receivables / payables position, computed on the server
   // over every open row (19-pages.js). Falls back to the local model if slow.
-  if(typeof mgLoadPosition === 'function') await mgLoadPosition();
+  // Wait at most 4 s: a cold read of a big book (suppliers rebuilt from every entry) takes longer, and the
+  // whole app waited on it. If it lands later, the page on screen redraws with it (19-pages.js).
+  if(typeof mgLoadPosition === 'function') await Promise.race([mgLoadPosition(), new Promise(r => setTimeout(r, 4000))]);
   // Every connector global is loaded by this point. Rebuild the scoring
   // inputs from the best source available per field; if that moved the
   // picture, a fresh `resolved` snapshot is written and re-read so every
