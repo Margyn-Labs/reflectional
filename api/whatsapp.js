@@ -11,6 +11,7 @@
  *   POST /api/whatsapp?action=webhook       inbound Closing Bell button replies
  *   GET  /api/whatsapp?action=cron-opening  Vercel Cron target, sends Opening Bell
  *   GET  /api/whatsapp?action=cron-closing  Vercel Cron target, sends Closing Bell
+ *   GET  /api/whatsapp?action=cron-watch&slot=afternoon  Margyn Watch's afternoon look (changes only)
  *
  * BSP adapter, template send, and webhook verification all live in
  * ./_lib/whatsappBsp.js — this file owns routing, auth, and the Supabase
@@ -42,6 +43,7 @@ module.exports = async function handler(req, res) {
   if (action === 'cron-opening' && req.method === 'GET') return handleCron(req, res, 'opening');
   if (action === 'cron-closing' && req.method === 'GET') return handleCron(req, res, 'closing');
   if (action === 'cron-chase' && req.method === 'GET') return handleChaseCronAndWatch(req, res);
+  if (action === 'cron-watch' && req.method === 'GET') return handleWatchCron(req, res);
 
   res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing, cron-chase.' });
 };
@@ -879,6 +881,18 @@ async function handleChaseCronAndWatch(req, res) {
     catch (e) { console.error('[whatsapp] midday watch failed:', e.message); }
   }
   return handleChaseCron(req, res);
+}
+
+/* The 15:00 IST run: Margyn Watch's second look in the day, changes since the last update only (watchBrief.intraday). */
+async function handleWatchCron(req, res) {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) { res.status(500).json({ error: 'CRON_SECRET not configured' }); return; }
+  if (req.headers['authorization'] !== `Bearer ${expected}` && req.query.cron_secret !== expected) { res.status(401).json({ error: 'Unauthorized' }); return; }
+  const slot = req.query.slot === 'afternoon' ? 'afternoon' : null;
+  if (!slot) { res.status(400).json({ error: 'slot must be afternoon' }); return; }
+  if (!(await cronOnce.claim('whatsapp-watch-' + slot))) { res.status(200).json({ slot, skipped: 'already ran today' }); return; }
+  try { const w = await runWatchAll(slot); res.status(200).json({ slot, accounts: w.accounts, sent: w.sent }); }
+  catch (e) { console.error('[whatsapp] ' + slot + ' watch failed:', e.message); res.status(500).json({ slot, error: e.message }); }
 }
 
 async function handleChaseCron(req, res) {

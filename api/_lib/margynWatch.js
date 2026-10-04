@@ -16,9 +16,15 @@
  *    is for deadlines only (GST due in a few days, Tally gone quiet). The
  *    owner can mute one finding or a whole kind from the app, or reply STOP
  *    ALERTS on WhatsApp.
- *  - SHAPE (2026-10-04): when the books are from, money that came in, cash
- *    and overdraft, then the points with amounts, then how to reply. Names
- *    the way a person says them, not "SUN PHARMA LABORATORIES LTD".
+ *  - SHAPE (2026-10-05, watchBrief.js): a cadence, not three copies of one
+ *    message. Morning (07:30) is the detailed one: where you stand, yesterday,
+ *    this week, up to three points (at most two about money owed) each with
+ *    why now / backing / next, and one "worth knowing" the owner wouldn't see
+ *    alone. Midday (10:30) and afternoon (15:00) send only what changed since
+ *    the last update, or nothing. Evening (19:00) follows up on each of the
+ *    morning's points, wraps the day's money, and says what's due tomorrow.
+ *    Each update keeps a snapshot (margyn_signals rows snap:morning / snap:last)
+ *    so the next one can say what moved. Names the way a person says them.
  *  - TO WHOM (profiles.preferences.margyn_watch.mode, chosen in the app):
  *      off     (default) nothing is sent; findings still show in the app.
  *      preview sent to MARGYN_WATCH_PREVIEW_PHONE (the Margyn team's test
@@ -51,6 +57,7 @@ const { track } = require('./track');
 const deliveries = require('./waDeliveries');
 const cashFlow = require('./cashFlowModel');
 const forecastStore = require('./forecastStore');
+const brief = require('./watchBrief');
 
 const DAY = 86400000;
 const MAX_PER_RUN = 3;
@@ -58,7 +65,9 @@ const MAX_PER_RUN = 3;
 const COOLDOWN_DAYS = {
   stale: 2, overdue_total: 7, slipping: 7, old_debts: 30, late: 14, short_paid: 30, quiet: 21, concentration: 60, collection_days: 30,
   commission: 60, expense_jump: 365, unbooked: 365, sales_trend: 365, below_cost: 30, unit_mismatch: 60,
-  gst_due: 365, receipt: 3650, newly_overdue: 3650, duplicate: 3650
+  gst_due: 365, receipt: 3650, newly_overdue: 3650, duplicate: 3650,
+  // "Worth knowing" (watchBrief.deepInsights): one a morning, never the same one for three weeks.
+  insight_slow: 21, insight_late_share: 30, insight_shrinking: 45, insight_growing: 60, insight_late_vs_borrowed: 30
 };
 // Never a point of their own: good news goes in the "money in" line instead.
 const NOT_A_POINT = new Set(['receipt']);
@@ -92,17 +101,18 @@ function isDeadline(x) {
  * mode 'on' ignores sends that only went to the preview phone (they never reached the owner).
  * Returns the chosen findings, each with `was` (the earlier figure) when it's back because it got worse.
  */
-function choose(list, state, slot, now, mode) {
+function choose(list, state, slot, now, mode, opts) {
+  const max = (opts && opts.max) || MAX_PER_RUN;
   const byKey = new Map(state.map((s) => [s.key, s]));
   const mutedKinds = new Set(state.filter((s) => s.key.startsWith('mute:') && s.status === 'muted').map((s) => s.kind));
   const t = now ? new Date(now).getTime() : Date.now();
   const out = [], parties = new Set();
   for (const x of list) {
-    if (out.length >= MAX_PER_RUN) break;
+    if (out.length >= max) break;
     if (NOT_A_POINT.has(x.kind) || mutedKinds.has(x.kind)) continue;
     const s = byKey.get(x.key);
     if (s && s.status === 'muted') continue;
-    if (slot === 'midday' && !isDeadline(x)) continue;
+    if ((slot === 'midday' || slot === 'afternoon') && !isDeadline(x)) continue;
     // One point per customer: their overdue bills, "short paid" and "gone quiet" are one conversation.
     const pk = x.party ? E.niceName(x.party).toLowerCase() : null;
     if (pk && parties.has(pk)) continue;
@@ -185,6 +195,10 @@ function templateParams(items, { company, firstName }) {
   const points = items.map((x, i) => `(${i + 1}) ${x.title}`).join(' ').replace(/\s+/g, ' ');
   return [String(firstName || shortCompany(company)).slice(0, 60), points.slice(0, 900)];
 }
+/** Template parameters from a message's one-line headline (no new lines allowed in parameters). */
+function headlineParams(headline, { company, firstName }, max) {
+  return [String(firstName || shortCompany(company)).slice(0, 60), String(headline || '').replace(/\s+/g, ' ').slice(0, max || 300)];
+}
 /** Short template: name and a one-line headline; the full update follows when they tap See details. */
 function teaserParams(items, { company, firstName }) {
   const n = items.length;
@@ -250,88 +264,157 @@ async function saveState(userId, list, chosen, sentInfo, state) {
   }
 }
 
+/** The snapshots kept with the updates (watchBrief.snapshot): this morning's and the last one sent. */
+const SNAP_KEYS = ['snap:morning', 'snap:last'];
+const BACKGROUND = new Set(['concentration', 'sales_trend', 'commission', 'collection_days']);
+async function loadSnaps(userId) {
+  const out = {};
+  try {
+    const rows = await selectRows('margyn_signals', `select=key,detail&user_id=eq.${userId}&key=in.(${SNAP_KEYS.map(encodeURIComponent).join(',')})`);
+    for (const r of rows) if (SNAP_KEYS.includes(r.key)) { try { out[r.key.slice(5)] = JSON.parse(r.detail); } catch (e) { /* ignore */ } }
+  } catch (e) { /* none yet */ }
+  return out;
+}
+async function saveSnap(userId, name, snap) {
+  // Kept as a resolved row in margyn_signals so no new table is needed; the hub never shows resolved rows.
+  await insertRows('margyn_signals', [{ user_id: userId, key: 'snap:' + name, kind: 'snapshot', status: 'resolved', title: 'Snapshot', detail: JSON.stringify(snap), last_seen: new Date().toISOString() }], { onConflict: 'user_id,key', merge: true }).catch(() => {});
+}
+
 /**
- * One account. slot: 'morning' | 'midday' | 'evening' | 'manual'.
+ * What this slot says (watchBrief): the morning's detail, the midday and afternoon changes, the evening's
+ * follow-ups. Returns { msg, sentItems } where sentItems are the findings the message raises (for cooldowns).
+ */
+function buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, extra) {
+  const chooseMode = mode === 'preview' ? 'preview' : 'on';
+  const words = { firstName: extra.firstName, preview: extra.preview, company: shortCompany(extra.company) };
+  // A customer's actionable point (late, short paid, gone quiet) wins over a background fact about them
+  // (concentration): one point per customer, so the background one would otherwise take the slot.
+  const acting = new Set(list.filter((x) => x.party && !BACKGROUND.has(x.kind)).map((x) => E.niceName(x.party).toLowerCase()));
+  const points = list.filter((x) => !brief.INSIGHT_KINDS.has(x.kind) && !(BACKGROUND.has(x.kind) && x.party && acting.has(E.niceName(x.party).toLowerCase())));
+  if (slot === 'midday' || slot === 'afternoon') {
+    const deadlines = choose(points, state, slot, o.now, chooseMode);
+    return { msg: brief.intraday(ctx, fc, snap, snaps.last, snaps.morning, deadlines, words), sentItems: deadlines };
+  }
+  if (slot === 'evening') {
+    const morningKeys = new Set(((snaps.morning && snaps.morning.day === snap.day && snaps.morning.points) || []).map((p) => p.key));
+    const fresh = choose(points.filter((x) => x.severity === 'high' && !morningKeys.has(x.key)), state, 'evening', o.now, chooseMode, { max: 1 });
+    return { msg: brief.evening(ctx, fc, snap, snaps.morning, list, fresh, extra.promises, words), sentItems: fresh };
+  }
+  // Morning (and the app's preview): the detailed one.
+  const picked = brief.mix(choose(points, state, 'morning', o.now, chooseMode, { max: 12 }));
+  const insight = choose(deep, state, 'morning', o.now, chooseMode, { max: 1 })[0] || null;
+  const prev = snaps.morning && snaps.morning.day !== snap.day ? snaps.morning : (snaps.morning && snaps.morning.prev) || null;
+  return { msg: brief.morning(ctx, fc, snap, prev, picked, insight, words), sentItems: picked.concat(insight ? [insight] : []), points: picked };
+}
+
+/**
+ * One account. slot: 'morning' | 'midday' | 'afternoon' | 'evening' | 'manual' (manual = the morning update).
  * opts.previewOnly: the app's "Preview today's update". Works out the message the owner would get next, sends
  * it only to the preview phone (and only in preview mode), and records nothing, so it never repeats or uses up
  * a point.
  */
 async function watchAccount(userId, opts) {
   const o = opts || {};
-  const slot = o.slot || 'manual';
+  const slot = o.slot === 'manual' || !o.slot ? 'morning' : o.slot;
   const { ctx } = await booksTools.contextFor(userId);
   if (!ctx || !ctx.rows.length) return { user: userId, skipped: 'no books' };
   // Every day, for every account with books, keep the forecast and the position (forecastStore.js), so the
-  // forecast's track record builds even on days nobody opens the app.
-  try { const fc = cashFlow.build(ctx, { promises: await forecastStore.promises(userId) }); if (fc) await forecastStore.recordDaily(userId, fc); } catch (e) { /* never blocks an update */ }
+  // forecast's track record builds even on days nobody opens the app. The same forecast feeds the update.
+  let fc = null;
+  try { fc = cashFlow.build(ctx, { promises: await forecastStore.promises(userId) }); if (fc && !o.previewOnly) await forecastStore.recordDaily(userId, fc); } catch (e) { /* never blocks an update */ }
   const list = E.insights(ctx);
+  let deep = [];
+  try { deep = brief.deepInsights(ctx, fc); } catch (e) { /* the update goes out without it */ }
   let state;
   try { state = await selectRows('margyn_signals', `select=key,kind,status,impact,last_sent_at,sent_count,sent_via,sent_to&user_id=eq.${userId}&limit=1000`); }
   catch (e) { return { user: userId, skipped: 'margyn_signals table missing (run the SQL)' }; }
+  state = state.filter((s) => !String(s.key).startsWith('snap:'));
   state = await onlyDelivered(userId, state);
 
   const profile = await prefsOf(userId);
   const mode = o.mode || modeOf(profile);
-  const chosen = choose(list, state, o.previewOnly ? 'manual' : slot, o.now, mode === 'preview' ? 'preview' : 'on');
   const company = ctx.company || profile.company_name;
-  const ctxLines = context(ctx);
+  const snaps = await loadSnaps(userId);
+  const snap = brief.snapshot(ctx, fc, o.now);
+  const promises = slot === 'evening' ? await forecastStore.promises(userId) : [];
+  const build = (preview) => buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, { firstName: preview ? null : firstNameOf(profile), preview, company, promises });
+  const { msg, sentItems, points } = build(false);
+  const all = list.concat(deep);
 
   if (o.previewOnly) {
-    const text = compose(chosen, { company, slot, preview: false, firstName: firstNameOf(profile), lastSync: ctx.lastSync, ctxLines, sourceName: ctx.source_name });
-    const res = { user: userId, mode, found: list.length, chosen: chosen.map((x) => x.kind), text };
-    if (mode === 'preview' && process.env.MARGYN_WATCH_PREVIEW_PHONE) {
+    const res = { user: userId, mode, slot, found: all.length, chosen: sentItems.map((x) => x.kind), text: msg.send ? msg.text : null, note: msg.send ? undefined : 'Nothing has changed enough to send an update right now.' };
+    if (msg.send && mode === 'preview' && process.env.MARGYN_WATCH_PREVIEW_PHONE) {
       const to = process.env.MARGYN_WATCH_PREVIEW_PHONE;
-      const ptext = compose(chosen, { company, slot, preview: true, lastSync: ctx.lastSync, ctxLines, sourceName: ctx.source_name });
-      const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: ptext }) : null;
+      const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: build(true).msg.text }) : null;
       res.sent_to_preview_phone = !!(s && s.ok);
       if (s && s.ok) await deliveries.record({ messageId: s.messageId, userId, kind: 'watch', to, sentTo: 'preview_copy', keys: [] });
     }
     return res;
   }
 
-  let sentInfo = null, result = { user: userId, mode, found: list.length, chosen: chosen.map((x) => x.kind) };
-  if (chosen.length && mode !== 'off') {
+  let sentInfo = null, result = { user: userId, mode, slot, found: all.length, chosen: sentItems.map((x) => x.kind) };
+  if (!msg.send) result.quiet = 'nothing changed enough to send';
+  if (msg.send) result.headline = msg.headline;
+  if (msg.send && mode !== 'off') {
     const preview = mode === 'preview';
     const to = preview ? process.env.MARGYN_WATCH_PREVIEW_PHONE : (profile.whatsapp_opt_in !== false ? profile.whatsapp_phone : null);
     if (!to) {
       result.not_sent = preview ? 'MARGYN_WATCH_PREVIEW_PHONE is not set in Vercel' : 'no WhatsApp number on the account (Settings > Profile)';
     } else {
       const firstName = preview ? null : firstNameOf(profile);
-      const text = compose(chosen, { company, slot, preview, firstName, lastSync: ctx.lastSync, ctxLines, sourceName: ctx.source_name });
+      const text = preview ? build(true).msg.text : msg.text;
+      // Changes in the middle of the day go out in an open chat; outside one, only when they matter (a customer
+      // on this morning's list paid, a big receipt, a deadline). A template costs money and a ping.
+      const templateOk = slot === 'morning' || slot === 'evening' || msg.important;
       let sent = null;
       if (await sessionOpen(to, o.now)) {
         sent = await bsp.sendText({ to, text });
         if (sent && sent.ok) sentInfo = { via: 'session', to: preview ? 'preview' : 'owner' };
       }
-      if (!sentInfo && process.env.WHATSAPP_TEMPLATE_ALERT_V2) {
-        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT_V2, params: teaserParams(chosen, { company, firstName }) });
+      if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_ALERT_V2) {
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT_V2, params: headlineParams(msg.headline, { company, firstName }) });
         if (sent && sent.ok) {
           sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
           // The full update goes out when they tap See details (or reply anything) within a day.
           await savePending(to, userId, text);
         }
       }
-      if (!sentInfo && process.env.WHATSAPP_TEMPLATE_ALERT) {
-        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT, params: templateParams(chosen, { company, firstName }) });
+      if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_ALERT) {
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT, params: headlineParams(msg.headline, { company, firstName }, 900) });
         if (sent && sent.ok) sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
       }
       if (sentInfo) {
         result.sent = sentInfo;
         // Gupshup taking it is not WhatsApp delivering it: keep the id so the delivery report can be matched.
-        await deliveries.record({ messageId: sent && sent.messageId, userId, kind: 'watch', to, sentTo: sentInfo.to, keys: chosen.map((x) => x.key) });
+        await deliveries.record({ messageId: sent && sent.messageId, userId, kind: 'watch', to, sentTo: sentInfo.to, keys: sentItems.map((x) => x.key) });
         if (!preview) {
           // In the owner's thread, so a reply of "2" or "why?" has the context.
           await insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text, tool_calls: null, wa_message_id: (sent && sent.messageId) || null, from_phone: digits(to) }])
             .catch(() => insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text }]).catch(() => {}));
         }
-        await track(userId, 'watch_sent', { kind: chosen[0].kind, points: chosen.length, mode, via: sentInfo.via });
+        await track(userId, 'watch_sent', { kind: (sentItems[0] && sentItems[0].kind) || slot, points: sentItems.length, mode, via: sentInfo.via });
+      } else if (!templateOk) {
+        result.not_sent = 'No open WhatsApp chat, and this change isn\'t urgent enough to send a template for; it will be in the evening wrap.';
       } else {
         result.not_sent = (sent && sent.error) ? String(sent.error).slice(0, 160)
           : 'No open WhatsApp chat in the last 24 hours and no alert template is set, so WhatsApp won\'t accept a message from us yet.';
       }
     }
   }
-  if (!o.dryRun) await saveState(userId, list, chosen, sentInfo, state);
+  if (!o.dryRun) {
+    await saveState(userId, all, sentItems, sentInfo, state);
+    // What the next update compares against. The morning's is kept all day (the evening follows up on its
+    // points); "last" moves only when something went out, so small changes add up until they're worth a line.
+    if (slot === 'morning') {
+      snap.points = sentInfo ? (points || []).map((x) => ({ key: x.key, kind: x.kind, party: x.party || null, title: x.title })) : [];
+      const prev = snaps.morning && snaps.morning.day !== snap.day ? snaps.morning : (snaps.morning && snaps.morning.prev) || null;
+      if (prev) snap.prev = { day: prev.day, cash: prev.cash, recv_total: prev.recv_total };
+      await saveSnap(userId, 'morning', snap);
+      await saveSnap(userId, 'last', snap);
+    } else if (sentInfo || slot === 'evening' || !(snaps.last && snaps.last.day === snap.day)) {
+      await saveSnap(userId, 'last', Object.assign({}, snap, { points: undefined }));
+    }
+  }
   return result;
 }
 /**
@@ -412,8 +495,8 @@ async function signals(userId) {
     template_ready: !!(process.env.WHATSAPP_TEMPLATE_ALERT || process.env.WHATSAPP_TEMPLATE_ALERT_V2),
     // Whether each update actually arrived (null = delivery tracking not set up yet).
     deliveries: await deliveries.recent(userId, 20),
-    signals: rows
+    signals: rows.filter((r) => !String(r.key).startsWith('snap:'))
   };
 }
 
-module.exports = { watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { headlineParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };

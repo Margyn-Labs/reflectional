@@ -16,6 +16,16 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-05-daily-cadence', date:'5 Oct 2026', title:'Margyn’s WhatsApp updates now follow your day',
+    items:[
+      { t:'A fuller morning update', what:'Every morning: your bank and cash, what customers owe and how much is late, yesterday’s money in and out, what’s due this week, and where cash is likely to be in 7 days. Then up to three things that need you, mixed across collections, costs, sales and GST. Each one says why Margyn is raising it today and what it’s based on.',
+        how:'WhatsApp, around 7:30 am. Preview it from Conversations → Preview today’s update.', act:'history' },
+      { t:'Something you might have missed', what:'Each morning ends with one thing that’s hard to spot yourself, like a customer paying slower than they usually do, or a big customer quietly buying less.', how:'The “Worth knowing” line in the morning update.', act:'history' },
+      { t:'Only changes during the day', what:'Around 10:30 am and 3 pm Margyn texts only if something changed, like a customer paying or a big payment going out. If nothing changed, it stays quiet.', how:'WhatsApp.', act:'history' },
+      { t:'An evening follow-up', what:'In the evening Margyn checks each of the morning’s points again (paid, part paid, or nothing yet), sums up the day’s money, and tells you what’s due tomorrow.', how:'WhatsApp, around 7 pm. Reply with what a customer said and Margyn keeps it in mind.', act:'history' }
+    ]
+  },
+  {
     id:'2026-10-04-receivables-tied', date:'4 Oct 2026', title:'What customers owe now matches Tally’s ledgers',
     items:[
       { t:'No more chasing paid bills', what:'Some customers’ bills were paid but never knocked off in Tally, so they looked overdue. Margyn now follows each customer’s ledger balance: bills already covered by payments are left out.',

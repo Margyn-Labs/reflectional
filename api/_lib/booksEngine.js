@@ -880,6 +880,10 @@ function cashAndDebt(ctx) {
     interest_paid_this_fy: inr(interestTotal),
     interest_by_ledger: [...interest.entries()].sort((x, y) => y[1] - x[1]).slice(0, 5).map(([k, v]) => ({ ledger: k, amount: inr(v) }))
   };
+  // The same figures as numbers, for Margyn Watch's day-on-day comparisons. Not enumerable, so tool answers are unchanged.
+  Object.defineProperty(out, 'raw', { enumerable: false, value: {
+    cash: an.cash ? num(an.cash.total) : cashL.reduce((s, c) => s + c.balance, 0),
+    borrowed: loans.reduce((s, x) => s + Math.max(0, x.owed), 0), interest_this_fy: interestTotal } });
   if (lastGst) {
     const [y, m] = lastGst.month.split('-').map(Number);
     const due = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 20));
@@ -1239,5 +1243,6 @@ function buildInsights(book, analytics, opts) {
 module.exports = {
   inr, pctStr, dayStr, resolvePeriod, PERIODS, MEASURES, GROUPS,
   prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, insights, attention,
-  buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf, niceName
+  buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf, niceName,
+  billRows, dailySales90, lateRanking, recentReceipts
 };

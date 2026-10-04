@@ -56,6 +56,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/whatsapp?action=cron-watch&slot=afternoon",
+      "schedule": "30 9 * * *"
+    },
+    {
       "path": "/api/ops?action=cron-cfo-pack",
       "schedule": "30 2 * * *"
     }
