@@ -1,37 +1,57 @@
 # Handoff: forecast v2 (learned 13-week forecast) + learning store, 2026-10-04
 
-Working copy: `~/Downloads/margyn-forecast-v2` (git clone of Margyn-Labs/reflectional), branch `forecast-v2` (pushed, WIP, NO PR).
-VP approved: build, and ship (PR + merge) once tested and checked live on Care Hygiene (read-only, VP's Chrome, mihir@carehygiene.in).
-Read first: memory `margyn-one-place-per-category`, `margyn-books-as-of-today`, `margyn-how-to-ship`, `margyn-vp-simple-steps`.
+**Status: SHIPPED and live** (PRs #65, #66, #67, #68, #69, #70, all merged into main; checked live on Care Hygiene, read-only, as mihir@carehygiene.in).
+Work happens in `~/Downloads/Full repo`; `~/Downloads/margyn-forecast-v2` is the git clone used only to ship.
+Plan for how Margyn keeps learning: vault `Margyn/Handoffs & Plans/PLAN-HOW-MARGYN-LEARNS-2026-10-04.md` (also published as a claude.ai artifact).
 
 ## Why
-VP: the forecast must be smarter: learn from how cash, receivables, payables and each bank account actually moved day by day, find patterns, suggest and act; store what's needed so it improves on its own.
+VP: the forecast must learn from how cash, receivables, payables and each bank account actually moved day by day, find patterns, suggest and act, and store what's needed so it improves on its own. VP, mid-task: "the main part is the logic and the accuracy… without accuracy it is garbage."
 
-## Data sweep (what we capture)
-- Tally vouchers (every entry, every ledger line, dated) for THIS FY only: the gold. Rebuilds every account's balance per day.
-- Tally open bills: today only, no history. Ledger balances: today only.
-- Entries made ahead (EMIs, PDCs) up to Mar 2027: certain future outflows (old forecast ignored them).
-- Razorpay/Cashfree payments+settlements, Shopify orders/payouts, Zoho/Odoo invoices/bills/payments/bank (via Books layer).
-- Payment chases: whatsapp_chase_targets state 'paused_promise' with promise_to_pay_date / promise_to_pay_amount (unused before).
-- NOT captured: Tally bill allocations (which invoice a receipt paid; agent doesn't read BILLALLOCATIONS), last FY (no seasonality), overdraft limit, bank feed (AA).
+## What's live
+- `api/_lib/cashFlowModel.js` (pure):
+  - **Customers**: each open invoice's arrival from Kaplan-Meier over that customer's history (else everyone's), amount-weighted; open invoices censored at yesterday's age (`openAges` floor); paid samples count from the invoice's own age (`>=`); recent payments weigh more (`HALF_LIFE` 60 days). Expected money spread by day (mid); cautious/hopeful at the 75th/25th percentile day. New sales at the 8-week median pace on the same curve from day 0. Doubtful: older than min(365, max(180, 2×p75)).
+  - **Suppliers**: two methods computed every run, (a) open bills per supplier on its learned curve + purchases pace on that curve + direct (non-creditor) pace, (b) weekly pace on its weekdays. Self-check picks per business on 4+8-week error; a supplier level factor (0.7–1.3, shrunk) is learned like the customer one.
+  - Recurring payments (≥3 of last 4 months, ±35%, day spread ≤8; not suppliers; not anyone paid >2×/month), entries made ahead (EMIs) on their dates, promises (whatsapp_chase_targets paused_promise) on their dates.
+  - **GST** on the 20th: books' estimate × (paid ÷ estimated over the last 3 months). If months with GST due show no tax out of cash (Care Hygiene Jul–Sep), `paid_from_elsewhere` and not taken from cash (still listed).
+  - **Self-check**: re-made as of each of the last 12 weeks (needs 10 weeks of history), scored at 1/2/4/8 weeks; cash compared before loans/overdraft/transfers; `by_kind` per check; `collection_factor` (0.6–1.3, shrunk n/(n+4)); `error_by_week`; range = likely ± 1.28 × typical miss (√time beyond measured weeks), `band_basis: 'past_misses'`.
+  - Running costs at weekday-shaped pace. Notes in plain words.
+- `api/_lib/forecastStore.js`: `forecast_runs` + `daily_positions` per IST day (needs SQL; fails open); `accuracyFromRuns` grades saved runs at 7 and 28 days.
+- Wired: `/api/tally?action=analytics` returns `forecast_v2` (+ records daily); `margynWatch.watchAccount` records daily for every account with books.
+- Books declare `balance_convention` ('opposite' for Zoho/Odoo adapters); `tallyAnalytics.asOfToday(…, conv)` adds entries made ahead back for those; sign inference falls back to the declaration.
+- App: `app/js/19a-forecast.js` `mgForecast()` uses `forecast_v2` by default (adds `learned`, `v`, `low`, `high`); "My own assumptions" (old arithmetic) under Adjust (`preferences.forecast.mode`). Band + hover on the chart, Cautious/Hopeful columns, Cash page "How Margyn built this" (`mgForecastHowPanel`) and "Week by week this year" (`mgPositionHistoryPanel`, four small charts). Voice/explain tools, formula catalogue, What's new entry updated.
 
-## Built so far (on the branch)
-- `api/_lib/cashFlowModel.js` (pure): cashEvents (bank movements by category), futureEvents (entered ahead), positionHistory (weekly cash/receivables/payables + days to collect), customerHabits (FIFO receipts→invoices: per-customer p25/p50/p75 days to pay, pool for thin history), recurringPayments (≥3 of last 4 months, ±35%, day spread ≤8), weeklyPace (median of 8 weeks), forecast (open invoices on each customer's habit, late ones spread wk1–4, doubtful >min(365,max(180,2×p75)); promises on date; new sales collected via learned lag quantiles; EMIs ahead; recurring on their day; supplier + other running-cost pace; GST on 20th from gst_estimate; mid/low/high), selfCheck (re-runs model as of 4/8/12 weeks ago, compares 4-week customer money in + cash; collection_factor bounded 0.6–1.3), accuracyFromRuns, build().
-- `api/_lib/forecastStore.js`: recordDaily (forecast_runs + daily_positions upsert per IST day), pastRuns, promises. Fails open.
-- SQL `2026-10-04-forecast-learning.sql` (forecast_runs, daily_positions; RLS on, service role only).
-- Wired: `api/tally.js` analytics returns `forecast_v2` (+ records daily); `margynWatch.watchAccount` records daily for every account with books.
-- Test `api/_lib/__tests__/cashFlowModel.test.js`: synthetic business (Alpha ~30 days, Beta ~60, salary 1st, rent 5th, EMIs ahead). 25/30 pass.
+## Accuracy (live self-check, Care Hygiene, after #70)
+- Customer money in, 4 weeks: 5.9% average miss, lean −2.1% (first version: +19% to +60%).
+- Cash before loans/overdraft: 4 weeks typical miss ₹25.6 L (lean −₹2.4 L); 8 weeks ₹28 L (lean +₹5.5 L). Care Hygiene collects ~₹2.4 Cr/month.
+- Suppliers: weekly pace chosen (bill-by-bill missed more over 4+8 weeks).
+- Tests: `cashFlowModel.test.js` 44/44, `cashFlowAccuracy.test.js` 14/14 (250-customer books with opening balances: habit book 1.5% miss, random-lag book 5.0%), `tools/ui-forecast-test.js` 26/26, all other api + UI tests pass.
 
-## Open failures → fixes to make next
-1. recurringPayments: skip category 'suppliers' and payees paid >2×/month (weekly supplier payments were flagged as monthly recurring, which also zeroed supplier pace).
-2. Balance direction: `tallyAnalytics.asOfToday` subtracts future entries assuming balances share the entries' sign ('same', true for Tally/Care Hygiene). For books with debit-positive balances ('opposite' — Zoho/Odoo adapters in dataLayer/books.js) it must ADD. Plan: books declare `balance_convention` ('opposite' for zoho/odoo adapters); computeAnalytics input + booksEngine.prepare pass it; asOfToday(ledgers, vouchers, now, conv) flips; sign inference falls back to the hint when 'unknown'. Callers: booksEngine.js:171, tallyAnalytics.js:258, tally.js:196.
-3. Test fixture: make the synthetic book Tally-like ('same' convention: balances debit-negative, with P&L closings so inference finds 'same'); then 'cash today', 'opens on today's cash', 'every bank movement is filed' (check count) should pass.
+## How accuracy was worked (keep doing it this way)
+1. Every change is scored by the self-check on the business's own past weeks; live numbers decide, synthetic tests guard regressions.
+2. A version that wins tests but loses live is reverted (happened: stricter counting alone made Care Hygiene lean +5%; the real cause was customers slowing, fixed by recency).
+3. Never tune thresholds to make a test pass; when a fixture hits a known limit (out-of-order payers vs oldest-first matching), say so in the test and fix the fixture's purpose.
+4. Real-data backtests run server-side through the self-check. Pulling a customer's books into a browser to backtest was blocked by auto mode: don't do that.
 
-## Then
-- Run all `api/_lib/__tests__` + UI tests (`node tools/serve-static.js` — first check nothing stale holds port 5188 — then tools/ui-frame/margyn/nav/explain-test.js; symlink node_modules from ~/Downloads/Full repo).
-- Ship server part first (PR: forecast_v2 in payload, not shown) → check live numbers on Care Hygiene (self_check errors, habits for big customers like GLENMARK/ALKEM, recurring list, EMIs, GST ₹8.93 L on 20 Oct).
-- Then app: `app/js/19a-forecast.js` mgForecast() uses mgMar.forecast_v2 by default (same return shape + low/high, drivers); keep v1 as "set my own assumptions" toggle in Adjust; chart band; Cash page "How Margyn built this" (customers, recurring, entered ahead, pace, doubtful, self-check/track record) + weekly history chart (cash, receivables, payables, days to collect). Nudge/CFO pack/Cash tile follow mgForecast automatically. MG_RELEASES entry.
-- VP steps: run `2026-10-04-forecast-learning.sql` (and `2026-10-04-books-layer.sql` if not yet), click-by-click with ✅.
+## Known issues / watch
+- `/api/tally?action=analytics` now ~12 s on Care Hygiene (was ~8 s before the forecast); the app aborts at 20 s. If it grows: cache the self-check per sync, or move it to the daily Watch run and store it in `forecast_runs`.
+- Floor (two weeks of spend, ₹1.2 Cr for Care Hygiene) flags every week for an overdraft business: needs the overdraft limit (see "store next").
+- Forecast is cash **before** loans/overdraft: for Care Hygiene it climbs to ~₹90 L+ by January because surplus usually goes to the overdraft. The page says so; a headroom view needs the OD limit.
+- GST "paid from elsewhere" is inferred from three months of no tax out of cash; if a business pays GST through a ledger Margyn files elsewhere, it would wrongly drop GST (the note says what it did).
 
-## What else to store so it learns (proposal, not built)
-promise outcomes per customer (kept / late / broken → promise reliability), suggestion outcomes (accepted/ignored + did cash improve), user corrections to recurring items (confirm/reject), overdraft limit + loan terms as account facts, Tally bill allocations (agent change), last-FY sync (seasonality), weekly per-customer habit snapshots (to see who's slowing down).
+## VP still owes (SQL)
+- `2026-10-04-forecast-learning.sql` (forecast_runs, daily_positions). Without it the forecast works but has no saved track record.
+- `2026-10-04-books-layer.sql` if not yet run.
+
+## What to store next (from the plan, in order)
+1. Overdraft limit + loan terms per account (floor/headroom).
+2. Promise outcomes per customer (kept/late/broken → weight promises, chase order).
+3. Weekly per-customer habit snapshot (who's slowing down alert).
+4. Tally bill allocations (agent reads BILLALLOCATIONS → exact invoice matching).
+5. Last FY sync (seasonality). 6. Suggestion outcomes. 7. User corrections to recurring items. 8. Bank feed (AA).
+
+## Run the tests
+```
+for f in api/_lib/__tests__/*.test.js; do node "$f" | tail -1; done
+node tools/serve-static.js "$PWD" 5188 &   # first: lsof -nP -iTCP:5188 -sTCP:LISTEN (stale servers)
+node tools/ui-forecast-test.js && node tools/ui-frame-test.js
+```
