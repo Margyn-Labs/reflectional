@@ -227,10 +227,13 @@ function impliedEntry(v, entries) {
  * including ones dated in the future: on 3 Oct Care Hygiene's accountant entered the Kotak loan EMIs for
  * Oct-Mar in advance, and Tally's bank balance dropped by all six (₹9.45 L) at once, so Margyn showed ₹4.38 L
  * of cash when the bank had about ₹13.8 L. Entries dated after today are taken out of the vouchers and backed
- * out of each ledger's closing balance (the balance and the entry amounts share one sign convention).
+ * out of each ledger's closing balance. Tally's balances share the entries' sign ('same', the default); books whose
+ * balances carry debit as positive while entries carry it as negative (Zoho, Odoo adapters: `balance_convention:
+ * 'opposite'`) add the entries back instead.
  * Returns { ledgers, vouchers, future } where future lists the entries waiting for their date.
  */
-function asOfToday(ledgers, vouchers, now) {
+function asOfToday(ledgers, vouchers, now, convention) {
+  const dir = convention === 'opposite' ? 1 : -1;
   const today = todayIstMs(now);
   const past = [], future = [];
   for (const v of vouchers || []) {
@@ -249,13 +252,14 @@ function asOfToday(ledgers, vouchers, now) {
   }
   const adj = (ledgers || []).map((l) => {
     const m = l && l.closing_balance != null ? move.get(nameKey(l.name)) : null;
-    return m ? Object.assign({}, l, { closing_balance: Math.round((num(l.closing_balance) - m) * 100) / 100, future_entries_backed_out: Math.round(m * 100) / 100 }) : l;
+    return m ? Object.assign({}, l, { closing_balance: Math.round((num(l.closing_balance) + dir * m) * 100) / 100, future_entries_backed_out: Math.round(m * 100) / 100 }) : l;
   });
   return { ledgers: adj, vouchers: past, future };
 }
 
 function computeAnalytics(input) {
-  const today = asOfToday(input.ledgers, input.vouchers, input.now);
+  const hint = input.balance_convention === 'same' || input.balance_convention === 'opposite' ? input.balance_convention : null;
+  const today = asOfToday(input.ledgers, input.vouchers, input.now, hint);
   input = Object.assign({}, input, { ledgers: today.ledgers, vouchers: today.vouchers });
   const ledgers = dedupe(input.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
@@ -447,9 +451,10 @@ function computeAnalytics(input) {
   let signConv = 'unknown';
   if (samples >= 2 && sameW >= 0.8 * (sameW + oppW)) signConv = 'same';
   else if (samples >= 2 && oppW >= 0.8 * (sameW + oppW)) signConv = 'opposite';
-  // Prior from the connector docs: balances carry debit as positive, vouchers debit as negative.
-  const effConv = signConv === 'unknown' ? 'opposite' : signConv;
-  const balance_sign = { convention: signConv, assumed: signConv === 'unknown', evidence_ledgers: samples };
+  // Not enough evidence: the books' own declaration (balance_convention), else the connector docs' prior
+  // (balances carry debit as positive, vouchers debit as negative).
+  const effConv = signConv === 'unknown' ? (hint || 'opposite') : signConv;
+  const balance_sign = { convention: signConv, effective: effConv, assumed: signConv === 'unknown', declared: hint, evidence_ledgers: samples };
   const debitPositive = (bal) => (effConv === 'same' ? -num(bal) : num(bal));
 
   // ----- stock adjustment (period level) -----
@@ -786,7 +791,7 @@ function computeAnalytics(input) {
   for (const f of failedKinds) reasons.push(`The last ${f.kind} sync from Tally failed${f.error ? ' (' + String(f.error).slice(0, 120) + ')' : ''}, so ${f.kind} may be behind.`);
   if (edition === 'educational') reasons.push('This Tally is in Educational mode, which limits voucher dates. Figures may not reflect a live business.');
   const excludedCount = Object.values(excludedTypes).reduce((a, b) => a + b, 0);
-  if (balance_sign.assumed && ledgers.length) internal.push('The sign convention of Tally balances could not be confirmed from your data, so cash and stock use the documented default.');
+  if (balance_sign.assumed && !hint && ledgers.length) internal.push('The sign convention of Tally balances could not be confirmed from your data, so cash and stock use the documented default.');
   if (bsLedgers.length && bsMissing) internal.push(`Tally returned no balance for ${bsMissing} of ${bsLedgers.length} balance-sheet ledgers.`);
   if (!vouchers.length) { level = 'low'; reasons.push('No vouchers synced yet.'); }
   for (const r of pnl.filter((x) => x.costs_incomplete)) {
