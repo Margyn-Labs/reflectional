@@ -327,17 +327,24 @@ function renderInvoicingView(){
 }
 document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 async function refreshAll(){
-  snapshots = await loadSnapshots();
-  receivables = await loadReceivables();
-  payables = await loadPayables();
-  findings = await loadFindings();
-  pendingSuggestions = await loadPendingSuggestions(); renderSuggestionsBadge();
-  khataParties = await loadKhataParties();
-  khataEntries = await loadKhataEntries();
-  khataInvoices = await loadKhataInvoices();
-  await checkRazorpayConnection();
-  await checkCashfreeConnection();
-  razorpayLiveSummary = await loadRazorpayLiveSummary();
+  // Independent reads go out together: one after another they took ~20 s on Care Hygiene before anything showed.
+  // Only two depend on another: Razorpay's summary on its connection check, Tally's data on its status.
+  let tallyP;
+  const [snaps, recv, pay, fnd, sugg, kp, ke, ki, , , , , rcn, acts] = await Promise.all([
+    loadSnapshots(), loadReceivables(), loadPayables(), loadFindings(), loadPendingSuggestions(),
+    loadKhataParties(), loadKhataEntries(), loadKhataInvoices(),
+    checkRazorpayConnection().then(async () => { razorpayLiveSummary = await loadRazorpayLiveSummary(); }),
+    checkCashfreeConnection(),
+    loadZohoVitals(), loadOdooStatus(),
+    loadReconSummary(), loadAgentActions(),
+    loadShopifyStatus(),
+    tallyP = loadTallyStatus().then(() => loadTallyData())
+  ]);
+  snapshots = snaps; receivables = recv; payables = pay; findings = fnd;
+  pendingSuggestions = sugg; renderSuggestionsBadge();
+  khataParties = kp; khataEntries = ke; khataInvoices = ki;
+  reconSummary = rcn; agentActions = acts;
+  tallyData = await tallyP;
   // Restore session-only Payments-tab state from the latest snapshot so it
   // survives refresh/re-login instead of resetting to empty each load.
   if(snapshots.length > 0){
@@ -349,13 +356,6 @@ async function refreshAll(){
   } else {
     paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
-  await loadZohoVitals();
-  await loadOdooStatus();
-  reconSummary = await loadReconSummary();
-  agentActions = await loadAgentActions();
-  await loadShopifyStatus();
-  await loadTallyStatus();
-  tallyData = await loadTallyData();
   // The books' analytics (19i-margin.js) carry day-by-day cash: saved readings take it when it arrives.
   if((typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected)) && typeof mgLoadMargin === 'function' && !mgMar) mgLoadMargin();
   // The reconciled receivables / payables position, computed on the server

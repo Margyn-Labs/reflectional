@@ -170,10 +170,16 @@ async function initSupabase(){
   sbClient.auth.onAuthStateChange((e, s) => {
     if(e === 'PASSWORD_RECOVERY'){ mgRecovery = true; showRecoveryGate(); return; }
     if(mgRecovery) return;
+    // The same person, already in: INITIAL_SESSION right after start-up, SIGNED_IN when the tab regains focus,
+    // TOKEN_REFRESHED every hour. Each used to re-run the whole start-up (Care Hygiene: every load ran twice,
+    // ~20 s each). Only a different person, or signing out, routes again.
+    if(s && s.user && mgRoutedAuthId === s.user.id && e !== 'USER_UPDATED') return;
     routeFor(s);
   });
 }
+let mgRoutedAuthId = null;   // the signed-in person routeFor() last set the app up for
 async function routeFor(session){
+  mgRoutedAuthId = session && session.user ? session.user.id : null;
   if(!session){
     currentUser = null; currentProfile = null; snapshots = []; paymentsData = null;
     receivables = []; payables = []; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
