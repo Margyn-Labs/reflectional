@@ -16,6 +16,14 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-receivables-tied', date:'4 Oct 2026', title:'What customers owe now matches Tally’s ledgers',
+    items:[
+      { t:'No more chasing paid bills', what:'Some customers’ bills were paid but never knocked off in Tally, so they looked overdue. Margyn now follows each customer’s ledger balance: bills already covered by payments are left out.',
+        how:'Receivables (the note at the top says how much and for how many customers).', act:'receivables' },
+      { t:'Nobody who owes you is missed', what:'Money a customer owes that Tally never split into bills now shows up too, dated from their invoices.', how:'Receivables and Customers.', act:'receivables' }
+    ]
+  },
+  {
     id:'2026-10-04-data-check', date:'4 Oct 2026', title:'See that all your data is in',
     items:[
       { t:'Is all your data in?', what:'Margyn now checks, month by month, that every voucher Tally holds reached Margyn, that every ledger and open bill is stored, and that each one is counted somewhere in your figures. Anything that needs a look is listed in plain words.',

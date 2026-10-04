@@ -251,7 +251,7 @@ function prepare(book, opts) {
   const closedMonths = (analytics.pnl || []).filter((m) => !m.provisional && !m.partial_start);
   const monthsNet = closedMonths.map((m) => m.net_sales).filter((x) => x > 0);
   const avgMonthlySales = monthsNet.length ? monthsNet.reduce((a, b) => a + b, 0) / monthsNet.length : 0;
-  return {
+  const ctx = {
     now, today: todayIST(now), book, analytics, ledgers, rows, bills, cls, assembled, bought, unitCost,
     coverage: { from: first, to: last },
     company: book.company || null, lastSync: book.lastSync || null,
@@ -260,6 +260,15 @@ function prepare(book, opts) {
     // What counts as "worth mentioning" scales with the business: 0.5% of a month's sales, at least ₹50,000.
     material: Math.max(50000, 0.005 * avgMonthlySales)
   };
+  // Customers' bills lined up with their ledger balances (billTieOut.js): paid bills never knocked off in Tally
+  // are set aside, and money owed that Tally never split into bills is added from the entries. The bills as
+  // Tally lists them stay in billsAsInTally (the completeness check compares the two).
+  ctx.billsAsInTally = bills;
+  if (o.tieBills !== false) {
+    try { const t = require('./billTieOut').tieReceivables(ctx); ctx.bills = t.bills; ctx.billTie = t.summary; }
+    catch (e) { /* keep Tally's bills */ }
+  }
+  return ctx;
 }
 
 function inPeriod(r, per) { return r.dt >= per.from && r.dt <= per.to; }

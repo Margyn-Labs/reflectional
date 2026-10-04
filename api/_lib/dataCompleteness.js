@@ -57,7 +57,8 @@ function tallyCompleteness(book, ctx, opts) {
       shortMonths.length
         ? `Tally holds more vouchers than Margyn has in ${shortMonths.map((m) => m.month).join(', ')} (${shortMonths.reduce((a, m) => a + m.tally - m.stored, 0)} missing). The next full sync retries.`
         : `Every month matches Tally’s own count: ${sTot.toLocaleString('en-IN')} stored for ${tTot.toLocaleString('en-IN')} in Tally (${months[0].month} to ${months[months.length - 1].month}).`,
-      { reported_at: diag.at || null }));
+      { reported_at: (diag.kept_from && diag.kept_from.vouchers) || diag.at || null }));
+    if (diag.kept_from && diag.kept_from.vouchers) checks[checks.length - 1].detail += ` (Tally's count is from the last full sync, ${String(diag.kept_from.vouchers).slice(0, 10)}; the latest sync stopped early.)`;
   }
   const errs = diag && diag.errors && typeof diag.errors === 'object' ? Object.entries(diag.errors).filter(([, v]) => v) : [];
   if (errs.length) checks.push(check('agent_errors', 'Agent errors on the last sync', 'warn', errs.map(([k, v]) => `${k}: ${String(v).slice(0, 160)}`).join(' · ')));
@@ -139,7 +140,7 @@ function tallyCompleteness(book, ctx, opts) {
   // knocked off in Tally.
   const bal = CF.partyBalancesToday(ctx);
   const billBy = new Map();
-  for (const b of ctx.bills || []) {
+  for (const b of ctx.billsAsInTally || ctx.bills || []) {
     if (b.direction === 'payable' || b.advance) continue;
     const k = A.nameKey(b.party_name);
     billBy.set(k, (billBy.get(k) || 0) + Math.abs(num(b.closing_balance)));
@@ -156,7 +157,7 @@ function tallyCompleteness(book, ctx, opts) {
   }
   gapTop.sort((a, b) => Math.abs(b.billed - b.ledger) - Math.abs(a.billed - a.ledger));
   if (tied + gaps) checks.push(check('bills_tie', 'Customer bills tie to their ledgers', gaps ? 'warn' : 'ok',
-    gaps ? `${tied} of ${tied + gaps} customers tie. For ${gaps}, open bills and the ledger balance differ by ₹${r0(gapAmt).toLocaleString('en-IN')} in all (bills missing, or settled bills not knocked off in Tally).`
+    gaps ? `${tied} of ${tied + gaps} customers tie. For ${gaps}, Tally's open bills and the ledger balance differ by ₹${r0(gapAmt).toLocaleString('en-IN')} in all: paid bills not knocked off in Tally, or money owed that isn't split into bills. Margyn goes by the ledger balance for these customers (oldest bills treated as paid; the rest added from the entries); knocking the bills off in Tally clears this.`
       : `All ${tied} customers’ open bills add up to their ledger balance.`, { gaps: gapTop.slice(0, 8) }));
 
   const wc = (ctx.analytics || {}).working_capital || {};
