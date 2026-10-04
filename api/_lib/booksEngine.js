@@ -168,7 +168,7 @@ function prepare(book, opts) {
   const o = opts || {};
   const now = o.now ? new Date(o.now) : new Date();
   // The books as of today: entries dated later (EMIs entered in advance) wait for their date (tallyAnalytics.asOfToday).
-  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now);
+  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now, book.balance_convention);
   book = Object.assign({}, book, { ledgers: asOf.ledgers, vouchers: asOf.vouchers });
   const ledgers = A.dedupe(book.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
@@ -176,7 +176,8 @@ function prepare(book, opts) {
     .map((v) => (v && v.voucher_base ? Object.assign({}, v, { voucher_type_name: v.voucher_type, voucher_type: v.voucher_base }) : v));
   const analytics = o.analytics || A.computeAnalytics({
     ledgers: book.ledgers, vouchers: book.vouchers, bills: book.bills, overrides: book.overrides || {},
-    syncRuns: book.syncRuns || [], diagnostics: book.diagnostics || null, edition: book.edition || null, now
+    syncRuns: book.syncRuns || [], diagnostics: book.diagnostics || null, edition: book.edition || null, now,
+    balance_convention: book.balance_convention
   });
   const classes = A.classifyLedgers(ledgers, book.overrides || {}, A.partyRolesFromVouchers(all));
   classes.set(nameKey(A.IMPLIED_SALES), { bucket: 'sales' });

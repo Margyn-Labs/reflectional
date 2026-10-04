@@ -33,28 +33,36 @@ for (let t = D('2026-04-01'); t < today; t += DAY) {
 V.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 // Loan EMIs entered ahead (future-dated), like Care Hygiene's.
 for (const m of ['2026-10-10', '2026-11-10', '2026-12-10']) V.push({ tally_guid: 'emi' + m, voucher_type: 'Payment', voucher_number: 'E', date: m, party_name: null, amount: 50000, is_cancelled: false, entries: [{ ledger: 'Kotak Loan', amount: -50000 }, { ledger: 'Bank', amount: 50000 }] });
-// Balances as Tally gives them: the whole year, including the EMIs (debit positive).
-const L = [
-  { name: 'Bank', parent: 'Bank Accounts', opening_balance: 2000000, closing_balance: bal.Bank - 150000 },
-  { name: 'Alpha', parent: 'Sundry Debtors', opening_balance: 0, closing_balance: bal.Alpha },
-  { name: 'Beta', parent: 'Sundry Debtors', opening_balance: 0, closing_balance: bal.Beta },
-  { name: 'Supplier', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: bal.Supplier },
-  { name: 'Sales', parent: 'Sales Accounts' }, { name: 'Purchases', parent: 'Purchase Accounts' },
-  { name: 'Output GST', parent: 'Duties & Taxes' }, { name: 'GST Payable', parent: 'Duties & Taxes' },
-  { name: 'Salary', parent: 'Indirect Expenses' }, { name: 'Rent', parent: 'Indirect Expenses' },
-  { name: 'Kotak Loan', parent: 'Secured Loans', opening_balance: -1000000, closing_balance: -850000 }
-];
+// Balances as Tally gives them ('same' convention: debit negative, like the entries) for the whole year,
+// including the EMIs entered ahead. P&L ledgers carry closings too, so the engine can see which way they run.
+const GROUP = { Bank: 'Bank Accounts', Alpha: 'Sundry Debtors', Beta: 'Sundry Debtors', Supplier: 'Sundry Creditors', Sales: 'Sales Accounts',
+  Purchases: 'Purchase Accounts', 'Output GST': 'Duties & Taxes', 'GST Payable': 'Duties & Taxes', Salary: 'Indirect Expenses',
+  Rent: 'Indirect Expenses', 'Kotak Loan': 'Secured Loans' };
+const OPEN = { Bank: -2000000, 'Kotak Loan': 1000000 };
+const MOVE = {};
+for (const x of V) for (const e of x.entries) MOVE[e.ledger] = (MOVE[e.ledger] || 0) + e.amount;
+const L = Object.keys(GROUP).map((name) => ({ name, parent: GROUP[name], opening_balance: OPEN[name] || 0, closing_balance: (OPEN[name] || 0) + (MOVE[name] || 0) }));
 const book = { connected: true, company: 'Test Co', ledgers: L, vouchers: V, bills: [], overrides: {}, syncRuns: [] };
 const ctx = E.prepare(book, { now: NOW });
 
 // ---------- 1. movements ----------
 const ev = CF.cashEvents(ctx);
-check('every bank movement is filed', ev.length > 100 && ev.every((e) => e.category));
+const bankVouchers = V.filter((x) => x.date < '2026-10-04' && x.entries.some((e) => e.ledger === 'Bank')).length;
+check('every bank movement is filed', ev.length === bankVouchers && ev.every((e) => e.category && e.category !== 'other'), [ev.length, bankVouchers]);
 check('receipts from customers are "customers"', ev.filter((e) => e.amount > 0).every((e) => e.category === 'customers'));
 check('salary is a running cost', ev.some((e) => e.ledger === 'Salary' && e.category === 'running_costs'));
 const fut = CF.futureEvents(ctx);
 check('EMIs entered ahead are known future outflows', fut.length === 3 && fut[0].amount === -50000 && fut[0].day === '2026-10-10', fut);
 check('cash today backs out the EMIs', Math.round(ctx.analytics.cash.total) === Math.round(bal.Bank), [ctx.analytics.cash.total, bal.Bank]);
+
+// Books whose balances are debit-positive (Zoho, Odoo adapters) add entries made ahead back instead.
+const A = require('../tallyAnalytics');
+const emi = [{ date: '2026-10-10', is_cancelled: false, entries: [{ ledger: 'Bank', amount: 50000 }, { ledger: 'Kotak Loan', amount: -50000 }] }];
+const opp = A.asOfToday([{ name: 'Bank', closing_balance: 950000 }], emi, NOW, 'opposite').ledgers[0].closing_balance;
+const same = A.asOfToday([{ name: 'Bank', closing_balance: -950000 }], emi, NOW).ledgers[0].closing_balance;
+check('entries made ahead backed out for both balance directions', opp === 1000000 && same === -1000000, [opp, same]);
+const zb = E.prepare(Object.assign({}, book, { balance_convention: 'opposite', ledgers: [] }), { now: NOW });
+check('declared direction used when the books can\'t show it', zb.analytics.quality.balance_sign.effective === 'opposite' && zb.analytics.quality.balance_sign.declared === 'opposite', zb.analytics.quality.balance_sign);
 
 // ---------- 2. habits ----------
 const H = CF.customerHabits(ctx, today - 1);

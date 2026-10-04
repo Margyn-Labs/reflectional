@@ -313,7 +313,7 @@ async function handleAnalytics(req, res) {
   const lastSync = book.lastSync;
 
   const rate = parseFloat(req.query && req.query.credit_rate);
-  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, diagnostics, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, diagnostics, balance_convention: book.balance_convention, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
   let out = run(overrides);
 
   // Whatever Tally's own groups could not place, the model places once and we remember it. Never overrides

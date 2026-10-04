@@ -95,8 +95,8 @@ function futureEvents(ctx) {
 }
 
 function balanceSign(ctx) {
-  const conv = (((ctx.analytics || {}).quality || {}).balance_sign || {}).convention;
-  const eff = !conv || conv === 'unknown' ? 'opposite' : conv;
+  const bs = ((ctx.analytics || {}).quality || {}).balance_sign || {};
+  const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
   return (b) => (eff === 'same' ? -num(b) : num(b));
 }
 
@@ -221,14 +221,18 @@ function habitOf(p, pool) {
 function monthKey(ms) { return new Date(ms).toISOString().slice(0, 7); }
 function addMonths(k, n) { const [y, m] = k.split('-').map(Number); const t = y * 12 + m - 1 + n; return Math.floor(t / 12) + '-' + String(t % 12 + 1).padStart(2, '0'); }
 
-/** Accounts paid in at least 3 of the last 4 complete months, similar amounts, around the same day. */
+/**
+ * Accounts paid in at least 3 of the last 4 complete months, similar amounts, around the same day.
+ * Suppliers, and anyone usually paid more than twice a month, follow the weekly pace instead: four Friday
+ * payments a month are not a monthly bill.
+ */
 function recurringPayments(events, todayMs, exclude) {
   const thisMonth = monthKey(todayMs);
   const months = [1, 2, 3, 4].map((n) => addMonths(thisMonth, -n));
   const by = new Map();
   for (const e of events) {
     if (e.amount >= 0 || !e.ledger || e.ms > todayMs) continue;
-    if (!['running_costs', 'transfers_loans', 'other', 'suppliers'].includes(e.category)) continue;
+    if (!['running_costs', 'transfers_loans', 'other'].includes(e.category)) continue;
     const k = keyOf(e.ledger);
     if (exclude && exclude.has(k)) continue;
     const mk = monthKey(e.ms);
@@ -242,6 +246,7 @@ function recurringPayments(events, todayMs, exclude) {
   for (const x of by.values()) {
     const seen = months.filter((m) => x.months.has(m));
     if (seen.length < 3) continue;
+    if (median(seen.map((m) => x.months.get(m).days.length)) > 2) continue;
     const totals = seen.map((m) => x.months.get(m).total);
     const med = median(totals);
     if (med < 1000) continue;

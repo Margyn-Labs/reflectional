@@ -142,7 +142,7 @@ function zohoToBook(z) {
   vouchers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const company = org.organization_name || org.org_name || org.name || 'Zoho Books';
   const lastSync = org.last_sync_at || org.last_synced_at || org.last_success_at || null;
-  return { connected: true, source: 'zoho', source_name: SOURCE_NAME.zoho, company, companies: [company], chosen: [], lastSync,
+  return { connected: true, source: 'zoho', source_name: SOURCE_NAME.zoho, balance_convention: 'opposite', company, companies: [company], chosen: [], lastSync,
     edition: null, agentVersion: null, diagnostics: null,
     ledgers: [...ledgers.values()], vouchers, bills: openBills, truncated: !!z.truncated, overrides: z.overrides || {}, aiPlaced: new Set(), syncRuns: [], notes };
 }
@@ -205,7 +205,7 @@ function odooToBook(d) {
   if (untaxedMissing) notes.push(untaxedMissing + ' Odoo invoices and bills arrived before Margyn read amounts before tax, so they’re left out of sales and purchases until Odoo syncs again.');
   vouchers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const company = d.company || 'Odoo';
-  return { connected: true, source: 'odoo', source_name: SOURCE_NAME.odoo, company, companies: [company], chosen: [], lastSync: d.lastSync || null,
+  return { connected: true, source: 'odoo', source_name: SOURCE_NAME.odoo, balance_convention: 'opposite', company, companies: [company], chosen: [], lastSync: d.lastSync || null,
     edition: null, agentVersion: null, diagnostics: null, ledgers: [...ledgers.values()], vouchers, bills: openBills, truncated: !!d.truncated,
     overrides: d.overrides || {}, aiPlaced: new Set(), syncRuns: [], notes };
 }
