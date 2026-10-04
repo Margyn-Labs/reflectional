@@ -48,7 +48,9 @@ const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 const { pagedAll } = require('./_lib/tallyData');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
 const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
-const { buildInsights } = require('./_lib/booksEngine');
+const { buildInsights, prepare: prepareBooks } = require('./_lib/booksEngine');
+const cashFlow = require('./_lib/cashFlowModel');
+const forecastStore = require('./_lib/forecastStore');
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
@@ -346,8 +348,17 @@ async function handleAnalytics(req, res) {
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
   let extra = {};
   try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
+  // The 13-week forecast learned from how money actually moved (cashFlowModel.js), graded by its own past runs,
+  // and today's run kept so tomorrow's can be graded (forecastStore.js). Never blocks the page.
+  let forecast_v2 = null;
+  try {
+    const [promises, runs] = await Promise.all([forecastStore.promises(user.id), forecastStore.pastRuns(user.id)]);
+    forecast_v2 = cashFlow.build(prepareBooks(book, { analytics: out }), { promises, pastRuns: runs });
+    if (forecast_v2 && !(req.query && req.query.company)) await forecastStore.recordDaily(user.id, forecast_v2);
+  } catch (e) { console.error('[tally] forecast failed:', e.message); }
   return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra,
     // Which books system this is, the others connected, and their headline figures side by side (never added).
+    forecast_v2,
     books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] });
 }
 

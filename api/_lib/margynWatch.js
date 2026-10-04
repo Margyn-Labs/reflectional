@@ -49,6 +49,8 @@ const booksTools = require('./booksTools');
 const E = require('./booksEngine');
 const { track } = require('./track');
 const deliveries = require('./waDeliveries');
+const cashFlow = require('./cashFlowModel');
+const forecastStore = require('./forecastStore');
 
 const DAY = 86400000;
 const MAX_PER_RUN = 3;
@@ -259,6 +261,9 @@ async function watchAccount(userId, opts) {
   const slot = o.slot || 'manual';
   const { ctx } = await booksTools.contextFor(userId);
   if (!ctx || !ctx.rows.length) return { user: userId, skipped: 'no books' };
+  // Every day, for every account with books, keep the forecast and the position (forecastStore.js), so the
+  // forecast's track record builds even on days nobody opens the app.
+  try { const fc = cashFlow.build(ctx, { promises: await forecastStore.promises(userId) }); if (fc) await forecastStore.recordDaily(userId, fc); } catch (e) { /* never blocks an update */ }
   const list = E.insights(ctx);
   let state;
   try { state = await selectRows('margyn_signals', `select=key,kind,status,impact,last_sent_at,sent_count,sent_via,sent_to&user_id=eq.${userId}&limit=1000`); }
