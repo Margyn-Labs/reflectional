@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-04-data-check', date:'4 Oct 2026', title:'See that all your data is in',
+    items:[
+      { t:'Is all your data in?', what:'Margyn now checks, month by month, that every voucher Tally holds reached Margyn, that every ledger and open bill is stored, and that each one is counted somewhere in your figures. Anything that needs a look is listed in plain words.',
+        how:'Organisations and sources → Is all your data in?', act:'connectors' },
+      { t:'Salaries from Tally payroll', what:'Payroll vouchers in Tally are now counted in your running costs.', how:'Margin and Reports.', act:'margin' },
+      { t:'Long lists stay whole', what:'Lists longer than 1,000 rows (conversations, ledger entries, invoices) were cut off at 1,000. They now load in full.', how:'Nothing to do.', act:'home' }
+    ]
+  },
+  {
     id:'2026-10-04-payables-from-supplier-balances', date:'4 Oct 2026', title:'Everything you owe suppliers, not just a few bills',
     items:[
       { t:'Payables from your supplier balances', what:'If Tally doesn’t keep your suppliers’ bills one by one, Payables used to show only the few bills Tally did keep. Margyn now works out what you owe each supplier from your purchases and payments, oldest bills paid first, so every supplier shows up.',

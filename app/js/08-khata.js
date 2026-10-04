@@ -4,17 +4,17 @@
    Mirrors the receivables/payables Supabase pattern above.
    ============================================================ */
 async function loadKhataParties(){
-  const { data, error } = await sbClient.from('ledger_parties').select('*').eq('user_id', currentUser.id).order('name', { ascending:true });
+  const { data, error } = await sbAll(() => sbClient.from('ledger_parties').select('*').eq('user_id', currentUser.id).order('name', { ascending:true }).order('id', { ascending:true }));
   if(error){ console.error('[margyn] loadKhataParties:', error); return []; }
   return data || [];
 }
 async function loadKhataEntries(){
-  const { data, error } = await sbClient.from('ledger_entries').select('*').eq('user_id', currentUser.id).order('entry_date', { ascending:true });
+  const { data, error } = await sbAll(() => sbClient.from('ledger_entries').select('*').eq('user_id', currentUser.id).order('entry_date', { ascending:true }).order('id', { ascending:true }));
   if(error){ console.error('[margyn] loadKhataEntries:', error); return []; }
   return data || [];
 }
 async function loadKhataInvoices(){
-  const { data, error } = await sbClient.from('invoices').select('*, invoice_line_items(*)').eq('user_id', currentUser.id).order('issue_date', { ascending:false });
+  const { data, error } = await sbAll(() => sbClient.from('invoices').select('*, invoice_line_items(*)').eq('user_id', currentUser.id).order('issue_date', { ascending:false }).order('id', { ascending:true }));
   if(error){ console.error('[margyn] loadKhataInvoices:', error); return []; }
   return data || [];
 }

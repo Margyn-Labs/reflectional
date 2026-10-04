@@ -14,6 +14,7 @@
  *   POST /api/tally?action=ingest         (install key) receive a batch of rows, upsert w/ provenance
  *   GET  /api/tally?action=status         (user JWT)   list this user's paired installs + counts
  *   GET  /api/tally?action=analytics      (user JWT)   P&L, margin, customers, working capital, GST est., data quality
+ *   GET  /api/tally?action=completeness   (user JWT)   is everything Tally sent stored, read and used (summaries only)
  *   POST /api/tally?action=classify       (user JWT)   confirm which P&L bucket a ledger belongs to
  *   POST /api/tally?action=revoke         (user JWT)   revoke an install key
  *
@@ -45,7 +46,8 @@ const { track } = require('./_lib/track');
 const { computeAnalytics, asOfToday, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
-const { pagedAll } = require('./_lib/tallyData');
+const { pagedAll, loadTallyBook } = require('./_lib/tallyData');
+const { tallyCompleteness } = require('./_lib/dataCompleteness');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
 const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
 const { buildInsights, prepare: prepareBooks } = require('./_lib/booksEngine');
@@ -124,6 +126,7 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET'  && action === 'status')         return await handleStatus(req, res);
     if (req.method === 'GET'  && action === 'summary')        return await handleSummary(req, res);
     if (req.method === 'GET'  && action === 'analytics')      return await handleAnalytics(req, res);
+    if (req.method === 'GET'  && action === 'completeness')   return await handleCompleteness(req, res);
     if (req.method === 'POST' && action === 'classify')       return await handleClassify(req, res);
     if (req.method === 'POST' && action === 'revoke')         return await handleRevoke(req, res);
   } catch (err) {
@@ -370,6 +373,28 @@ async function handleAnalytics(req, res) {
     // Which books system this is, the others connected, and their headline figures side by side (never added).
     forecast_v2,
     books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] });
+}
+
+/* ------------------------------------------------------------------ */
+/* completeness — GET ?action=completeness                             */
+/* Sent → stored → read → used, for the Organisations and sources page */
+/* (api/_lib/dataCompleteness.js). Counts and totals only.             */
+/* ------------------------------------------------------------------ */
+async function handleCompleteness(req, res) {
+  let user;
+  try { user = await getUserFromRequest(req); }
+  catch { return json(res, 500, { error: 'auth_check_failed' }); }
+  if (!user) return json(res, 401, { error: 'unauthorized' });
+  try {
+    const book = await loadTallyBook(user.id, { fresh: true });
+    if (!book.connected) return json(res, 200, { connected: false });
+    const out = tallyCompleteness(book, prepareBooks(book));
+    res.setHeader('Cache-Control', 'no-store');
+    return json(res, 200, Object.assign({ connected: true }, out));
+  } catch (e) {
+    console.error('[tally] completeness failed:', e.message);
+    return json(res, 500, { error: 'completeness_failed' });
+  }
 }
 
 /* ------------------------------------------------------------------ */

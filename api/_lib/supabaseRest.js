@@ -139,13 +139,50 @@ async function updateRows(table, filter, patch) {
 }
 
 /** Select rows matching a PostgREST query string, e.g. "select=*&user_id=eq.<id>". */
-async function selectRows(table, query) {
+async function selectOnce(table, query) {
   const res = await restRequest(`${table}?${query}`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Select on ${table} failed: ${res.status} ${text}`);
   }
   return res.json();
+}
+
+// PostgREST on this project answers at most 1,000 rows per request, whatever `limit=` asks for. Readers
+// asking for limit=2000/5000/20000 (reconciliation's Tally sales, Razorpay payments, Odoo, Zoho's
+// deleted-at-source sweep, the WhatsApp agent...) were silently getting the first 1,000 (4 Oct 2026).
+const ROW_CEILING = 1000;
+const AUTO_PAGE_MAX = 100000;
+
+/**
+ * Rows matching a query. Asks beyond the 1,000-row ceiling are paged transparently: `limit=N` above
+ * 1,000 returns up to N rows; no limit returns every row (up to 100,000), paging only when the first
+ * page comes back full. A query that sets its own `offset=` is a single request, as before.
+ */
+async function selectRows(table, query) {
+  const q = String(query || '');
+  const lm = /(?:^|&)limit=(\d+)(?=&|$)/.exec(q);
+  const want = lm ? parseInt(lm[1], 10) : null;
+  if (/(?:^|&)offset=\d+/.test(q) || (want != null && want <= ROW_CEILING)) return selectOnce(table, q);
+  const base = q.replace(/(?:^|&)limit=\d+(?=&|$)/, '').replace(/^&/, '');
+  const cap = want != null ? want : AUTO_PAGE_MAX;
+  // Paging needs a stable order; most tables have an id to break ties.
+  let ordered = /(?:^|&)order=/.test(base) ? base : (base ? base + '&' : '') + 'order=id.asc';
+  const rows = [];
+  for (let offset = 0; offset < cap; offset += ROW_CEILING) {
+    const n = Math.min(ROW_CEILING, cap - offset);
+    let page;
+    try { page = await selectOnce(table, `${ordered}${ordered ? '&' : ''}limit=${n}&offset=${offset}`); }
+    catch (e) {
+      // No id column to order by: page without it (still far better than stopping at 1,000).
+      if (offset === 0 && ordered !== base && /column .*id.* does not exist|failed to parse order/i.test(e.message)) { ordered = base; offset -= ROW_CEILING; continue; }
+      throw e;
+    }
+    rows.push(...page);
+    if (page.length < n) break;
+    if (want == null && offset + ROW_CEILING >= AUTO_PAGE_MAX) console.warn(`[supabaseRest] ${table}: stopped at ${AUTO_PAGE_MAX} rows`);
+  }
+  return rows;
 }
 
 /**

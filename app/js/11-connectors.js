@@ -1033,8 +1033,45 @@ function connIsLive(key){
   };
   return !!map[key];
 }
+/* "Is all your data in?" (2026-10-04): what Tally holds against what Margyn stored, read and used
+   (GET /api/tally?action=completeness, api/_lib/dataCompleteness.js). Counts only. */
+let mgDataCheck = null, mgDataCheckAt = 0, mgDataCheckBusy = false;
+async function mgLoadDataCheck(force){
+  if(mgDataCheckBusy || (!force && mgDataCheck && Date.now() - mgDataCheckAt < 5 * 60000)) return;
+  if(typeof tallyConnected === 'undefined' || !tallyConnected) return;
+  mgDataCheckBusy = true;
+  try {
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(!session) return;
+    const res = await fetch('/api/tally?action=completeness', { headers:{ 'Authorization':'Bearer ' + session.access_token } });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    mgDataCheck = await res.json(); mgDataCheckAt = Date.now();
+  } catch(e){ console.error('[margyn] data check:', e.message); mgDataCheck = { error:true }; }
+  finally { mgDataCheckBusy = false; mgRenderDataCheck(); }
+}
+function mgRenderDataCheck(){
+  const host = document.getElementById('mgDataCheck'); if(!host) return;
+  if(typeof tallyConnected === 'undefined' || !tallyConnected){ host.innerHTML = ''; return; }
+  const head = '<div class="rd-section-label">Is all your data in? <span class="rd-note">What Tally holds, against what Margyn stored, read and uses</span></div>';
+  const d = mgDataCheck;
+  if(!d){ host.innerHTML = head + '<div class="rd-card" style="padding:16px 20px;"><span class="mg-muted">Checking your Tally data…</span></div>'; mgLoadDataCheck(); return; }
+  if(d.error || !d.connected){ host.innerHTML = head + '<div class="rd-card" style="padding:16px 20px;"><span class="mg-muted">Couldn’t run the check just now.</span> <button class="mg-link" type="button" data-datacheck-run>Try again</button></div>'; return; }
+  const bdg = st => st === 'ok' ? '<span class="mg-bdg pos">OK</span>' : st === 'warn' ? '<span class="mg-bdg warn">Look</span>' : '<span class="mg-bdg">Note</span>';
+  const rows = (d.checks || []).map(c => '<tr><td style="white-space:nowrap;vertical-align:top;">' + bdg(c.status) + '</td><td style="vertical-align:top;"><b>' + escapeHtml(c.label) + '</b><div class="mg-muted" style="font-size:13px;margin-top:2px;">' + escapeHtml(c.detail || '') + '</div>' +
+    (c.gaps && c.gaps.length ? '<div class="mg-muted" style="font-size:12px;margin-top:4px;">Biggest: ' + c.gaps.slice(0, 5).map(g => escapeHtml(mgCleanName ? mgCleanName(g.party) : g.party) + ' (bills ' + escapeHtml(fmtINR(g.billed, 'tile')) + ', ledger ' + escapeHtml(fmtINR(g.ledger, 'tile')) + ')').join(' · ') + '</div>' : '') + '</td></tr>').join('');
+  const months = (d.months || []).filter(m => m.tally != null);
+  const mt = months.length ? '<details style="margin-top:10px;"><summary class="mg-muted" style="cursor:pointer;font-size:13px;">Month by month: Tally’s count against Margyn’s</summary><table class="mg-grid" style="margin-top:8px;"><thead><tr><th>Month</th><th class="r">In Tally</th><th class="r">In Margyn</th><th></th></tr></thead><tbody>' +
+    months.map(m => '<tr><td>' + escapeHtml(m.month) + '</td><td class="r">' + (m.tally || 0).toLocaleString('en-IN') + '</td><td class="r">' + (m.stored || 0).toLocaleString('en-IN') + '</td><td>' + (m.stored >= m.tally ? '<span class="mg-bdg pos">Match</span>' : '<span class="mg-bdg neg">' + (m.tally - m.stored) + ' missing</span>') + '</td></tr>').join('') + '</tbody></table></details>' : '';
+  const when = d.reported_at ? 'Tally agent last reported ' + fmtDate(d.reported_at) : '';
+  host.innerHTML = head + '<div class="rd-card" style="padding:12px 20px;">' +
+    '<div class="mg-muted" style="font-size:12px;margin-bottom:6px;">' + escapeHtml([d.company, when, (d.counts ? d.counts.vouchers.toLocaleString('en-IN') + ' vouchers · ' + d.counts.ledgers.toLocaleString('en-IN') + ' ledgers · ' + d.counts.bills.toLocaleString('en-IN') + ' open bills' : '')].filter(Boolean).join(' · ')) +
+    ' <button class="mg-link" type="button" data-datacheck-run style="margin-left:6px;">Check again</button></div>' +
+    '<table style="width:100%;border-collapse:collapse;"><tbody>' + rows + '</tbody></table>' + mt + '</div>';
+}
+document.addEventListener('click', e => { if(e.target.closest && e.target.closest('[data-datacheck-run]')){ mgDataCheck = null; mgRenderDataCheck(); mgLoadDataCheck(true); } });
 function renderConnectionsHub(){
   ['renderRazorpayStatus','renderZohoStatus','renderOdooStatus','renderShopifyStatus','renderTallyStatus','renderCashfreeStatus'].forEach(fn => { if(typeof window[fn] === 'function'){ try { window[fn](); } catch(e){} } });
+  try { mgRenderDataCheck(); } catch(e){ console.error('[margyn] data check render:', e); }
   const anyLive = CONN_FEED_MAP.some(c => connIsLive(c.key));
   const nudge = document.getElementById('day1Nudge');
   if(nudge) nudge.classList.toggle('hidden', anyLive);

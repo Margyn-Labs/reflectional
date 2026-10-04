@@ -180,7 +180,7 @@ document.getElementById('cashfreeClose').addEventListener('click', () => documen
 document.getElementById('cashfreeOverlay').addEventListener('click', (e) => { if(e.target.id === 'cashfreeOverlay') e.currentTarget.classList.add('hidden'); });
 
 async function loadReceivables(){
-  const { data, error } = await sbClient.from('receivables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
+  const { data, error } = await sbAll(() => sbClient.from('receivables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false }).order('id', { ascending:true }));
   if(error){ console.error('[margyn] loadReceivables:', error); return []; }
   return data || [];
 }
@@ -237,7 +237,7 @@ async function loadRazorpayLiveSummary(){
   } catch(e){ console.error('[margyn] loadRazorpayLiveSummary:', e); return null; }
 }
 async function loadPayables(){
-  const { data, error } = await sbClient.from('payables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false });
+  const { data, error } = await sbAll(() => sbClient.from('payables').select('*').eq('user_id', currentUser.id).eq('status','open').order('due_date', { ascending:true, nullsFirst:false }).order('id', { ascending:true }));
   if(error){ console.error('[margyn] loadPayables:', error); return []; }
   return data || [];
 }

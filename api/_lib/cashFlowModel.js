@@ -764,4 +764,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, supplierOpenItems, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, accuracyFromRuns, supplierOpenItems, partyBalancesToday, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
