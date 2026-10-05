@@ -106,6 +106,24 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.evaluate(() => { window.__presence = {}; window.__channel.handlers['presence:sync'](); }); await p.waitForTimeout(100);
   ok(!(await p.isVisible('#ltFaces')), 'nobody else online: no faces in the top bar');
 
+  // 10b. Needs you on a Tally-only account (no approvals): it lists what needs a look, never "Nothing is waiting" beside a late-money card.
+  await p.evaluate(() => { agentActions = { actions:[] }; reconSummary = Object.assign({}, reconSummary, { review_queue:[] }); pendingSuggestions = []; showView('home'); });
+  await p.waitForTimeout(400);
+  const nd = await p.evaluate(() => { const panel = [...document.querySelectorAll('#view-home .mg-panel')].find(x => /Needs you/.test(x.textContent));
+    return { aside:panel.querySelector('.mg-aside').textContent, rows:[...panel.querySelectorAll('.mgd-look .mgd-need-t')].map(x => x.textContent), btns:panel.querySelectorAll('[data-mgd-look]').length, empty:/Nothing is waiting/.test(panel.textContent) }; });
+  ok(!nd.empty && nd.rows.length > 0 && /to look at/.test(nd.aside) && nd.btns > 0 && nd.rows.some(t => /overdue/.test(t)), 'Needs you without approvals lists what needs a look: ' + nd.aside + ' | ' + nd.rows[0]);
+  await p.evaluate(() => { window.__clicked = null; const base = mgrAsk; mgrAsk = q => { window.__clicked = q; }; document.querySelector('[data-mgd-look$=":1"]').click(); mgrAsk = base; });
+  ok(!!(await p.evaluate(() => window.__clicked)), 'its buttons work (asks Margyn): ' + await p.evaluate(() => window.__clicked));
+  // The Ledger badge counts every overdue Tally bill, not the first 100 the server lists.
+  const badge = await p.evaluate(() => { const was = tallyData, conn = tallyConnected;
+    tallyConnected = true;
+    tallyData = Object.assign({}, was || {}, { connected:true, bills:Object.assign({}, (was && was.bills) || {}, { overdue_count:342, items:Array.from({ length:100 }, (_, i) => ({ direction:'receivable', party_name:'P' + i, bill_ref:'B' + i, closing_balance:1000, overdue_days:10 })) }) });
+    try { renderTallyTab(); } catch(e){ return 'error: ' + e.message; }
+    const out = document.getElementById('booksBadge').textContent;
+    tallyData = was; tallyConnected = conn; try { renderTallyTab(); } catch(e){}
+    return out; });
+  ok(badge === '342', 'Ledger badge (renderTallyTab): every overdue bill, not the first 100 listed: ' + badge);
+
   // 11. Phone: no sideways scroll on Home with the new pieces.
   const m = await b.newPage({ viewport:{ width:390, height:844 } }); m.on('pageerror', e => errs.push('mobile: ' + e.message));
   await m.goto(B); await m.waitForTimeout(600); await m.evaluate(seedApp); await m.waitForTimeout(600);

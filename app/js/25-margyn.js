@@ -729,14 +729,31 @@ function mgrWorkingOn(){
   return rows.map(r => '<div class="mgd-task' + (r.ask ? ' click' : '') + '"' + (r.ask ? ' data-mgr-ask="' + escapeHtml(r.ask) + '"' : '') + '><span class="mgd-dot ' + r.dot + '"></span><div><b>' + escapeHtml(r.t) + '</b><span>' + escapeHtml(r.s) + '</span></div><span class="mgd-st">' + escapeHtml(r.st) + '</span></div>').join('');
 }
 /* The top of Home: Margyn's read, how it works, what needs you, what it's on. */
+let mgdLook = [];
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-mgd-look]'); if(!b) return;
+  const [i, j] = b.dataset.mgdLook.split(':').map(Number);
+  const n = mgdLook[i]; if(!n || !n.acts[j]) return;
+  try { n.acts[j].run(); } catch(err){ console.error('[margyn] needs-you action', err); }
+});
 function mgrDeskTop(){
   const m = mgrMood();
   let dec = []; try { dec = mgDecisions(); } catch(e){}
   const away = mgrAway && mgrAway.did.length ? '<div class="mgd-away"><b>While you were away:</b> ' + escapeHtml(mgrAway.did.join(', ')) + '.</div>' : '';
-  const need = dec.length
+  // What needs a look, not an approval: the same list Margyn's own cards come from (late customers, cash under the
+  // floor, bills due, a source or WhatsApp not delivering). A Tally-only account has no approvals, so without this
+  // the panel said "Nothing is waiting on you" beside a card saying ₹62 L was 60+ days late.
+  let look = []; try { look = mgrNudgeRules(); } catch(e){}
+  mgdLook = look;
+  const lookN = Math.max(0, Math.min(look.length, 6 - Math.min(dec.length, 4)));
+  const need = (dec.length || look.length)
     ? dec.slice(0, 4).map(x => '<div class="mgd-need"><div><div class="mgd-need-t">' + escapeHtml(x.t) + '</div><div class="mgd-need-s">' + escapeHtml(x.s) + '</div></div><div class="mgd-need-a">' + (x.amt ? escapeHtml(fmtINR(x.amt, 'tile')) : '') + '</div></div>').join('') +
-      '<div class="mgd-need-f"><button type="button" class="mg-btn primary mg-btn-sm" data-go-page="inbox">Review in Inbox</button><button type="button" class="mg-btn mg-btn-sm" data-mgr-ask="What needs my OK?">Go through them with Margyn</button></div>'
+      (dec.length ? '<div class="mgd-need-f"><button type="button" class="mg-btn primary mg-btn-sm" data-go-page="inbox">Review in Inbox</button><button type="button" class="mg-btn mg-btn-sm" data-mgr-ask="What needs my OK?">Go through them with Margyn</button></div>' : '') +
+      (lookN ? (dec.length ? '<div class="mgd-look-h">Also worth a look</div>' : '') + look.slice(0, lookN).map((n, i) =>
+        '<div class="mgd-need mgd-look"><div><div class="mgd-need-t">' + escapeHtml((mgrName && n.text.indexOf(mgrName + ', ') === 0 ? n.text.slice(mgrName.length + 2) : n.text).replace(/^./, c => c.toUpperCase())) + '</div>' +
+        '<div class="mgd-look-acts">' + n.acts.slice(0, 2).map((a, j) => '<button type="button" class="mg-btn mg-btn-sm' + (j ? '' : ' primary') + '" data-mgd-look="' + i + ':' + j + '">' + escapeHtml(a.label) + '</button>').join('') + '</div></div></div>').join('') : '')
     : '<div class="mg-empty">Nothing is waiting on you. I’ll tell you when something is.</div>';
+  const aside = [dec.length ? dec.length + ' to approve' : '', lookN ? look.length + ' to look at' : ''].filter(Boolean).join(' · ') || 'All clear';
   return '<section class="mgd-hero mgd-' + m.level + '">' +
       '<div class="mgd-mark"><img src="images/margyn-logo-mark.png" alt=""></div>' +
       '<div class="mgd-read"><span class="mgd-tag">' + escapeHtml(m.tag) + '</span>' +
@@ -746,7 +763,7 @@ function mgrDeskTop(){
       '</div>' + mgrHowIWork() +
     '</section>' +
     '<div class="mg-row2 mgd-row">' +
-      '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs you</h2><span class="mg-aside">' + (dec.length ? dec.length + ' waiting' : 'All clear') + '</span></div>' + need + '</div>' +
+      '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs you</h2><span class="mg-aside">' + escapeHtml(aside) + '</span></div>' + need + '</div>' +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>What I’m working on</h2><span class="mg-aside">live</span></div>' + mgrWorkingOn() + '</div>' +
     '</div>';
 }

@@ -195,3 +195,7 @@ body.mgr-open #vxTopBtn{ display:none; }
 .mgr-msg.m + .mgr-msg.m .mgr-who{ display:none; }
 .mgr-feed > .mgr-msg.m + .mgr-msg.m{ margin-top:-6px; }
 .mgr-msg.me + .mgr-msg.me{ margin-top:-6px; }
+/* Needs you: things to look at, under the approvals (mgrDeskTop) */
+.mgd-look-h{ font:600 var(--f12)/1 var(--font-ui); color:var(--g500); padding:14px 16px 4px; border-top:1px solid var(--g100); }
+.mgd-look .mgd-need-t{ font-weight:500; line-height:1.45; }
+.mgd-look-acts{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
