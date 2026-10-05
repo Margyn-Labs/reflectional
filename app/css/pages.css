@@ -297,6 +297,10 @@ body.mg-member #setDeleteAccount, body.mg-member #deleteAccountBtn{ display:none
 .mg-chip.on{ border-color:var(--brand); background:var(--brand-50); color:var(--brand-700); }
 .mg-hub-watch{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; border-bottom:1px solid var(--g100); }
 .mg-hub-watch .mg-fine{ flex-basis:100%; margin:0; }
+.mg-hub-runs{ display:flex; flex-direction:column; gap:6px; }
+.mg-hub-run{ padding:6px 0; border-top:1px solid var(--g100); font-size:var(--f13, 13px); }
+.mg-hub-run summary{ cursor:pointer; list-style:none; }
+.mg-hub-run summary::-webkit-details-marker{ display:none; }
 .mg-li.mg-hub-note{ align-items:flex-start; }
 .mg-li.mg-hub-note .mg-dot{ margin-top:6px; }
 .mg-dot.neg{ background:var(--neg); }

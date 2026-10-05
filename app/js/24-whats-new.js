@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-05-updates-log', date:'5 Oct 2026', title:'See every WhatsApp update Margyn sent today',
+    items:[
+      { t:'Today’s updates', what:'A list of every update of the day: what went out and when, whether WhatsApp delivered it and it was read, and why Margyn stayed quiet or couldn’t send at a given time. Tap one to read exactly what was sent. Earlier days are one tap away.',
+        how:'Conversations → WhatsApp updates → Today’s updates.', act:'history' }
+    ]
+  },
+  {
     id:'2026-10-05-money-pulses', date:'5 Oct 2026', title:'Short money updates through the day',
     items:[
       { t:'Money pulses at 10:30, 12:30, 3 and 5', what:'Between the morning and evening updates, Margyn texts what moved since its last message: money in and out, what got better (a customer paid, late money down, a better-than-usual day) and what needs a look (more credit to a customer who is months late, a bill gone past due, an unusual payment out, a possible double entry, Tally not syncing). If nothing moved, it stays quiet, and it never sends more than four in a day.',

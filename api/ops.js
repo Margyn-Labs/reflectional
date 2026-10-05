@@ -8,6 +8,9 @@
  *   GET  /api/ops?action=partners              (ops allowlist) design-partner list
  *   GET  /api/ops?action=partner&userId=<id>   (ops allowlist) one partner deep dive
  *   PUT  /api/ops?action=note&userId=<id>      (ops allowlist) upsert ops_partner_notes
+ *   GET  /api/ops?action=watch-log&day=<YYYY-MM-DD> (ops allowlist) every account's WhatsApp updates that day:
+ *                                                             slot, sent / quiet / couldn't send, delivery. Statuses
+ *                                                             only, never the message text.
  *   GET  /api/ops?action=metrics               (ops allowlist) ops_metrics aggregates, read as
  *                                                             ops_reader via OPS_METRICS_JWT
  *   POST /api/ops?action=waitlist              (public)       marketing-site waitlist signup
@@ -315,7 +318,7 @@ async function buildPartners() {
       recon_verified_7d,
       recon_cleared_7d,
       whatsapp_in_7d: c('whatsapp_inbound', s7),
-      whatsapp_out_7d: c('whatsapp_outbound', s7),
+      whatsapp_out_7d: c('whatsapp_outbound', s7) + c('watch_sent', s7),
       ask_7d: c('ask_message_sent', s7),
       reconcile_runs_7d: c('reconcile_run', s7),
       reconcile_summary_view_7d: c('reconcile_summary_view', s7),
@@ -325,7 +328,7 @@ async function buildPartners() {
       events_7d_total: evUser.filter((e) => new Date(e.at).getTime() >= s7).length,
       recon_runs_14d: c('reconcile_run', s14),
       ask_14d: c('ask_message_sent', s14),
-      whatsapp_14d: c('whatsapp_inbound', s14) + c('whatsapp_outbound', s14),
+      whatsapp_14d: c('whatsapp_inbound', s14) + c('whatsapp_outbound', s14) + c('watch_sent', s14),
       zoho_active: connectors.some((x) => x.name === 'zoho'),
       zoho_idle: connectors.some((x) => x.name === 'zoho') && c('reconcile_run', s7) === 0,
       note_preview: noteById[uid] ? String(noteById[uid].note || '').slice(0, 80) : null
@@ -459,7 +462,7 @@ async function buildPartnerDetail(userId) {
         last_active_at: events[0] ? events[0].at : null,
         recon_open_mismatches: findings.filter((r) => r.status === 'mismatch').length,
         recon_cleared_7d: findings.filter((r) => r.status === 'verified' && r.verified_at && new Date(r.verified_at).getTime() >= s7).length,
-        whatsapp_in_7d: c7.whatsapp_inbound, whatsapp_out_7d: c7.whatsapp_outbound,
+        whatsapp_in_7d: c7.whatsapp_inbound, whatsapp_out_7d: c7.whatsapp_outbound + (c7.watch_sent || 0),
         ask_7d: c7.ask_message_sent, reconcile_runs_7d: c7.reconcile_run,
         reconcile_summary_view_7d: c7.reconcile_summary_view,
         mismatch_opened_7d: c7.mismatch_opened, mismatch_resolved_marked_7d: c7.mismatch_resolved_marked,
@@ -467,7 +470,7 @@ async function buildPartnerDetail(userId) {
         events_7d_total: Object.values(c7).reduce((a, b) => a + b, 0),
         recon_runs_14d: countBy(s14).reconcile_run,
         ask_14d: countBy(s14).ask_message_sent,
-        whatsapp_14d: countBy(s14).whatsapp_inbound + countBy(s14).whatsapp_outbound,
+        whatsapp_14d: countBy(s14).whatsapp_inbound + countBy(s14).whatsapp_outbound + (countBy(s14).watch_sent || 0),
         zoho_active: connectors.some((x) => x.name === 'zoho'),
         zoho_idle: connectors.some((x) => x.name === 'zoho') && c7.reconcile_run === 0
       };
@@ -484,6 +487,38 @@ async function buildPartnerDetail(userId) {
 // This path uses the OPS_METRICS_JWT (role=ops_reader, 2026-09-21-ops-metrics.sql),
 // so Postgres itself limits it to aggregates — it cannot read any raw table
 // even if this code is wrong.
+/**
+ * Margyn Watch's day across all accounts (margynWatch.logRun rows + wa_deliveries). What went out, when, whether
+ * WhatsApp delivered it, and why a slot stayed quiet. No message text or headline leaves this function.
+ */
+async function buildWatchLog(day) {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(day || '')) ? day : new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+  const rows = await selectRows('margyn_signals', `select=user_id,detail&kind=eq.watch_run&key=like.${encodeURIComponent('run:' + d + ':*')}&limit=5000`).catch(() => []);
+  const runs = rows.map((r) => { try { return Object.assign({ user_id: r.user_id }, JSON.parse(r.detail)); } catch (e) { return null; } }).filter(Boolean);
+  const ids = [...new Set(runs.map((r) => r.message_id).filter(Boolean))];
+  const dl = ids.length ? await selectRows('wa_deliveries', `select=message_id,status,error,delivered_at,read_at&message_id=in.(${ids.map((x) => '"' + String(x).replace(/"/g, '') + '"').join(',')})`).catch(() => null) : [];
+  const byMsg = new Map((dl || []).map((x) => [x.message_id, x]));
+  const users = [...new Set(runs.map((r) => r.user_id))];
+  const [profiles, emails] = await Promise.all([
+    users.length ? selectRows('profiles', `select=id,company_name&id=in.(${users.join(',')})`).catch(() => []) : [],
+    loadUserEmails(users)
+  ]);
+  const company = Object.fromEntries(profiles.map((p) => [p.id, p.company_name]));
+  const accounts = users.map((u) => {
+    const slots = {};
+    for (const r of runs.filter((x) => x.user_id === u)) {
+      const del = r.message_id ? byMsg.get(r.message_id) : null;
+      slots[r.slot] = {
+        outcome: r.outcome, at: r.at, mode: r.mode || null, via: r.via || null, to: r.to || null, points: r.points || 0,
+        reason: r.outcome === 'sent' ? null : (r.reason || null),
+        delivery: del ? del.status : (r.message_id ? (dl === null ? 'untracked' : 'waiting') : null), delivery_error: del ? del.error || null : null
+      };
+    }
+    return { user_id: u, label: company[u] || emails[u] || u, slots };
+  }).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  return { day: d, delivery_tracking: dl !== null, accounts };
+}
+
 async function loadOpsMetrics() {
   const jwt = process.env.OPS_METRICS_JWT;
   if (!jwt) return { configured: false, rows: [] };
@@ -585,6 +620,12 @@ module.exports = async (req, res) => {
       const rows = await buildPartners();
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json({ partners: rows, generated_at: new Date().toISOString() });
+      return;
+    }
+
+    if (action === 'watch-log' && req.method === 'GET') {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(await buildWatchLog(req.query.day));
       return;
     }
 

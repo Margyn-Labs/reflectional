@@ -626,8 +626,9 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   }
 
   const pulses = (last && last.day === today && last.pulses) || 0;
-  const send = (good.length + bad.length > 0 || moneyMoved) && pulses < 4;
-  if (!send) return { send: false, said: [...said] };
+  const worth = good.length + bad.length > 0 || moneyMoved;
+  if (worth && pulses >= 4) return { send: false, said: [...said], reason: 'Already sent four updates today; the rest waits for the evening wrap.' };
+  if (!worth) return { send: false, said: [...said], reason: still.length ? 'Only the morning\'s points still open; that alone isn\'t worth a message.' : 'Nothing moved enough since the last update.' };
   const when = timeIST(snap.at);
   const head = `${previewTag(opt)}${when ? when + ' update' : 'Update'}${greetingName(opt.firstName) ? ',' + greetingName(opt.firstName) : ''}. ${asOfLine(ctx)}`;
   const sections = [head, moneyLines.join('\n') || null,
@@ -713,9 +714,10 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
   const foot = (fu.length ? 'Tell me what happened on any of these, or ask me anything.' : 'Ask me anything about your books.') + ' Reply STOP ALERTS to pause these.';
   const moneyMoved = m.in_total > 0 || m.out_total > 0 || m.invoices > 0;
   const send = moneyMoved || fu.length > 0 || newOne.length > 0 || tm.length > 1;
+  const reason = send ? undefined : 'Nothing happened today and nothing is due tomorrow.';
   const headline = 'Evening wrap: ' + (m.in_total ? `${inr(m.in_total)} came in today` : 'no money in from customers today') +
     (fu.length ? `; ${open} of this morning's ${fu.length} point${fu.length === 1 ? ' is' : 's are'} still open.` : '.');
-  return { text: fit(sections, foot), headline, send, open };
+  return { text: fit(sections, foot), headline, send, open, reason };
 }
 
 module.exports = {
