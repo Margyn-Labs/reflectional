@@ -41,14 +41,27 @@ const NAV_PAGES = {
   analytics: 'Reports: charts, graphs and trends built from the data',
   scores: 'Pulse Score: the financial health score and the vitals behind it',
   history: 'Conversations: past chats with Margyn, calls and WhatsApp chats, and what Margyn noticed',
-  agents: 'Automations: payment reminders, chasing customers for collections, month-end close, morning and evening WhatsApp updates',
+  agents: 'Margyn’s agents: each agent and its switches, automations, payment reminders, chasing customers for collections, month-end close, morning and evening WhatsApp updates',
   connectors: 'Organisations and sources: connect, sync or reconnect Zoho, Tally, Odoo, Razorpay, Cashfree, Shopify',
   people: 'People and roles: team members, their WhatsApp numbers, who can see what',
   settings: 'Settings: notifications, preferences, account controls',
   audit: 'Audit log: a history of who changed what and when',
   channels: 'Channel health: whether WhatsApp and email reminders are actually delivered, money paid after a reminder',
   financing: 'Capital readiness: business loans, working capital credit, readiness for a lender',
-  profile: 'Profile: the company name, GST number, city and business details'
+  profile: 'Profile: the company name, GST number, city and business details',
+  work: 'All work: every task and proposal across the business, who owns it, what is waiting',
+  live: 'Margyn live: what Margyn and its agents are doing right now, running jobs',
+  collect: 'Collect: overview of getting paid by customers, what is due this week, who to chase',
+  chasing: 'Chasing: reminders sent to customers, follow-ups, promises to pay',
+  payover: 'Pay: overview of paying suppliers, bills due this week, what to pay first',
+  closeover: 'Close: month-end close checklist, what is done and what is left',
+  entries: 'Ledger entries: receivable, payable and cash entries kept by hand, settled not deleted',
+  plan: 'Plan: forecast, scenarios, targets and where the business is heading',
+  transactions: 'Transactions: every invoice, bill, payment and settlement across all apps in one list',
+  tallydata: 'Tally vouchers: ledger balances, bills and vouchers exactly as Tally holds them',
+  documents: 'Documents: uploaded and forwarded invoices, bills, receipts and files',
+  rules: 'Rules: what Margyn may do on its own, what needs approval, limits',
+  howitworks: 'How Margyn works: how the agents work, where numbers come from, the formulas'
 };
 // Quick actions the palette already offers (mgSearch); ids match MG_NAV_ACTIONS in app/js/02-shell.js.
 const NAV_ACTIONS = {

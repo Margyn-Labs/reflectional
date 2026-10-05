@@ -14,7 +14,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const boot = async (hash, pre, preArg) => { await p.goto('about:blank'); await p.goto(B + (hash || '')); await p.waitForFunction(() => sbClient && document.getElementById('authGate') && !document.getElementById('authGate').classList.contains('hidden'), null, { timeout:10000 }); await p.waitForTimeout(500); await p.evaluate(pre || (() => { window.__seedPrefs = null; window.__seedNoPrefsColumn = false; }), preArg); await p.evaluate(seedApp); await p.waitForTimeout(700); };
   const vis = () => p.evaluate(() => [...document.querySelectorAll('[id^="view-"]')].filter(v => !v.classList.contains('hidden') && v.parentElement.classList.contains('wrap')).map(v => v.id));
   // Margyn OS (27-os.js): pages live in spaces with tabs; the rail opens a space, the tab bar a page.
-  const OSNAV = { cash:'cash/overview', cfopack:'reports/cfo-pack', analytics:'reports/custom', home:'desk/desk', receivables:'collect/receivables', customers:'parties/customers', books:'close/books', gst:'tax/gst', audit:'audit/log', inbox:'work/needs-me', agents:'margyn/agents', margin:'plan/margin', cashforecast:'cash/forecast' };
+  const OSNAV = { cash:'cash/overview', cfopack:'reports/cfo-pack', analytics:'reports/custom', home:'desk/desk', receivables:'collect/receivables', customers:'parties/customers', books:'close/books', gst:'tax/gst', audit:'audit/log', inbox:'close/proposals', agents:'margyn/agents', margin:'plan/margin', cashforecast:'cash/forecast' };
   const rail = async (m, page) => { const [s, t] = OSNAV[page].split('/'); await m.click('.os-rail-b[data-os-space="' + s + '"]'); await m.waitForTimeout(200); const tab = await m.$('[data-os-tab="' + s + '/' + t + '"]'); if(tab && await tab.isVisible()) await tab.click(); };
 
   // 1. deep link: URL opens that page with that source, after login data load
@@ -196,7 +196,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await rail(p, 'audit'); await p.waitForTimeout(300);
   ok((await p.$$('#view-audit tbody tr')).length === 5, 'Audit log shows ledger and team events');
   await rail(p, 'inbox'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/work/needs-me') && !(await p.isVisible('#agentTabs')) && await p.evaluate(() => agentsActiveTab) === 'queue', 'Inbox = the queue, no tab bar');
+  ok(p.url().endsWith('#/close/proposals') && !(await p.isVisible('#agentTabs')) && await p.evaluate(() => agentsActiveTab) === 'queue' && await p.isVisible('#agentQueueCard') && !(await p.isVisible('#reconReviewCard')), 'Proposals = the proposal queue only, no tab bar');
+  await p.evaluate(() => showView('inbox')); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/work') && JSON.stringify(await vis()) === '["view-work"]', 'an Inbox link opens Work, the one list of what waits');
   await rail(p, 'agents'); await p.waitForTimeout(300);
   ok(p.url().endsWith('#/margyn/agents') && await p.evaluate(() => agentsActiveTab) === 'roster' && !(await p.isVisible('#agentTabs [data-atab="queue"]')), 'Agents = roster, queue tab hidden');
   ok(await p.evaluate(() => new Set([...document.querySelectorAll('.sidebar .os-rail-b')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().left))).size) === 1, 'rail is a single column');

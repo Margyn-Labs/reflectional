@@ -84,18 +84,18 @@ function osRenderPay(){
   let g = []; try { g = mgMoneyGroups('pay'); } catch(e){}
   const total = g.reduce((t, x) => t + x.amount, 0), overdue = g.reduce((t, x) => t + (x.overdue || 0), 0), due7 = g.reduce((t, x) => t + (x.due7 || 0), 0);
   let itc = []; try { itc = ((agentActions && agentActions.actions) || []).filter(a => a.kind === 'itc_risk'); } catch(e){}
-  const top = g.slice(0, 10);
+  const top = g.filter(x => x.due7 > 0 || x.overdue > 0).sort((a, b) => (b.due7 || 0) - (a.due7 || 0)).slice(0, 10);
   host.innerHTML = mgPageHead({ group:'Pay', title:'Pay', sub:'What you owe suppliers, what’s due this week, and what to hold back.', scope:mgScopeText('Reconciled') }) +
     osKpis([
       { l:'You owe suppliers', v:total ? fmtINR(total, 'tile') : '—', s:g.length + ' supplier' + (g.length === 1 ? '' : 's'), go:'pay/payables' },
       { l:'Due in 7 days', v:fmtINR(due7, 'tile'), s:'including anything already late' },
       { l:'Already late', v:fmtINR(overdue, 'tile'), s:'past the due date', tone:overdue ? 'neg' : '' },
-      { l:'Holds suggested', v:String(itc.length), s:itc.length ? fmtINR(itc.reduce((t, a) => t + (Number(a.amount) || 0), 0), 'tile') + ' until suppliers file GST' : 'No GST holds', go:itc.length ? 'work/needs-me' : 'tax/gst' }
+      { l:'Holds suggested', v:String(itc.length), s:itc.length ? fmtINR(itc.reduce((t, a) => t + (Number(a.amount) || 0), 0), 'tile') + ' until suppliers file GST' : 'No GST holds', go:itc.length ? 'close/proposals' : 'tax/gst' }
     ]) +
-    osPanel('Biggest suppliers', osGoLink('Open payables', 'pay/payables'),
+    osPanel('To pay this week', osGoLink('All suppliers', 'pay/payables'),
       top.length ? '<div class="mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>Supplier</th><th class="r">Owed (₹)</th><th class="r">Due in 7 days (₹)</th><th>Status</th><th>Apps</th></tr></thead><tbody>' +
         top.map(x => '<tr class="click" data-os-party="pay|' + escapeHtml(x.key) + '"><td>' + escapeHtml(x.party) + '</td><td class="r">' + mgNum(x.amount) + '</td><td class="r">' + (x.due7 ? mgNum(x.due7) : '') + '</td><td>' + (x.overdue > 0 ? '<span class="mg-pill os-pill-bad">Late</span>' : '<span class="mg-pill">Open</span>') + '</td><td>' + osSrcChips(x.sources) + '</td></tr>').join('') + '</tbody></table></div>'
-        : '<div class="mg-empty">No supplier bills yet. Connect your books or add a bill.</div>');
+        : '<div class="mg-empty">' + (g.length ? 'Nothing is due this week.' : 'No supplier bills yet. Connect your books or add a bill.') + '</div>');
 }
 
 /* ---------- Close › Overview: the month-end checklist, worked out from the books ---------- */
@@ -114,7 +114,7 @@ function osRenderClose(){
     { t:'Every app synced', ok:on.length > 0 && !stale.length, s:!on.length ? 'No app connected yet' : stale.length ? stale.map(k => MG_SRC_LABEL[k]).join(', ') + ' haven’t synced in 2 days' : on.length + ' app' + (on.length === 1 ? '' : 's') + ' up to date', who:'Books agent', go:'apps/connected' },
     { t:'Your books agree', ok:!dis.length, s:dis.length ? dis.length + ' place' + (dis.length === 1 ? '' : 's') + ' where two sources disagree' : 'Every source agrees within 2%', who:dis.length ? 'You' : 'Books agent', go:'close/books' },
     { t:'Payments matched to invoices', ok:!!c && !osAgentState('payments').need, s:c ? c.verified + ' matched · ' + osAgentState('payments').need + ' to check' : 'Connect Razorpay or Cashfree and Zoho Books', who:'Payments agent', go:'collect/matching' },
-    { t:'Proposals decided', ok:!props, s:props ? props + ' waiting for your OK' : 'Nothing waiting', who:props ? 'You' : 'Close agent', go:'work/needs-me' },
+    { t:'Proposals decided', ok:!props, s:props ? props + ' waiting for your OK' : 'Nothing waiting', who:props ? 'You' : 'Close agent', go:'close/proposals' },
     { t:'Forwarded documents placed', ok:!docs, s:docs ? docs + ' to approve' : 'Nothing waiting', who:docs ? 'You' : 'Documents agent', go:'documents/forwarded' },
     { t:'CFO pack for ' + mgMonthLabel(lastMonth), ok:packSent, s:packSent ? 'Sent' : 'Not sent yet', who:'You', go:'reports/cfo-pack' }
   ];
@@ -124,7 +124,6 @@ function osRenderClose(){
       '<div class="os-prog"><i style="width:' + Math.round(done / steps.length * 100) + '%"></i></div>' +
       steps.map((x, i) => '<button type="button" class="os-step' + (x.ok ? ' ok' : '') + '" data-os-go="' + x.go + '"><span class="os-step-n">' + (x.ok ? '✓' : i + 1) + '</span><span class="os-step-m"><b>' + escapeHtml(x.t) + '</b><span>' + escapeHtml(x.s) + '</span></span><span class="os-step-w">' + escapeHtml(x.who) + '</span></button>').join('') + '</div>' +
     '<div class="mg-row2">' +
-      osPanel('Where your books disagree', osGoLink('Open books', 'close/books'), dis.length ? '<div class="os-need">' + dis.slice(0, 6).map(x => '<div class="os-need-r"><div><b>' + escapeHtml(x.t) + '</b><span>' + escapeHtml(x.s) + '</span></div><span class="os-need-a">' + escapeHtml(fmtINR(x.amt, 'tile')) + '</span></div>').join('') + '</div>' : '<div class="mg-empty">Every source agrees.</div>') +
       osPanel('Margyn on it', osGoLink('See it live', 'margyn/live'), osAgentsBlock(['books', 'close', 'documents'])) +
     '</div>';
 }
@@ -145,7 +144,6 @@ function osRenderPlan(){
       { l:'Cash low point', v:f ? fmtINR(f.min, 'tile') : '—', s:f ? 'week ' + (f.minWeek + 1) + ' of 13' + (f.firstBelow >= 0 ? ' · below your floor' : '') : 'Forecast needs more figures', tone:f && f.firstBelow >= 0 ? 'neg' : '', go:'cash/forecast' }
     ]) +
     '<div class="mg-row2">' +
-      osPanel('The six vitals', osGoLink('Why this score', 'plan/pulse'), '<div class="os-vitals">' + ((s && s.vitals) || []).map(v => '<div class="os-vit"><span>' + escapeHtml(mgVitalName(v.label)) + '</span><b>' + escapeHtml(String(v.value)) + '</b><i style="width:' + Math.max(4, Math.min(100, Number(v.score) || 0)) + '%"></i></div>').join('') + '</div>' + (s ? '' : '<div class="mg-empty">Your vitals appear once Margyn has your figures.</div>')) +
       osPanel('Margyn on it', osGoLink('See it live', 'margyn/live'), osAgentsBlock(['forecast', 'watch'])) +
     '</div>';
 }
@@ -214,23 +212,23 @@ function osRenderDocuments(){
 /* ---------- Rules: what Margyn may do on its own (the real settings) ---------- */
 function osRenderRules(){
   const host = document.getElementById('view-rules'); if(!host) return;
-  const d = (typeof agentDeployments !== 'undefined' && agentDeployments) || {};
-  const st = k => (d[k] && d[k].status) || 'not_deployed';
-  const lab = s => s === 'active' ? ['On', 'os-pill-ok'] : s === 'paused' ? ['Paused', 'os-pill-wait'] : ['Off', ''];
-  const w = typeof mgWatchChannel === 'function' ? mgWatchChannel() : null;
+  // Permissions only: what each agent may do without a person. Whether an agent is
+  // switched on, and what it is doing, is on its card under Margyn › Agents.
+  const OWN = ['Does it on its own', 'os-pill-ok'], ASK = ['You approve', 'os-pill-prop'], SOON = ['Coming app by app', ''];
   const rows = [
-    { a:'Payments', what:'Match payments to invoices', mode:'Suggests, you approve', note:'Exact single matches are verified automatically; anything ambiguous comes to Work.' },
-    { a:'Collections', what:'Send payment reminders on WhatsApp', mode:lab(st('chase_agent'))[0] === 'On' ? 'Does it on its own' : lab(st('chase_agent'))[0], pill:lab(st('chase_agent')), note:'Reminders follow your schedule and stop the moment a customer pays, disputes or promises a date.', go:'margyn/agents' },
-    { a:'Close', what:'Book journal entries for exceptions', mode:'Suggests, you approve', note:'Nothing is booked until you approve it in Work.' },
-    { a:'GST', what:'Hold payments to suppliers who haven’t filed', mode:'Suggests, you approve', note:'Margyn drafts the message to the supplier; you see it before it goes.' },
-    { a:'Documents', what:'Place forwarded bills and invoices in your books', mode:'Suggests, you approve', note:'Every document waits in Documents until you approve it.' },
-    { a:'Watch', what:'Send you WhatsApp updates through the day', mode:w && w.headline !== 'Off' ? 'Does it on its own' : 'Off', pill:w && w.headline !== 'Off' ? ['On', 'os-pill-ok'] : ['Off', ''], note:'Morning detail, short updates at 10:30 and 3:00, an evening wrap-up.', go:'settings/notifications' },
-    { a:'Bells', what:'Opening and Closing Bell on WhatsApp', mode:lab(st('whatsapp_bell'))[0] === 'On' ? 'Does it on its own' : lab(st('whatsapp_bell'))[0], pill:lab(st('whatsapp_bell')), note:'Your morning and evening briefing.', go:'margyn/agents' },
-    { a:'Books', what:'Write approved changes back to Tally, Zoho and Odoo', mode:'Coming app by app', note:'Today Margyn records approved changes in Margyn; your connected books are not changed.' }
+    { a:'Payments', what:'Match payments to invoices', may:ASK, note:'Exact single matches are verified automatically; anything ambiguous comes to Work.' },
+    { a:'Collections', what:'Send payment reminders on WhatsApp', may:OWN, note:'Once switched on, reminders follow your schedule and stop the moment a customer pays, disputes or promises a date.', go:'margyn/agents' },
+    { a:'Close', what:'Book journal entries for exceptions', may:ASK, note:'Nothing is booked until you approve it in Work.' },
+    { a:'GST', what:'Hold payments to suppliers who haven’t filed', may:ASK, note:'Margyn drafts the message to the supplier; you see it before it goes.' },
+    { a:'Documents', what:'Place forwarded bills and invoices in your books', may:ASK, note:'Every document waits in Documents until you approve it.' },
+    { a:'Watch', what:'Send you WhatsApp updates and the Opening and Closing Bell', may:OWN, note:'Once switched on: morning detail, short updates at 10:30 and 3:00, an evening wrap-up.', go:'margyn/agents' },
+    (() => { const caps = (typeof osWB !== 'undefined' && osWB.caps) || [], on = caps.filter(c => c.any_on).map(c => c.label);
+      return { a:'Books', what:'Write approved changes back to your apps', may:on.length ? ASK : SOON,
+        note:on.length ? 'Writes to ' + on.join(', ') + ' after you approve. Other apps: saved in Margyn until they get write permission.' : 'Every approval is queued for its app (Work › Sent to apps). Until an app gets write permission, the change is saved in Margyn and you make it in the app.', go:'work/all', goLabel:'See what was sent' }; })()
   ];
-  host.innerHTML = mgPageHead({ group:'Rules', title:'What Margyn may do', sub:'For each job: whether Margyn does it on its own, or suggests and waits for a person. These are the live settings, not a promise.' }) +
-    '<div class="mg-panel"><div class="mg-gridwrap"><table class="mg-grid comfy os-rules"><thead><tr><th>Agent</th><th>Job</th><th>How it works today</th><th></th></tr></thead><tbody>' +
-      rows.map(r => '<tr><td><b>' + escapeHtml(r.a) + '</b></td><td>' + escapeHtml(r.what) + '<div class="mg-muted">' + escapeHtml(r.note) + '</div></td><td>' + (r.pill ? '<span class="mg-pill ' + r.pill[1] + '">' + escapeHtml(r.pill[0]) + '</span> ' : '<span class="mg-pill os-pill-prop">You approve</span> ') + '<div class="mg-muted">' + escapeHtml(r.mode) + '</div></td><td class="r">' + (r.go ? '<button type="button" class="mg-btn mg-btn-sm" data-os-go="' + r.go + '">Change</button>' : '') + '</td></tr>').join('') +
+  host.innerHTML = mgPageHead({ group:'Rules', title:'What Margyn may do', sub:'For each job: whether Margyn may do it on its own, or suggests and waits for a person. Switching an agent on or off is on its card under Margyn › Agents.' }) +
+    '<div class="mg-panel"><div class="mg-gridwrap"><table class="mg-grid comfy os-rules"><thead><tr><th>Agent</th><th>Job</th><th>Margyn may</th><th></th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td><b>' + escapeHtml(r.a) + '</b></td><td>' + escapeHtml(r.what) + '<div class="mg-muted">' + escapeHtml(r.note) + '</div></td><td><span class="mg-pill ' + r.may[1] + '">' + escapeHtml(r.may[0]) + '</span></td><td class="r">' + (r.go ? '<button type="button" class="mg-btn mg-btn-sm"' + (r.go === 'work/all' ? ' data-os-worktab-go="apps"' : '') + ' data-os-go="' + r.go + '">' + escapeHtml(r.goLabel || 'Switch on or off') + '</button>' : '') + '</td></tr>').join('') +
     '</tbody></table></div></div>' +
     '<div class="os-note">Every change Margyn makes, and every approval, is recorded with who did it in the Audit log.</div>';
 }

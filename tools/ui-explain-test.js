@@ -54,7 +54,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(true, 'every figure in the catalog explains without error and fits a call');
 
   // 3. press: safe buttons yes, data-changing buttons no
-  await run('navigate', { page:'inbox' });
+  await p.evaluate(() => osGo('close', 'proposals')); await p.waitForTimeout(400);   // where the Approve buttons are
   const approve = await run('press', { label:'Approve' });
   ok(approve.pressed === false && approve.refused, 'press refuses Approve: ' + (approve.reason || '').slice(0, 50));
   const after = await p.evaluate(() => agentQueueTotals().total);

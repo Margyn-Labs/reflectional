@@ -30,7 +30,7 @@ const MG_PAGES = {
   analytics:{ slug:'reports', base:'analytics', group:'Insight', label:'Reports', sub:'Charts you define, computed from connected data. Nothing here moves your Pulse Score.' },
   scores:{ slug:'pulse', base:'scores', group:'Insight', label:'Pulse Score', sub:'Every point is arithmetic on your own figures. The AI writes the briefing; it never touches the score.' },
   history:{ slug:'ask', base:'history', group:'Insight', label:'Conversations', sub:'Every conversation with Margyn, in the app, on a call or on WhatsApp. Ask anything in plain words, and see what Margyn noticed in your books.' },
-  agents:{ slug:'agents', base:'agents', group:'Automation', label:'Automations', sub:'What Margyn runs for you in the background. It proposes; you approve.' },
+  agents:{ slug:'agents', base:'agents', group:'Margyn', label:'Margyn’s agents', sub:'Each agent: what it is doing, what it did last, and its switches. Agents propose; you approve.' },
   connectors:{ slug:'sources', base:'connectors', group:'Admin', label:'Organisations and sources', sub:'The systems Margyn reads from. Connect, reconnect or disconnect each one here.' },
   people:{ slug:'people', base:'settings', group:'Admin', label:'People and roles', sub:'Who can message Margyn on WhatsApp, get the Bells, and act on your behalf.' },
   settings:{ slug:'settings', base:'settings', group:'Admin', label:'Settings', sub:'Notifications, scoring labels and account controls.' },

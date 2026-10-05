@@ -16,7 +16,10 @@ async function mgLoadChannels(force){
     const res = await fetch('/api/reconcile?action=channel-health', { headers:{ 'Authorization':'Bearer ' + session.access_token }, signal:ctl.signal });
     clearTimeout(timer);
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    mgChan = await res.json(); mgChanAt = Date.now(); mgChanErr = false;
+    const j = await res.json();
+    // An answer without the channel list (an error body, an older server) is a failed load, not an empty page.
+    if(!j || !Array.isArray(j.channels)) throw new Error('no channel list in the answer');
+    mgChan = j; mgChanAt = Date.now(); mgChanErr = false;
   } catch(e){ mgChanErr = true; console.error('[margyn] channel health:', e.message); }
   finally {
     mgChanBusy = false;
@@ -33,8 +36,8 @@ function mgWatchChannel(){ return (mgChan && (mgChan.channels || []).find(c => c
 const MG_CHAN_TONE = { working:'', failing:'warn', not_set_up:'off', quiet:'off' };
 function mgRenderChannels(){
   const host = document.getElementById('view-channels'); if(!host) return;
-  if(!mgChan && !mgChanBusy && !mgChanErr) mgLoadChannels();
-  const d = mgChan;
+  const d = mgChan && Array.isArray(mgChan.channels) ? mgChan : null;
+  if(!d && !mgChanBusy && !mgChanErr) mgLoadChannels(true);
   const head = mgPageHead({ group:'Admin', title:'Channel health', sub:'Which messages are actually reaching people. WhatsApp templates that WhatsApp hasn’t approved fail without any warning, so this is where you’d see it.',
     actions:mgBtn('Refresh', 'data-chan-refresh') });
   if(!d){

@@ -498,7 +498,7 @@ function mgRenderGst(){
     (vendors.length ? '<div class="mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>Vendor</th><th>GSTIN</th><th class="r">At risk (₹)</th></tr></thead><tbody>' +
       vendors.map(v => '<tr><td>' + escapeHtml(v.vendor_name || '—') + '</td><td class="mg-mono">' + escapeHtml(v.vendor_gstin || '') + '</td><td class="r">' + mgNum(v.at_risk) + '</td></tr>').join('') + '</tbody></table></div>'
       : '<div class="mg-empty">' + (z ? 'No vendor has credit at risk this period.' : 'Connect Zoho Books to match GSTR-2B against your books.') + '</div>') + '</div>' +
-    (acts.length ? '<div class="mg-panel"><div class="mg-panel-h"><h2>Waiting on your decision</h2><button class="mg-link mg-aside" type="button" data-go-page="inbox">Open in Inbox →</button></div>' +
+    (acts.length ? '<div class="mg-panel"><div class="mg-panel-h"><h2>Waiting on your decision</h2><button class="mg-link mg-aside" type="button" data-os-go="close/proposals">Decide in Proposals →</button></div>' +
       acts.map(a => '<div class="mg-li"><div><div class="mg-li-t">' + escapeHtml(a.title) + '</div><div class="mg-li-s">' + escapeHtml(a.rationale || '') + '</div></div><div class="mg-li-a">' + escapeHtml(fmtINR(a.amount)) + '</div></div>').join('') + '</div>' : '');
 }
 

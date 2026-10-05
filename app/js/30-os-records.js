@@ -3,7 +3,7 @@
    across apps (what each app said, what Margyn did, what people did) and a
    thread; any piece of work can be assigned to a person.
 
-   Threads and assignments live in record_notes (2026-10-05-record-notes.sql):
+   Threads and assignments live in record_notes (2026-10-05-margyn-os.sql):
    append-only, readable by the whole team, written only under your own name.
    Until that SQL has run the page works as before and says comments are off.
    ============================================================ */
@@ -114,7 +114,7 @@ function osPartyTimeline(g, dir){
 /* ---------- work items and who owns them ---------- */
 function osWorkItems(){
   const out = [];
-  try { ((agentActions && agentActions.actions) || []).forEach(a => out.push({ key:'act:' + a.id, t:a.title, s:(AGENT_KIND_LABEL[a.kind] || a.kind) + ' · Margyn' + (a.confidence != null ? ' · ' + Math.round(a.confidence * 100) + '% sure' : ''), amt:Number(a.amount) || 0, go:'work/needs-me', wf:a.kind === 'itc_risk' ? 'Tax' : 'Collect' })); } catch(e){}
+  try { ((agentActions && agentActions.actions) || []).forEach(a => out.push({ key:'act:' + a.id, t:a.title, s:(AGENT_KIND_LABEL[a.kind] || a.kind) + ' · Margyn' + (a.confidence != null ? ' · ' + Math.round(a.confidence * 100) + '% sure' : ''), amt:Number(a.amount) || 0, go:'close/proposals', wf:a.kind === 'itc_risk' ? 'Tax' : 'Close' })); } catch(e){}
   try { ((reconSummary && reconSummary.connected && reconSummary.review_queue) || []).forEach(q => out.push({ key:'rq:' + q.id, t:(q.customer_name || 'Payment') + ': ' + (q.reason || 'needs review'), s:'Reconciliation · ' + (q.invoice_number || ''), amt:Number(q.amount) || 0, go:'collect/matching', wf:'Collect' })); } catch(e){}
   try { ((typeof pendingSuggestions !== 'undefined' && pendingSuggestions) || []).forEach(p => { const ents = (p.proposal && p.proposal.entries) || [];
     out.push({ key:'doc:' + p.id, t:'Forwarded on WhatsApp' + (ents[0] && ents[0].party ? ': ' + ents[0].party : ''), s:'Import' + (ents.length > 1 ? ' · ' + ents.length + ' figures' : ''), amt:ents.reduce((t, x) => t + (Number(x.amount) || 0), 0), go:'documents/forwarded', wf:'Documents' }); }); } catch(e){}

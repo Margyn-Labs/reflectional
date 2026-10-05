@@ -944,6 +944,7 @@
       <button data-src="tally">Tally</button>
       <button data-src="odoo">Odoo</button>
     </div>
+    <div class="hint os-books-else">Receivables, payables and GST from each source are on Collect, Pay and Tax: pick the source in the bar at the top. Books shows the books themselves: entries, balances and where sources disagree.</div>
     <div id="booksAllNote" class="hint hidden" style="margin-bottom:16px;">Showing every connected accounting source. Margyn never adds these together. For each scoring figure it takes the strongest source available — two that agree beat one, and one connected source beats a number typed by hand — and flags anything that disagrees rather than averaging it.</div>
     <div class="chart-card cc-wide hidden" id="srcConflictCard" style="margin-bottom:16px;">
       <div class="cc-head"><h3>Sources that disagree</h3><span class="cc-sub dt-count" id="srcConflictSub"></span></div>
@@ -1125,8 +1126,8 @@
   <div id="view-agents" class="hidden">
     <div class="rd-head">
       <div>
-        <div class="rd-eyebrow">Automations</div>
-        <h1>What Margyn runs for you</h1>
+        <div class="rd-eyebrow">Margyn</div>
+        <h1>Margyn’s agents</h1>
         <div class="rd-sub">The work Margyn does in the background: payment reminders, reconciliation, reading forwarded documents and the daily Bells. Margyn never edits a figure by itself &mdash; it proposes, you approve, and only then does anything reach your books or your score. To talk to Margyn, open the Margyn panel.</div>
       </div>
       <div class="rd-asof"><span class="dot"></span><span id="agentsAsOf">&mdash;</span></div>
@@ -1394,5 +1395,7 @@
 <script src="/app/js/28-os-live.js"></script>
 <script src="/app/js/29-os-pages.js"></script>
 <script src="/app/js/30-os-records.js"></script>
+<script src="/app/js/31-os-people.js"></script>
+<script src="/app/js/32-os-writes.js"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@ const OS_AGENTS = [
   { key:'payments', name:'Payments', job:'Matches payments to invoices', space:'collect', tab:'matching' },
   { key:'collections', name:'Collections', job:'Chases customers who owe you', space:'collect', tab:'chasing' },
   { key:'books', name:'Books', job:'Keeps your books in sync and checks they agree', space:'close', tab:'books' },
-  { key:'close', name:'Close', job:'Turns exceptions into proposals for you', space:'work', tab:'needs-me' },
+  { key:'close', name:'Close', job:'Turns exceptions into proposals for you', space:'close', tab:'proposals' },
   { key:'gst', name:'GST', job:'Checks supplier filings and input credit', space:'tax', tab:'gst' },
   { key:'documents', name:'Documents', job:'Reads what you forward on WhatsApp', space:'documents', tab:'forwarded' },
   { key:'forecast', name:'Forecast', job:'Learns from your books and forecasts cash', space:'cash', tab:'forecast' },
@@ -235,6 +235,15 @@ function osAgentState(key){
   return out;
 }
 
+/* The rail's Margyn line: what it is doing, or what waits on you. */
+function osRailNow(){
+  try {
+    const run = osRunning();
+    if(run.length) return run.length === 1 ? (OS_AGENT[run[0].agent] || {}).name + ': ' + run[0].text : run.length + ' agents working';
+    let need = 0; osAgentsVisible().forEach(a => { need += osAgentState(a.key).need || 0; });
+    return need ? need + ' waiting on you' : osAgentsVisible().length + ' agents ready';
+  } catch(e){ return ''; }
+}
 function osNowText(){
   const run = osRunning();
   if(run.length) return (OS_AGENT[run[0].agent] || {}).name + ': ' + run[0].text;
@@ -301,8 +310,39 @@ function osAgentCard(a){
     '<div class="os-agc-now"><span class="os-ticker" data-os-ticker="' + a.key + '">' + escapeHtml(st.state === 'working' ? st.now : (st.facts[0] || a.job)) + '</span>' + (st.state === 'working' ? '<span class="os-bar-run"></span>' : '') + '</div>' +
     (st.needText ? '<button type="button" class="os-agc-need" data-os-go="' + a.space + '/' + a.tab + '">' + escapeHtml(st.needText) + ' →</button>' : '') +
     '<div class="os-agc-log">' + (recent.length ? recent.map(x => '<div class="' + x.state + '"><span>' + escapeHtml(x.text) + '</span><small>' + escapeHtml(x.state === 'running' ? 'now' : osSince(x.end || x.at)) + '</small></div>').join('') : '<div class="idle"><span>Nothing yet this session</span></div>') + '</div>' +
+    '<div class="os-agc-ctl" data-os-ctl="' + a.key + '"></div>' +
     '<button type="button" class="mg-link os-agc-go" data-os-go="' + a.space + '/' + a.tab + '">Open ' + escapeHtml((OS_BY_KEY[a.space] || {}).label || '') + ' →</button>' +
   '</div>';
+}
+/* Margyn › Agents: one card per agent, and each agent's own switches inside it
+   (the WhatsApp Bell and Margyn updates are Watch; Payment Chase is Collections;
+   Auto-Reconciliation is Payments). One list of agents in the whole app. */
+const OS_SWITCH_OF = { 'WhatsApp Bell':'watch', 'Margyn updates':'watch', 'Payment Chase':'collections', 'Auto-Reconciliation':'payments' };
+function osPlaceSwitches(){
+  const host = document.getElementById('agentCards'), grid = document.getElementById('osAgentGrid'); if(!host || !grid) return;
+  [...host.querySelectorAll(':scope > .agent-card')].forEach(c => {
+    const h = c.querySelector('h3'), k = h && OS_SWITCH_OF[h.textContent.trim()];
+    const slot = k && grid.querySelector('[data-os-ctl="' + k + '"]');
+    if(slot) slot.appendChild(c);
+  });
+}
+/* Live updates redraw the cards but keep the switches (moved back into the new slots). */
+function osRefreshAgentGrid(){
+  const grid = document.getElementById('osAgentGrid'); if(!grid) return;
+  const keep = [...grid.querySelectorAll('.os-agc-ctl > .agent-card')];
+  grid.innerHTML = osAgentsVisible().map(osAgentCard).join('');
+  keep.forEach(c => { const h = c.querySelector('h3'), k = h && OS_SWITCH_OF[h.textContent.trim()]; const slot = k && grid.querySelector('[data-os-ctl="' + k + '"]'); if(slot) slot.appendChild(c); });
+}
+function osRenderAgentGrid(){
+  const panel = document.getElementById('agentPanel-roster'), host = document.getElementById('agentCards'); if(!panel || !host) return;
+  let grid = document.getElementById('osAgentGrid');
+  if(!grid){ grid = document.createElement('div'); grid.id = 'osAgentGrid'; grid.className = 'os-agcs'; panel.insertBefore(grid, host); }
+  grid.innerHTML = osAgentsVisible().map(osAgentCard).join('');
+  osPlaceSwitches();
+}
+if(typeof renderAgentRoster === 'function'){
+  const baseRoster = renderAgentRoster;
+  renderAgentRoster = async function(){ const out = await baseRoster.apply(this, arguments); try { osRenderAgentGrid(); } catch(e){ console.error('[os] agents', e); } return out; };
 }
 
 /* ---------- the system view: apps → one record → agents → people ---------- */
@@ -328,8 +368,8 @@ function osSystemSvg(){
     const id = path('M176,' + y + ' L236,' + y, 'os-l');
     if(busy) flow(id, 'os-d-in', 1.4, 2);
     const h = mgSourceHealth(k), L = MG_SRC_LOGO[k] || ['?', '#8B93A0'];
-    nodes += '<g><rect x="24" y="' + ay(i) + '" width="152" height="36" rx="8" class="os-n"/><rect x="34" y="' + (ay(i) + 9) + '" width="18" height="18" rx="4" fill="' + L[1] + '"/><text x="43" y="' + (ay(i) + 22) + '" text-anchor="middle" class="os-t-logo">' + L[0] + '</text>' +
-      '<text x="60" y="' + (ay(i) + 16) + '" class="os-t-b">' + escapeHtml(MG_SRC_LABEL[k]) + '</text><text x="60" y="' + (ay(i) + 29) + '" class="os-t-s' + (h.warn ? ' warn' : '') + '">' + escapeHtml(h.text) + '</text></g>';
+    nodes += '<g class="os-sg" data-os-go="apps/connected"><rect x="24" y="' + ay(i) + '" width="152" height="36" rx="8" class="os-n"/><rect x="34" y="' + (ay(i) + 9) + '" width="18" height="18" rx="4" fill="' + L[1] + '"/><text x="43" y="' + (ay(i) + 22) + '" text-anchor="middle" class="os-t-logo">' + L[0] + '</text>' +
+      '<text x="60" y="' + (ay(i) + 16) + '" class="os-t-b">' + escapeHtml(MG_SRC_LABEL[k]) + '</text><text x="60" y="' + (ay(i) + 29) + '" class="os-t-s' + (h.warn ? ' warn' : '') + '">' + escapeHtml(h.warn ? 'Needs attention' : busy ? 'Sending data' : 'Connected') + '</text></g>';   // sync times are on Apps
   });
   if(!apps.length) nodes += '<text x="100" y="60" text-anchor="middle" class="os-t-s">No apps connected</text>';
   nodes += '<rect x="236" y="20" width="56" height="' + (H - 40) + '" rx="10" class="os-rec"/><text transform="translate(268,' + (H / 2) + ') rotate(-90)" text-anchor="middle" class="os-t-rec">ONE FINANCE RECORD</text>';
@@ -365,12 +405,11 @@ function osRenderLive(){
   const host = document.getElementById('view-live'); if(!host) return;
   const run = osRunning();
   const legend = '<div class="os-legend"><span><i class="in"></i>Data coming in</span><span><i class="work"></i>An agent working</span><span><i class="hand"></i>A decision handed to you</span><span><i class="wa"></i>Going out on WhatsApp</span></div>';
-  host.innerHTML = mgPageHead({ group:'Margyn', title:'Margyn, live', sub:'Margyn’s agents and what each is doing right now. Something moves here only when it is actually happening.',
+  host.innerHTML = mgPageHead({ group:'Margyn', title:'Margyn, live', sub:'What Margyn is doing right now, and everything it did. Something moves here only when it is actually happening. Each agent, and its switches, is under Agents.',
       actions:'<button class="mg-btn" type="button" data-os-refresh>Check again</button>' }) +
     '<div class="os-livebar' + (run.length ? ' on' : '') + '"><span class="os-pulse' + (run.length ? '' : ' idle') + '"><i></i>' + (run.length ? '<i></i>' : '') + '</span><b>' + (run.length ? run.length + ' thing' + (run.length === 1 ? '' : 's') + ' running' : 'Nothing running this second') + '</b>' +
       '<span>' + escapeHtml(run.length ? run.map(a => (OS_AGENT[a.agent] || {}).name + ': ' + a.text).join(' · ') : 'Agents run when your books sync, overnight, and when you open the app.') + '</span></div>' +
     '<div class="mg-panel os-sys"><div class="mg-gridwrap">' + osSystemSvg() + '</div>' + legend + '</div>' +
-    '<div class="os-agcs">' + osAgentsVisible().map(osAgentCard).join('') + '</div>' +
     '<div class="mg-panel"><div class="mg-panel-h"><h2>Everything, as it happened</h2><span class="mg-aside">This session and the last 3 days</span></div>' + osFeedHtml(40, true) + '</div>';
 }
 function osFeedHtml(n, withAgent){
@@ -389,7 +428,7 @@ function osInitials(n){ return String(n || '?').trim().split(/\s+/).slice(0, 2).
 function osWhere(){ return osCur ? osCur.space.label + (osCur.space.tabs.length > 1 ? ' · ' + osCur.tab.label : '') : 'Desk'; }
 function osPresenceList(){
   const me = currentUser && currentUser.id, out = [];
-  Object.values(osPresenceState || {}).forEach(arr => (arr || []).forEach(p => { if(!out.some(x => x.id === p.id)) out.push({ id:p.id, name:p.name, where:p.where, me:p.id === me, at:p.at }); }));
+  Object.values(osPresenceState || {}).forEach(arr => (arr || []).forEach(p => { if(!out.some(x => x.id === p.id)) out.push({ id:p.id, name:p.name, where:p.where, me:p.id === me, at:p.at, rec:p.rec || null, typing:p.typing || null }); }));
   return out;
 }
 function osStartPresence(){
@@ -398,6 +437,7 @@ function osStartPresence(){
     const acct = osOwner(); if(!acct) return;
     osPresence = sbClient.channel('os-presence-' + acct, { config:{ presence:{ key:currentUser.id } } });
     osPresence.on('presence', { event:'sync' }, () => { osPresenceState = osPresence.presenceState(); osRefreshLive(); })
+      .on('broadcast', { event:'note' }, m => { if(typeof osOnBroadcast === 'function') osOnBroadcast(m); })   // 31-os-people.js
       .subscribe(st => { if(st === 'SUBSCRIBED') osTrack(); });
   } catch(e){ console.warn('[os] presence', e); }
 }
@@ -464,8 +504,7 @@ function osRenderDesk(){
       '<h1 class="os-hello-h">' + escapeHtml(m.line || (s ? 'Here’s where things stand.' : 'Let’s get your figures in.')) + '</h1>' +
       (who && typeof mgActor !== 'undefined' && mgActor ? '<div class="os-hello-role">Signed in as ' + escapeHtml(mgActor.roleLabel || '') + (osCan('edit') ? '' : ', read-only') + '. You see what your role allows.</div>' : '') +
       (away.length ? '<div class="os-hello-away"><b>While you were away:</b> ' + escapeHtml(away.join(', ')) + '.</div>' : (m.sub ? '<div class="os-hello-away">' + escapeHtml(m.sub) + '</div>' : '')) + '</div>' +
-      '<button type="button" class="os-now' + (run.length ? ' on' : '') + '" data-os-go="margyn/live"><span class="os-pulse' + (run.length ? '' : ' idle') + '"><i></i>' + (run.length ? '<i></i>' : '') + '</span><span><b>' + (run.length ? 'Margyn is working' : 'Margyn · agents idle') + '</b><span class="os-now-t" id="osDeskNow">' +
-        escapeHtml(osNowText()) + '</span></span></button></div>' +
+    '</div>' +
     (s ? '' : '<div class="mg-panel os-setup"><div class="mg-panel-h"><h2>Set Margyn up</h2><span class="mg-aside">Takes a few minutes</span></div><div class="os-setup-list">' +
       '<button type="button" data-os-go="apps/connected"><b>Connect your books</b><span>Tally, Zoho Books or Odoo</span></button>' +
       '<button type="button" data-os-go="apps/connected"><b>Connect payments</b><span>Razorpay, Cashfree or Shopify</span></button>' +
@@ -476,7 +515,7 @@ function osRenderDesk(){
       '<div class="os-desk-l">' +
         '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs you</h2><span class="mg-aside">' + (dec.length ? dec.length + ' waiting' : 'All clear') + '</span></div>' +
           (dec.length ? '<div class="os-need">' + dec.slice(0, 6).map(x => '<div class="os-need-r"><div><b>' + escapeHtml(x.t) + '</b><span>' + escapeHtml(x.s) + '</span></div><span class="os-need-a">' + (x.amt ? escapeHtml(fmtINR(x.amt, 'tile')) : '') + '</span><span class="mg-pill os-pill-prop">Proposed</span></div>').join('') + '</div>' +
-            '<div class="os-need-f"><button type="button" class="mg-btn primary mg-btn-sm" data-os-go="work/needs-me">Review and approve</button><button type="button" class="mg-btn mg-btn-sm" data-mgr-ask="What needs my OK?">Go through them with Margyn</button></div>'
+            '<div class="os-need-f"><button type="button" class="mg-btn primary mg-btn-sm" data-os-go="work/all">Review and approve</button><button type="button" class="mg-btn mg-btn-sm" data-mgr-ask="What needs my OK?">Go through them with Margyn</button></div>'
             : '<div class="mg-empty">Nothing is waiting on you. When an agent needs a decision, it lands here.</div>') + '</div>' +
         '<div class="mg-panel"><div class="mg-panel-h"><h2>Activity</h2><span class="mg-aside"><span class="os-livetag"><i></i>Live</span> people and Margyn</span></div><div id="osDeskFeed">' + osFeedHtml(8, true) + '</div></div>' +
       '</div>' +
@@ -497,21 +536,22 @@ function osRenderWork(){
   osRunning().forEach(a => running.push({ w:(OS_AGENT[a.agent] || {}).name || 'Margyn', t:a.text, s:'Running now', amt:0, st:'run' }));
   const done = osActVisible().filter(a => a.state === 'done').slice(0, 40);
   let le = []; try { le = ((typeof ledgerEvents !== 'undefined' && ledgerEvents) || []).filter(e => e.channel !== 'agent').slice(0, 30); } catch(e){}
-  const tabs = [['waiting', 'Waiting on a person', dec.length], ['assigned', 'Assigned', typeof osAssignedCount === 'function' ? osAssignedCount() : 0], ['running', 'Margyn is on it', running.length], ['people', 'Done by people', le.length], ['done', 'Done by Margyn', done.length]];
+  const tabs = [['waiting', 'Waiting on a person', dec.length], ['assigned', 'Assigned', typeof osAssignedCount === 'function' ? osAssignedCount() : 0], ['running', 'Margyn is on it', running.length], ['people', 'Done by people', le.length], ['apps', 'Sent to apps', typeof osWB !== 'undefined' ? (osWB.writes || []).length : 0], ['done', 'Done by Margyn', done.length]];
   let body = '';
   if((osWorkTab === 'waiting' || osWorkTab === 'assigned') && typeof osWorkTableHtml === 'function') body = osWorkTableHtml(osWorkTab);
   else if(osWorkTab === 'waiting') body = dec.length ? '<table class="mg-grid os-work"><thead><tr><th></th><th>What</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>' +
-      dec.map(x => '<tr><td class="os-own"><span class="os-av m">M</span></td><td><b>' + escapeHtml(x.t) + '</b><div class="mg-muted">' + escapeHtml(x.s) + '</div></td><td class="r">' + (x.amt ? mgNum(x.amt) : '') + '</td><td><span class="mg-pill os-pill-prop">Proposed</span></td><td class="r"><button type="button" class="mg-btn mg-btn-sm primary" data-os-go="work/needs-me">Review</button></td></tr>').join('') + '</tbody></table>'
+      dec.map(x => '<tr><td class="os-own"><span class="os-av m">M</span></td><td><b>' + escapeHtml(x.t) + '</b><div class="mg-muted">' + escapeHtml(x.s) + '</div></td><td class="r">' + (x.amt ? mgNum(x.amt) : '') + '</td><td><span class="mg-pill os-pill-prop">Proposed</span></td><td class="r"><button type="button" class="mg-btn mg-btn-sm primary" data-os-go="close/proposals">Review</button></td></tr>').join('') + '</tbody></table>'
     : '<div class="mg-empty">Nothing is waiting on a person.</div>';
   else if(osWorkTab === 'running') body = running.length ? '<table class="mg-grid os-work"><thead><tr><th></th><th>What</th><th class="r">Amount</th><th>Status</th></tr></thead><tbody>' +
       running.map(x => '<tr' + (x.go ? ' class="click" data-os-go="' + x.go + '"' : '') + '><td class="os-own"><span class="os-av m">M</span></td><td><span class="os-wfc">' + escapeHtml(x.w) + '</span><b>' + escapeHtml(x.t) + '</b><div class="mg-muted">' + escapeHtml(x.s) + '</div></td><td class="r">' + (x.amt ? mgNum(x.amt) : '') + '</td><td><span class="mg-pill ' + (x.st === 'need' ? 'os-pill-wait' : 'os-pill-run') + '">' + (x.st === 'need' ? 'Needs you' : 'Running') + '</span></td></tr>').join('') + '</tbody></table>'
     : '<div class="mg-empty">Margyn has nothing in progress right now.</div>';
+  else if(osWorkTab === 'apps') body = typeof osWritesTableHtml === 'function' ? osWritesTableHtml() : '';
   else if(osWorkTab === 'people') body = le.length ? '<table class="mg-grid os-work"><thead><tr><th></th><th>What</th><th class="r">Amount</th><th>When</th></tr></thead><tbody>' +
       le.map(e => '<tr><td class="os-own"><span class="os-av">' + escapeHtml(osInitials(e.actor_name || 'You')) + '</span></td><td><b>' + escapeHtml(((e.actor_name || 'Someone') + ' ' + ({ settled:'settled', deleted:'removed', created:'added', imported:'imported', updated:'changed' }[e.event] || e.event || '') + ' ' + (e.entity_type || '')).trim()) + '</b><div class="mg-muted">' + escapeHtml([e.party_name, e.note].filter(Boolean).join(' · ')) + '</div></td><td class="r">' + (e.amount != null ? mgNum(e.amount) : '') + '</td><td class="mg-mono">' + escapeHtml(e.created_at ? osSince(e.created_at) : '') + '</td></tr>').join('') + '</tbody></table>'
     : '<div class="mg-empty">Nothing yet. Changes your team makes show here, with who made them.</div>';
   else body = done.length ? '<div class="os-feed">' + done.map(x => '<div class="os-fe done"><span class="os-fe-dot"></span><span class="os-fe-t"><b>' + escapeHtml((OS_AGENT[x.agent] || {}).name || 'Margyn') + '</b> ' + escapeHtml(x.text) + '</span><small>' + escapeHtml(osSince(x.end || x.at)) + '</small></div>').join('') + '</div>'
     : '<div class="mg-empty">Nothing recorded yet this session.</div>';
-  host.innerHTML = mgPageHead({ group:'Work', title:'All work', sub:'Everything in progress across the business: what waits on a person, what Margyn is doing, and what was done.' }) +
+  host.innerHTML = mgPageHead({ group:'Work', title:'Work', sub:'Every finance task in one list, with who owns it. Review opens the item where it is decided; what Margyn is doing and what was done are here too.' }) +
     '<div class="os-subtabs">' + tabs.map(t => '<button type="button" class="' + (t[0] === osWorkTab ? 'on' : '') + '" data-os-worktab="' + t[0] + '">' + escapeHtml(t[1]) + '<i>' + t[2] + '</i></button>').join('') + '</div>' +
     '<div class="mg-panel mg-gridwrap">' + body + '</div>';
 }
@@ -527,17 +567,17 @@ function osRefreshLive(){
   requestAnimationFrame(() => {
     osLiveQueued = false;
     osDrawPill(); osFaces();
+    document.querySelectorAll('[data-os-railnow]').forEach(el => { const t = osRailNow(); if(el.textContent !== t) el.textContent = t; });
+    document.querySelectorAll('.os-rail-mg').forEach(b => b.classList.toggle('on', osRunning().length > 0));
     if(typeof osCounts === 'function') osCounts();
     const v = typeof mgCurrentView !== 'undefined' ? mgCurrentView : '';
     if(v === 'home'){
       const f = document.getElementById('osDeskFeed'); if(f) f.innerHTML = osFeedHtml(8, true);
       const a = document.getElementById('osDeskAgents'); if(a) a.innerHTML = osAgentsVisible().map(osAgentRow).join('');
       const t = document.getElementById('osDeskTeam'); if(t) t.innerHTML = osTeamHtml();
-      const n = document.getElementById('osDeskNow'); const run = osRunning();
-      if(n){ n.textContent = osNowText(); const hb = n.previousElementSibling; if(hb) hb.textContent = run.length ? 'Margyn is working' : 'Margyn · agents idle';
-        const btn = n.closest('.os-now'); if(btn){ btn.classList.toggle('on', !!run.length); } }
     }
     if(v === 'live') osRenderLive();
+    if(v === 'agents') osRefreshAgentGrid();
     if(v === 'work') osRenderWork();
   });
 }

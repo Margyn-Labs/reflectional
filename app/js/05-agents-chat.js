@@ -497,6 +497,7 @@ async function runProposedAction(action){
       .update({ status: type === 'approve_suggestion' ? 'approved' : 'rejected', decided_at: new Date().toISOString() })
       .eq('id', sug.id);
     if(uErr) throw uErr;
+    if(type === 'approve_suggestion' && typeof osQueueDocWrites === 'function') await osQueueDocWrites(sug.id, null);   // 32-os-writes.js
     pendingSuggestions = await loadPendingSuggestions();
     if(typeof renderSuggestionsView === 'function') renderSuggestionsView();
     return;

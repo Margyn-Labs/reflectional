@@ -1107,11 +1107,10 @@ function renderConnectionsHub(){
   // feed table
   const t = document.getElementById('connFeedTable');
   if(t){
-    let rows = '<thead><tr><th>Source</th><th>Status</th><th>Feeds</th><th>Tier</th></tr></thead><tbody>';
+    // Connected or not is on each source's row above; this table says only what each one feeds.
+    let rows = '<thead><tr><th>Source</th><th>Feeds</th><th>Tier</th></tr></thead><tbody>';
     CONN_FEED_MAP.forEach(c => {
-      const live = connIsLive(c.key);
       rows += '<tr><td>' + escapeHtml(c.label) + '</td>' +
-        '<td>' + (live ? '<span class="lr-tag ok">Connected</span>' : '<span class="lr-tag unreconciled">Not connected</span>') + '</td>' +
         '<td>' + escapeHtml(c.feeds) + '</td>' +
         '<td>' + escapeHtml(c.tier) + '</td></tr>';
     });

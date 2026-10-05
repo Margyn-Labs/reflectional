@@ -138,7 +138,17 @@ function renderSettingsView(){
   const mount = document.getElementById('settingsMount'); if(!mount) return;
   const bands = scoreBandCutoffs();
   const toggle = (id, on) => '<label class="rd-toggle"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><span class="track"></span></label>';
+  const fcMine = Object.keys(mgPrefGet('forecast', {}) || {}).length > 0;
+  const tilesMine = Object.keys(mgPrefGet('metrics', {}) || {}).length > 0;
   mount.innerHTML =
+    '<div class="set-block"><h3>Preferences</h3><div class="set-card">' +
+      '<div class="set-row"><span>Forecast assumptions<span class="set-desc">' + (fcMine ? 'You have set your own: when customers pay, what you spend, and the rest.' : 'Margyn’s defaults, learned from your books.') + '</span></span>' +
+        '<span style="display:flex; gap:10px;">' + (fcMine ? '<button class="btn-ghost" type="button" id="setPrefFcReset">Back to Margyn’s defaults</button>' : '') + '<button class="btn-ghost" type="button" id="setPrefFcOpen">Open the forecast</button></span></div>' +
+      '<div class="set-row"><span>Tiles on the Desk and the Pulse Score<span class="set-desc">' + (tilesMine ? 'You chose which figures show.' : 'The standard set of figures.') + ' Change them with Edit tiles on either page.</span></span>' +
+        (tilesMine ? '<button class="btn-ghost" type="button" id="setPrefTilesReset">Back to the standard set</button>' : '<span class="rd-tag">Standard</span>') + '</div>' +
+      '<div class="set-row"><span>How figures show<span class="set-desc">Tiles show lakh and crore (₹18.6 L, ₹1.24 Cr). Hover a tile for the exact figure; tables and exports keep every rupee.</span></span><span class="rd-tag">Lakh and crore</span></div>' +
+      '<div class="set-row"><span class="set-desc" style="margin:0;" id="setPrefWhere">' + escapeHtml(mgPrefWhere()) + '</span></div>' +
+    '</div></div>' +
     '<div class="set-block"><h3>App logins</h3><div class="set-card" id="setTeamMount"></div></div>' +
     '<div class="set-block"><h3>People on WhatsApp</h3><div class="set-card" id="setPeopleMount"></div></div>' +
     '<div class="set-block"><h3>Notifications</h3><div class="set-card">' +
@@ -188,6 +198,22 @@ function renderSettingsView(){
     renderSettingsView();
     if(typeof renderScores === 'function') renderScores();
     if(typeof renderSummary === 'function') renderSummary();
+  });
+  const fcReset = document.getElementById('setPrefFcReset');
+  if(fcReset) fcReset.addEventListener('click', () => {
+    if(typeof mgFcReset === 'function') mgFcReset(); else mgPrefSet('forecast', null);
+    renderSettingsView();
+    toast('Forecast back to Margyn’s defaults');
+  });
+  const fcOpen = document.getElementById('setPrefFcOpen');
+  if(fcOpen) fcOpen.addEventListener('click', () => { if(typeof osGo === 'function') osGo('cash', 'forecast'); else showView('cash'); });
+  const tilesReset = document.getElementById('setPrefTilesReset');
+  if(tilesReset) tilesReset.addEventListener('click', () => {
+    mgPrefSet('metrics', null);
+    renderSettingsView();
+    if(typeof renderSummary === 'function') renderSummary();
+    if(typeof renderScores === 'function') renderScores();
+    toast('Tiles back to the standard set');
   });
   const bind = (id, view) => { const el = document.getElementById(id); if(el) el.addEventListener('click', () => showView(view)); };
   bind('setGoAgents', 'agents'); bind('setGoConnections', 'connectors'); bind('setGoProfile', 'profile');

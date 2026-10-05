@@ -425,8 +425,9 @@ async function decideSuggestion(sug, idx, decision){
   if(approveBtn) approveBtn.disabled = true; if(rejectBtn) rejectBtn.disabled = true;
   if(note){ note.className = 'note'; note.textContent = decision === 'approved' ? 'Importing…' : 'Dismissing…'; }
   try {
+    const keys0 = [];
     if(decision === 'approved'){
-      const chosen = [], keys = [];
+      const chosen = [], keys = keys0;
       document.querySelectorAll('input[data-sug-entry^="' + idx + ':"]').forEach(cb => {
         if(cb.checked){
           const i = Number(cb.dataset.sugEntry.split(':')[1]);
@@ -444,10 +445,13 @@ async function decideSuggestion(sug, idx, decision){
     const { error } = await sbClient.from('import_suggestions')
       .update({ status: decision, decided_at: new Date().toISOString() }).eq('id', sug.id);
     if(error) throw error;
+    // Approved: queue what it should change in the books app (32-os-writes.js), using the ticked entries.
+    let wrote = null;
+    if(decision === 'approved' && typeof osQueueDocWrites === 'function') wrote = await osQueueDocWrites(sug.id, keys0.map(k => Number(k.split(':')[1])));
     pendingSuggestions = await loadPendingSuggestions();
     renderSuggestionsBadge();
     renderSuggestionsView();
-    toast(decision === 'approved' ? 'Imported from WhatsApp' : 'Suggestion dismissed', {});
+    toast(decision === 'approved' ? 'Imported from WhatsApp' : 'Suggestion dismissed', decision === 'approved' && wrote && typeof osApprovalLine === 'function' ? { sub:osApprovalLine(wrote.writes) } : {});
   } catch(err){
     if(note){ note.className = 'note bad'; note.textContent = 'Could not ' + (decision === 'approved' ? 'import' : 'dismiss') + ': ' + (err.message || 'unknown error'); }
     if(approveBtn) approveBtn.disabled = false; if(rejectBtn) rejectBtn.disabled = false;

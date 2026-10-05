@@ -42,10 +42,14 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   });
   await p.waitForTimeout(4500);
 
-  // 1. Margyn OS: the panel opens over the page when asked (not by itself on load); greeting by name, away facts, what needs you
-  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#osAsk'), 'Margyn waits in the ask bar; the panel does not cover the page on load');
+  // 1. Margyn up front: on a wide screen the panel is open at load, docked beside the page (not over it); greeting by name, away facts, what needs you
+  const dock = await p.evaluate(() => { const r = document.getElementById('mgRail').getBoundingClientRect(), w = document.querySelector('.app-body .wrap').getBoundingClientRect();
+    return { pinned:document.body.classList.contains('os-pinned'), beside:w.right <= r.left + 1 }; });
+  ok(await p.isVisible('#mgRail') && dock.pinned && dock.beside && !(await p.isVisible('#osAsk')), 'Margyn is open at load, docked beside the page; one place to type, so the ask bar steps aside: ' + JSON.stringify(dock));
   await p.click('#mgAskBtn'); await p.waitForTimeout(400);
-  ok(await p.isVisible('#mgRail'), 'the Margyn button opens the panel over the page');
+  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#osAsk'), 'the Margyn button closes the panel; the ask bar comes back');
+  await p.click('#mgAskBtn'); await p.waitForTimeout(400);
+  ok(await p.isVisible('#mgRail'), 'and opens it again');
   const greet = await p.textContent('#vxFeed .mgr-msg.greet');
   ok(/Hey Aditi, welcome back\./.test(greet), 'greets the owner by first name (from People): ' + greet.slice(0, 40));
   ok(/Since you were last here \(2 days ago\)/.test(greet), 'says what happened since the last visit');
@@ -59,7 +63,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/Cash|Collections|figures/.test(await p.textContent('#view-home .os-hello-h')), 'Margyn\'s read leads the Desk: ' + await p.textContent('#view-home .os-hello-h'));
   ok((await p.$$('#view-home .os-ag')).length >= 2, 'Margyn at work has rows: ' + (await p.$$('#view-home .os-ag')).length);
   await p.evaluate(() => osGo('rules')); await p.waitForTimeout(300);
-  ok(/Suggests, you approve/.test(await p.textContent('#view-rules')) && /Payment reminders|payment reminders/.test(await p.textContent('#view-rules')), 'Rules lists the real settings for each agent');
+  ok(/You approve/.test(await p.textContent('#view-rules')) && /Does it on its own/.test(await p.textContent('#view-rules')) && /payment reminders/i.test(await p.textContent('#view-rules')) && !/\b(On|Off|Paused)\b/.test(await p.$$eval('#view-rules td:nth-child(3)', x => x.map(e => e.textContent).join(' '))), 'Rules lists what each agent may do (on/off is on its card in Agents)');
   await p.evaluate(() => osGo('desk')); await p.waitForTimeout(300);
   ok(!/Needs your decision/.test(await p.textContent('#view-home')), 'old "Needs your decision" panel replaced by "Needs you"');
   if(SHOTS) await p.screenshot({ path:SHOTS + '/1-desk-and-greeting.png' });

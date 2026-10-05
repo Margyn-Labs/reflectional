@@ -219,7 +219,7 @@ function mgRenderCash(){
     settle = '<div class="mg-panel"><div class="mg-panel-h"><h2>Settlements</h2><span class="mg-aside">From your uploaded sheet</span></div>' +
       '<div class="mg-gridwrap"><table class="mg-grid" id="mgCashSettle"><thead><tr><th>Batch</th><th>Date</th><th class="r">Gross (₹)</th><th class="r">Net (₹)</th></tr></thead><tbody>' +
       uploaded.slice(0, 25).map(r => '<tr><td class="mg-mono">' + escapeHtml(r.id || '—') + '</td><td>' + escapeHtml(r.date || '—') + '</td><td class="r">' + mgNum(r.gross) + '</td><td class="r">' + mgNum(r.net) + '</td></tr>').join('') +
-      '</tbody></table></div><div class="mg-foot-note">An uploaded sheet doesn’t say when each batch reached the bank. Marking batches as settled is on Payment gateways, and lasts until you reload.</div></div>';
+      '</tbody></table></div><div class="mg-foot-note">An uploaded sheet doesn’t say when each batch reached the bank. Connect Razorpay or Cashfree and Margyn shows it.</div></div>';
   } else {
     settle = '<div class="mg-panel"><div class="mg-panel-h"><h2>Settlements</h2></div><div class="mg-empty">' + (mgCashGwLoading ? 'Loading settlements…' : 'No settlements yet. Connect Razorpay or Cashfree, or upload a settlements sheet.') + '</div></div>';
   }

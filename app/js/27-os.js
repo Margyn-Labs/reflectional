@@ -43,21 +43,26 @@ function osIcon(k, cls){ return '<svg' + (cls ? ' class="' + cls + '"' : '') + '
    section's heading starts with) or #id selectors; 'rest' = every section of
    the page that no other tab claims. No secs = the whole page. */
 const OS_SPACES = [
+  { key:'margyn', label:'Margyn', group:'Margyn', sub:'What Margyn and its agents are doing', tabs:[
+    { k:'live', label:'Live', page:'live' },
+    { k:'agents', label:'Agents', page:'agents' },
+    { k:'conversations', label:'Conversations', page:'history' },
+    { k:'delivery', label:'Delivery', page:'channels' },
+    { k:'how', label:'How it works', page:'howitworks' }] },
   { key:'desk', label:'Desk', group:'You', sub:'Where every day starts', tabs:[{ k:'desk', label:'Desk', page:'home' }] },
   { key:'work', label:'Work', group:'You', sub:'Every open finance task, with an owner', tabs:[
-    { k:'needs-me', label:'Needs me', page:'inbox' },
-    { k:'all', label:'All work', page:'work' }] },
+    { k:'all', label:'Work', page:'work' }] },
   { key:'cash', label:'Cash', group:'Workflows', sub:'How much money there is, where it is, and where it’s going', tabs:[
     { k:'overview', label:'Overview', page:'cash', secs:'rest' },
     { k:'forecast', label:'Forecast', page:'cash', secs:['13-week cash forecast', 'Week by week', 'How Margyn built this', 'How the forecast is made'], sub:'Thirteen weeks of money in and out, learned from your own books. Change the assumptions with Adjust.' },
-    { k:'settlements', label:'Settlements', page:'cash', secs:['Settlements', 'Payment gateways'], sub:'Money your payment gateways have collected and paid into your bank, and the fees.' },
+    { k:'settlements', label:'Settlements', page:'cash', secs:['Settlements'], sub:'Money your payment gateways have collected and paid into your bank: when each batch landed, the lag and the UTR.' },
     { k:'gateways', label:'Gateway detail', page:'payments' }] },
   { key:'collect', label:'Collect', group:'Workflows', sub:'Everything customers owe you, and getting it paid', tabs:[
     { k:'overview', label:'Overview', page:'collect' },
     { k:'receivables', label:'Receivables', page:'receivables' },
     { k:'invoices', label:'Invoices', page:'invoicing' },
     { k:'chasing', label:'Chasing', page:'chasing' },
-    { k:'matching', label:'Matching', page:'inbox', secs:['#reconReviewCard', '#agentQueueCard'], sub:'Payments Margyn couldn’t match on its own, and what it proposes for the exceptions. Nothing is applied until you approve it.' }] },
+    { k:'matching', label:'Matching', page:'inbox', secs:['#reconReviewCard'], sub:'Payments Margyn couldn’t match to an invoice on its own. Confirm the right one; nothing is applied until you do.' }] },
   { key:'pay', label:'Pay', group:'Workflows', sub:'Everything you owe suppliers', tabs:[
     { k:'overview', label:'Overview', page:'payover' },
     { k:'payables', label:'Payables', page:'payables' }] },
@@ -65,8 +70,8 @@ const OS_SPACES = [
     { k:'gst', label:'GST', page:'gst' }] },
   { key:'close', label:'Close', group:'Workflows', sub:'Getting the books right and closing the month', tabs:[
     { k:'overview', label:'Overview', page:'closeover' },
-    { k:'books', label:'Books', page:'books' },
-    { k:'ledger', label:'Ledger entries', page:'entries' }] },
+    { k:'proposals', label:'Proposals', page:'inbox', secs:['#agentQueueCard'], sub:'What Margyn proposes for the exceptions it found: splitting a payment across invoices, booking TDS, holding a payment until a supplier files GST. Nothing is applied until you approve it.' },
+    { k:'books', label:'Books', page:'books' }] },
   { key:'plan', label:'Plan', group:'Workflows', sub:'How healthy the business is, and where it’s heading', tabs:[
     { k:'overview', label:'Overview', page:'plan' },
     { k:'margin', label:'Margin', page:'margin' },
@@ -76,8 +81,7 @@ const OS_SPACES = [
     { k:'customers', label:'Customers', page:'customers' },
     { k:'vendors', label:'Vendors', page:'vendors' }] },
   { key:'transactions', label:'Transactions', group:'Records', sub:'Every transaction Margyn holds, from every app', tabs:[
-    { k:'all', label:'All', page:'transactions' },
-    { k:'tally', label:'Tally vouchers', page:'tallydata' }] },
+    { k:'all', label:'All', page:'transactions' }] },
   { key:'documents', label:'Documents', group:'Records', sub:'Every file sent to Margyn', tabs:[
     { k:'forwarded', label:'Forwarded documents', page:'inbox', secs:['#agentSuggestCard'], sub:'Bills, invoices and receipts sent to your Margyn WhatsApp number. Margyn read each one and proposed where it goes.' },
     { k:'files', label:'All documents', page:'documents' },
@@ -86,12 +90,6 @@ const OS_SPACES = [
     { k:'cfo-pack', label:'CFO pack', page:'cfopack' },
     { k:'custom', label:'Custom reports', page:'analytics' },
     { k:'briefings', label:'Briefings', page:'scores', secs:['#scBrief'], sub:'Margyn’s written read of your business, from your own figures.' }] },
-  { key:'margyn', label:'Margyn', group:'System', sub:'What Margyn and its agents are doing', tabs:[
-    { k:'live', label:'Live', page:'live' },
-    { k:'agents', label:'Agents', page:'agents' },
-    { k:'conversations', label:'Conversations', page:'history' },
-    { k:'delivery', label:'Delivery', page:'channels' },
-    { k:'how', label:'How it works', page:'howitworks' }] },
   { key:'apps', label:'Apps', group:'System', sub:'The apps Margyn reads from and writes to', tabs:[
     { k:'connected', label:'Connected apps', page:'connectors' }] },
   { key:'rules', label:'Rules', group:'System', sub:'What Margyn may do on its own, and what waits for a person', tabs:[
@@ -103,7 +101,7 @@ const OS_SPACES = [
   { key:'audit', label:'Audit log', group:'System', sub:'Every action, by a person or by Margyn', tabs:[
     { k:'log', label:'Audit log', page:'audit' }] },
   { key:'settings', label:'Settings', group:'System', sub:'Your business and how Margyn behaves for you', tabs:[
-    { k:'business', label:'Business', page:'profile' },
+    { k:'business', label:'Business', page:'profile', secs:['Business details'], sub:'Your company, and what Margyn calls you. Your sign-in is under Account; people are under Team.' },
     { k:'preferences', label:'Preferences', page:'settings', secs:'rest' },
     { k:'notifications', label:'Notifications', page:'settings', secs:['Notifications'], sub:'What Margyn tells you, and where.' },
     { k:'consent', label:'Consent', page:'settings', secs:['Consent and data sharing'], sub:'What Margyn reads and who it is shared with.' },
@@ -113,9 +111,13 @@ const OS_BY_KEY = Object.fromEntries(OS_SPACES.map(s => [s.key, s]));
 // The page key a section filter applies to ('people' renders the settings view).
 const OS_PAGE_VIEW = { people:'settings' };
 // Sections hidden everywhere: duplicates of what now has its own place.
-const OS_HIDE = { settings:['Connected sources'] };
+const OS_HIDE = { settings:['Connected sources'], connectors:['#connFlowMap'],   // the apps diagram is on Margyn › Live
+  // Books keeps what is about the books themselves; each source's receivables, payables and GST are on Collect, Pay and Tax (pick the source in the bar).
+  cash:['Payment gateways'],          // a link list to the Gateway detail tab next door
+  payments:['Settlement batches'],    // settlements, with status from the gateway, are on Cash › Settlements
+  books:['Receivables aging', 'Overdue customers', 'Vendors putting ITC at risk', 'Payment reconciliation', 'Outstanding bills'] };
 // Where a page opens when something navigates to it directly (not by a tab).
-const OS_DEFAULT = { home:['desk', 'desk'], summary:['desk', 'desk'], inbox:['work', 'needs-me'], settings:['settings', 'preferences'],
+const OS_DEFAULT = { home:['desk', 'desk'], summary:['desk', 'desk'], settings:['settings', 'preferences'],
   people:['team', 'whatsapp'], scores:['plan', 'pulse'], cash:['cash', 'overview'] };
 
 function osFind(space, k){ const s = OS_BY_KEY[space]; return s && s.tabs.find(t => t.k === k) ? { space:s, tab:s.tabs.find(t => t.k === k) } : null; }
@@ -166,6 +168,11 @@ function osRailHtml(){
   let h = '', g = null;
   OS_SPACES.forEach(s => {
     if(!osTabsFor(s).length) return;
+    if(s.key === 'margyn'){
+      h += '<button type="button" class="os-rail-b os-rail-mg" data-os-space="margyn" title="' + escapeHtml(s.sub) + '"><img src="images/margyn-logo-mark.png" alt="" class="os-rail-mark">' +
+        '<span class="os-rail-mg-t"><b>Margyn</b><small data-os-railnow>' + escapeHtml(typeof osRailNow === 'function' ? osRailNow() : '') + '</small></span><i class="os-rail-n" data-os-count="margyn"></i></button>';
+      g = s.group; return;
+    }
     if(s.group !== g){ g = s.group; h += '<div class="os-rail-g' + (g === 'System' ? ' os-sys' : '') + '">' + escapeHtml(g) + '</div>'; }
     h += '<button type="button" class="os-rail-b" data-os-space="' + s.key + '" title="' + escapeHtml(s.sub) + '">' + osIcon(s.key) + '<span>' + escapeHtml(s.label) + '</span><i class="os-rail-n" data-os-count="' + s.key + '"></i></button>';
   });
@@ -192,7 +199,7 @@ function osCounts(){
     const need = k => { try { return osAgentState(k).need || 0; } catch(e){ return 0; } };
     set('collect', need('payments') + need('collections'));
     set('tax', need('gst'));
-    set('close', need('books'));
+    set('close', need('books') + need('close'));
     set('documents', need('documents'));
   }
 }
@@ -218,7 +225,7 @@ function osDrawHead(){
 }
 
 /* ---------- section filter ---------- */
-const OS_WRAPS = '.mg-row2, #settingsMount, #agentPanel-queue, .set-wrap, .mg-cols';
+const OS_WRAPS = '.mg-row2, #settingsMount, #agentPanel-queue, .set-wrap, .mg-cols, #booksZohoBlocks, #booksContent, #booksTallyBlocks, #booksTallyMount, #tallyTabContent, #tallyTabContent > div, #paymentsRzpBlocks';
 function osBlocks(root){
   const out = [];
   const walk = el => [...el.children].forEach(c => {
@@ -295,6 +302,9 @@ function osWatchView(){
 /* ---------- showView: settle the space + tab after every navigation ---------- */
 const osBaseShowView = showView;
 showView = function(name){
+  if(name === 'inbox' && !(osPending && osPending.tab.page === 'inbox')){ try { osWorkTab = 'waiting'; } catch(e){} arguments[0] = name = 'work'; }
+  // Manual entries and Tally's own vouchers are sources on Close › Books (one place for the books).
+  if(name === 'entries' || name === 'tallydata'){ booksActiveSource = name === 'entries' ? 'manual' : 'tally'; arguments[0] = name = 'books'; osPending = osFind('close', 'books'); }
   const out = osBaseShowView.apply(this, arguments);
   const page = mgCurrentView;
   const r = osResolve(page) || osDefaultFor(page);
@@ -356,17 +366,18 @@ function osDrawChips(){
 
 /* ---------- Margyn panel: a sheet over the page, pinned on wide screens ---------- */
 const OS_PIN_KEY = 'mg.panel.pin';
-function osPinned(){ try { return lsGet(OS_PIN_KEY, '') === '1' && window.innerWidth >= 1500; } catch(e){ return false; } }
+const OS_DOCK_MIN = 1280;   // wide enough for rail + page + Margyn side by side
+function osPinned(){ try { return lsGet(OS_PIN_KEY, '1') !== '0' && window.innerWidth >= OS_DOCK_MIN; } catch(e){ return false; } }
 function osSyncPin(){
   document.body.classList.toggle('os-pinned', osPinned());
   const b = document.getElementById('osPinBtn');
-  if(b){ const on = lsGet(OS_PIN_KEY, '') === '1'; b.classList.toggle('on', on); b.title = on ? 'Unpin: open Margyn over the page' : 'Pin Margyn to the side'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  if(b){ const on = lsGet(OS_PIN_KEY, '1') !== '0'; b.classList.toggle('on', on); b.title = on ? 'Unpin: open Margyn over the page' : 'Pin Margyn to the side'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
 }
 function osAddPin(){
   const h = document.querySelector('#mgRail .mgr-h'); if(!h || document.getElementById('osPinBtn')) return;
   const b = document.createElement('button'); b.type = 'button'; b.className = 'mg-icon-btn os-pin'; b.id = 'osPinBtn';
   b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l3 3.2H6z"/></svg>';
-  b.addEventListener('click', () => { lsSet(OS_PIN_KEY, lsGet(OS_PIN_KEY, '') === '1' ? '' : '1'); osSyncPin(); });
+  b.addEventListener('click', () => { lsSet(OS_PIN_KEY, lsGet(OS_PIN_KEY, '1') !== '0' ? '0' : '1'); osSyncPin(); });
   const close = document.getElementById('mgrClose'); h.insertBefore(b, close || null);
   osSyncPin();
 }

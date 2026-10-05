@@ -308,6 +308,23 @@ async function seedApp() {
     ],
     invites: [{ id: 'ti1', email: 'ravi@anvaya.in', name: 'Ravi', role: 'approver', role_label: 'Approver', expires_at: iso(-5 * DAY) }]
   };
+  // Write-back (api/_lib/writeBack.js): every app read-only today, so approvals are saved in Margyn and wait for access.
+  const WB_NOTE = app => 'Margyn can’t write to ' + app + ' yet. It’s saved in Margyn; write-back is being switched on app by app.';
+  const WB_CAPS = [['zoho', 'Zoho Books', ['Record a customer payment against its invoice', 'Post an approved journal entry', 'Create an invoice from a forwarded document', 'Create a bill from a forwarded document']],
+    ['tally', 'Tally', ['Post a receipt voucher against the bill', 'Post an approved journal voucher', 'Post a sales voucher from a forwarded document', 'Post a purchase voucher from a forwarded document']],
+    ['odoo', 'Odoo', ['Register a payment on the invoice', 'Post an approved journal entry', 'Create a customer invoice', 'Create a vendor bill']],
+    ['razorpay', 'Razorpay', ['Send a payment link for an overdue invoice']], ['cashfree', 'Cashfree', ['Send a payment link for an overdue invoice']], ['shopify', 'Shopify', []]]
+    .map(([app, label, acts]) => ({ app, label, connected: ['zoho', 'tally', 'razorpay', 'shopify'].includes(app), any_on: false, writes: acts.map(a => ({ action: a, label: a, on: false, reason: WB_NOTE(label) })) }));
+  window.__wbWrites = [
+    { id: 'w1', app: 'zoho', action: 'record_payment', source_type: 'recon_match', summary: 'Record ₹3,20,000 against INV-00251', status: 'waiting_access', status_note: WB_NOTE('Zoho Books'), approved_by_name: 'Priya Nair', created_at: iso(0.3 * DAY), updated_at: iso(0.3 * DAY) },
+    { id: 'w2', app: 'tally', action: 'post_journal', source_type: 'agent_action', summary: 'Book bank charges for August', status: 'waiting_access', status_note: WB_NOTE('Tally'), approved_by_name: 'Aditi Kulkarni', created_at: iso(1.2 * DAY), updated_at: iso(1.2 * DAY) }
+  ];
+  API['reconcile?action=app-writes'] = () => ({ setup: true, writes: window.__wbWrites, capabilities: WB_CAPS });
+  API['reconcile?action=agent-review'] = () => {
+    const w = { id: 'w' + (window.__wbWrites.length + 1), app: 'zoho', action: 'record_payment', source_type: 'agent_action', summary: 'Record ₹5,92,500 against INV-00266', status: 'waiting_access', status_note: WB_NOTE('Zoho Books'), approved_by_name: 'Aditi Kulkarni', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    window.__wbWrites = [w].concat(window.__wbWrites);
+    return { status: 'ok', decision: 'approve', writes: { queued: 1, writes: [w] } };
+  };
   API['ops?action=team-update'] = () => { window.__teamCalls.push('update'); return { ok: true }; };
   API['ops?action=team-prefs'] = () => { window.__teamCalls.push('prefs'); return { ok: true }; };
   API['ops?action=team-invite'] = () => { window.__teamCalls.push('invite'); return { invite_id: 'ti2', email: 'new@anvaya.in', role: 'viewer', role_label: 'Viewer', code: 'K7QM-4XPA-9TRW', link: 'https://www.margynlabs.com/app.html#/join?code=K7QM-4XPA-9TRW', expires_at: iso(-7 * DAY), emailed: false }; };

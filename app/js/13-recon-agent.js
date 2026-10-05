@@ -183,7 +183,7 @@ function renderAgentQueue(){
         if(decision === 'approve'){
           reconSummary = await loadReconSummary();
           renderReconLedger(); renderReconBooksCard();
-          toast('Approved — recorded for your books.', { kind:'good' });
+          toast(typeof osApprovalLine === 'function' ? osApprovalLine() : 'Approved — recorded for your books.', { kind:'good', ms:6000 });
         }
       } catch(err){
         row.querySelectorAll('button').forEach(b => b.disabled = false);
