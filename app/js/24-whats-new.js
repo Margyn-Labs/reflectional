@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-06-margyn-os', date:'6 Oct 2026', title:'Margyn is now your finance operating system',
+    items:[
+      { t:'One place for all your finance work', what:'The menu is now Desk and Work, then six workflows: Cash, Collect, Pay, Tax, Close and Plan, then your records and Margyn itself. Every page you used is still there, as a tab inside its workflow (Receivables is Collect → Receivables, Ledger is Close → Books).',
+        how:'The menu on the left. Shortcuts: press <kbd>G</kbd> then <kbd>C</kbd> for Cash, <kbd>G</kbd> <kbd>O</kbd> for Collect, <kbd>G</kbd> <kbd>L</kbd> for Close.', act:'desk' },
+      { t:'See Margyn working', what:'The top bar shows what Margyn is doing right now: reconciling payments, syncing Tally, reading a document you forwarded. Margyn → Live shows each of its agents (Payments, Collections, Books, Close, GST, Documents, Forecast, Watch), what it is on, and what it handed to you.',
+        how:'Click the status in the top bar, or Margyn → Live.', act:'live' },
+      { t:'Your Desk', what:'Each workflow’s number in one row, what needs you, Margyn at work, who on your team is online, and everything people and Margyn did, as it happens.', how:'Desk, at the top of the menu.', act:'desk' },
+      { t:'Every task in Work, with an owner', what:'Proposals, payments to confirm, forwarded documents and places your books disagree, in one list. Hand any item to a person on your team.', how:'Work → All work → Assign.', act:'work' },
+      { t:'A timeline and a thread on every customer and supplier', what:'Open a customer or supplier to see what each app says, every reminder and reply, and what people and Margyn did, in one timeline. Leave notes for your team; write @Margyn to ask Margyn about them.', how:'Parties → open anyone → Timeline and Thread.', act:'parties' },
+      { t:'Margyn on every page', what:'Ask from the bar at the bottom of any page. Margyn opens over the page and closes when you click away; pin it to keep it open on a wide screen.', how:'The ask bar, or <kbd>⌘J</kbd>. The pin is in Margyn’s header.', act:'panel' }
+    ]
+  },
+  {
     id:'2026-10-05-updates-log', date:'5 Oct 2026', title:'See every WhatsApp update Margyn sent today',
     items:[
       { t:'Today’s updates', what:'A list of every update of the day: what went out and when, whether WhatsApp delivered it and it was read, and why Margyn stayed quiet or couldn’t send at a given time. Tap one to read exactly what was sent. Earlier days are one tap away.',
@@ -341,7 +354,12 @@ const MG_WN_ACTS = {
   cash:{ label:'Open Cash', run:() => { if(typeof showView === 'function') showView('cash'); } },
   connectors:{ label:'Open Connectors', run:() => { if(typeof showView === 'function') showView('connectors'); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
-  team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
+  desk:{ label:'Open the Desk', run:() => { if(typeof osGo === 'function') osGo('desk'); else if(typeof showView === 'function') showView('home'); } },
+  live:{ label:'See Margyn live', run:() => { if(typeof osGo === 'function') osGo('margyn', 'live'); } },
+  work:{ label:'Open Work', run:() => { if(typeof osGo === 'function') osGo('work', 'all'); } },
+  parties:{ label:'Open Parties', run:() => { if(typeof osGo === 'function') osGo('parties', 'customers'); } },
+  history:{ label:'Open Conversations', run:() => { if(typeof showView === 'function') showView('history'); } },
+  team:{ label:'Invite someone', run:() => { if(typeof osGo === 'function'){ osGo('team', 'people'); return; } if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
 };
 
 function mgWnSeen(){
