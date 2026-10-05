@@ -333,6 +333,15 @@ async function seedApp() {
   // The What's new card opens over the app after a release; the harness is
   // an account that has already seen it (it would block every click).
   try { if(typeof MG_RELEASES !== 'undefined' && MG_RELEASES.length) localStorage.setItem('margyn_whats_new_seen', MG_RELEASES[0].id); } catch (e) {}
+  // Realtime presence (28-live-team.js) without the network: a fake channel.
+  // Tests set window.__presence and call window.__channel.handlers['presence:sync']().
+  window.__presence = {}; window.__sent = [];
+  try { sbClient.channel = (name, opts) => ({ name, opts, handlers: {},
+    on(type, filter, cb) { this.handlers[type + ':' + ((filter && filter.event) || '')] = cb; return this; },
+    subscribe(cb) { window.__channel = this; setTimeout(() => cb && cb('SUBSCRIBED'), 0); return this; },
+    track(p) { window.__tracked = p; return Promise.resolve('ok'); },
+    send(m) { window.__sent.push(m); return Promise.resolve('ok'); },
+    presenceState() { return window.__presence; }, unsubscribe() {} }); } catch (e) {}
   // Who is signed in (19g-team.js), through the real whoami path: the owner.
   if (typeof mgResolveAccount === 'function') { await mgResolveAccount({ id: UID, email: 'owner@anvaya.in' }); }
   await refreshAll();
