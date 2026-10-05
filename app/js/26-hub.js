@@ -99,6 +99,8 @@ function mgHubDeliveryText(d, w){
   if(d.status === 'delivered') return { cls:'pos', text:'Delivered to ' + who + ' · ' + mgHubTime(d.delivered_at) };
   if(d.status === 'failed') return { cls:'neg', text:'Didn’t arrive on ' + who + ': ' + (d.error || 'WhatsApp didn’t say why') };
   const mins = (Date.now() - Date.parse(d.sent_at)) / 60000;
+  // "sent" = WhatsApp's servers have it but the phone hasn't taken it (usually off or offline); anything else = no report at all.
+  if(mins > 30 && d.status === 'sent') return { cls:'warn', text:'With WhatsApp, not on ' + who + ' yet: the phone may be off or offline (sent ' + mgHubTime(d.sent_at) + ')' };
   return mins > 30 ? { cls:'warn', text:'WhatsApp hasn’t confirmed delivery to ' + who + ' (sent ' + mgHubTime(d.sent_at) + ')' }
     : { cls:'', text:'Sent to ' + who + ' · waiting for WhatsApp to confirm' };
 }
@@ -119,7 +121,9 @@ function mgHubRunRow(r, w){
   else if(r.outcome === 'skipped') bdg = { cls:'', text:'No books yet' };
   else bdg = { cls:'warn', text:'Couldn’t send' };
   const sub = r.outcome === 'sent' ? (r.headline || '') : (r.reason || '');
-  const head = '<span class="mg-bdg ' + bdg.cls + '">' + escapeHtml(bdg.text) + '</span> <b>' + escapeHtml(time + ' · ' + (MG_HUB_SLOTS[r.slot] || r.slot)) + '</b>' + (sub ? '<div class="mg-li-s">' + escapeHtml(sub) + '</div>' : '');
+  // How it went: a chat message (inside the 24-hour window) or an approved template. Tells a delivery problem apart.
+  const via = r.outcome === 'sent' ? (r.via === 'template' ? ' · as a template' : r.via === 'session' ? ' · as a chat message' : '') : '';
+  const head = '<span class="mg-bdg ' + bdg.cls + '">' + escapeHtml(bdg.text) + '</span> <b>' + escapeHtml(time + ' · ' + (MG_HUB_SLOTS[r.slot] || r.slot)) + '</b><span class="mg-fine">' + escapeHtml(via) + '</span>' + (sub ? '<div class="mg-li-s">' + escapeHtml(sub) + '</div>' : '');
   return r.text ? '<details class="mg-hub-run"><summary>' + head + '</summary><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + escapeHtml(r.text) + '</pre></details>'
     : '<div class="mg-hub-run">' + head + '</div>';
 }

@@ -524,7 +524,8 @@ function renderTallyTab(){
   wireDscroll(content);
 
   // nav badge: overdue bill count, folded into the single Books badge
-  tallyOverdueCount = (b.items || []).filter(x => x.overdue_days != null && x.overdue_days > 0).length;
+  // The server counts every overdue bill; items is only the first 100 (older servers: count those).
+  tallyOverdueCount = b.overdue_count != null ? Number(b.overdue_count) || 0 : (b.items || []).filter(x => x.overdue_days != null && x.overdue_days > 0).length;
   renderBooksBadge();
 }
 /* ============================================================

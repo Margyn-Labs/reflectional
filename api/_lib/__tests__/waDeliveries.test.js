@@ -60,6 +60,20 @@ const texts = [];
   check('its points go back to not sent, so the next run tries again', DB.margyn_signals[0].status === 'open' && DB.margyn_signals[0].last_sent_at === null, DB.margyn_signals[0]);
   check('the Margyn team hears about it', texts.length === 1 && texts[0].to === '919999900000' && /didn't arrive/.test(texts[0].text), texts);
 
+  console.log('a report that arrives before the send is recorded (5 Oct, 7:19 pm)');
+  await D.apply(D.parseStatusEvents({ type: 'message-event', payload: { id: 'wamid.E', gsId: 'gs-early', type: 'delivered' } }));
+  let er = DB.wa_deliveries.find((r) => r.message_id === 'gs-early');
+  check('the early report is kept, not dropped', er && er.status === 'delivered' && er.delivered_at && er.wa_id === 'wamid.E', er);
+  await D.record({ messageId: 'gs-early', userId: 'u1', kind: 'watch', to: '919324000000', sentTo: 'owner', keys: ['overdue_total'] });
+  er = DB.wa_deliveries.filter((r) => r.message_id === 'gs-early');
+  check('recording it afterwards fills in whose it is and keeps "delivered"', er.length === 1 && er[0].status === 'delivered' && er[0].user_id === 'u1' && er[0].kind === 'watch' && er[0].sent_to === 'owner', er);
+  await D.apply(D.parseStatusEvents({ entry: [{ changes: [{ value: { statuses: [{ id: 'wamid.E', status: 'read', timestamp: '1759680000' }] } }] }] }));
+  check('later reports find it by WhatsApp id', DB.wa_deliveries.find((r) => r.message_id === 'gs-early').status === 'read');
+  Object.assign(DB.margyn_signals[0], { status: 'sent', last_sent_at: '2026-10-05T13:49:00Z', sent_to: 'owner', sent_via: 'session' });
+  await D.apply(D.parseStatusEvents({ type: 'message-event', payload: { id: 'gs-early-f', type: 'failed', payload: { code: 131026 } } }));
+  await D.record({ messageId: 'gs-early-f', userId: 'u1', kind: 'watch', to: '919324000000', sentTo: 'owner', keys: ['overdue_total'] });
+  check('an early failure still puts the points back to not sent', DB.wa_deliveries.find((r) => r.message_id === 'gs-early-f').status === 'failed' && DB.margyn_signals[0].status === 'open', DB.margyn_signals[0]);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

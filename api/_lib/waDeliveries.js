@@ -24,6 +24,18 @@ const clean = (a) => [...new Set(a.filter(Boolean).map(String))];
 async function record({ messageId, userId, kind, to, sentTo, keys, ref }) {
   if (!messageId) return false;
   try {
+    // WhatsApp's report can beat us here: a chat message to a phone that's online is delivered in about a
+    // second, sometimes before Gupshup has even answered our send. apply() keeps such a report in an 'early'
+    // row; fill in whose message it is and keep the status it already has (5 Oct 2026: the 7:19 pm update
+    // to Mihir showed "WhatsApp hasn't confirmed delivery" all night while his phone was on).
+    const early = await selectRows('wa_deliveries', `select=*&message_id=eq.${encodeURIComponent(String(messageId))}&limit=1`).catch(() => []);
+    if (early[0]) {
+      const fill = { user_id: userId || null, kind: kind || 'watch', to_phone: digits(to), sent_to: sentTo || null, signal_keys: keys && keys.length ? keys : null, ref: ref || null };
+      await updateRows('wa_deliveries', `message_id=eq.${encodeURIComponent(String(messageId))}`, fill);
+      const row = Object.assign({}, early[0], fill);
+      if (row.status === 'failed' && row.kind === 'watch') await onWatchFailed(row, {}).catch(() => {});
+      return true;
+    }
     await insertRows('wa_deliveries', [{
       message_id: String(messageId), user_id: userId || null, kind: kind || 'watch', to_phone: digits(to),
       sent_to: sentTo || null, signal_keys: keys && keys.length ? keys : null, ref: ref || null,
@@ -101,7 +113,14 @@ async function apply(events, deps) {
   const d = deps || {};
   let changed = 0;
   for (const ev of events || []) {
-    const rows = await rowsFor(ev.ids);
+    let rows = await rowsFor(ev.ids);
+    if (!rows.length && ev.ids[0]) {
+      // Not recorded yet (the report beat the send's own bookkeeping, see record()): keep it under Gupshup's id
+      // so it isn't lost, then apply it to that row like any other.
+      const seed = { message_id: String(ev.ids[0]), wa_id: ev.waId ? String(ev.waId) : null, kind: 'early', status: 'queued', sent_at: new Date().toISOString() };
+      try { await insertRows('wa_deliveries', [seed]); rows = [seed]; }
+      catch (e) { rows = await rowsFor(ev.ids); }   // recorded in the meantime: use that row
+    }
     for (const row of rows) {
       const cur = row.status || 'queued';
       const at = new Date(typeof ev.at === 'number' ? ev.at : Date.parse(ev.at) || Date.now()).toISOString();

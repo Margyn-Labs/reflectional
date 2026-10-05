@@ -271,6 +271,8 @@ async function handleSummary(req, res) {
       receivable_over_90: round2(recvOver90),
       payable_due_30d: round2(payDue30),
       count: billItems.length,
+      // Counted over every bill: the list below is capped at 100, so counting it said "100" for Care Hygiene.
+      overdue_count: billItems.filter((x) => (x.overdue_days || 0) > 0).length,
       items: billItems.slice(0, 100)
     },
     vouchers: {
