@@ -40,6 +40,13 @@
   .chip.green{ color:var(--emerald); background:rgba(14,143,92,.10); }
   .chip.yellow{ color:var(--orange); background:rgba(204,91,52,.10); }
   .chip.red{ color:var(--rust); background:rgba(179,67,46,.10); }
+  .chip.grey{ color:var(--ink-2); background:#F4F2EE; }
+  .wlog{ margin-bottom:22px; }
+  .wlog h2{ font-size:14px; margin:0 0 8px; display:flex; align-items:center; gap:10px; }
+  .wlog h2 button{ font:inherit; font-size:11.5px; font-weight:600; border:1px solid var(--border); background:var(--surf); color:var(--ink-1); border-radius:6px; padding:3px 9px; cursor:pointer; }
+  .wlog h2 button.on{ color:var(--ink-0); border-color:var(--ink-1); }
+  .wlog th{ cursor:default; }
+  .wlog td .t{ display:block; font-size:11px; color:var(--ink-2); margin-top:2px; }
 
   .conn{ display:inline-block; font-size:11px; padding:1px 7px; border:1px solid var(--border); border-radius:6px; margin:1px 3px 1px 0; }
   .conn.reauth{ color:var(--rust); border-color:var(--rust); }
@@ -82,7 +89,7 @@
 <script>
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
-let sb = null, token = null, partners = [], metricsById = {}, metricsConfigured = null, sortKey = 'status', sortDir = 1;
+let sb = null, token = null, watchLog = null, watchDay = 'today', partners = [], metricsById = {}, metricsConfigured = null, sortKey = 'status', sortDir = 1;
 
 const $ = (s, r=document) => r.querySelector(s);
 const fmtDate = (t) => t ? new Date(t).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
@@ -155,7 +162,7 @@ function renderList(){
   const banner = metricsConfigured === false
     ? '<div class="banner">Verified coverage is off: set <span class="mono">OPS_METRICS_JWT</span> in Vercel and run the ops-metrics cron once.</div>'
     : '';
-  $('#main').innerHTML = banner +
+  $('#main').innerHTML = banner + watchLogHtml() +
     '<table><thead><tr>'
     + '<th data-k="status">Status</th><th data-k="label">Partner</th><th data-k="active">Active</th>'
     + '<th>Connectors</th><th data-k="mismatch">Mism.</th><th data-k="wa">WA 7d</th><th data-k="verified">Verified</th>'
@@ -167,6 +174,41 @@ function renderList(){
     renderList();
   });
   $('#main').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => openDetail(tr.dataset.id));
+  $('#main').querySelectorAll('[data-wday]').forEach(b => b.onclick = async () => { watchDay = b.dataset.wday; await loadWatchLog(); renderList(); });
+}
+
+// Margyn's WhatsApp updates: one row per account, one cell per time slot. Statuses only, never the message.
+const WSLOTS = [['morning', '7:30 am'], ['midday', '10:30'], ['noon', '12:30'], ['afternoon', '3:00 pm'], ['late', '5:00'], ['evening', '7:00 pm']];
+function istDayOffset(n){ return new Date(Date.now() + 5.5 * 3600000 - n * 86400000).toISOString().slice(0, 10); }
+async function loadWatchLog(){
+  try { watchLog = await api('?action=watch-log&day=' + istDayOffset(watchDay === 'yesterday' ? 1 : 0)); }
+  catch(e){ if(e.gate) throw e; watchLog = { error: true }; }
+}
+function watchCell(x){
+  if(!x) return '<span class="muted">—</span>';
+  const time = '<span class="t">' + new Date(x.at).toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit', timeZone:'Asia/Kolkata' }) + '</span>';
+  let cls, label;
+  if(x.outcome === 'sent'){
+    const d = x.delivery;
+    cls = d === 'read' || d === 'delivered' ? 'green' : d === 'failed' ? 'red' : 'yellow';
+    label = d === 'read' ? 'Read' : d === 'delivered' ? 'Delivered' : d === 'failed' ? 'Failed' : d === 'untracked' ? 'Sent' : 'Sent, unconfirmed';
+    if(x.to === 'preview') label += ' (test phone)';
+  } else if(x.outcome === 'quiet'){ cls = 'grey'; label = 'Quiet'; }
+  else if(x.outcome === 'off'){ cls = 'grey'; label = 'Off'; }
+  else if(x.outcome === 'skipped'){ cls = 'grey'; label = 'No books'; }
+  else { cls = 'red'; label = 'Couldn’t send'; }
+  const why = [x.reason, x.delivery_error, x.via ? 'via ' + x.via : null, x.points ? x.points + ' point' + (x.points === 1 ? '' : 's') : null].filter(Boolean).join(' · ');
+  return '<span class="chip ' + cls + '" title="' + escapeHtml(why) + '">' + escapeHtml(label) + '</span>' + time;
+}
+function watchLogHtml(){
+  const head = '<h2>Margyn’s WhatsApp updates <button data-wday="today" class="' + (watchDay === 'today' ? 'on' : '') + '">Today</button><button data-wday="yesterday" class="' + (watchDay === 'yesterday' ? 'on' : '') + '">Yesterday</button></h2>';
+  if(!watchLog) return '';
+  if(watchLog.error) return '<div class="wlog">' + head + '<p class="muted">Could not load.</p></div>';
+  const rows = (watchLog.accounts || []).map(a => '<tr><td>' + escapeHtml(a.label) + '</td>' + WSLOTS.map(([k]) => '<td>' + watchCell(a.slots[k]) + '</td>').join('') + '</tr>').join('');
+  const note = watchLog.delivery_tracking ? 'Hover a status for the reason. Delivered and Read come from WhatsApp itself.'
+    : 'WhatsApp delivery reports aren’t being stored yet (run 2026-10-04-whatsapp-delivery.sql), so a sent update shows as Sent, not Delivered or Read.';
+  return '<div class="wlog">' + head + '<table><thead><tr><th>Account</th>' + WSLOTS.map(([, l]) => '<th>' + l + '</th>').join('') + '</tr></thead><tbody>'
+    + (rows || '<tr><td colspan="7" class="muted">No updates have run yet ' + (watchDay === 'today' ? 'today' : 'yesterday') + '.</td></tr>') + '</tbody></table><p class="muted" style="font-size:12px;margin:6px 0 0">' + note + '</p></div>';
 }
 
 async function openDetail(userId){
@@ -274,7 +316,8 @@ async function load(){
     token = session.access_token;
     const [res, met] = await Promise.all([
       api('?action=partners'),
-      api('?action=metrics').catch(() => null)
+      api('?action=metrics').catch(() => null),
+      loadWatchLog()
     ]);
     partners = res.partners || [];
     metricsConfigured = met ? !!met.configured : null;

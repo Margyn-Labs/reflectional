@@ -49,7 +49,7 @@
  * CommonJS, zero-npm.
  */
 
-const { selectRows, insertRows, updateRows } = require('./supabaseRest');
+const { selectRows, insertRows, updateRows, restRequest } = require('./supabaseRest');
 const bsp = require('./whatsappBsp');
 const booksTools = require('./booksTools');
 const E = require('./booksEngine');
@@ -268,6 +268,30 @@ async function saveState(userId, list, chosen, sentInfo, state) {
 
 /** The snapshots kept with the updates (watchBrief.snapshot): this morning's and the last one sent. */
 const SNAP_KEYS = ['snap:morning', 'snap:last'];
+/**
+ * Every scheduled run, one row per account per slot per India day (margyn_signals key run:<day>:<slot>, kind
+ * watch_run): whether an update went out, stayed quiet or couldn't go, why, and the message. The app's
+ * "Today's updates" and the Ops Console read these; delivery comes from wa_deliveries by message id.
+ * Kept 8 days.
+ */
+async function logRun(userId, slot, entry, now) {
+  const at = new Date(now || Date.now()).toISOString();
+  const day = brief.istDay(now);
+  const row = { user_id: userId, key: `run:${day}:${slot}`, kind: 'watch_run', status: 'resolved', title: 'Update: ' + slot,
+    detail: JSON.stringify(Object.assign({ slot, day, at }, entry)), last_seen: at };
+  await insertRows('margyn_signals', [row], { onConflict: 'user_id,key', merge: true }).catch(() => {});
+  if (slot === 'morning') {
+    const cutoff = new Date(Date.parse(at) - 8 * DAY).toISOString();
+    await restRequest(`margyn_signals?user_id=eq.${userId}&kind=eq.watch_run&last_seen=lt.${encodeURIComponent(cutoff)}`, { method: 'DELETE' }).catch(() => {});
+  }
+}
+/** The last 8 days of runs for one account, newest first. [] without the table. */
+async function runs(userId) {
+  try {
+    const rows = await selectRows('margyn_signals', `select=key,detail&user_id=eq.${userId}&kind=eq.watch_run&order=last_seen.desc&limit=60`);
+    return rows.map((r) => { try { return JSON.parse(r.detail); } catch (e) { return null; } }).filter(Boolean);
+  } catch (e) { return []; }
+}
 const BACKGROUND = new Set(['concentration', 'sales_trend', 'commission', 'collection_days']);
 async function loadSnaps(userId) {
   const out = {};
@@ -320,7 +344,10 @@ async function watchAccount(userId, opts) {
   const o = opts || {};
   const slot = o.slot === 'manual' || !o.slot || !(INTRADAY.has(o.slot) || o.slot === 'evening' || o.slot === 'morning') ? 'morning' : o.slot;
   const { ctx } = await booksTools.contextFor(userId);
-  if (!ctx || !ctx.rows.length) return { user: userId, skipped: 'no books' };
+  if (!ctx || !ctx.rows.length) {
+    if (!o.previewOnly && !o.dryRun) await logRun(userId, slot, { outcome: 'skipped', reason: 'No books to read yet.' }, o.now);
+    return { user: userId, skipped: 'no books' };
+  }
   // Every day, for every account with books, keep the forecast and the position (forecastStore.js), so the
   // forecast's track record builds even on days nobody opens the app. The same forecast feeds the update.
   let fc = null;
@@ -331,7 +358,7 @@ async function watchAccount(userId, opts) {
   let state;
   try { state = await selectRows('margyn_signals', `select=key,kind,status,impact,last_sent_at,sent_count,sent_via,sent_to&user_id=eq.${userId}&limit=1000`); }
   catch (e) { return { user: userId, skipped: 'margyn_signals table missing (run the SQL)' }; }
-  state = state.filter((s) => !String(s.key).startsWith('snap:'));
+  state = state.filter((s) => !/^(snap|run):/.test(String(s.key)));
   state = await onlyDelivered(userId, state);
 
   const profile = await prefsOf(userId);
@@ -388,6 +415,7 @@ async function watchAccount(userId, opts) {
       }
       if (sentInfo) {
         result.sent = sentInfo;
+        result.message_id = (sent && sent.messageId) || null;
         // Gupshup taking it is not WhatsApp delivering it: keep the id so the delivery report can be matched.
         await deliveries.record({ messageId: sent && sent.messageId, userId, kind: 'watch', to, sentTo: sentInfo.to, keys: sentItems.map((x) => x.key) });
         if (!preview) {
@@ -405,6 +433,14 @@ async function watchAccount(userId, opts) {
     }
   }
   if (!o.dryRun) {
+    // The day's log: what this run did and why.
+    const outcome = sentInfo ? 'sent' : !msg.send ? 'quiet' : mode === 'off' ? 'off' : 'not_sent';
+    await logRun(userId, slot, {
+      outcome, mode,
+      reason: outcome === 'quiet' ? (msg.reason || 'Nothing worth a message.') : outcome === 'off' ? 'Updates are switched off for this account.' : outcome === 'not_sent' ? result.not_sent : null,
+      via: sentInfo ? sentInfo.via : null, to: sentInfo ? sentInfo.to : null, message_id: result.message_id || null,
+      headline: msg.send ? msg.headline : null, text: msg.send ? msg.text : null, points: sentItems.length
+    }, o.now);
     await saveState(userId, all, sentItems, sentInfo, state);
     // What the next update compares against. The morning's is kept all day (the evening follows up on its
     // points); "last" moves only when something went out, so small changes add up until they're worth a line.
@@ -504,9 +540,11 @@ async function signals(userId) {
     preview_available: !!process.env.MARGYN_WATCH_PREVIEW_PHONE,
     template_ready: !!(process.env.WHATSAPP_TEMPLATE_ALERT || process.env.WHATSAPP_TEMPLATE_ALERT_V2),
     // Whether each update actually arrived (null = delivery tracking not set up yet).
-    deliveries: await deliveries.recent(userId, 20),
-    signals: rows.filter((r) => !String(r.key).startsWith('snap:'))
+    deliveries: await deliveries.recent(userId, 60),
+    // Every scheduled run in the last 8 days: sent, stayed quiet (and why), or couldn't go.
+    runs: await runs(userId),
+    signals: rows.filter((r) => !/^(snap|run):/.test(String(r.key)))
   };
 }
 
-module.exports = { headlineParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { runs, logRun, headlineParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };

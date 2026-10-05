@@ -105,7 +105,7 @@ const W = require('../margynWatch');
   check('found findings', r.found > 0, r);
   check('not sent: no session and no template', !r.sent && /24 hours/.test(r.not_sent || ''), r);
   check('nothing reached Gupshup', sent.length === 0, sent);
-  const kept = DB.margyn_signals.filter((s) => !s.key.startsWith('snap:'));
+  const kept = DB.margyn_signals.filter((s) => !/^(snap|run):/.test(s.key));
   check('findings kept for the app', kept.length === r.found && kept.every((s) => s.status === 'open'), kept);
   check('the morning snapshot is kept for the next update', DB.margyn_signals.some((s) => s.key === 'snap:morning' && s.status === 'resolved' && JSON.parse(s.detail).recv_total === 9000000));
 
@@ -249,6 +249,14 @@ const W = require('../margynWatch');
   check('evening: today\'s money', /\*Today\*\nIn: ₹40 L \(Big Co ₹40 L\)\./.test(ev), ev);
   check('evening: follows up on the morning point', /\*This morning's points\*\n1\. ✅ Big Co: paid ₹40 L today\. ₹50 L still open/.test(ev), ev);
   check('evening template headline counts what is still open', /^Evening wrap: ₹40 L came in today; 1 of this morning's 1 point is still open\.$/.test(r.headline), r);
+
+  console.log('the day\'s log');
+  const runsNow = await W.runs(U);
+  const bySlot = Object.fromEntries(runsNow.map((x) => [x.slot, x]));
+  check('every run of the day is logged with its outcome', bySlot.morning && bySlot.morning.outcome === 'sent' && bySlot.noon && bySlot.noon.outcome === 'quiet' && /Nothing moved/.test(bySlot.noon.reason) && bySlot.evening && bySlot.evening.outcome === 'sent', runsNow.map((x) => [x.slot, x.outcome, x.reason]));
+  check('a sent run keeps the message and its WhatsApp id (to match the delivery report)', /^Evening wrap/.test(bySlot.evening.text) && !!bySlot.evening.message_id && bySlot.evening.to === 'owner', bySlot.evening);
+  const hub = await W.signals(U);
+  check('the app gets the runs, not as findings', Array.isArray(hub.runs) && hub.runs.length >= 4 && !hub.signals.some((x) => /^(snap|run):/.test(x.key)), hub.runs && hub.runs.length);
 
   console.log('a morning snapshot from before pulses (no seen list)');
   const yIso = new Date(Date.now() + 5.5 * 3600000 - 86400000).toISOString().slice(0, 10);

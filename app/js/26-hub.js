@@ -102,6 +102,42 @@ function mgHubDeliveryText(d, w){
   return mins > 30 ? { cls:'warn', text:'WhatsApp hasn’t confirmed delivery to ' + who + ' (sent ' + mgHubTime(d.sent_at) + ')' }
     : { cls:'', text:'Sent to ' + who + ' · waiting for WhatsApp to confirm' };
 }
+/* Today's updates: every scheduled run, sent or not, and why. Tap a sent one to read exactly what went out. */
+const MG_HUB_SLOTS = { morning:'Morning update', midday:'10:30 update', noon:'12:30 update', afternoon:'3 pm update', late:'5 pm update', evening:'Evening wrap' };
+function mgHubRunRow(r, w){
+  const d = r.message_id ? ((w.deliveries || []).find(x => x.message_id === r.message_id) || null) : null;
+  const time = new Date(r.at).toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour:'numeric', minute:'2-digit' });
+  let bdg;
+  if(r.outcome === 'sent'){
+    const st = d && d.status, test = r.to === 'preview' ? ' (test phone)' : '';
+    bdg = st === 'read' ? { cls:'pos', text:'Read' + test } : st === 'delivered' ? { cls:'pos', text:'Delivered' + test }
+      : st === 'failed' ? { cls:'neg', text:'Didn’t arrive' + test } : { cls:'', text:'Sent' + test };
+    if(st === 'failed' && d.error) r = Object.assign({}, r, { headline: 'WhatsApp said: ' + d.error });
+  }
+  else if(r.outcome === 'quiet') bdg = { cls:'', text:'Stayed quiet' };
+  else if(r.outcome === 'off') bdg = { cls:'', text:'Updates off' };
+  else if(r.outcome === 'skipped') bdg = { cls:'', text:'No books yet' };
+  else bdg = { cls:'warn', text:'Couldn’t send' };
+  const sub = r.outcome === 'sent' ? (r.headline || '') : (r.reason || '');
+  const head = '<span class="mg-bdg ' + bdg.cls + '">' + escapeHtml(bdg.text) + '</span> <b>' + escapeHtml(time + ' · ' + (MG_HUB_SLOTS[r.slot] || r.slot)) + '</b>' + (sub ? '<div class="mg-li-s">' + escapeHtml(sub) + '</div>' : '');
+  return r.text ? '<details class="mg-hub-run"><summary>' + head + '</summary><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + escapeHtml(r.text) + '</pre></details>'
+    : '<div class="mg-hub-run">' + head + '</div>';
+}
+function mgHubRunsHtml(w){
+  const runs = w.runs || [];
+  if(!runs.length) return '';
+  const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+  const order = ['morning', 'midday', 'noon', 'afternoon', 'late', 'evening'];
+  const sortDay = (a, b) => order.indexOf(a.slot) - order.indexOf(b.slot);
+  const t = runs.filter(r => r.day === today).sort(sortDay);
+  const days = [...new Set(runs.filter(r => r.day !== today).map(r => r.day))].sort().reverse();
+  const earlier = days.map(dy => '<div class="mg-li-s" style="margin-top:8px"><b>' + escapeHtml(new Date(dy + 'T00:00:00Z').toLocaleDateString('en-IN', { timeZone:'UTC', weekday:'short', day:'numeric', month:'short' })) + '</b></div>'
+    + runs.filter(r => r.day === dy).sort(sortDay).map(r => mgHubRunRow(r, w)).join('')).join('');
+  return '<div class="mg-hub-runs" style="flex-basis:100%"><span class="mg-hub-lbl">Today’s updates</span>'
+    + (t.length ? t.map(r => mgHubRunRow(r, w)).join('') : '<p class="mg-fine">Nothing has run yet today. The first update goes out around 7:30 am.</p>')
+    + (earlier ? '<details class="mg-hub-run"><summary class="mg-fine">Earlier days</summary>' + earlier + '</details>' : '')
+    + '</div>';
+}
 function mgHubDeliveryFor(key){
   const list = (mgHub.watch && mgHub.watch.deliveries) || [];
   return list.find(d => (d.signal_keys || []).includes(key)) || null;
@@ -114,12 +150,12 @@ function mgHubWatchControls(){
   if(w.preview_available || mode === 'preview') opts.push(['preview', 'Test on Margyn’s phone']);
   opts.push(['on', 'Send to ' + mgHubOwnerLabel(w)]);
   const seg = '<div class="mg-seg" role="group" aria-label="WhatsApp updates">' + opts.map(o => '<button type="button" data-hub-mode="' + o[0] + '" class="' + (mode === o[0] ? 'on' : '') + '">' + escapeHtml(o[1]) + '</button>').join('') + '</div>';
-  const when = 'around 7:30 am and 7 pm, plus 10:30 am only for a deadline (GST due, Tally gone quiet)';
+  const when = 'a detailed update around 7:30 am, short money updates at 10:30, 12:30, 3 and 5 only when something moved, and an evening wrap around 7 pm';
   let note;
   if(!w.ready) note = 'Keeping a history of these needs one setup step on Margyn’s side. They still show here.';
   else if(mode === 'off') note = 'Nothing is texted to anyone. Margyn still lists what it noticed here.';
   else if(mode === 'preview') note = 'Updates go only to the Margyn team’s test phone, ' + when + '. ' + (w.owner_name || 'The owner') + ' gets nothing until you pick “Send to ' + mgHubOwnerLabel(w) + '”.';
-  else note = w.has_number ? 'Margyn texts ' + mgHubOwnerLabel(w) + ' ' + when + ', at most three points, one per customer. Reply STOP ALERTS to pause.' : 'Add a WhatsApp number under Settings first, then Margyn can text it.';
+  else note = w.has_number ? 'Margyn texts ' + mgHubOwnerLabel(w) + ': ' + when + '. Never more than four short updates in a day. Reply STOP ALERTS to pause.' : 'Add a WhatsApp number under Settings first, then Margyn can text it.';
   if(mode !== 'off' && w.ready && !w.template_ready) note += ' Until Margyn’s WhatsApp template is approved, messages only go out within 24 hours of the last message to Margyn.';
   const pv = mgHub.preview;
   const last = ((w.deliveries || []).filter(d => d.sent_to === 'owner' || d.sent_to === 'preview'))[0];
@@ -130,6 +166,7 @@ function mgHubWatchControls(){
   return '<div class="mg-panel-b mg-hub-watch"><span class="mg-hub-lbl">WhatsApp updates</span>' + seg +
     mgBtn('Preview today’s update', 'data-hub-send') +
     '<p class="mg-fine">' + escapeHtml(note) + '</p>' + deliveryLine +
+    mgHubRunsHtml(w) +
     (pv ? '<div class="mg-hub-preview"><div class="mg-li-s">' + escapeHtml(pv.note) + '</div><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + escapeHtml(pv.text) + '</pre></div>' : '') +
     '</div>';
 }
