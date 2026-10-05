@@ -193,8 +193,9 @@ function mgRenderCash(){
   if(!s) fc = '';
   else if(f && f.st.enabled) fc = mgForecastPanel(window.innerWidth > 900) + '<div class="mg-panel"><div class="mg-panel-h"><h2>Week by week</h2><span class="mg-aside">' +
     (f.learned ? 'Closing cash, learned from your books, before loans and overdraft' : 'Closing cash under your assumptions') + '</span></div>' + mgForecastTable(f) + '</div>' + mgForecastHowPanel(f);
-  if(s && typeof mgPositionHistoryPanel === 'function') fc += mgPositionHistoryPanel();
   else fc = '<div class="mg-panel"><div class="mg-panel-h"><h2>13-week cash forecast</h2><button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Adjust</button></div><div class="mg-empty">The forecast is switched off. Open Adjust and tick “Show the forecast” to turn it back on.</div></div>';
+  // The "switched off" note belonged to the line above by mistake: it never showed when position history existed.
+  if(s && typeof mgPositionHistoryPanel === 'function') fc += mgPositionHistoryPanel();
 
   // ---- settlements ----
   const setl = [];

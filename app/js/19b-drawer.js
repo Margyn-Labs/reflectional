@@ -74,7 +74,10 @@ function mgOpenParty(dir, key){
   mgDrawer({
     title:g.party,
     sub:escapeHtml(who + ' · ' + g.sources.map(s => MG_SRC_NAME[s]).join(', ')),
-    tabs:[['details', 'Details', details], ['sources', 'Sources', sources], ['activity', 'Activity', activity]],
+    // Margyn OS (30-os-records.js): a timeline across apps and a team thread, when loaded.
+    tabs:[['details', 'Details', details], ['sources', 'Sources', sources],
+      typeof osPartyTimeline === 'function' ? ['activity', 'Timeline', osPartyTimeline(g, dir)] : ['activity', 'Activity', activity]]
+      .concat(typeof osThreadHtml === 'function' ? [['thread', 'Thread', osThreadHtml('party', g.key, g.party)]] : []),
     foot:'<button class="mg-btn" type="button" data-drawer-ask="' + escapeHtml(g.party) + '">Ask Margyn about ' + escapeHtml(g.party) + '</button>' +
       (mgCurrentView === 'customers' || mgCurrentView === 'vendors' ? '<button class="mg-btn primary" type="button" data-drawer-list="' + escapeHtml(g.party) + '" data-dir="' + dir + '">Open in ' + (dir === 'recv' ? 'Receivables' : 'Payables') + '</button>' : '')
   });

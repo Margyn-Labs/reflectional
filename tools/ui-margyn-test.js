@@ -42,8 +42,10 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   });
   await p.waitForTimeout(4500);
 
-  // 1. panel open on a wide screen, greeting by name, away facts, what needs you
-  ok(await p.isVisible('#mgRail'), 'Margyn panel is open on a wide screen');
+  // 1. Margyn OS: the panel opens over the page when asked (not by itself on load); greeting by name, away facts, what needs you
+  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#osAsk'), 'Margyn waits in the ask bar; the panel does not cover the page on load');
+  await p.click('#mgAskBtn'); await p.waitForTimeout(400);
+  ok(await p.isVisible('#mgRail'), 'the Margyn button opens the panel over the page');
   const greet = await p.textContent('#vxFeed .mgr-msg.greet');
   ok(/Hey Aditi, welcome back\./.test(greet), 'greets the owner by first name (from People): ' + greet.slice(0, 40));
   ok(/Since you were last here \(2 days ago\)/.test(greet), 'says what happened since the last visit');
@@ -52,14 +54,13 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.isVisible('#vxFeed .mgr-divider'), 'NEW SINCE YOU WERE HERE divider');
   ok(!(await p.$('.mg-wn-scrim')), 'no What\'s-new modal on top: the greeting covers it');
 
-  // 2. Home is Margyn's desk
-  const title = await p.textContent('#view-home .mg-ph-title, #view-home h1');
-  ok(/Welcome back, Aditi/.test(title), 'Home title: ' + title);
-  ok(await p.isVisible('#view-home .mgd-hero'), 'desk hero on Home');
-  const tag = await p.textContent('#view-home .mgd-tag');
-  ok(/Steady|Watchful|Needs attention/.test(tag), 'Margyn\'s read has a level: ' + tag);
-  ok(/How I work/.test(await p.textContent('#view-home .mgd-how')) && /I suggest, you approve/.test(await p.textContent('#view-home .mgd-how')), 'How I work lists the real settings');
-  ok((await p.$$('#view-home .mgd-task')).length >= 2, 'What I\'m working on has rows: ' + (await p.$$('#view-home .mgd-task')).length);
+  // 2. The Desk: greeting, Margyn's read, Margyn at work; what Margyn may do lives in Rules
+  ok(/ADITI/.test(await p.textContent('#view-home .os-hello-d')), 'Desk greets Aditi: ' + await p.textContent('#view-home .os-hello-d'));
+  ok(/Cash|Collections|figures/.test(await p.textContent('#view-home .os-hello-h')), 'Margyn\'s read leads the Desk: ' + await p.textContent('#view-home .os-hello-h'));
+  ok((await p.$$('#view-home .os-ag')).length >= 2, 'Margyn at work has rows: ' + (await p.$$('#view-home .os-ag')).length);
+  await p.evaluate(() => osGo('rules')); await p.waitForTimeout(300);
+  ok(/Suggests, you approve/.test(await p.textContent('#view-rules')) && /Payment reminders|payment reminders/.test(await p.textContent('#view-rules')), 'Rules lists the real settings for each agent');
+  await p.evaluate(() => osGo('desk')); await p.waitForTimeout(300);
   ok(!/Needs your decision/.test(await p.textContent('#view-home')), 'old "Needs your decision" panel replaced by "Needs you"');
   if(SHOTS) await p.screenshot({ path:SHOTS + '/1-desk-and-greeting.png' });
 
@@ -84,10 +85,10 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   if(SHOTS) await p.screenshot({ path:SHOTS + '/2-typed-with-tools.png' });
 
   // 4. one Margyn: Conversations page is the archive, no Agents tab; Automations renamed
-  await p.click('.pagenav button[data-view="history"]'); await p.waitForTimeout(500);
-  ok(!(await p.$('#askTabs [data-tab="agents"]')), 'no Agents tab on Conversations');
-  ok(/Conversations/.test(await p.textContent('.pagenav button[data-view="history"]')), 'nav says Conversations');
-  ok(/Automations/.test(await p.textContent('.pagenav button[data-view="agents"]')), 'nav says Automations');
+  await p.evaluate(() => osGo('margyn', 'conversations')); await p.waitForTimeout(500);
+  ok(!(await p.$('#askTabs [data-tab="agents"]')), 'no agent tab inside Conversations');
+  ok(/Conversations/.test(await p.textContent('[data-os-tab="margyn/conversations"]')), 'Margyn › Conversations tab');
+  ok(/Agents/.test(await p.textContent('[data-os-tab="margyn/agents"]')) && /Live/.test(await p.textContent('[data-os-tab="margyn/live"]')), 'Margyn › Live and Agents tabs: the agents run under Margyn');
   ok(!(await p.isVisible('#view-history .ask-composer')), 'Conversations has no second composer (talking happens in the panel)');
   const rows = await p.$$('#historyThreadList .chat-history-row');
   ok(rows.length >= 2, 'thread list shows past conversations: ' + rows.length);
@@ -112,17 +113,18 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/What I’ve been doing/.test(await p.$eval('#vxFeed', f => f.lastElementChild.textContent)), 'tapping it lists the activity in the conversation');
   // Wide screens also show it in the top bar, with the log in a popover.
   await p.setViewportSize({ width:1680, height:900 }); await p.waitForTimeout(200);
-  await p.evaluate(() => mgStatus('Synced Zoho Books'));
+  await p.evaluate(() => osActAdd({ agent:'books', text:'Syncing Zoho Books…', state:'running', at:new Date().toISOString(), from:'app' }));
   await p.waitForTimeout(300);
-  ok(await p.isVisible('#topSync') && /Synced Zoho/.test(await p.textContent('#topSyncText')), 'top-bar status line on a wide screen');
-  await p.click('#topSync'); await p.waitForTimeout(200);
-  ok(await p.isVisible('#mgStatusPop'), 'it opens the activity log');
+  ok(await p.isVisible('#osLive') && /Books/.test(await p.textContent('#osLive')) && /Syncing Zoho Books/.test(await p.textContent('#osLive')), 'top bar shows what Margyn is doing right now: ' + await p.textContent('#osLive'));
+  await p.click('#osLive'); await p.waitForTimeout(300);
+  ok(await p.evaluate(() => mgCurrentView) === 'live' && /Syncing Zoho Books/.test(await p.textContent('#view-live')), 'it opens Margyn › Live, where the work shows');
   await p.click('body', { position:{ x:600, y:500 } });
   await p.setViewportSize({ width:1440, height:900 }); await p.waitForTimeout(200);
 
-  // 6. closed panel -> launcher + bubble; ⌘J reopens
+  // 6. closed panel -> ask bar + bubble; ⌘J reopens. (A click on the page closes the sheet, so open it first.)
+  await p.evaluate(() => mgrOpen()); await p.waitForTimeout(200);
   await p.click('#mgrClose'); await p.waitForTimeout(200);
-  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#mgrLaunch'), 'closing shows the Margyn button');
+  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#osAsk'), 'closing leaves the ask bar');
   ok(await p.evaluate(() => localStorage.getItem('mg.panel')) === 'closed', 'closed state remembered');
   await p.evaluate(() => { mgrNudgesShown = 0; mgrNudgeQueue = []; localStorage.removeItem('mg.nudge.snooze'); mgrCheckNudges(); });
   await p.waitForTimeout(300);
@@ -132,7 +134,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.isVisible('#mgRail'), '⌘J opens the panel');
 
   // 7. tapping a figure opens the panel on that topic
-  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(400);
+  await p.evaluate(() => osGo('desk')); await p.waitForTimeout(400);
   await p.evaluate(() => openMargynFocused('Cash Position', '₹1.84 Cr'));
   await p.waitForTimeout(300);
   ok(/Cash Position/.test(await p.$eval('#vxFeed', f => f.textContent)) && /Ask about Cash Position/.test(await p.getAttribute('#mgrInput', 'placeholder')), 'tapped figure opens the panel focused on it');
@@ -185,7 +187,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(!/안녕/.test(noiseTxt), 'Korean noise is not shown as something they said');
   ok((noiseTxt.match(/What does our cash health look like\?/g) || []).length === 1, 'a doubled line is shown once');
   // scroll: the page, by direction and to a section
-  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
+  await p.evaluate(() => osGo('cash')); await p.waitForTimeout(500);
   let sc = await p.evaluate(() => VX_TOOLS.scroll({ direction:'down' }));
   await p.waitForTimeout(600);
   ok(sc.ok && await p.evaluate(() => document.querySelector('.app-body .wrap').scrollTop > 100), 'scroll down moves the page: ' + sc.now);
@@ -195,7 +197,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(sc.ok && /forecast/i.test(sc.scrolled_to), 'scroll to a section by name: ' + sc.scrolled_to);
   sc = await p.evaluate(() => VX_TOOLS.scroll({ to:'zzz-nothing' }));
   ok(!sc.ok && /Headings here/.test(sc.note), 'an unknown section says what is on the page');
-  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(300);
+  await p.evaluate(() => osGo('desk')); await p.waitForTimeout(300);
 
   // 7d. open a vendor from "customers" by mistake, and someone with nothing open
   let op = await p.evaluate(() => VX_TOOLS.open_party({ direction:'receivables', name:'Omkar Steel' }));

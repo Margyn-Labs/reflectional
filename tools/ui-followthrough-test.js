@@ -33,6 +33,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.waitForTimeout(3000);
 
   // 1. two messages back to back: the second is queued, then answered, in order
+  await p.evaluate(() => mgrOpen()); await p.waitForTimeout(200);   // Margyn OS: the panel opens when asked, not on load
   await p.fill('#mgrInput', 'First question'); await p.press('#mgrInput', 'Enter');
   await p.waitForTimeout(300);
   await p.fill('#mgrInput', 'Second question'); await p.press('#mgrInput', 'Enter');

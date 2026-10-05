@@ -42,7 +42,7 @@ function learned() {
   await p.goto(B);
   await p.waitForFunction(() => sbClient && document.getElementById('authGate') && !document.getElementById('authGate').classList.contains('hidden'), null, { timeout: 10000 });
   await p.evaluate(seedApp); await p.waitForTimeout(4500);
-  await p.evaluate((f) => { mgMar = Object.assign({}, mgMar || {}, { forecast_v2: f }); mgMarAt = Date.now(); mgMarCompany = ''; showView('cash'); }, fv);
+  await p.evaluate((f) => { mgMar = Object.assign({}, mgMar || {}, { forecast_v2: f }); mgMarAt = Date.now(); mgMarCompany = ''; osGo('cash', 'forecast'); }, fv);   // the forecast lives on Cash › Forecast
   await p.waitForTimeout(600);
 
   // 1. Cash page: learned forecast with its range
@@ -77,12 +77,15 @@ function learned() {
   ok(hist && hist.n === 4 && hist.paths === 4, 'four small history charts (cash, customers owe, you owe, days to collect)');
   ok(hist && /Days to collect/.test(hist.text) && /\d+ days/.test(hist.text), 'days to collect shown');
 
-  // 4. "How Margyn built this" link from Home scrolls to the panel
-  await p.evaluate(() => showView('home')); await p.waitForTimeout(400);
-  const homeLearned = await p.evaluate(() => !!document.querySelector('#view-home [data-fc-how]'));
-  ok(homeLearned, 'Home forecast offers "How Margyn built this"');
-  if(homeLearned){ await p.click('#view-home [data-fc-how]'); await p.waitForTimeout(500); }
-  ok(await p.evaluate(() => mgCurrentView === 'cash' && !!document.getElementById('mgFcHow')), 'the link opens Cash at the explanation');
+  // 4. Margyn OS: Desk -> Cash tile -> Cash › Forecast, where "How Margyn built this" scrolls to the panel
+  await p.evaluate(() => osGo('desk')); await p.waitForTimeout(400);
+  await p.click('#view-home .os-wft[data-os-go="cash/overview"]'); await p.waitForTimeout(400);
+  ok(await p.evaluate(() => mgCurrentView === 'cash' && osCur.tab.k === 'overview'), 'Desk Cash tile opens Cash');
+  await p.click('[data-os-tab="cash/forecast"]'); await p.waitForTimeout(400);
+  const fcLink = await p.isVisible('#view-cash [data-fc-how]');
+  ok(fcLink, 'Cash › Forecast offers "How Margyn built this"');
+  if(fcLink){ await p.click('#view-cash [data-fc-how]'); await p.waitForTimeout(600); }
+  ok(await p.evaluate(() => mgCurrentView === 'cash' && osCur.tab.k === 'forecast' && !!document.getElementById('mgFcHow') && !!document.getElementById('mgFcHow').offsetParent), 'the link shows the explanation on Cash › Forecast');
 
   // 5. Adjust: switch to my own assumptions and back
   await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(300);
@@ -105,7 +108,7 @@ function learned() {
   ok(gc.forecast_13_weeks && gc.forecast_13_weeks.learned_from_books && gc.forecast_13_weeks.week_13_range, 'get_cash says the forecast is learned and gives the range');
 
   // 7. Phone width: nothing wider than the screen
-  await p.setViewportSize({ width: 375, height: 812 }); await p.evaluate(() => showView('cash')); await p.waitForTimeout(500);
+  await p.setViewportSize({ width: 375, height: 812 }); await p.evaluate(() => osGo('cash', 'forecast')); await p.waitForTimeout(500);
   const over = await p.evaluate(() => { const w = document.documentElement.clientWidth; return [...document.querySelectorAll('#mgFcHist, #mgFcHow .mg-panel-b, .mg-histmini')].filter(e => e.getBoundingClientRect().right > w + 1).length; });
   ok(over === 0, 'phone width: history and explanation fit the screen');
   await p.screenshot({ path: process.env.SHOT || '/tmp/ui-forecast-phone.png', fullPage: false });

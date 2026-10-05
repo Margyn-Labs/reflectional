@@ -13,6 +13,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   const boot = async (hash, pre, preArg) => { await p.goto('about:blank'); await p.goto(B + (hash || '')); await p.waitForFunction(() => sbClient && document.getElementById('authGate') && !document.getElementById('authGate').classList.contains('hidden'), null, { timeout:10000 }); await p.waitForTimeout(500); await p.evaluate(pre || (() => { window.__seedPrefs = null; window.__seedNoPrefsColumn = false; }), preArg); await p.evaluate(seedApp); await p.waitForTimeout(700); };
   const vis = () => p.evaluate(() => [...document.querySelectorAll('[id^="view-"]')].filter(v => !v.classList.contains('hidden') && v.parentElement.classList.contains('wrap')).map(v => v.id));
+  // Margyn OS (27-os.js): pages live in spaces with tabs; the rail opens a space, the tab bar a page.
+  const OSNAV = { cash:'cash/overview', cfopack:'reports/cfo-pack', analytics:'reports/custom', home:'desk/desk', receivables:'collect/receivables', customers:'parties/customers', books:'close/books', gst:'tax/gst', audit:'audit/log', inbox:'work/needs-me', agents:'margyn/agents', margin:'plan/margin', cashforecast:'cash/forecast' };
+  const rail = async (m, page) => { const [s, t] = OSNAV[page].split('/'); await m.click('.os-rail-b[data-os-space="' + s + '"]'); await m.waitForTimeout(200); const tab = await m.$('[data-os-tab="' + s + '/' + t + '"]'); if(tab && await tab.isVisible()) await tab.click(); };
 
   // 1. deep link: URL opens that page with that source, after login data load
   await boot('#/ledger?src=tally');
@@ -22,27 +25,27 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/Tally/.test(await p.textContent('#view-books .mg-scopeline')), 'page scope line says Tally');
 
   // 2. rail click updates URL, back button returns
-  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/cash') && JSON.stringify(await vis()) === '["view-cash"]', 'rail click Cash -> #/cash, the new Cash page (' + p.url().split('#')[1] + ')');
+  await rail(p, 'cash'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/cash/overview') && JSON.stringify(await vis()) === '["view-cash"]', 'rail click Cash -> #/cash/overview, the Cash page (' + p.url().split('#')[1] + ')');
   await p.goBack(); await p.waitForTimeout(400);
-  ok(JSON.stringify(await vis()) === '["view-books"]' && p.url().includes('#/ledger?src=tally'), 'Back returns to Ledger/Tally');
+  ok(JSON.stringify(await vis()) === '["view-books"]' && p.url().includes('#/close/books?src=tally'), 'Back returns to Close › Books/Tally (old link moved to its new address)');
 
   // 3. Scope bar source switch on Payment gateways (Cash -> Payment gateways) drives the page's own tabs
-  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(300);
+  await rail(p, 'cash'); await p.waitForTimeout(300);
   await p.click('#view-cash .mg-ph-actions [data-go-page="payments"]'); await p.waitForTimeout(300);
-  ok(JSON.stringify(await vis()) === '["view-payments"]' && p.url().endsWith('#/payment-gateways'), 'Cash -> Payment gateways opens the old Payments view');
-  ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="cash"]').classList.contains('active')), 'Payment gateways keeps Cash lit in the rail');
+  ok(JSON.stringify(await vis()) === '["view-payments"]' && p.url().endsWith('#/cash/gateways'), 'Cash -> Gateway detail opens the old Payments view');
+  ok(await p.evaluate(() => document.querySelector('.os-rail-b[data-os-space="cash"]').classList.contains('active')), 'Gateway detail keeps Cash lit in the rail');
   await p.click('#mgSrcBtn'); await p.waitForTimeout(150);
   ok(await p.isVisible('#mgSrcPop'), 'Sources menu opens');
   const opts = await p.$$eval('#mgSrcPop [data-mg-src]', x => x.map(e => e.dataset.mgSrc));
   ok(opts.join() === 'all,razorpay,cashfree', 'Payments sources listed: ' + opts);
   await p.click('#mgSrcPop [data-mg-src="razorpay"]'); await p.waitForTimeout(300);
   ok(await p.evaluate(() => paymentsActiveSource) === 'razorpay', 'picking Razorpay sets paymentsActiveSource');
-  ok(p.url().endsWith('#/payment-gateways?src=razorpay'), 'URL carries src=razorpay');
+  ok(p.url().endsWith('#/cash/gateways?src=razorpay'), 'URL carries src=razorpay');
   ok(!(await p.isVisible('#mgSrcPop')), 'menu closes after choice');
 
   // 3b. Cash page: sources side by side, Tally ledgers one by one, forecast table, settlements
-  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
+  await rail(p, 'cash'); await p.waitForTimeout(500);
   ok((await p.$$('#view-cash .mg-tile')).length === 4, 'Cash has 4 tiles');
   const cashTiles = await p.$$eval('#view-cash .mg-tile-l', x => x.map(e => e.textContent));
   ok(cashTiles.join('|') === 'Cash (reconciled)|In transit|Runway|Lowest point in 13 weeks', 'Cash tiles: ' + cashTiles.join(' | '));
@@ -58,6 +61,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok((await p.$$('#mgFcTable tbody tr')).length === 13, 'forecast table has 13 weeks');
   ok((await p.$$('#mgCashSettle tbody tr')).length === 12 && /Pending/.test(await p.textContent('#mgCashSettle')), 'settlements grid with status (one pending)');
   ok(!(await p.$('#view-cash [data-idx]')) && !/Mark as settled/.test(await p.textContent('#view-cash')), 'no settle toggle on Cash (it is session-only)');
+  await rail(p, 'cashforecast'); await p.waitForTimeout(300);   // the forecast and its Adjust live on Cash › Forecast
   await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(200);
   await p.fill('.mg-drawer input[data-fc="collectDelay"]', '40'); await p.waitForTimeout(250);
   ok(/pay 40 days after/.test(await p.textContent('#view-cash')), 'Adjust from Cash updates the Cash forecast');
@@ -66,13 +70,13 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const cashOpts = await p.$$eval('#mgSrcPop [data-mg-src]', x => x.map(e => e.dataset.mgSrc));
   ok(cashOpts.join() === 'reconciled,zoho,tally,razorpay', 'Cash sources in the Scope bar: ' + cashOpts);
   await p.click('#mgSrcPop [data-mg-src="tally"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/cash?src=tally') && !/Zoho Books/.test(await p.textContent('#mgCashWhere')) && (await p.textContent('#mgSrcVal')) === 'Tally', 'Scope bar Tally: Cash shows Tally only');
+  ok(/#\/cash\/[\w-]+\?src=tally$/.test(p.url()) && !/Zoho Books/.test(await p.textContent('#mgCashWhere')) && (await p.textContent('#mgSrcVal')) === 'Tally', 'Scope bar Tally: Cash shows Tally only');
   await p.click('#mgSrcBtn'); await p.click('#mgSrcPop [data-mg-src="reconciled"]'); await p.waitForTimeout(200);
   ok(await p.evaluate(() => cmdkBuild('payment gateways').some(i => i.label === 'Payment gateways')), '⌘K still finds Payment gateways');
 
   // 3c. CFO pack: month, sections with scope lines, PDF window, delivery settings
-  await p.click('.pagenav button[data-view="cfopack"]'); await p.waitForTimeout(500);
-  ok(p.url().endsWith('#/cfo-pack') && JSON.stringify(await vis()) === '["view-cfopack"]', 'rail CFO pack -> #/cfo-pack');
+  await rail(p, 'cfopack'); await p.waitForTimeout(500);
+  ok(p.url().endsWith('#/reports/cfo-pack') && JSON.stringify(await vis()) === '["view-cfopack"]', 'Reports › CFO pack -> #/reports/cfo-pack');
   // The last full month, in India, whenever this runs (it used to be hard-coded to August 2026).
   const LM = await p.evaluate(() => mgMonthShift(mgMonthKey(new Date().toISOString()), -1)), LML = await p.evaluate(k => mgMonthLabel(k), LM);
   ok((await p.inputValue('#view-cfopack [data-pk-month]')) === LM && (await p.textContent('#mgPerVal')) === LML, 'defaults to the last full month (' + LML + ')');
@@ -87,7 +91,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/HDFC Bank CA 0021/.test(await p.textContent('#pkCash')) && (await p.$$('#pkOverdue tbody tr')).length >= 3, 'cash by account and top overdue customers listed');
   await p.click('#mgPerBtn'); await p.waitForTimeout(150);
   await p.click('#mgPerPop [data-mg-range="2026-09"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/cfo-pack?period=2026-09') && (await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-09', 'Scope bar Period picks September, URL carries period');
+  ok(p.url().endsWith('#/reports/cfo-pack?period=2026-09') && (await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-09', 'Scope bar Period picks September, URL carries period');
   await p.evaluate(() => { location.hash = '#/cfo-pack?period=2026-07'; }); await p.waitForTimeout(400);
   ok((await p.inputValue('#view-cfopack [data-pk-month]')) === '2026-07' && /July 2026 CFO pack/.test(await p.textContent('#view-cfopack .pk-doc h1')), 'deep link period=2026-07 opens July: ' + await p.inputValue('#view-cfopack [data-pk-month]') + ' / ' + await p.textContent('#view-cfopack .pk-doc h1'));
   const [pop] = await Promise.all([p.waitForEvent('popup', { timeout:4000 }).catch(() => null), p.click('#view-cfopack [data-pk-print]')]);
@@ -110,29 +114,29 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/3rd of each month to 2 people/.test(await p.textContent('#mgPackDelivery')), 'page states the schedule: ' + await p.textContent('#mgPackDelivery'));
   await p.keyboard.press('Escape');
   await p.evaluate(() => { mgPrefSet('cfo_pack', null); });
-  await p.click('.pagenav button[data-view="analytics"]'); await p.waitForTimeout(250);
+  await rail(p, 'analytics'); await p.waitForTimeout(250);
   ok(!!(await p.$('#view-analytics [data-go-page="cfopack"]')), 'Reports header links to the CFO pack');
 
   // 4. Home: reconciled only, Sources menu explains and lists source health
-  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(300);
-  ok((await p.textContent('#mgSrcVal')) === 'Reconciled' && p.url().endsWith('#/home'), 'Home: Reconciled, URL #/home');
+  await rail(p, 'home'); await p.waitForTimeout(300);
+  ok((await p.textContent('#mgSrcVal')) === 'Reconciled' && p.url().endsWith('#/desk'), 'Desk: Reconciled, URL #/desk');
   ok(JSON.stringify(await vis()) === '["view-home"]', 'Home page shown');
-  ok((await p.$$('#view-home .mg-tile')).length === 5, 'Home has 5 KPI tiles');
-  ok(/₹[\d.]+ (Cr|L)/.test(await p.textContent('#view-home .mg-tile-v')), 'tiles use lakh/crore: ' + await p.textContent('#view-home .mg-tile-v'));
-  ok((await p.$$('#view-home .mg-row3 .mg-li')).length > 0, 'Home: Needs your decision / Sources disagree have rows');
+  ok((await p.$$('#view-home .os-wft')).length === 6, 'Desk has a tile per workflow (6)');
+  ok(/₹[\d.]+ (Cr|L)/.test(await p.textContent('#view-home .os-wft-v')), 'tiles use lakh/crore: ' + await p.textContent('#view-home .os-wft-v'));
+  ok((await p.$$('#view-home .os-need-r')).length > 0 && (await p.$$('#view-home .os-ag')).length === 8, 'Desk: Needs you has rows; Margyn at work lists 8 agents');
   await p.evaluate(() => showView('summary')); await p.waitForTimeout(200);
   ok(JSON.stringify(await vis()) === '["view-home"]', 'old showView(summary) callers land on Home');
 
   // 4b. Receivables: modes, sources, aging, mark received, export
-  await p.click('.pagenav button[data-view="receivables"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/receivables') && (await p.$$('#view-receivables .mg-aging button')).length === 4, 'Receivables: reconciled with 4 aging buckets');
+  await rail(p, 'receivables'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/collect/receivables') && (await p.$$('#view-receivables .mg-aging button')).length === 4, 'Receivables: reconciled with 4 aging buckets');
   await p.click('#view-receivables [data-money-mode="compare"]'); await p.waitForTimeout(200);
-  ok(p.url().endsWith('#/receivables?src=compare') && (await p.textContent('#mgSrcVal')) === 'Compare', 'Compare mode: URL + Scope bar');
+  ok(p.url().endsWith('#/collect/receivables?src=compare') && (await p.textContent('#mgSrcVal')) === 'Compare', 'Compare mode: URL + Scope bar');
   const heads = await p.$$eval('#view-receivables thead th', x => x.map(e => e.textContent));
   ok(heads.includes('Zoho Books (₹)') && heads.includes('Tally (₹)') && heads.includes('Difference (₹)'), 'Compare columns per source: ' + heads.join(' | '));
   ok(/Conflict/.test(await p.textContent('#view-receivables tbody')), 'Compare shows a conflict');
   await p.click('#mgSrcBtn'); await p.click('#mgSrcPop [data-mg-src="tally"]'); await p.waitForTimeout(250);
-  ok(p.url().endsWith('#/receivables?src=tally') && /Tally only/.test(await p.textContent('#view-receivables tfoot')), 'Scope bar picks Tally: By source, Tally-only total');
+  ok(p.url().endsWith('#/collect/receivables?src=tally') && /Tally only/.test(await p.textContent('#view-receivables tfoot')), 'Scope bar picks Tally: By source, Tally-only total');
   await p.click('#view-receivables [data-money-mode="reconciled"]'); await p.waitForTimeout(200);
   await p.click('#view-receivables [data-money-age="b3"]'); await p.waitForTimeout(200);
   ok((await p.$$('#view-receivables tbody tr')).length >= 1 && /Age 90\+ days/.test(await p.textContent('#view-receivables .mg-toolbar')), 'aging bucket filters the grid');
@@ -149,64 +153,64 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
 
   // 4c. Customers -> row opens Receivables filtered; GST; Audit; Inbox vs Agents
   // 4d. Detail drawer: from a receivables row and from Customers
-  await p.click('.pagenav button[data-view="receivables"]'); await p.waitForTimeout(250);
+  await rail(p, 'receivables'); await p.waitForTimeout(250);
   await p.click('#view-receivables [data-money-mode="reconciled"]'); await p.waitForTimeout(150);
   await p.click('#view-receivables tr[data-open-party="urbannestretail"] td'); await p.waitForTimeout(250);
   ok(await p.isVisible('.mg-drawer') && /Urban Nest/.test(await p.textContent('#mgDrawerTitle')), 'row opens the detail drawer');
   await p.click('.mg-drawer [data-dtab="sources"]'); await p.waitForTimeout(100);
   ok((await p.$$('.mg-drawer [data-dpanel="sources"] .mg-src-block')).length >= 2 && /differ by/.test(await p.textContent('.mg-drawer [data-dpanel="sources"]')), 'Sources tab: each source separately, conflict explained');
   await p.keyboard.press('Escape'); await p.waitForTimeout(150);
-  ok(!(await p.isVisible('.mg-drawer')) && p.url().includes('#/receivables'), 'Escape closes the drawer, page stays put');
-  await p.click('.pagenav button[data-view="customers"]'); await p.waitForTimeout(250);
+  ok(!(await p.isVisible('.mg-drawer')) && p.url().includes('#/collect/receivables'), 'Escape closes the drawer, page stays put');
+  await rail(p, 'customers'); await p.waitForTimeout(250);
   await p.click('#view-customers tr[data-open-party="kaveristores"] td'); await p.waitForTimeout(250);
   await p.click('.mg-drawer [data-drawer-list]'); await p.waitForTimeout(250);
-  ok(p.url().includes('#/receivables') && (await p.inputValue('#view-receivables [data-money-q]')) === 'Kaveri Stores' && (await p.$$('#view-receivables tbody tr')).length === 1, 'customer drawer -> Open in Receivables, filtered');
+  ok(p.url().includes('#/collect/receivables') && (await p.inputValue('#view-receivables [data-money-q]')) === 'Kaveri Stores' && (await p.$$('#view-receivables tbody tr')).length === 1, 'customer drawer -> Open in Receivables, filtered');
   await p.fill('#view-receivables [data-money-q]', ''); await p.waitForTimeout(150);
 
   // 4e. Forecast: customer adjusts it and can switch it off
   await p.evaluate(() => { try { localStorage.removeItem('margyn_forecast_v1'); } catch(e){} });
-  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(250);
-  ok(/13-week cash forecast/.test(await p.textContent('#view-home')), 'Home shows the 13-week forecast');
-  await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
+  await rail(p, 'cashforecast'); await p.waitForTimeout(250);
+  ok(/13-week cash forecast/.test(await p.textContent('#view-cash')), 'Cash › Forecast shows the 13-week forecast');
+  await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(200);
   ok(await p.isVisible('.mg-drawer') && (await p.$$('.mg-drawer input[data-fc]')).length === 13, 'Adjust opens the assumptions (2 ways to make it + 11 inputs)');
   await p.fill('.mg-drawer input[data-fc="collectDelay"]', '60'); await p.waitForTimeout(200);
-  ok(/pay 60 days after/.test(await p.textContent('#view-home .mg-fine')), 'changing an assumption updates the forecast live');
+  ok(/pay 60 days after/.test(await p.textContent('#view-cash')), 'changing an assumption updates the forecast live');
   await p.uncheck('.mg-drawer input[data-fc="enabled"]'); await p.waitForTimeout(200);
-  ok(!/13-week cash forecast/.test(await p.textContent('#view-home')) && /Cash position/.test(await p.textContent('#view-home')), 'switching it off shows cash history instead');
+  ok(/The forecast is switched off/.test(await p.textContent('#view-cash')), 'switching it off says so, with how to turn it back on');
   await p.click('.mg-drawer [data-fc-reset]'); await p.waitForTimeout(200);
-  ok(/13-week cash forecast/.test(await p.textContent('#view-home')) && /pay 15 days after/.test(await p.textContent('#view-home')), 'Reset returns to the customer\'s own figures');
+  ok(/13-week cash forecast/.test(await p.textContent('#view-cash')) && /pay 15 days after/.test(await p.textContent('#view-cash')), 'Reset returns to the customer\'s own figures');
   await p.keyboard.press('Escape');
 
   // 4f. Older tiles show lakh/crore, exact figure on hover; Financing lives under Reports
-  await p.click('.pagenav button[data-view="books"]'); await p.waitForTimeout(300);
+  await rail(p, 'books'); await p.waitForTimeout(300);
   await p.click('#mgSrcBtn'); await p.click('#mgSrcPop [data-mg-src="all"]'); await p.waitForTimeout(400);   // earlier steps left Ledger on Tally
   const strip = await p.$$eval('#view-books .rd-strip .v', xs => xs.map(e => [e.textContent, e.title]));
   const big = strip.filter(s => s[1]);
   ok(big.length > 0 && big.every(s => /^[+-]?₹[\d.]+ (Cr|L)$/.test(s[0]) && /^[+-]?₹[\d,]+$/.test(s[1])), 'Ledger tiles in lakh/crore, full figure on hover: ' + strip.map(s => s.join(' / ')).join(' | '));
-  ok(!(await p.isVisible('.pagenav button[data-view="financing"]')), 'Financing is not in the rail');
-  await p.click('.pagenav button[data-view="analytics"]'); await p.waitForTimeout(250);
+  ok(!(await p.isVisible('.os-rail-b[data-os-space="financing"]')) && await p.evaluate(() => OS_BY_KEY.plan.tabs.some(t => t.page === 'financing')), 'Capital readiness is a Plan tab, not its own rail item');
+  await rail(p, 'analytics'); await p.waitForTimeout(250);
   await p.click('#view-analytics [data-go-page="financing"]'); await p.waitForTimeout(250);
-  ok(p.url().endsWith('#/financing') && /Capital readiness/.test(await p.textContent('#view-financing h1')), 'Reports -> Capital readiness');
-  await p.click('.pagenav button[data-view="gst"]'); await p.waitForTimeout(250);
+  ok(p.url().endsWith('#/plan/capital') && /Capital readiness/.test(await p.textContent('#view-financing h1')), 'Reports -> Capital readiness');
+  await rail(p, 'gst'); await p.waitForTimeout(250);
   ok(/Rathi Textiles/.test(await p.textContent('#view-gst')), 'GST page lists at-risk vendors');
-  await p.click('.pagenav button[data-view="audit"]'); await p.waitForTimeout(300);
+  await rail(p, 'audit'); await p.waitForTimeout(300);
   ok((await p.$$('#view-audit tbody tr')).length === 5, 'Audit log shows ledger and team events');
-  await p.click('.pagenav button[data-view="inbox"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/inbox') && !(await p.isVisible('#agentTabs')) && await p.evaluate(() => agentsActiveTab) === 'queue', 'Inbox = the queue, no tab bar');
-  await p.click('.pagenav button[data-view="agents"]'); await p.waitForTimeout(300);
-  ok(p.url().endsWith('#/agents') && await p.evaluate(() => agentsActiveTab) === 'roster' && !(await p.isVisible('#agentTabs [data-atab="queue"]')), 'Agents = roster, queue tab hidden');
-  ok(await p.evaluate(() => new Set([...document.querySelectorAll('.sidebar .pagenav button')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().left))).size) === 1, 'rail is a single column');
+  await rail(p, 'inbox'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/work/needs-me') && !(await p.isVisible('#agentTabs')) && await p.evaluate(() => agentsActiveTab) === 'queue', 'Inbox = the queue, no tab bar');
+  await rail(p, 'agents'); await p.waitForTimeout(300);
+  ok(p.url().endsWith('#/margyn/agents') && await p.evaluate(() => agentsActiveTab) === 'roster' && !(await p.isVisible('#agentTabs [data-atab="queue"]')), 'Agents = roster, queue tab hidden');
+  ok(await p.evaluate(() => new Set([...document.querySelectorAll('.sidebar .os-rail-b')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().left))).size) === 1, 'rail is a single column');
 
   // 5. Period on Reports
-  await p.click('.pagenav button[data-view="analytics"]'); await p.waitForTimeout(300);
+  await rail(p, 'analytics'); await p.waitForTimeout(300);
   ok(!(await p.isDisabled('#mgPerBtn')), 'Reports: Period enabled');
   await p.click('#mgPerBtn'); await p.click('#mgPerPop [data-mg-range="1y"]'); await p.waitForTimeout(300);
-  ok(await p.evaluate(() => analyticsRange) === '1y' && p.url().endsWith('#/reports?period=1y'), 'Period Last year -> analyticsRange 1y, URL period=1y');
+  ok(await p.evaluate(() => analyticsRange) === '1y' && p.url().endsWith('#/reports/custom?period=1y'), 'Period Last year -> analyticsRange 1y, URL period=1y');
   ok((await p.textContent('#mgPerVal')) === 'Last year', 'Period label Last year');
 
   // 6. Import / Ask / user menu
   await p.click('#mgImportBtn'); await p.waitForTimeout(250);
-  ok(JSON.stringify(await vis()) === '["view-calculate"]' && p.url().endsWith('#/import'), 'Import button opens the upload page');
+  ok(JSON.stringify(await vis()) === '["view-calculate"]' && p.url().endsWith('#/documents/import'), 'Import button opens Documents › Import a file');
   // The top bar's Margyn button toggles the Margyn panel (25-margyn.js); Conversations is in the rail.
   const railWas = await p.isVisible('#mgRail');
   await p.click('#mgAskBtn'); await p.waitForTimeout(250);
@@ -250,8 +254,8 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
 
   // 9b. Preferences are saved to the account (profiles.preferences), not the browser
   await p.evaluate(() => { window.__profileUpdates = []; try { localStorage.removeItem('margyn_forecast_v1'); } catch(e){} });
-  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(250);
-  await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
+  await rail(p, 'cashforecast'); await p.waitForTimeout(250);
+  await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(200);
   ok(/Saved to your account/.test(await p.textContent('.mg-drawer')), 'forecast drawer says Saved to your account');
   await p.fill('.mg-drawer input[data-fc="collectDelay"]', ''); await p.type('.mg-drawer input[data-fc="collectDelay"]', '45', { delay:40 });
   await p.waitForTimeout(1000);
@@ -260,7 +264,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.evaluate(() => localStorage.getItem('margyn_forecast_v1')) === null, 'nothing written to localStorage when the column exists');
   await p.keyboard.press('Escape');
   await p.evaluate(() => { window.__profileUpdates = []; setMetricSelection('summary', ['cash', 'netMargin']); saveAnalyticsCharts([{ id:'x1', name:'Only cash', type:'area', metrics:['cash'], group:'Week' }]); });
-  await p.evaluate(() => { document.getElementById('setBandHealthy') || showView('settings'); }); await p.waitForTimeout(250);
+  await p.evaluate(() => osGo('rules', 'scoring')); await p.waitForTimeout(250);   // score bands live in Rules › Scoring
   await p.fill('#setBandHealthy', '75'); await p.fill('#setBandCaution', '45'); await p.click('#setBandSave'); await p.waitForTimeout(1000);
   const ups2 = await p.evaluate(() => window.__profileUpdates);
   const last = ups2.length ? ups2[ups2.length - 1].preferences : {};
@@ -269,12 +273,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
 
   // reload on "another device": the account's preferences apply
   const prefsNow = await p.evaluate(() => JSON.parse(JSON.stringify(currentProfile.preferences)));
-  await boot('#/home', seed => { localStorage.clear(); window.__seedPrefs = seed; window.__seedNoPrefsColumn = false; }, prefsNow);
-  ok(/pay 45 days after/.test(await p.textContent('#view-home')), 'reload with saved preferences.forecast shows that setting');
+  await boot('#/cash/forecast', seed => { localStorage.clear(); window.__seedPrefs = seed; window.__seedNoPrefsColumn = false; }, prefsNow);
+  ok(/pay 45 days after/.test(await p.textContent('#view-cash')), 'reload with saved preferences.forecast shows that setting');
   ok(await p.evaluate(() => metricSelection('summary').join() === 'cash,netMargin' && loadAnalyticsCharts().length === 1 && scoreBandCutoffs().healthy === 75), 'metrics, charts and score bands come back from the account');
 
   // first use migrates this browser's old values into the account, once
-  await boot('#/home', () => { localStorage.clear(); localStorage.setItem('margyn_score_bands', JSON.stringify({ healthy:80, caution:50 })); localStorage.setItem('margyn_metrics_scores', JSON.stringify(['cash'])); window.__seedPrefs = { forecast:{ collectDelay:30 } }; window.__seedNoPrefsColumn = false; });
+  await boot('#/cash/forecast', () => { localStorage.clear(); localStorage.setItem('margyn_score_bands', JSON.stringify({ healthy:80, caution:50 })); localStorage.setItem('margyn_metrics_scores', JSON.stringify(['cash'])); window.__seedPrefs = { forecast:{ collectDelay:30 } }; window.__seedNoPrefsColumn = false; });
   await p.evaluate(() => scoreBandCutoffs()); await p.waitForTimeout(1000);
   const mig = await p.evaluate(() => window.__profileUpdates);
   ok(mig.length === 1 && mig[0].preferences.score_bands.healthy === 80 && mig[0].preferences.metrics.scores.join() === 'cash' && mig[0].preferences.forecast.collectDelay === 30, 'old browser values migrate into the account once, account values kept: ' + JSON.stringify(mig));
@@ -282,12 +286,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.evaluate(() => scoreBandCutoffs().healthy === 70 && window.__profileUpdates.slice(-1)[0].preferences.score_bands === null), 'reset stores null, the old browser value does not come back');
 
   // code deployed before the SQL: no column -> localStorage, no errors
-  await boot('#/home', () => { localStorage.clear(); window.__seedPrefs = null; window.__seedNoPrefsColumn = true; });
-  await p.click('#view-home [data-fc-adjust]'); await p.waitForTimeout(200);
+  await boot('#/cash/forecast', () => { localStorage.clear(); window.__seedPrefs = null; window.__seedNoPrefsColumn = true; });
+  await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(200);
   ok(/Saved in this browser/.test(await p.textContent('.mg-drawer')), 'missing column: drawer says Saved in this browser');
   await p.fill('.mg-drawer input[data-fc="collectDelay"]', '21'); await p.waitForTimeout(900);
   ok(await p.evaluate(() => JSON.parse(localStorage.getItem('margyn_forecast_v1') || '{}').collectDelay) === '21' && (await p.evaluate(() => window.__profileUpdates.length)) === 0, 'missing column: saved to localStorage, no profile update sent');
-  ok(/pay 21 days after/.test(await p.textContent('#view-home')), 'missing column: forecast still follows the setting');
+  ok(/pay 21 days after/.test(await p.textContent('#view-cash')), 'missing column: forecast still follows the setting');
   await p.keyboard.press('Escape');
   await p.evaluate(() => { localStorage.clear(); window.__seedNoPrefsColumn = false; });
 
@@ -305,8 +309,8 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/Fresh Entry Traders/.test(await p.textContent('#view-receivables')), 'the entry is still there after the refresh');
   ok(await p.evaluate(() => { const c = buildCrossLedgerSummary(); return !!c && c.receivables.reconciledTotal > 0 && 'odoo' in c.sourcesPresent; }), 'chat cross-source summary built from the reconciled model');
 
-  // 10b. Team logins (19g-team.js): the owner manages the team
-  await boot('#/settings');
+  // 10b. Team logins (19g-team.js): the owner manages the team, in Team › People and roles
+  await boot('#/team/people');
   await p.waitForTimeout(400);
   const teamTxt = await p.textContent('#setTeamMount');
   ok(/Arjun Kapoor/.test(teamTxt) && /Priya Mehta/.test(teamTxt) && /S\. Rao \(CA\)/.test(teamTxt), 'App logins lists the owner and both people');
@@ -345,7 +349,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const hidden = await p.$$eval('.pagenav button.mg-hide-perm', x => x.map(b => b.dataset.view).sort());
   ok(JSON.stringify(hidden) === JSON.stringify(['calculate', 'connectors', 'invoicing', 'people', 'settings'].filter(v => hidden.includes(v))) && hidden.includes('connectors') && hidden.includes('settings') && !hidden.includes('receivables'), 'Advisor: admin and edit pages hidden from the rail (' + hidden + ')');
   ok(await p.evaluate(() => document.body.classList.contains('mg-ro')), 'Advisor: read-only');
-  ok(/Welcome( back)?, S\./.test(await p.textContent('#view-home h1')) && /Advisor \(CA\), read-only/.test(await p.textContent('#view-home')), 'Home greets them by name and role');
+  ok(/S\./.test(await p.textContent('#view-home .os-hello-d')) && /Signed in as Advisor \(CA\), read-only/.test(await p.textContent('#view-home .os-hello-role')), 'Desk greets them by name and role');
   ok((await p.textContent('#mgUserName')) === 'S. Rao' && /Advisor \(CA\) · Anvaya Home Goods Pvt Ltd · read-only/.test(await p.textContent('#mgUserRole')), 'user menu shows the person, role and business');
   await p.evaluate(() => showView('receivables')); await p.waitForTimeout(200);
   ok(!(await p.isVisible('#view-receivables .mg-ph-actions .mg-btn.primary')), 'Advisor: no New invoice button');
@@ -364,8 +368,10 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   }), 'member settings: their own copy, the business setting untouched');
   await asMember('approver', 'Approver', ['view_receivables', 'view_payables', 'approve']);
   await p.waitForTimeout(300);
-  const tiles = await p.$$eval('#view-home .mg-tile .mg-tile-l, #view-home .mg-tile-label, #view-home .mg-tile', x => x.map(e => e.textContent).join('|'));
-  ok(!/Cash|Runway|GST payable/.test(tiles) && /Receivables overdue/.test(tiles), 'Approver: Home shows no cash, runway or GST tiles');
+  const tiles = await p.$$eval('#view-home .os-wft-k b', x => x.map(e => e.textContent).join('|'));
+  ok(!/Cash|Tax/.test(tiles) && /Collect/.test(tiles) && /Pay/.test(tiles), 'Approver: Desk shows no Cash or Tax tiles (' + tiles + ')');
+  ok(!/Cash stays|cash/i.test(await p.textContent('#view-home .os-hello-h')) && !(await p.$('#view-home [data-os-ticker="forecast"]')), 'Approver: no cash in the headline, no Forecast agent');
+  ok(!(await p.$('.os-rail-b[data-os-space="cash"]')) && !!(await p.$('.os-rail-b[data-os-space="plan"]')) && await p.evaluate(() => !osTabsFor(OS_BY_KEY.plan).some(t => t.page === 'margin' || t.page === 'plan')), 'Approver: no Cash in the rail; Plan keeps only Pulse and Capital readiness');
   const homeHeads = await p.$$eval('#view-home .mg-panel-h h2', x => x.map(e => e.textContent).join('|'));
   ok(!(await p.$('#view-home [data-fc-adjust]')) && !/Cash position|forecast/i.test(homeHeads), 'Approver: no cash chart or forecast panel (' + homeHeads + ')');
   ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="margin"]').classList.contains('mg-hide-perm')), 'Approver: Margin hidden (needs cash access)');
@@ -373,9 +379,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.evaluate(() => { mgMe = null; mgActor = null; mgApplyActor(); showView('home'); });
 
   // 10e. Margin (Tally analytics): rail, page, tiles, honest item state, confirming a ledger, permission
-  ok(await p.evaluate(() => { const b = document.querySelector('.pagenav button[data-view="margin"]'); return !!b && b.closest('.pagenav').textContent.indexOf('Insight') < b.closest('.pagenav').textContent.indexOf('Margin'); }), 'Margin sits under Insight in the rail');
-  await p.click('.pagenav button[data-view="margin"]'); await p.waitForTimeout(700);
-  ok(p.url().endsWith('#/margin') && JSON.stringify(await vis()) === '["view-margin"]', 'rail click Margin -> #/margin (' + p.url().split('#')[1] + ')');
+  ok(await p.evaluate(() => OS_BY_KEY.plan.group === 'Workflows' && OS_BY_KEY.plan.tabs.some(t => t.page === 'margin')), 'Margin is a tab of Plan, under Workflows');
+  await rail(p, 'margin'); await p.waitForTimeout(700);
+  ok(p.url().endsWith('#/plan/margin') && JSON.stringify(await vis()) === '["view-margin"]', 'Plan › Margin -> #/plan/margin (' + p.url().split('#')[1] + ')');
   ok(/Margin/.test(await p.textContent('#view-margin .mg-title')), 'Margin page has its title');
   const marTiles = await p.$$eval('#view-margin .mg-tile-l', x => x.map(e => e.textContent));
   ok(marTiles.slice(0, 4).join('|') === 'Net sales, before GST|Gross margin, before stock movement|Returns and credit notes|Days to get paid', 'Margin headline tiles: ' + marTiles.slice(0, 4).join(' | '));
@@ -409,11 +415,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const m = await b.newPage({ viewport:{ width:390, height:844 } });
   m.on('pageerror', e => errs.push('mobile: ' + e.message));
   await m.goto(B); await m.waitForTimeout(700); await m.evaluate(seedApp); await m.waitForTimeout(600);
-  ok(!(await m.isVisible('.sidebar .pagenav button[data-view="books"]')) || (await m.evaluate(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0)), 'phone: rail hidden by default');
+  ok(!(await m.isVisible('.sidebar .os-rail-b[data-os-space="close"]')) || (await m.evaluate(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0)), 'phone: rail hidden by default');
   await m.click('#mgMenuBtn'); await m.waitForTimeout(300);
   ok(await m.evaluate(() => document.querySelector('.sidebar').getBoundingClientRect().left >= 0), 'phone: menu opens the rail');
-  await m.click('.sidebar .pagenav button[data-view="books"]'); await m.waitForTimeout(300);
-  ok(await m.evaluate(() => !document.body.classList.contains('mg-rail-open')) && m.url().includes('#/ledger'), 'phone: picking a page closes the rail');
+  await m.click('.sidebar .os-rail-b[data-os-space="close"]'); await m.waitForTimeout(300);
+  ok(await m.evaluate(() => !document.body.classList.contains('mg-rail-open')) && m.url().includes('#/close'), 'phone: picking a space closes the rail');
+  await m.click('[data-os-tab="close/books"]'); await m.waitForTimeout(300);
   await m.click('#mgScopeCompactBtn'); await m.waitForTimeout(150);
   ok(await m.isVisible('#mgScopeCompactPop') && await m.isVisible('#mgScopeCompactPop [data-mg-src="tally"]'), 'phone: scope chip menu is visible and offers Books sources');
   ok(await m.evaluate(() => document.documentElement.scrollWidth - innerWidth) === 0, 'phone: no horizontal overflow');

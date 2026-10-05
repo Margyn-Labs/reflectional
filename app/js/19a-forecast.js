@@ -344,7 +344,8 @@ function mgForecastEditor(){
 document.addEventListener('click', e => {
   if(e.target.closest('[data-fc-adjust]')){ mgForecastEditor(); return; }
   if(e.target.closest('[data-fc-how]')){
-    if(mgCurrentView !== 'cash' && typeof mgGo === 'function') mgGo('cash');
+    if(typeof osGo === 'function') osGo('cash', 'forecast');   // Margyn OS: the explanation lives on Cash › Forecast
+    else if(mgCurrentView !== 'cash' && typeof mgGo === 'function') mgGo('cash');
     setTimeout(() => { const el = document.getElementById('mgFcHow'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
     return;
   }

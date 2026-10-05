@@ -822,7 +822,9 @@ function mgrDeskTop(){
         if(mgrUserId !== currentUser.id){
           mgrUserId = currentUser.id; mgrGreeted = false; mgrThread = null; mgrHistory.length = 0; mgrName = null; mgrAway = null; mgrNudgesShown = 0; mgrNudgeQueue = [];
           const f = mgrFeed(); if(f) f.innerHTML = '';
-          if(mgrWide() && lsGet(MGR_OPEN_KEY, 'open') !== 'closed') mgrOpen(); else mgrClose(true);
+          // Margyn OS (27-os.js): the panel opens over the page, so it only opens by itself when pinned.
+          const sheet = document.body.classList.contains('os-on') && !(lsGet('mg.panel.pin', '') === '1' && window.innerWidth >= 1500);
+          if(mgrWide() && !sheet && lsGet(MGR_OPEN_KEY, 'open') !== 'closed') mgrOpen(); else mgrClose(true);
           const l = mgrEl('mgrLaunch'); if(l) l.classList.remove('hidden');
           setTimeout(mgrGreet, 400);
         } else if(mgrGreeted) setTimeout(mgrCheckNudges, 3000);

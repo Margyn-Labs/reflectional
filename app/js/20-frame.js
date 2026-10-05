@@ -37,7 +37,21 @@ const MG_PAGES = {
   audit:{ slug:'audit', own:true, group:'Admin', label:'Audit log' },
   channels:{ slug:'channel-health', own:true, group:'Admin', label:'Channel health' },
   financing:{ slug:'financing', base:'financing', group:'Insight', label:'Capital readiness', sub:'An indicative working-capital view built from your own figures. Margyn is not a lender.' },
-  profile:{ slug:'profile', base:'profile', group:'Account', label:'Profile' }
+  profile:{ slug:'profile', base:'profile', group:'Account', label:'Profile' },
+  // Margyn OS pages (27-os.js, 28-os-live.js, 29-os-pages.js). Old slugs above still open their page.
+  work:{ slug:'work', own:true, group:'You', label:'All work' },
+  live:{ slug:'live', own:true, group:'Margyn', label:'Margyn live' },
+  collect:{ slug:'collect', own:true, group:'Collect', label:'Collect' },
+  chasing:{ slug:'chasing', own:true, group:'Collect', label:'Chasing' },
+  payover:{ slug:'pay', own:true, group:'Pay', label:'Pay' },
+  closeover:{ slug:'close', own:true, group:'Close', label:'Close' },
+  entries:{ slug:'ledger-entries', base:'ledger', group:'Close', label:'Ledger entries', sub:'Receivables, payables and cash entries you keep yourself. Entries are settled, never deleted.' },
+  plan:{ slug:'plan', own:true, group:'Plan', label:'Plan' },
+  transactions:{ slug:'transactions', own:true, group:'Records', label:'Transactions' },
+  tallydata:{ slug:'tally-vouchers', base:'tally', group:'Records', label:'Tally vouchers', sub:'Ledger balances, bills and vouchers exactly as Tally holds them.' },
+  documents:{ slug:'documents', own:true, group:'Records', label:'Documents' },
+  rules:{ slug:'rules', own:true, group:'Rules', label:'What Margyn may do' },
+  howitworks:{ slug:'how-it-works', own:true, group:'Margyn', label:'How Margyn works' }
 };
 const MG_BY_SLUG = Object.fromEntries(Object.entries(MG_PAGES).map(([k, p]) => [p.slug, k]));
 const MG_OWN = Object.keys(MG_PAGES).filter(k => MG_PAGES[k].own);
@@ -312,7 +326,7 @@ showView = function(name){
 
 /* ---------- router: #/page?src=&period= ---------- */
 function mgParseHash(){
-  const m = /^#\/([\w-]+)(?:\?(.*))?$/.exec(location.hash || '');
+  const m = /^#\/([\w-]+(?:\/[\w-]+)?)(?:\?(.*))?$/.exec(location.hash || '');
   if(!m) return null;
   const q = new URLSearchParams(m[2] || '');
   return { slug:m[1], src:q.get('src'), period:q.get('period') };
@@ -325,7 +339,8 @@ function mgHashFor(page){
   if(page === 'analytics' && typeof analyticsRange !== 'undefined' && analyticsRange !== '1q') q.set('period', analyticsRange);
   if(page === 'cfopack' && mgPackMonth) q.set('period', mgPackMonth);
   const qs = q.toString();
-  return '#/' + P.slug + (qs ? '?' + qs : '');
+  const path = typeof osHashPath === 'function' ? osHashPath(page) : null;   // '#/collect/receivables' (27-os.js)
+  return '#/' + (path || P.slug) + (qs ? '?' + qs : '');
 }
 function mgWriteHash(push){
   if((location.hash || '').indexOf('zoho=') !== -1) return;   // Zoho org-select callback owns the hash
@@ -339,7 +354,8 @@ function mgWriteHash(push){
 }
 function mgApplyRoute(){
   const r = mgParseHash(); if(!r) return false;
-  const page = MG_BY_SLUG[r.slug]; if(!page) return false;
+  // New addresses are space/tab ('collect/receivables'); old ones are a page slug and still work.
+  const page = (typeof osResolvePath === 'function' && osResolvePath(r.slug)) || MG_BY_SLUG[r.slug]; if(!page) return false;
   mgApplying = true;
   try {
     if(MG_MONEY[page]) mgMoneySrc = r.src || 'reconciled';
@@ -357,6 +373,7 @@ function mgApplyRoute(){
     }
   } finally { mgApplying = false; }
   mgRefreshScope();
+  if(typeof osHashPath === 'function') mgWriteHash(false);   // an old link moves to its new address
   return true;
 }
 // First data load after login: re-apply the URL so the page it names renders
