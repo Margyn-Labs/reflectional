@@ -228,7 +228,7 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
       try {
         await require('./margynWatch').setMode(profileId, stopAlerts ? 'off' : 'on');
         reply = stopAlerts ? 'Done. I\'ve paused my updates. You can still ask me anything here, and text START ALERTS to turn them back on.'
-          : 'Done. I\'ll text you when something in your books needs a look (at most a few points, mornings and evenings). Text STOP ALERTS any time to pause.';
+          : 'Done. I\'ll text you when something in your books needs a look (a detailed update in the morning, short money updates through the day when something moves, and a wrap in the evening). Text STOP ALERTS any time to pause.';
       } catch (e) { reply = 'I couldn\'t change that just now. You can also do it in the app under Conversations.'; }
     }
     await persist({ profileId, phone: fromPhone }, 'assistant', reply, null);

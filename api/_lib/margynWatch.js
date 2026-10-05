@@ -72,6 +72,8 @@ const COOLDOWN_DAYS = {
 // Never a point of their own: good news goes in the "money in" line instead.
 const NOT_A_POINT = new Set(['receipt']);
 const MODES = ['off', 'preview', 'on'];
+// The day's money pulses between the morning and evening updates (IST): 10:30, 12:30, 15:00, 17:00.
+const INTRADAY = new Set(['midday', 'noon', 'afternoon', 'late']);
 const PENDING_HOURS = 24;
 
 const digits = (p) => String(p || '').replace(/[^\d]/g, '');
@@ -112,7 +114,7 @@ function choose(list, state, slot, now, mode, opts) {
     if (NOT_A_POINT.has(x.kind) || mutedKinds.has(x.kind)) continue;
     const s = byKey.get(x.key);
     if (s && s.status === 'muted') continue;
-    if ((slot === 'midday' || slot === 'afternoon') && !isDeadline(x)) continue;
+    if (INTRADAY.has(slot) && !isDeadline(x)) continue;
     // One point per customer: their overdue bills, "short paid" and "gone quiet" are one conversation.
     const pk = x.party ? E.niceName(x.party).toLowerCase() : null;
     if (pk && parties.has(pk)) continue;
@@ -291,9 +293,10 @@ function buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, ex
   // (concentration): one point per customer, so the background one would otherwise take the slot.
   const acting = new Set(list.filter((x) => x.party && !BACKGROUND.has(x.kind)).map((x) => E.niceName(x.party).toLowerCase()));
   const points = list.filter((x) => !brief.INSIGHT_KINDS.has(x.kind) && !(BACKGROUND.has(x.kind) && x.party && acting.has(E.niceName(x.party).toLowerCase())));
-  if (slot === 'midday' || slot === 'afternoon') {
+  if (INTRADAY.has(slot)) {
     const deadlines = choose(points, state, slot, o.now, chooseMode);
-    return { msg: brief.intraday(ctx, fc, snap, snaps.last, snaps.morning, deadlines, words), sentItems: deadlines };
+    const msg = brief.pulse(ctx, fc, snap, snaps.last, snaps.morning, deadlines, Object.assign({ slot }, words));
+    return { msg, sentItems: msg.send ? deadlines.filter((d) => (msg.said || []).includes('deadline:' + d.key)) : [] };
   }
   if (slot === 'evening') {
     const morningKeys = new Set(((snaps.morning && snaps.morning.day === snap.day && snaps.morning.points) || []).map((p) => p.key));
@@ -308,14 +311,14 @@ function buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, ex
 }
 
 /**
- * One account. slot: 'morning' | 'midday' | 'afternoon' | 'evening' | 'manual' (manual = the morning update).
+ * One account. slot: 'morning' | 'midday' | 'noon' | 'afternoon' | 'late' | 'evening' | 'manual' (manual = the morning update).
  * opts.previewOnly: the app's "Preview today's update". Works out the message the owner would get next, sends
  * it only to the preview phone (and only in preview mode), and records nothing, so it never repeats or uses up
  * a point.
  */
 async function watchAccount(userId, opts) {
   const o = opts || {};
-  const slot = o.slot === 'manual' || !o.slot ? 'morning' : o.slot;
+  const slot = o.slot === 'manual' || !o.slot || !(INTRADAY.has(o.slot) || o.slot === 'evening' || o.slot === 'morning') ? 'morning' : o.slot;
   const { ctx } = await booksTools.contextFor(userId);
   if (!ctx || !ctx.rows.length) return { user: userId, skipped: 'no books' };
   // Every day, for every account with books, keep the forecast and the position (forecastStore.js), so the
@@ -409,10 +412,17 @@ async function watchAccount(userId, opts) {
       snap.points = sentInfo ? (points || []).map((x) => ({ key: x.key, kind: x.kind, party: x.party || null, title: x.title })) : [];
       const prev = snaps.morning && snaps.morning.day !== snap.day ? snaps.morning : (snaps.morning && snaps.morning.prev) || null;
       if (prev) snap.prev = { day: prev.day, cash: prev.cash, recv_total: prev.recv_total };
+      // Customers flagged as gone quiet or buying less: an order from them during the day is good news.
+      snap.watchlist = all.filter((x) => x.party && (x.kind === 'quiet' || x.kind === 'insight_shrinking')).slice(0, 20).map((x) => ({ party: x.party, kind: x.kind }));
+      // Two weeks of mornings, for Monday's "late money against a week ago".
+      snap.hist = [{ day: snap.day, cash: snap.cash, recv_total: snap.recv_total, recv_late30: snap.recv_late30 }]
+        .concat(((snaps.morning && snaps.morning.hist) || []).filter((h) => h.day !== snap.day)).slice(0, 14);
       await saveSnap(userId, 'morning', snap);
       await saveSnap(userId, 'last', snap);
     } else if (sentInfo || slot === 'evening' || !(snaps.last && snaps.last.day === snap.day)) {
-      await saveSnap(userId, 'last', Object.assign({}, snap, { points: undefined }));
+      // What's been said today (each pulse line once a day) and how many pulses went out (at most four).
+      const keep = sentInfo ? { said: msg.said, pulses: msg.pulses } : { said: snaps.last && snaps.last.day === snap.day ? snaps.last.said : [], pulses: snaps.last && snaps.last.day === snap.day ? snaps.last.pulses : 0 };
+      await saveSnap(userId, 'last', Object.assign({}, snap, { points: undefined }, keep));
     }
   }
   return result;

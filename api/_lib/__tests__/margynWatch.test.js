@@ -223,17 +223,40 @@ const W = require('../margynWatch');
   DB.tally_installs[0].last_sync_at = new Date().toISOString();
   r = await W.watchAccount(U, { slot: 'afternoon' });
   const pm = lastText();
-  check('afternoon: only the change, tied to the morning point', r.sent && /^Quick update Mihir\./.test(pm) && /✅ Big Co paid ₹40 L \(point 1 this morning\)\. ₹50 L still open/.test(pm) && !/Where you stand/.test(pm), pm);
+  check('pulse: money since this morning', r.sent && /^\d{1,2}:\d\d [ap]m update, Mihir\./.test(pm) && /\*Since this morning:\* ₹40 L in \(Big Co ₹40 L\)/.test(pm) && !/Where you stand/.test(pm), pm);
+  check('pulse: getting better, tied to the morning point', /\*Getting better\*\n✅ Big Co paid ₹40 L \(point 1 this morning\)\. ₹50 L still open/.test(pm) && /✅ Money more than a month late is down to ₹50 L, from ₹90 L this morning/.test(pm), pm);
+  check('pulse: invites plain-word questions', /in your own words/.test(pm), pm);
   n = sent.length;
   r = await W.watchAccount(U, { slot: 'afternoon' });
   check('...and does not say it again', !r.sent && sent.length === n, r);
+  // Big Co gets a new invoice while ₹50 L of theirs is months late: more credit to someone who isn't paying.
+  DB.tally_vouchers.push(Object.assign(sale(todayIso, 'Big Co', 300000), { tally_guid: 'new-inv' }));
+  DB.tally_installs[0].last_sync_at = new Date(Date.now() + 1000).toISOString();
+  r = await W.watchAccount(U, { slot: 'late' });
+  const lt = lastText();
+  check('pulse: new sale to a customer who is months late is flagged', r.sent && /\*Needs a look\*\n⚠️ New ₹3 L invoice to Big Co, who already owes ₹50 L/.test(lt) && r.headline && /^New ₹3 L invoice/.test(r.headline), { r, lt });
+  check('pulse: says each thing once a day', !/Big Co paid/.test(lt), lt);
+  check('pulse: the change since the last pulse, not since the morning', /\*Since \d{1,2}:\d\d [ap]m:\* new sales ₹3 L/.test(lt), lt);
+  n = sent.length;
+  r = await W.watchAccount(U, { slot: 'noon' });
+  check('pulse: nothing new, nothing sent', !r.sent && sent.length === n, r);
+  for (const a of [3, 5, 8, 10, 12, 15]) DB.tally_vouchers.push(sale(d(a), 'Small Co', 20000));   // a few working days to compare with
+  DB.tally_installs[0].last_sync_at = new Date(Date.now() + 2000).toISOString();
   r = await W.watchAccount(U, { slot: 'evening' });
   const ev = lastText();
+  check('evening: today against a usual day', /\*Today against a usual day\*\nCollected ₹40 L/.test(ev) && /Late money ₹50 L, down ₹40 L today ↓/.test(ev), ev);
   check('evening goes out', r.sent, r);
   check('evening: today\'s money', /\*Today\*\nIn: ₹40 L \(Big Co ₹40 L\)\./.test(ev), ev);
   check('evening: follows up on the morning point', /\*This morning's points\*\n1\. ✅ Big Co: paid ₹40 L today\. ₹50 L still open/.test(ev), ev);
   check('evening template headline counts what is still open', /^Evening wrap: ₹40 L came in today; 1 of this morning's 1 point is still open\.$/.test(r.headline), r);
 
+  console.log('a morning snapshot from before pulses (no seen list)');
+  const yIso = new Date(Date.now() + 5.5 * 3600000 - 86400000).toISOString().slice(0, 10);
+  DB.tally_vouchers.push(Object.assign(sale(yIso, 'Yesterday Co', 900000), { tally_guid: 'y1' }));
+  DB.tally_installs[0].last_sync_at = new Date(Date.now() + 3000).toISOString();
+  for (const row of DB.margyn_signals) if (row.key === 'snap:morning' || row.key === 'snap:last') { const j = JSON.parse(row.detail); delete j.seen; j.said = []; j.pulses = 0; row.detail = JSON.stringify(j); }
+  r = await W.watchAccount(U, { slot: 'late', previewOnly: true });
+  check('yesterday\'s entries are never counted as new', !/Yesterday Co|₹9 L/.test(r.text || '') && (r.text == null || /update/.test(r.text)), r);
   console.log('every account');
   const all = await W.runWatchAll('morning');
   check('runs over Tally accounts', all.accounts === 1 && all.results.length === 1, all);
