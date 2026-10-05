@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-05-money-pulses', date:'5 Oct 2026', title:'Short money updates through the day',
+    items:[
+      { t:'Money pulses at 10:30, 12:30, 3 and 5', what:'Between the morning and evening updates, Margyn texts what moved since its last message: money in and out, what got better (a customer paid, late money down, a better-than-usual day) and what needs a look (more credit to a customer who is months late, a bill gone past due, an unusual payment out, a possible double entry, Tally not syncing). If nothing moved, it stays quiet, and it never sends more than four in a day.',
+        how:'WhatsApp. Reply in your own words to ask about any line.', act:'history' },
+      { t:'Today against a usual day', what:'The evening wrap now compares today’s collections, sales and payments with an average working day from the last four weeks, and says how late money moved.', how:'WhatsApp, around 7 pm.', act:'history' },
+      { t:'Monday: last week in one look', what:'On Mondays the morning update adds last week against the week before, and the biggest money in and out.', how:'WhatsApp, Monday around 7:30 am.', act:'history' }
+    ]
+  },
+  {
     id:'2026-10-05-daily-cadence', date:'5 Oct 2026', title:'Margyn’s WhatsApp updates now follow your day',
     items:[
       { t:'A fuller morning update', what:'Every morning: your bank and cash, what customers owe and how much is late, yesterday’s money in and out, what’s due this week, and where cash is likely to be in 7 days. Then up to three things that need you, mixed across collections, costs, sales and GST. Each one says why Margyn is raising it today and what it’s based on.',

@@ -73,8 +73,9 @@ function owedByParty(ctx) {
   const m = new Map();
   for (const b of E.billRows(ctx, 'receivable')) {
     const k = norm(b.party);
-    const g = m.get(k) || { name: b.party, owed: 0, late30: 0 };
+    const g = m.get(k) || { name: b.party, owed: 0, late30: 0, maxLate: 0 };
     g.owed += b.amount; if (b.late > 30) g.late30 += b.amount;
+    if (b.late > g.maxLate) g.maxLate = b.late;
     m.set(k, g);
   }
   return m;
@@ -98,14 +99,33 @@ function snapshot(ctx, fc, now) {
     recv_total: Math.round([...owed.values()].reduce((s, g) => s + g.owed, 0)),
     recv_late30: Math.round([...owed.values()].reduce((s, g) => s + g.late30, 0)),
     pay_total: Math.round(pay.reduce((s, b) => s + b.amount, 0)),
-    parties, points: []
+    parties, points: [],
+    // Entries dated today or yesterday that were already in the books, so the next update can tell what's new.
+    seen: ctx.rows.filter((r) => r.guid && r.dt.getTime() >= ctx.today.getTime() - DAY).map((r) => r.guid)
   };
 }
 
-/** Money in and out on the given India days ('2026-10-04'), by who and what for, and new sales. */
-function movement(ctx, days) {
-  const set = new Set(days);
-  const rows = ctx.rows.filter((r) => set.has(r.day));
+/** The average working day over the last four weeks (days with any entry): money in from customers, sales, money out. */
+function usualDay(ctx) {
+  const from = ctx.today.getTime() - 28 * DAY, to = ctx.today.getTime();
+  const rows = ctx.rows.filter((r) => r.dt.getTime() >= from && r.dt.getTime() < to);
+  const days = new Set(rows.map((r) => r.day));
+  if (days.size < 5) return null;
+  let collected = 0, out = 0, sales = 0;
+  for (const e of cashFlow.cashEvents(ctx, rows)) {
+    if (e.category === 'transfers_loans') continue;
+    if (e.amount > 0 && e.category === 'customers') collected += e.amount; else if (e.amount < 0) out += -e.amount;
+  }
+  for (const r of rows) if (r.kind === 'sales' || r.kind === 'credit_note') sales += r.sales - r.returns;
+  return { collected: collected / days.size, out: out / days.size, sales: sales / days.size, days: days.size };
+}
+const arrow = (now, usual) => (usual > 0 && now >= usual * 1.1 ? '↑' : usual > 0 && now <= usual * 0.9 ? '↓' : '·');
+function timeIST(iso) { const s = istStamp(iso); return s ? s.split(', ')[1] : null; }
+
+/** Money in and out on the given India days ('2026-10-04'), or in just the given entries, by who and what for, and new sales. */
+function movement(ctx, days, only) {
+  const set = new Set(days || []);
+  const rows = only || ctx.rows.filter((r) => set.has(r.day));
   const ev = cashFlow.cashEvents(ctx, rows);
   const inBy = new Map(), outBy = new Map();
   let inTot = 0, outTot = 0;
@@ -407,17 +427,41 @@ function morning(ctx, fc, snap, prev, points, insight, o) {
     if (minV < 0 && snap.cash != null && snap.cash >= 0) week.push(`Heads up: on these patterns cash dips below zero around ${E.dayStr(new Date(ctx.today.getTime() + at * DAY))}, about ${inr(-minV)} short, so that would come from the overdraft.`);
   }
 
+  const wk = weekReview(ctx, snap);
   const pts = points.length
     ? `*${points.length === 1 ? 'One thing that needs you' : points.length + ' things that need you'}*\n\n` + points.map((x, i) => pointBlock(x, i, 'morning')).join('\n\n')
     : '*Needs you today*\nNothing new. Everything I flagged earlier is either sorted or not due for another look yet.';
   const worth = insight ? `*Worth knowing*\n${insight.title}` : null;
   const replies = points.length > 1 ? `Reply ${points.map((_, i) => i + 1).join(', ').replace(/, (\d)$/, ' or $1')} for more on a point` : points.length ? 'Reply 1 for more' : 'Ask me anything about your books';
   const foot = `${replies}, or ask me anything. I'll check back this evening on what moved. Reply STOP ALERTS to pause these.`;
-  const text = fit([head, stand.length > 1 ? stand.join('\n') : null, ySec, week.length > 1 ? week.join('\n') : null, pts, worth], foot);
+  const text = fit([head, stand.length > 1 ? stand.join('\n') : null, wk, ySec, week.length > 1 ? week.join('\n') : null, pts, worth], foot);
   const headline = points.length
     ? (points.length === 1 ? 'One thing in your books needs you today: ' : `${points.length} things in your books need you today. The biggest: `) + points[0].title
     : `Your morning update is ready: bank and cash ${snap.cash != null ? inr(snap.cash) : 'n/a'}, customers owe ${inr(snap.recv_total)}.`;
   return { text, headline, send: true };
+}
+
+/**
+ * Mondays: last week (Mon-Sun) against the week before, and the biggest moves. Late money against a week ago
+ * comes from the morning snapshots kept in snap.hist.
+ */
+function weekReview(ctx, snap) {
+  if (ctx.today.getUTCDay() !== 1) return null;
+  const daysOf = (from) => Array.from({ length: 7 }, (_, i) => isoDay(new Date(ctx.today.getTime() - (from - i) * DAY)));
+  const last = movement(ctx, daysOf(7)), before = movement(ctx, daysOf(14));
+  if (!last.in_total && !last.out_total && !last.invoices) return null;
+  const cmp = (a, b) => b > 0 ? ` (week before ${inr(b)}) ${arrow(a, b)}` : '';
+  const lines = ['*Last week*',
+    `Collected ${inr(last.in_by.reduce((s, [, v]) => s + v, 0))}${cmp(last.in_by.reduce((s, [, v]) => s + v, 0), before.in_by.reduce((s, [, v]) => s + v, 0))}`,
+    `Sales ${inr(last.sales)}${cmp(last.sales, before.sales)}`,
+    `Paid out ${inr(last.out_total)}${cmp(last.out_total, before.out_total)}`];
+  const wkAgo = ((snap.hist || []).find((h) => h.day === isoDay(new Date(ctx.today.getTime() - 7 * DAY))));
+  if (wkAgo && wkAgo.recv_late30 != null) {
+    const d = snap.recv_late30 - wkAgo.recv_late30;
+    lines.push(`Late money ${inr(snap.recv_late30)}, ${Math.abs(d) < threshold(ctx) ? 'about the same as a week ago' : `${d < 0 ? 'down' : 'up'} ${inr(Math.abs(d))} on a week ago`}.`);
+  }
+  if (last.in_by[0]) lines.push(`Biggest in: ${last.in_by[0][0]} ${inr(last.in_by[0][1])}.` + (last.out_by[0] && last.out_by[0].top[0] ? ` Biggest out: ${last.out_by[0].top[0][0]} ${inr(last.out_by[0].top[0][1])}.` : ''));
+  return lines.join('\n');
 }
 
 /** What happened to a customer's balance between two snapshots, and whether a receipt explains it. */
@@ -445,34 +489,151 @@ function pointRef(morningSnap, partyKey) {
 }
 
 /**
- * MIDDAY / AFTERNOON: only what changed since `last` (the snapshot from the last update that went out).
- * deadlines: findings with a clock on them that haven't been sent (margynWatch decides). Returns send: false when
- * nothing moved enough to be worth a message.
+ * THE DAY'S PULSES (10:30, 12:30, 15:00, 17:00): money that moved since the last update, then what got better,
+ * what needs a look, and (at 15:00 only) which of the morning's points haven't moved. Each line is said once a
+ * day (snap.said). Nothing worth saying means send: false, and the changes add up for the next pulse.
+ * deadlines: findings with a clock on them (margynWatch.choose). watch: parties the morning flagged as quiet or
+ * buying less, so an order from them is good news.
  */
-function intraday(ctx, fc, snap, last, morningSnap, deadlines, o) {
+function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   const opt = o || {};
-  const lines = [];
+  const t = threshold(ctx);
+  const today = snap.day;
+  const ms = morningSnap && morningSnap.day === today ? morningSnap : null;
+  const since = last && last.day === today ? last : ms;
+  const fromMorning = !!(since && ms && since.at === ms.at);
+  const said = new Set((last && last.day === today && last.said) || []);
+  const fresh = [];
+  const say = (key, line) => { if (said.has(key)) return false; said.add(key); fresh.push(key); return line; };
+  const good = [], bad = [], still = [];
   let important = false;
-  const since = last && last.day === snap.day ? last : morningSnap && morningSnap.day === snap.day ? morningSnap : null;
-  if (since) {
-    for (const p of partyMoves(ctx, since, snap, snap.day).slice(0, 4)) {
-      const ref = pointRef(morningSnap, p.key);
-      const left = p.now >= 1 ? ` ${inr(p.now)} still open${p.late30Now ? `, ${inr(p.late30Now)} of it more than a month late` : ''}.` : ' Nothing left open.';
-      lines.push(p.paid ? `✅ ${nice(p.name)} paid ${inr(p.paid)}${ref ? ` (${ref})` : ''}.${left}`
-        : `${nice(p.name)}'s balance is down ${inr(p.drop)} with no receipt entered, so likely a credit note or adjustment${ref ? ` (${ref})` : ''}.${left}`);
-      if (p.paid >= 2 * threshold(ctx) || ref) important = true;
-    }
-    const m = movement(ctx, [snap.day]);
-    for (const b of m.big_out.slice(0, 2)) lines.push(`${inr(b.amount)} went out to ${b.who}${b.category === 'suppliers' ? ' (supplier)' : ''}.`);
-    if (lines.length && snap.cash != null && since.cash != null) lines.push(`Bank and cash now ${inr(snap.cash)}, ${moved(snap.cash, since.cash, since === morningSnap ? 'this morning' : 'my last update', ctx)}.`);
-  }
-  for (const d of deadlines || []) { lines.push(`⚠️ ${d.title}${d.action ? ' ' + d.action : ''}`); important = true; }
-  if (!lines.length) return { send: false };
-  const head = `${previewTag(opt)}Quick update${greetingName(opt.firstName)}. ${asOfLine(ctx)}`;
-  const text = fit([head, lines.join('\n')], 'Reply to ask about any of it. Reply STOP ALERTS to pause these.');
-  return { text, headline: lines[0].replace(/^[✅⚠️]\s*/u, ''), send: true, important };
-}
 
+  // Money since the last update: entries that weren't in the books then.
+  const seen = new Set((since && since.seen) || []);
+  const newRows = since ? ctx.rows.filter((r) => r.guid && r.dt.getTime() >= ctx.today.getTime() - DAY && !seen.has(r.guid)) : [];
+  const m = since ? movement(ctx, null, newRows) : null;
+  const moneyLines = [];
+  if (m && (m.in_total || m.out_total || m.invoices)) {
+    const label = fromMorning ? 'Since this morning' : `Since ${timeIST(since.at) || 'my last update'}`;
+    const parts = [m.in_total ? `${inr(m.in_total)} in` + (m.in_by.length ? ` (${m.in_by.slice(0, 2).map(([k, v]) => `${k} ${inr(v)}`).join(', ')})` : '') : null,
+      m.out_total ? `${inr(m.out_total)} out` + (m.out_by.length && m.out_by[0].top.length ? ` (${m.out_by[0].top.slice(0, 2).map(([k, v]) => `${k} ${inr(v)}`).join(', ')})` : '') : null,
+      m.invoices ? `new sales ${inr(m.sales)}` : null].filter(Boolean);
+    moneyLines.push(`*${label}:* ${parts.join(' · ')}.`);
+  }
+  if (since && snap.cash != null && since.cash != null && Math.abs(snap.cash - since.cash) >= t) moneyLines.push(`Bank and cash ${inr(snap.cash)}, ${moved(snap.cash, since.cash, fromMorning ? 'this morning' : 'my last update', ctx)}.`);
+  const moneyMoved = !!(m && (m.in_total >= t || m.out_total >= t || m.sales >= t));
+
+  // Getting better.
+  if (since) {
+    for (const p of partyMoves(ctx, since, snap, today).slice(0, 4)) {
+      const ref = pointRef(ms, p.key);
+      const left = p.now >= 1 ? ` ${inr(p.now)} still open${p.late30Now ? `, ${inr(p.late30Now)} of it more than a month late` : ''}.` : ' Nothing left open.';
+      if (p.paid) {
+        const l = say('paid:' + p.key + ':' + Math.round(p.now), `✅ ${nice(p.name)} paid ${inr(p.paid)}${ref ? ` (${ref})` : ''}.${left}`);
+        if (l) { good.push(l); if (ref || p.paid >= 2 * t) important = true; }
+      } else {
+        const l = say('adjusted:' + p.key + ':' + Math.round(p.now), `${nice(p.name)}'s balance fell ${inr(p.drop)} with no receipt entered, so it's likely a credit note or a deduction${ref ? ` (${ref})` : ''}. Worth knowing why.${left}`);
+        if (l) bad.push('⚠️ ' + l);
+      }
+    }
+  }
+  if (ms && ms.recv_late30 && ms.recv_late30 - snap.recv_late30 >= t) {
+    const l = say('late_down:' + Math.round(snap.recv_late30 / t), `✅ Money more than a month late is down to ${inr(snap.recv_late30)}, from ${inr(ms.recv_late30)} this morning.`);
+    if (l) good.push(l);
+  }
+  const usual = usualDay(ctx);
+  const td = movement(ctx, [today]);
+  const custIn = td.in_by.reduce((s, [, v]) => s + v, 0);
+  if (usual && usual.collected >= t && custIn >= usual.collected) { const l = say('collect_usual', `✅ ${inr(custIn)} collected so far today, already more than a usual full day (${inr(usual.collected)}).`); if (l) good.push(l); }
+  if (usual && usual.sales >= t && td.sales >= usual.sales) { const l = say('sales_usual', `✅ Sales today ${inr(td.sales)}, already past a usual full day (${inr(usual.sales)}).`); if (l) good.push(l); }
+  const watch = new Map(((ms && ms.watchlist) || []).map((w) => [norm(w.party), w]));
+  const owed = owedByParty(ctx);
+  for (const r of newRows) {
+    if (r.kind !== 'sales' || !r.party) continue;
+    const k = norm(r.party), w = watch.get(k);
+    if (w) { const l = say('back:' + k, `✅ New order from ${nice(r.party)}, ${inr(r.sales - r.returns)}. ${w.kind === 'quiet' ? 'They had gone quiet' : 'They\'d been buying less'}, so that's a good sign.`); if (l) good.push(l); }
+    // Needs a look: more credit to someone who isn't paying.
+    const g = owed.get(k);
+    if (g && g.late30 >= t && g.maxLate > 60) {
+      const l = say('credit_to_late:' + k, `⚠️ New ${inr(r.sales - r.returns)} invoice to ${nice(r.party)}, who already owes ${inr(g.late30)} that's more than a month late (oldest ${g.maxLate} days). That's more credit to someone who isn't paying; worth asking for part of the old money first.`);
+      if (l) { bad.push(l); important = true; }
+    }
+    // Sold below cost today.
+    let loss = 0; const items = [];
+    for (const it of r.items || []) {
+      const q = num(it.qty), v = it.abs_amount != null ? num(it.abs_amount) : Math.abs(num(it.amount));
+      const c = ctx.unitCost(it.item).cost;
+      if (!(q > 0) || !(c > 0)) continue;
+      const price = v / q;
+      if (price < c && price >= 0.25 * c) { loss += (c - price) * q; items.push(it.item); }
+    }
+    if (loss >= Math.max(5000, t / 5)) { const l = say('below_cost:' + r.guid, `⚠️ ${items.slice(0, 2).join(', ')} went to ${nice(r.party)} below cost today, about ${inr(loss)} under what it costs you.`); if (l) bad.push(l); }
+  }
+
+  // Needs a look.
+  const pastDue = new Map();
+  for (const b of E.billRows(ctx, 'receivable')) if (b.late === 1) pastDue.set(nice(b.party), (pastDue.get(nice(b.party)) || 0) + b.amount);
+  for (const [name, amt] of [...pastDue.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)) {
+    if (amt < t) continue;
+    const l = say('pastdue:' + norm(name), `⚠️ ${inr(amt)} from ${name} went past due today. A reminder now is routine.`);
+    if (l) bad.push(l);
+  }
+  const usualLedgers = new Set(((fc && fc.drivers && fc.drivers.recurring) || []).map((x) => norm(x.ledger)));
+  for (const e of cashFlow.cashEvents(ctx, newRows)) {
+    if (e.amount >= 0 || e.category === 'transfers_loans' || -e.amount < 2 * t || usualLedgers.has(norm(e.ledger))) continue;
+    const who = e.party ? nice(e.party) : e.ledger;
+    const l = say('bigout:' + norm(who) + ':' + Math.round(-e.amount), `⚠️ ${inr(-e.amount)} went out to ${who}. It isn't one of your usual monthly payments.`);
+    if (l) bad.push(l);
+  }
+  if (since && snap.borrowed != null && since.borrowed != null && snap.borrowed - since.borrowed >= 2 * t) {
+    const l = say('od_up:' + Math.round(snap.borrowed / t), `⚠️ Overdraft and loans up ${inr(snap.borrowed - since.borrowed)} to ${inr(snap.borrowed)}.`);
+    if (l) bad.push(l);
+  }
+  const dupSeen = new Map();
+  for (const r of ctx.rows) {
+    if (r.dt.getTime() < ctx.today.getTime() - DAY || !['sales', 'purchase', 'payment'].includes(r.kind) || !r.party || r.total < t) continue;
+    const k = r.kind + '|' + norm(r.party) + '|' + r.day + '|' + Math.round(r.total);
+    const prev = dupSeen.get(k);
+    if (prev && prev.number !== r.number && (!seen.has(r.guid) || !seen.has(prev.guid))) {
+      const l = say('dup:' + k, `⚠️ Two ${r.kind === 'sales' ? 'invoices' : r.kind === 'purchase' ? 'purchase bills' : 'payments'} of ${inr(r.total)} to ${nice(r.party)} on the same day${prev.number || r.number ? ' (' + [prev.number, r.number].filter(Boolean).join(' and ') + ')' : ''}. Entered twice?`);
+      if (l) bad.push(l);
+    } else dupSeen.set(k, r);
+  }
+  // Tally gone quiet during a working day: every pulse depends on it.
+  const nowMs = Date.parse(snap.at), syncMs = Date.parse(ctx.lastSync || '');
+  const dow = new Date(nowMs + 5.5 * 3600000).getUTCDay();
+  if (!Number.isNaN(syncMs) && dow !== 0 && nowMs - syncMs > 2 * 3600000 && nowMs - syncMs < 26 * 3600000) {
+    const l = say('sync_gap', `⚠️ Tally hasn't synced since ${istStamp(ctx.lastSync)}. Is the Tally PC on with Tally open? Until it syncs, today's entries don't reach me.`);
+    if (l) { bad.push(l); important = true; }
+  }
+  for (const d of deadlines || []) { const l = say('deadline:' + d.key, `⚠️ ${d.title}${d.action ? ' ' + d.action : ''}`); if (l) { bad.push(l); important = true; } }
+
+  // Not moving yet: the morning's points, once, in the afternoon pulse.
+  if (opt.slot === 'afternoon' && ms) {
+    const moves = new Map(partyMoves(ctx, ms, snap, today).map((p) => [p.key, p]));
+    (ms.points || []).forEach((p, i) => {
+      if (!p.party || !RECEIVABLE_KINDS.has(p.kind)) return;
+      const k = norm(p.party);
+      if (moves.has(k)) return;
+      const bal = ms.parties[k];
+      const l = say('still:' + p.key, `⏳ ${nice(p.party)} (point ${i + 1} this morning): nothing in yet` + (bal ? `, ${inr(bal[1])} open.` : '.'));
+      if (l) still.push(l);
+    });
+  }
+
+  const pulses = (last && last.day === today && last.pulses) || 0;
+  const send = (good.length + bad.length > 0 || moneyMoved) && pulses < 4;
+  if (!send) return { send: false, said: [...said] };
+  const when = timeIST(snap.at);
+  const head = `${previewTag(opt)}${when ? when + ' update' : 'Update'}${greetingName(opt.firstName) ? ',' + greetingName(opt.firstName) : ''}. ${asOfLine(ctx)}`;
+  const sections = [head, moneyLines.join('\n') || null,
+    good.length ? '*Getting better*\n' + good.join('\n') : null,
+    bad.length ? '*Needs a look*\n' + bad.join('\n') : null,
+    still.length ? '*Not moving yet*\n' + still.join('\n') : null];
+  const text = fit(sections, 'Ask me about any of it in your own words, like "why did cash drop?" Reply STOP ALERTS to pause these.');
+  const first = (good[0] || bad[0] || moneyLines[0] || '').replace(/^[✅⚠️⏳*\s]+/u, '').replace(/\*/g, '');
+  return { text, headline: first, send: true, important, said: [...said], pulses: pulses + 1 };
+}
 /**
  * EVENING: today's money, then each of this morning's points checked again, then tomorrow, then at most one new
  * urgent thing. live: the current findings (to see which morning points are sorted). fresh: new points the
@@ -487,6 +648,15 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
   if (day.length === 1) day.push(`Nothing entered in ${ctx.source_name || 'Tally'} for today yet.`);
   const ms = morningSnap && morningSnap.day === today ? morningSnap : null;
   if (snap.cash != null) day.push(`Bank and cash ${inr(snap.cash)}` + (ms && ms.cash != null ? `, ${moved(snap.cash, ms.cash, 'this morning', ctx)}` : '') + '.');
+  const usual = usualDay(ctx);
+  if (usual) {
+    const custIn = m.in_by.reduce((s, [, v]) => s + v, 0);
+    const vs = [`Collected ${inr(custIn)} (usual ${inr(usual.collected)}) ${arrow(custIn, usual.collected)}`,
+      `Sales ${inr(m.sales)} (usual ${inr(usual.sales)}) ${arrow(m.sales, usual.sales)}`,
+      `Paid out ${inr(m.out_total)} (usual ${inr(usual.out)}) ${arrow(m.out_total, usual.out)}`];
+    if (ms && ms.recv_late30 != null) { const d = snap.recv_late30 - ms.recv_late30; vs.push(`Late money ${inr(snap.recv_late30)}` + (Math.abs(d) >= threshold(ctx) ? `, ${d < 0 ? 'down' : 'up'} ${inr(Math.abs(d))} today ${d < 0 ? '↓' : '↑'}` : ', unchanged today')); }
+    day.push('', '*Today against a usual day*', vs.join('\n'));
+  }
 
   // This morning's points, checked again.
   const fu = [];
@@ -545,6 +715,6 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
 }
 
 module.exports = {
-  snapshot, movement, deepInsights, mix, morning, intraday, evening, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
+  snapshot, movement, deepInsights, mix, morning, pulse, evening, usualDay, weekReview, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
   istDay, istStamp, RECEIVABLE_KINDS, INSIGHT_KINDS, FOLLOW_UP_KINDS, MAX_POINTS
 };
