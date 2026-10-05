@@ -250,6 +250,13 @@ const W = require('../margynWatch');
   check('evening: follows up on the morning point', /\*This morning's points\*\n1\. ✅ Big Co: paid ₹40 L today\. ₹50 L still open/.test(ev), ev);
   check('evening template headline counts what is still open', /^Evening wrap: ₹40 L came in today; 1 of this morning's 1 point is still open\.$/.test(r.headline), r);
 
+  console.log('a morning snapshot from before pulses (no seen list)');
+  const yIso = new Date(Date.now() + 5.5 * 3600000 - 86400000).toISOString().slice(0, 10);
+  DB.tally_vouchers.push(Object.assign(sale(yIso, 'Yesterday Co', 900000), { tally_guid: 'y1' }));
+  DB.tally_installs[0].last_sync_at = new Date(Date.now() + 3000).toISOString();
+  for (const row of DB.margyn_signals) if (row.key === 'snap:morning' || row.key === 'snap:last') { const j = JSON.parse(row.detail); delete j.seen; j.said = []; j.pulses = 0; row.detail = JSON.stringify(j); }
+  r = await W.watchAccount(U, { slot: 'late', previewOnly: true });
+  check('yesterday\'s entries are never counted as new', !/Yesterday Co|₹9 L/.test(r.text || '') && (r.text == null || /update/.test(r.text)), r);
   console.log('every account');
   const all = await W.runWatchAll('morning');
   check('runs over Tally accounts', all.accounts === 1 && all.results.length === 1, all);

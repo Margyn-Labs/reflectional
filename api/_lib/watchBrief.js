@@ -510,7 +510,11 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
 
   // Money since the last update: entries that weren't in the books then.
   const seen = new Set((since && since.seen) || []);
-  const newRows = since ? ctx.rows.filter((r) => r.guid && r.dt.getTime() >= ctx.today.getTime() - DAY && !seen.has(r.guid)) : [];
+  // A snapshot from before pulses existed has no list of entries seen: then only today's entries count as new,
+  // never yesterday's (which the morning already covered).
+  const newRows = !since ? [] : since.seen
+    ? ctx.rows.filter((r) => r.guid && r.dt.getTime() >= ctx.today.getTime() - DAY && !seen.has(r.guid))
+    : ctx.rows.filter((r) => r.day === today);
   const m = since ? movement(ctx, null, newRows) : null;
   const moneyLines = [];
   if (m && (m.in_total || m.out_total || m.invoices)) {
