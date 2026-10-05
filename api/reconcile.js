@@ -33,6 +33,13 @@ const { runLlmTier } = require('./_lib/closeCollectionsLlmTier');
 const { resolveActor, can } = require('./_lib/actor');
 const { positionForAccount } = require('./_lib/moneyModel');
 const { channelHealthForAccount } = require('./_lib/channelHealth');
+const writeBack = require('./_lib/writeBack');
+// Write-back (api/_lib/writeBack.js): every approval queues what it should change in the customer's apps.
+const WB_DB = { select: selectRows, insert: insertRows, update: updateRows };
+async function booksAppsFor(userId) {
+  const src = await detectBooksSources(userId).catch(() => []);
+  return src.map((s) => (s.source === 'zoho_books' ? 'zoho' : s.source));
+}
 
 const LOOKBACK_DAYS = 30;
 
@@ -145,7 +152,9 @@ async function resolveManualMatch({ matchId, userId, razorpayPaymentId, matchedA
     });
   }
 
-  return { status: 'ok' };
+  const plan = writeBack.planWrites('recon_match', { ...match, matched_amount: matchedAmount, razorpay_payment_id: razorpayPaymentId }, ['zoho']);
+  const writes = await writeBack.enqueueWrites(WB_DB, { accountId: userId, source: 'recon_match', sourceId: matchId, writes: plan });
+  return { status: 'ok', writes };
 }
 
 /**
@@ -728,7 +737,7 @@ function invoiceRefsFromProposal(proposal) {
   return [...refs];
 }
 
-async function reviewAgentAction({ actionId, userId, decision }) {
+async function reviewAgentAction({ actionId, userId, decision, approvedBy, approvedByName }) {
   if (!['approve', 'reject'].includes(decision)) throw new Error('decision must be "approve" or "reject"');
   const rows = await selectRows('agent_actions', `select=*&id=eq.${actionId}&user_id=eq.${userId}&limit=1`);
   if (!rows.length) throw new Error('Action not found');
@@ -771,7 +780,12 @@ async function reviewAgentAction({ actionId, userId, decision }) {
     }
   }
 
-  return { status: 'ok', decision, actionId };
+  let writes = null;
+  if (decision === 'approve') {
+    const plan = writeBack.planWrites('agent_action', a, await booksAppsFor(userId));
+    writes = await writeBack.enqueueWrites(WB_DB, { accountId: userId, source: 'agent_action', sourceId: a.id, writes: plan, approvedBy: approvedBy || null, approvedByName: approvedByName || null });
+  }
+  return { status: 'ok', decision, actionId, writes };
 }
 
 module.exports = async (req, res) => {
@@ -936,7 +950,8 @@ module.exports = async (req, res) => {
       return;
     }
     try {
-      const result = await reviewAgentAction({ actionId, userId: user.id, decision });
+      const who = await resolveActor(req).catch(() => null);
+      const result = await reviewAgentAction({ actionId, userId: user.id, decision, approvedBy: who ? who.userId : null, approvedByName: who ? who.name : null });
       track(user.id, 'close_agent_review', { decision });
       res.status(200).json(result);
     } catch (err) {
@@ -945,7 +960,48 @@ module.exports = async (req, res) => {
     return;
   }
 
-  res.status(400).json({ error: 'Unknown action. Use ?action=run | run-v2 | run-agent | summary | summary-v2 | resolve | agent-actions | agent-review.' });
+  if (action === 'app-writes') {
+    const actor = await resolveActor(req);
+    if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    const acct = actor.accountId;
+    try {
+      if (req.method === 'GET') {
+        const [rows, grants, books] = await Promise.all([
+          selectRows('app_writes', `select=id,app,action,source_type,source_id,ref,summary,status,status_note,external_ref,approved_by_name,created_at,updated_at,confirmed_at&user_id=eq.${acct}&order=created_at.desc&limit=60`).then((r) => ({ ok: true, r })).catch((e) => ({ ok: false, e })),
+          selectRows('app_write_access', `select=app,enabled,scopes&user_id=eq.${acct}`).catch(() => []),
+          booksAppsFor(acct)
+        ]);
+        const cc = await selectRows('connector_credentials', `select=connector_type&user_id=eq.${acct}&disconnected_at=is.null`).catch(() => []);
+        const connected = [...new Set(books.concat(cc.map((c) => c.connector_type)))];
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(200).json({ setup: rows.ok, writes: rows.ok ? rows.r : [], capabilities: writeBack.capabilities(grants, connected) });
+        return;
+      }
+      if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+      if (!can(actor, 'edit') && !can(actor, 'approve')) { res.status(403).json({ error: 'Not permitted' }); return; }
+      const { kind, id, entries } = req.body || {};
+      if (kind === 'suggestion') {
+        if (!id) { res.status(400).json({ error: 'id is required' }); return; }
+        const rows = await selectRows('import_suggestions', `select=id,status,proposal&id=eq.${encodeURIComponent(id)}&user_id=eq.${acct}&limit=1`);
+        if (!rows.length || rows[0].status !== 'approved') { res.status(400).json({ error: 'Only an approved document is written to your apps' }); return; }
+        // Only entries that are really in the proposal (the browser says which were ticked, never what they are).
+        const all = (rows[0].proposal && rows[0].proposal.entries) || [];
+        const pick = Array.isArray(entries) && entries.length ? entries.map(Number).filter((i) => Number.isInteger(i) && all[i]).map((i) => ({ ...all[i], _i: i })) : all.map((e, i) => ({ ...e, _i: i }));
+        const plan = writeBack.planWrites('suggestion', { id, entries: pick }, await booksAppsFor(acct));
+        const out = await writeBack.enqueueWrites(WB_DB, { accountId: acct, source: 'suggestion', sourceId: id, writes: plan, approvedBy: actor.userId, approvedByName: actor.name || null });
+        res.status(200).json(out);
+        return;
+      }
+      if (kind === 'run') { res.status(200).json(await writeBack.runWrites(WB_DB, acct)); return; }
+      res.status(400).json({ error: 'kind must be suggestion or run' });
+    } catch (err) {
+      console.error('[reconcile] app-writes failed:', err.message);
+      res.status(500).json({ error: 'Could not reach the write-back queue' });
+    }
+    return;
+  }
+
+  res.status(400).json({ error: 'Unknown action. Use ?action=run | run-v2 | run-agent | summary | summary-v2 | resolve | agent-actions | agent-review | app-writes.' });
 };
 
 module.exports.reconcileForUser = reconcileForUser;

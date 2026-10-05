@@ -497,13 +497,15 @@ async function runProposedAction(action){
       .update({ status: type === 'approve_suggestion' ? 'approved' : 'rejected', decided_at: new Date().toISOString() })
       .eq('id', sug.id);
     if(uErr) throw uErr;
+    if(type === 'approve_suggestion' && typeof lxQueueDoc === 'function') await lxQueueDoc(sug.id, null);   // 29-live-writes.js
     pendingSuggestions = await loadPendingSuggestions();
     if(typeof renderSuggestionsView === 'function') renderSuggestionsView();
     return;
   }
   if(type === 'approve_agent_action' || type === 'dismiss_agent_action'){
     const decision = type === 'approve_agent_action' ? 'approve' : 'reject';
-    await zohoApi('/api/reconcile?action=agent-review', { method:'POST', body: JSON.stringify({ actionId: action.targetId, decision }) });
+    const res = await zohoApi('/api/reconcile?action=agent-review', { method:'POST', body: JSON.stringify({ actionId: action.targetId, decision }) });
+    if(decision === 'approve' && typeof lxAfterApproval === 'function') lxAfterApproval(res);   // 29-live-writes.js
     if(typeof loadAgentActions === 'function') await loadAgentActions();
     if(typeof renderAgentQueue === 'function') renderAgentQueue();
     return;

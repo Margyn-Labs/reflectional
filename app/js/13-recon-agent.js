@@ -56,7 +56,7 @@ function renderReconLedger(){
         ).join('') +
         '</div>'
       : '';
-    return '<div class="ledger-row" style="flex-wrap:wrap;"><div class="lr-main">' +
+    return '<div class="ledger-row" style="flex-wrap:wrap;" data-work-key="rq:' + escapeHtml(String(q.id)) + '"><div class="lr-main">' +
       '<div class="lr-party">' + escapeHtml(q.customer_name || 'Unknown customer') + '<span class="lr-tag review">Needs review</span></div>' +
       '<div class="lr-meta">' + escapeHtml(meta) + '</div>' + picker +
       '</div><div class="lr-amount">' + inr(q.amount) + '</div></div>';
@@ -68,10 +68,11 @@ function renderReconLedger(){
       if(!q || !c) return;
       btn.disabled = true; btn.textContent = 'Confirming…';
       try {
-        await zohoApi('/api/reconcile?action=resolve', { method:'POST', body: JSON.stringify({
+        const res = await zohoApi('/api/reconcile?action=resolve', { method:'POST', body: JSON.stringify({
           matchId: q.id, razorpayPaymentId: c.id, matchedAmount: q.amount
         })});
         mtrack('mismatch_resolved_marked', { via: 'candidate_pick' });
+        if(typeof lxAfterApproval === 'function'){ lxAfterApproval(res); const line = lxApprovalLine(res, null); if(line) toast(line, { kind:'good', ms:6000 }); }   // 29-live-writes.js
         reconSummary = await loadReconSummary();
         renderReconLedger();
         renderReconBooksCard();
@@ -176,14 +177,15 @@ function renderAgentQueue(){
       row.querySelectorAll('button').forEach(b => b.disabled = true);
       btn.textContent = decision === 'approve' ? 'Approving…' : 'Dismissing…';
       try {
-        await zohoApi('/api/reconcile?action=agent-review', { method:'POST', body: JSON.stringify({ actionId: id, decision }) });
+        const res = await zohoApi('/api/reconcile?action=agent-review', { method:'POST', body: JSON.stringify({ actionId: id, decision }) });
         mtrack('close_agent_review', { decision, kind: (agentActions.actions.find(x => x.id === id) || {}).kind });
         agentActions = await loadAgentActions();
         renderAgentQueue();
         if(decision === 'approve'){
           reconSummary = await loadReconSummary();
           renderReconLedger(); renderReconBooksCard();
-          toast('Approved — recorded for your books.', { kind:'good' });
+          if(typeof lxAfterApproval === 'function') lxAfterApproval(res);   // 29-live-writes.js
+          toast(typeof lxApprovalLine === 'function' ? lxApprovalLine(res, 'Approved — recorded for your books.') : 'Approved — recorded for your books.', { kind:'good', ms:6000 });
         }
       } catch(err){
         row.querySelectorAll('button').forEach(b => b.disabled = false);

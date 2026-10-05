@@ -16,6 +16,21 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-06-team-live', date:'6 Oct 2026', title:'Watch Margyn work, and work with your team',
+    items:[
+      { t:'See Margyn working', what:'Home’s “What I’m working on” now shows what is running this second, like syncing Zoho Books or checking payments, and under it what was just done, with the time. Margyn’s panel says what is running on every page.',
+        how:'Open <b>Home</b> and look at “What I’m working on”.', act:'home' },
+      { t:'See your team', what:'Faces next to the bell show who else is in Margyn and which page they are on. Open a customer or supplier and you see who else has it open, and when they are typing.',
+        how:'Hover the faces next to the bell. Click them to manage your team.', act:'team' },
+      { t:'A timeline and comments on every customer and supplier', what:'Timeline: everything about them from your apps, Margyn and your team, newest first. Comments: notes for your team. Write @Margyn to ask Margyn about them.',
+        how:'<b>Customers</b> or <b>Vendors</b> → click a name → <b>Timeline</b> or <b>Comments</b>.', act:'customers' },
+      { t:'An owner for everything in your Inbox', what:'Hand any item to a teammate. They get a card saying you handed it over, and so do you when Margyn or a teammate hands you something.',
+        how:'<b>Inbox</b> → <b>Owner</b> under any item.', act:'inbox' },
+      { t:'Approvals go to your apps', what:'Each approval is queued for the app it belongs in: a payment for Zoho Books, a journal for Tally. Until writing to an app is switched on, Margyn saves it and tells you to make the same change in that app.',
+        how:'<b>Inbox</b> → <b>Sent to your apps</b>. What each app reads and writes: <b>Organisations and sources</b>.', act:'inbox' }
+    ]
+  },
+  {
     id:'2026-10-05-updates-log', date:'5 Oct 2026', title:'See every WhatsApp update Margyn sent today',
     items:[
       { t:'Today’s updates', what:'A list of every update of the day: what went out and when, whether WhatsApp delivered it and it was read, and why Margyn stayed quiet or couldn’t send at a given time. Tap one to read exactly what was sent. Earlier days are one tap away.',
@@ -340,6 +355,8 @@ const MG_WN_ACTS = {
   gst:{ label:'Open GST and tax', run:() => { if(typeof showView === 'function') showView('gst'); } },
   cash:{ label:'Open Cash', run:() => { if(typeof showView === 'function') showView('cash'); } },
   connectors:{ label:'Open Connectors', run:() => { if(typeof showView === 'function') showView('connectors'); } },
+  inbox:{ label:'Open Inbox', run:() => { if(typeof showView === 'function') showView('inbox'); } },
+  customers:{ label:'Open Customers', run:() => { if(typeof showView === 'function') showView('customers'); } },
   talk:{ label:'Try it now', run:() => { if(typeof openRealtimeOverlay === 'function') openRealtimeOverlay(); } },
   team:{ label:'Invite someone', run:() => { if(typeof showView === 'function') showView('settings'); setTimeout(() => { const m = document.getElementById('setTeamMount'); if(m) m.scrollIntoView({ block:'start' }); }, 120); } }
 };

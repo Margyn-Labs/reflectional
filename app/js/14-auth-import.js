@@ -444,10 +444,14 @@ async function decideSuggestion(sug, idx, decision){
     const { error } = await sbClient.from('import_suggestions')
       .update({ status: decision, decided_at: new Date().toISOString() }).eq('id', sug.id);
     if(error) throw error;
+    // Approved: queue what it changes in your books app (29-live-writes.js), using the ticked entries.
+    const ticked = [...document.querySelectorAll('input[data-sug-entry^="' + idx + ':"]')].filter(cb => cb.checked).map(cb => Number(cb.dataset.sugEntry.split(':')[1]));
+    const wrote = decision === 'approved' && typeof lxQueueDoc === 'function' ? await lxQueueDoc(sug.id, ticked) : null;
+    const line = wrote && typeof lxApprovalLine === 'function' ? lxApprovalLine(wrote, '') : '';
     pendingSuggestions = await loadPendingSuggestions();
     renderSuggestionsBadge();
     renderSuggestionsView();
-    toast(decision === 'approved' ? 'Imported from WhatsApp' : 'Suggestion dismissed', {});
+    toast(decision === 'approved' ? 'Imported from WhatsApp' : 'Suggestion dismissed', line ? { sub:line, ms:6000 } : {});
   } catch(err){
     if(note){ note.className = 'note bad'; note.textContent = 'Could not ' + (decision === 'approved' ? 'import' : 'dismiss') + ': ' + (err.message || 'unknown error'); }
     if(approveBtn) approveBtn.disabled = false; if(rejectBtn) rejectBtn.disabled = false;
