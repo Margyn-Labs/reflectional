@@ -320,3 +320,32 @@ body.mg-member #setDeleteAccount, body.mg-member #deleteAccountBtn{ display:none
 @media (max-width:520px){.mg-histgrid{grid-template-columns:1fr}}
 #mgFcHow ul.mg-fine{margin:6px 0 0 18px;padding:0}
 #mgFcHow ul.mg-fine li{margin:2px 0}
+
+/* Cash flow (19j-cashflow.js): statement table, checks, borrowing history */
+.mg-cf-wrap{ overflow-x:auto; }
+.mg-cf td:first-child, .mg-cf th:first-child{ position:sticky; left:0; background:var(--g0); z-index:1; min-width:260px; }
+.mg-cf th:first-child{ background:var(--g25); }
+.mg-cf .mg-cf-sec td{ font-weight:700; color:var(--g900); background:var(--g25); padding-top:12px; }
+.mg-cf .mg-cf-l{ padding-left:24px; color:var(--g600); }
+.mg-cf .mg-cf-sub td{ font-weight:600; border-top:1px solid var(--g200); }
+.mg-cf .mg-cf-net td{ font-weight:700; border-top:2px solid var(--g300); }
+.mg-cf .mg-cf-made td{ color:var(--g500); font-size:var(--f12); }
+.mg-cf .mg-cf-warn .mg-cf-l{ color:var(--warn); }
+.mg-cf td.mg-cf-neg{ color:var(--neg); }
+.mg-cf .mg-cf-totcol{ background:var(--g25); font-weight:600; }
+.mg-cf-why{ font-size:var(--f13); color:var(--g600); border-bottom:1px solid var(--g100); }
+.mg-cf-checks{ list-style:none; margin:0; padding:0; font-size:var(--f13); }
+.mg-cf-checks li{ display:flex; gap:10px; align-items:baseline; padding:6px 0; }
+.mg-ax-v{ fill:var(--g900); font-weight:600; }
+.mg-bw{ padding:16px; border-top:1px solid var(--g100); }
+.mg-bw-h{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.mg-bw-h .mg-linkbtn{ margin-left:auto; font-size:var(--f12); }
+.mg-bw-stats{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:8px; }
+.mg-bw-k{ font-size:var(--f12); color:var(--g500); }
+.mg-bw-v{ font:700 var(--f16) var(--font-num); color:var(--g900); font-variant-numeric:tabular-nums; margin-top:2px; }
+.mg-bw-s{ font-size:var(--f12); color:var(--g500); margin-top:2px; }
+.mg-bw-alert{ font-size:var(--f12); color:var(--warn); background:var(--warn-50); border-radius:4px; padding:4px 8px; display:inline-block; margin:4px 0 8px; }
+.mg-bw-months td, .mg-bw-months th{ padding:6px 10px; }
+.mg-bw-total{ font-size:var(--f13); color:var(--g600); border-bottom:1px solid var(--g100); }
+.mg-bw-total b{ color:var(--g900); font-family:var(--font-num); }
+@media (max-width:900px){ .mg-bw-stats{ grid-template-columns:repeat(2,minmax(0,1fr)); } .mg-cf td:first-child, .mg-cf th:first-child{ min-width:180px; } }

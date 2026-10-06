@@ -121,7 +121,7 @@ async function mgrStep(host, text){
   line.textContent = t;
   mgrScroll();
 }
-const MGR_VIEW_LABEL = { pnl:'your P&L', receivables:'receivables', payables:'payables', cash:'cash and the forecast', gst:'GST', inbox:'what needs your OK', overview:'the overview', cfopack:'the CFO pack', party:'the party', mismatches:'where sources disagree' };
+const MGR_VIEW_LABEL = { pnl:'your P&L', receivables:'receivables', payables:'payables', cash:'cash and the forecast', gst:'GST', inbox:'what needs your OK', overview:'the overview', cfopack:'the CFO pack', cashflow:'the cash flow statement', party:'the party', mismatches:'where sources disagree' };
 function mgrStepLabel(name, a){
   a = a || {};
   const dir = a.direction === 'payables' ? 'vendors' : 'customers';

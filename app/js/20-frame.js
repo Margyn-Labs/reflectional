@@ -26,6 +26,7 @@ const MG_PAGES = {
   customers:{ slug:'customers', own:true, group:'Parties', label:'Customers' },
   vendors:{ slug:'vendors', own:true, group:'Parties', label:'Vendors' },
   margin:{ slug:'margin', own:true, group:'Insight', label:'Margin' },
+  cashflow:{ slug:'cash-flow', own:true, group:'Insight', label:'Cash flow' },
   cfopack:{ slug:'cfo-pack', own:true, group:'Insight', label:'CFO pack' },
   analytics:{ slug:'reports', base:'analytics', group:'Insight', label:'Reports', sub:'Charts you define, computed from connected data. Nothing here moves your Pulse Score.' },
   scores:{ slug:'pulse', base:'scores', group:'Insight', label:'Pulse Score', sub:'Every point is arithmetic on your own figures. The AI writes the briefing; it never touches the score.' },

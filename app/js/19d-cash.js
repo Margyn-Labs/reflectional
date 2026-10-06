@@ -232,5 +232,5 @@ function mgRenderCash(){
   host.innerHTML = mgPageHead({ group:'Money', title:'Cash', scope:mgScopeText(modeLabel),
       sub:'How much you have, where it is, what is on its way, and whether it lasts.', actions:mgBtn('Payment gateways', 'data-go-page="payments"') }) +
     (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>No cash figures yet</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>') +
-    tiles + where + fc + settle + gw;
+    tiles + where + (typeof mgBorrowPanel === 'function' ? mgBorrowPanel() : '') + fc + settle + gw;
 }

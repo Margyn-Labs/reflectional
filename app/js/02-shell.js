@@ -50,7 +50,7 @@ const MG_SEARCH_WORDS = {
   receivables:'debtors owed owe us collections overdue invoices ar ageing aging dues', payables:'creditors bills vendors due ap owe we pay',
   gst:'tax itc gstr gstr-2b 2b tds input credit gstin filing returns', books:'ledger books zoho tally odoo manual entries journal accounting sources compare',
   invoicing:'invoice create bill khata quote estimate', calculate:'import upload excel xlsx csv pdf file spreadsheet workbook photo scan',
-  customers:'clients buyers debtors parties', vendors:'suppliers creditors parties', cfopack:'report monthly pdf board investor pack mis email',
+  customers:'clients buyers debtors parties', vendors:'suppliers creditors parties', cfopack:'report monthly pdf board investor pack mis email', cashflow:'cash flow statement operating investing financing where did cash go indirect direct as-3 fund flow',
   analytics:'reports charts graphs analytics trends build chart', scores:'pulse score health vitals scoring',
   history:'ask chat questions ai conversation history threads', agents:'agents automation chase collections close bell whatsapp reminders',
   connectors:'sources connectors integrations connect zoho tally odoo razorpay cashfree shopify sync disconnect reconnect api keys organisations',

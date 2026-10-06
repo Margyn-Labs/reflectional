@@ -201,6 +201,22 @@
       inputs: [],
       notes: ['So the CFO pack can differ from today\'s Home: it is a month-end picture.'],
       code: '19e-cfopack.js', page: 'cfopack'
+    },
+    cash_flow: {
+      label: 'Cash flow statement', aliases: ['cash flow', 'cash flow statement', 'operating cash flow', 'where did my cash go', 'profit vs cash', 'fund flow'],
+      what: 'Where the period\'s cash came from and where it went, from every entry in your books.',
+      formula: 'Every entry balances, so the cash an entry moved = the sum of its other lines. Owner view: those lines, for entries that moved cash, filed by what they are (customers, suppliers, running costs, GST, assets, loans, owner\'s money, interest). Accountant view (indirect, AS-3): net profit + depreciation + interest, then the change in receivables, payables, GST owed and other balances (operating); assets and investments (investing); loans, capital and interest paid (financing). Cash at the start + operating + investing + financing = cash at the end.',
+      inputs: ['every entry on the bank, cash and overdraft ledgers', 'each ledger\'s group in the books (to file it)', 'today\'s balances, walked back day by day'],
+      notes: ['Overdraft and cash credit count as cash (negative cash), as AS-3 allows when the overdraft is how the business runs day to day; term loans are financing.', 'Net profit is before the stock adjustment, so a change in stock is not in it. The cash figures are exact either way.', 'It checks itself: each cash and overdraft ledger is walked back to the opening balance the books have for it; a gap means entries are missing from the sync. Ledgers in no known group show as "Not yet sorted".'],
+      code: 'api/_lib/cashFlowStatement.js statement', page: 'cashflow'
+    },
+    borrowing_cost: {
+      label: 'Overdraft and loan history, cost of borrowing', aliases: ['cost of borrowing', 'overdraft history', 'od usage', 'limit used', 'interest rate on od', 'loan history', 'peak overdraft'],
+      what: 'How each overdraft, cash credit and loan moved this year, and what borrowing costs as a yearly rate.',
+      formula: 'Owed on a day = today\'s balance walked back through every entry on the account. Peak, lowest and average are over this financial year\'s days; days used counts days with anything owed. Limit used = owed today ÷ the limit you entered. Cost of borrowing = interest booked this year × 365 ÷ days covered ÷ the average owed.',
+      inputs: ['every entry on the overdraft and loan ledgers', 'interest ledgers', 'the limit you enter on the Cash page'],
+      notes: ['Interest charged to the account is interest entries posted against that account. The overall cost uses all interest in the books, so a late fee booked as interest makes it look higher.', 'EMIs entered for later dates are listed but not taken off until their date.'],
+      code: 'api/_lib/cashFlowStatement.js borrowing', page: 'cash'
     }
   };
 

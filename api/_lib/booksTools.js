@@ -12,6 +12,7 @@
  */
 
 const E = require('./booksEngine');
+const CFS = require('./cashFlowStatement');
 const FORMULAS = require('../../app/js/margyn-formulas.js');
 // The books from whichever system keeps them (Tally, Zoho Books, Odoo): the one place for the Books category.
 const { loadBooks } = require('./dataLayer/books');
@@ -99,6 +100,16 @@ const TOOLS = [
     input_schema: { type: 'object', properties: {}, additionalProperties: false }
   },
   {
+    name: 'cash_flow_statement',
+    description: 'The cash flow statement for any period, from every entry that moved cash: opening and closing cash, and where the money came from and went, two ways. Owner view: money from customers, paid to suppliers, running costs, GST, assets bought, loans taken or repaid, owner\'s money, interest. Accountant view (indirect method, AS-3): net profit, add back depreciation, change in receivables, payables, GST owed, then investing and financing. Month by month when the period spans months. Overdraft and cash credit count as cash (negative cash). Use for "cash flow statement", "where did my cash go", "why is cash down when I made a profit", "how much cash did the business generate", "operating cash flow".',
+    input_schema: { type: 'object', properties: { period: PERIOD, from: FROM, to: TO }, additionalProperties: false }
+  },
+  {
+    name: 'borrowing_history',
+    description: 'How each overdraft, cash credit and loan moved this year, from every entry on it: owed today, change over 30 and 90 days, peak and lowest (with dates), average, days the overdraft was used, paid in and out, interest the bank charged to it, the yearly cost of borrowing (interest ÷ average borrowed), month-end balances, whether a loan is reducing, EMIs already entered for later dates, and use of the limit when the owner has entered it. Use for "how is my OD moving", "is my overdraft going up", "peak OD this year", "how much of my limit am I using", "what is my loan really costing", "is the term loan reducing". Optional account narrows to one.',
+    input_schema: { type: 'object', properties: { account: { type: 'string', description: 'Part of the account name, e.g. "Kotak" or "CC".' } }, additionalProperties: false }
+  },
+  {
     name: 'what_needs_attention',
     description: 'What deserves the owner\'s attention in the books right now, biggest and most urgent first: overdue money, bills over a year old, customers late against their own habit, regular customers who stopped ordering, customer concentration, the gap between getting paid and paying suppliers, commission share, expense jumps, an unfinished month, sales against the average, items sold below cost or with a likely unit mix-up, GST due, big receipts, possible duplicate entries, and whether Tally has stopped syncing. Use for "what should I worry about", "top 3 action items", "how is the business doing", "anything I should know", "what changed".',
     input_schema: { type: 'object', properties: { top: { type: 'integer', description: 'How many (default 6).' } }, additionalProperties: false }
@@ -119,6 +130,7 @@ const RUN = {
   money_owed: E.moneyOwed,
   find_entries: E.findEntries,
   cash_and_loans: E.cashAndDebt,
+  cash_flow_statement: CFS.cashFlowTool,
   what_needs_attention: E.attention
 };
 
@@ -142,6 +154,16 @@ async function contextFor(userId) {
 
 function has(name) { return NAMES.has(name); }
 
+/* Overdraft limits the owner entered on the Cash page (profiles.preferences.borrow_limits = { ledger: ₹ }). */
+async function borrowLimits(userId) {
+  try {
+    const { selectRows } = require('./supabaseRest');
+    const rows = await selectRows('profiles', 'id=eq.' + encodeURIComponent(userId) + '&select=preferences&limit=1');
+    const v = rows && rows[0] && rows[0].preferences && rows[0].preferences.borrow_limits;
+    return v && typeof v === 'object' ? v : {};
+  } catch (e) { return {}; }
+}
+
 /* Formulas aren't account data: no Tally needed, nobody's access limits them. */
 function howItsCalculated(input) {
   const i = input || {};
@@ -158,7 +180,7 @@ function howItsCalculated(input) {
 function allowed(name, input, perms) {
   if (!Array.isArray(perms)) return true;
   const can = (p) => perms.includes(p);
-  if (name === 'cash_and_loans') return can('view_cash');
+  if (name === 'cash_and_loans' || name === 'cash_flow_statement' || name === 'borrowing_history') return can('view_cash');
   if (name === 'money_owed') return /pay/i.test((input && input.direction) || '') ? can('view_payables') : can('view_receivables');
   if (name === 'customer_or_vendor') return can('view_receivables') || can('view_payables');
   return can('view_cash') && can('view_receivables') && can('view_payables');
@@ -176,6 +198,7 @@ async function exec(name, input, userId, perms) {
     const { ctx } = await contextFor(userId);
     if (!ctx) return { connected: false, note: 'No books are connected for this business (Tally, Zoho Books or Odoo), so there are no books to read. Connect one under Organisations and sources.' };
     if (!ctx.rows.length) return { connected: true, note: ctx.source === 'tally' ? 'Tally is connected but no entries have synced yet. Is the Tally PC on with the Margyn agent running?' : ctx.source_name + ' is connected but no entries have synced yet.' };
+    if (name === 'borrowing_history') return CFS.borrowingTool(ctx, input || {}, await borrowLimits(userId));
     return RUN[name](ctx, input || {});
   } catch (e) {
     console.error('[booksTools] ' + name + ' failed:', e.message);
@@ -197,6 +220,8 @@ const STEP_LABELS = {
   money_owed: 'Read who owes what in Tally',
   find_entries: 'Searched your Tally entries',
   cash_and_loans: 'Read cash, loans and interest',
+  cash_flow_statement: 'Built the cash flow statement from your entries',
+  borrowing_history: 'Traced your overdraft and loans day by day',
   what_needs_attention: 'Checked what needs your attention',
   how_its_calculated: 'Looked up how that is worked out'
 };

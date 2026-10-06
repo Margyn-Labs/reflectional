@@ -37,7 +37,7 @@ const MG_PERM_LABEL = {
 // What each page needs. Pages not listed are open to everyone on the account.
 const MG_PAGE_PERM = {
   cash:'view_cash', payments:'view_cash', receivables:'view_receivables', customers:'view_receivables',
-  payables:'view_payables', vendors:'view_payables', gst:'view_gst', margin:'view_cash', calculate:'edit', invoicing:'edit',
+  payables:'view_payables', vendors:'view_payables', gst:'view_gst', margin:'view_cash', cashflow:'view_cash', calculate:'edit', invoicing:'edit',
   connectors:'manage_connections', people:'manage_people', settings:'manage_people', channels:'view_receivables'
 };
 

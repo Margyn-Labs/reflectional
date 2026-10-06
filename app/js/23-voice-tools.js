@@ -123,6 +123,7 @@ function vxPageSummary(page){
     if(page === 'cfopack') return vxPackSummary();
     if(page === 'home') return VX_TOOLS.get_overview();
     if(page === 'margin') return VX_TOOLS.get_margin();
+    if(page === 'cashflow' && typeof vxCashFlowSummary === 'function') return vxCashFlowSummary();
     if(page === 'channels') return vxChannelSummary();
   } catch(e){ console.error('[voice] summary', page, e); }
   return { about:(MG_PAGES[page] && MG_PAGES[page].sub) || null };
@@ -1101,7 +1102,7 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-vx-g
 
 /* The books tools (api/_lib/booksTools.js) run on the server, through ?action=books: the same
    engine typed chat and WhatsApp use, reading every Tally entry rather than what the page loaded. */
-const VX_BOOK_TOOLS = ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'what_needs_attention'];
+const VX_BOOK_TOOLS = ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'cash_flow_statement', 'borrowing_history', 'what_needs_attention'];
 async function vxBooks(tool, input){
   const { data:{ session } } = await sbClient.auth.getSession();
   const res = await fetch('/api/ask-margyn?action=books', {
