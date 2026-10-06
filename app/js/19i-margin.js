@@ -29,7 +29,7 @@ async function mgLoadMargin(force){
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
     // Saved readings now carry the books' cash for their day: re-draw the page that shows them.
     const moved = mgApplyCashHistory(typeof snapshots !== 'undefined' ? snapshots : null);
-    if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView !== 'margin' && (moved || ['home', 'cash', 'reports', 'cfopack'].includes(mgCurrentView))) mgRenderOwn(mgCurrentView);
+    if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView !== 'margin' && (moved || ['home', 'cash', 'cashflow', 'reports', 'cfopack'].includes(mgCurrentView))) mgRenderOwn(mgCurrentView);
   } catch(e){ mgMarErr = true; console.error('[margyn] margin:', e.message); }
   finally {
     mgMarBusy = false;

@@ -26,7 +26,7 @@ const jev = require('./jev');
 const NAV_PAGES = {
   home: 'Home: today\'s overview, the daily briefing, a summary of the business',
   inbox: 'Inbox: decisions waiting for approval, proposals to approve, payments to confirm, forwarded documents',
-  cash: 'Cash: bank balances, cash position, 13-week cash forecast, runway, overdraft',
+  cash: 'Cash: bank balances, cash position, 13-week cash forecast, runway, overdraft and loans day by day, overdraft limit used',
   payments: 'Payment gateways: Razorpay and Cashfree settlements, gateway fees, failed payments, UPI, refunds',
   receivables: 'Receivables: money customers owe the business, overdue invoices, debtors, dues to collect, ageing',
   payables: 'Payables: money the business owes vendors and suppliers, bills due to pay, creditors',
@@ -37,6 +37,7 @@ const NAV_PAGES = {
   customers: 'Customers: the list of customers, clients and buyers with their details',
   vendors: 'Vendors: the list of vendors and suppliers with their details',
   margin: 'Margin: gross margin, profit on each product, what slow payers cost',
+  cashflow: 'Cash flow: the cash flow statement, where cash came from and went each month, operating, investing and financing, profit vs cash',
   cfopack: 'CFO pack: the monthly MIS report for the board or investors, as a PDF',
   analytics: 'Reports: charts, graphs and trends built from the data',
   scores: 'Pulse Score: the financial health score and the vitals behind it',

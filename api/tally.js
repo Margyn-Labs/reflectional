@@ -52,6 +52,7 @@ const { tallyCompleteness } = require('./_lib/dataCompleteness');
 const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
 const { buildInsights, prepare: prepareBooks } = require('./_lib/booksEngine');
 const cashFlow = require('./_lib/cashFlowModel');
+const cashFlowStatement = require('./_lib/cashFlowStatement');
 const forecastStore = require('./_lib/forecastStore');
 
 /* ------------------------------------------------------------------ */
@@ -375,6 +376,13 @@ async function handleAnalytics(req, res) {
     const t = ctxB.billTie;
     out.quality.reasons.push(`What customers owe follows their ledger balances: ${t.trimmed.parties ? `₹${t.trimmed.amount.toLocaleString('en-IN')} of bills for ${t.trimmed.parties} customers is already paid by their ledgers (not knocked off in Tally)` : ''}${t.trimmed.parties && t.added.parties ? '; ' : ''}${t.added.parties ? `₹${t.added.amount.toLocaleString('en-IN')} owed by ${t.added.parties} customers isn't split into bills in Tally, so it is taken from their entries` : ''}.`);
   }
+  // The cash flow statement (month by month, owner and accountant views) and every overdraft and loan day by day
+  // (cashFlowStatement.js). Never blocks the page.
+  let cash_flow = null, borrowing = null;
+  if (ctxB) {
+    try { cash_flow = cashFlowStatement.yearStatement(ctxB); } catch (e) { console.error('[tally] cash flow failed:', e.message); }
+    try { borrowing = cashFlowStatement.borrowing(ctxB); } catch (e) { console.error('[tally] borrowing failed:', e.message); }
+  }
   try {
     const [promises, runs] = await Promise.all([forecastStore.promises(user.id), forecastStore.pastRuns(user.id)]);
     forecast_v2 = cashFlow.build(ctxB || prepareBooks(book, { analytics: out }), { promises, pastRuns: runs });
@@ -382,7 +390,7 @@ async function handleAnalytics(req, res) {
   } catch (e) { console.error('[tally] forecast failed:', e.message); }
   return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra,
     // Which books system this is, the others connected, and their headline figures side by side (never added).
-    forecast_v2,
+    forecast_v2, cash_flow, borrowing,
     books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] });
 }
 

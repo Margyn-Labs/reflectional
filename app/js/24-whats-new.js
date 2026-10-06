@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-06-cash-flow', date:'6 Oct 2026', title:'Your cash flow statement, and how your overdraft and loans move',
+    items:[
+      { t:'Cash flow statement', what:'Where your cash came from and where it went, month by month this year, from every entry in your books. The owner view says what the money was for (customers, suppliers, salaries, assets, loans); the accountant view is the statement your CA or bank asks for, starting from profit. It checks itself against your books every time.',
+        how:'Open <b>Cash flow</b> under Insight. Switch views at the top; <b>Export</b> gives your accountant a spreadsheet. Or ask Margyn: “why is cash down when I made a profit?”', act:'cashflow' },
+      { t:'Overdraft and loans, day by day', what:'For each overdraft, cash credit and loan: what you owed at the end of every day this year, the peak, the average, how many days you used it, the interest the bank charged and what borrowing really costs you a year. Loans show whether they’re reducing, and EMIs already entered for later dates.',
+        how:'<b>Cash</b> → <b>Overdraft and loans this year</b>. Press <b>Enter your limit</b> once to see how much of the limit you use and what’s left. Or ask Margyn: “how is my OD moving?”', act:'borrowing' }
+    ]
+  },
+  {
     id:'2026-10-06-team-live', date:'6 Oct 2026', title:'Watch Margyn work, and work with your team',
     items:[
       { t:'See Margyn working', what:'Home’s “What I’m working on” now shows what is running this second, like syncing Zoho Books or checking payments, and under it what was just done, with the time. Margyn’s panel says what is running on every page.',
@@ -349,6 +358,8 @@ const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
 const MG_WN_ACTS = {
   panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
   margin:{ label:'Open Margin', run:() => { if(typeof showView === 'function') showView('margin'); } },
+  cashflow:{ label:'Open Cash flow', run:() => { if(typeof showView === 'function') showView('cashflow'); } },
+  borrowing:{ label:'Open Cash', run:() => { if(typeof showView === 'function') showView('cash'); setTimeout(() => { const el = document.getElementById('mgBorrowHist'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 120); } },
   home:{ label:'Open Home', run:() => { if(typeof showView === 'function') showView('home'); } },
   receivables:{ label:'Open Receivables', run:() => { if(typeof showView === 'function') showView('receivables'); } },
   cfopack:{ label:'Open CFO pack', run:() => { if(typeof showView === 'function') showView('cfopack'); } },

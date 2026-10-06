@@ -826,10 +826,24 @@ function products(ctx, args) {
 
 /* ---------------- 6. cash, loans, interest, GST ---------------- */
 
+/**
+ * An overdraft, cash credit or loan the business owes (the Borrowing list, the cash flow statement and the
+ * borrowing history all use this one test). Judged by the ledger's group (and only for balance-sheet ledgers),
+ * so "INTEREST ON OD" is never a loan; "Loans & Advances (Asset)" is money lent out, not borrowed.
+ */
+function isBorrowing(ctx, l) {
+  const b = ctx.cls(l.name);
+  if (b === 'bank_od') return true;
+  if (A.PL_BUCKETS.includes(b) || b === 'debtor' || b === 'creditor' || b === 'tax') return false;
+  if (/advance|\(\s*asset|\basset\b/i.test(l.parent || '')) return false;
+  return /\b(o\.?\s?d|overdraft|cash\s*credit|loans?)\b/i.test(l.parent || '') || (b === 'bank' && /\b(o\.?\s?d|overdraft|cash\s*credit)\b/i.test(l.name));
+}
+
 function cashAndDebt(ctx) {
   const an = ctx.analytics;
-  const conv = ((an.quality || {}).balance_sign || {}).convention;
-  const eff = !conv || conv === 'unknown' ? 'opposite' : conv;
+  // The same reading of balance signs as the Margin page (the books' declared convention when the data can't tell).
+  const bs = (an.quality || {}).balance_sign || {};
+  const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
   const debitPos = (b) => (eff === 'same' ? -num(b) : num(b));
   const move = new Map();
   for (const r of ctx.rows) for (const l of r.lines) { const k = nameKey(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); }
@@ -838,13 +852,7 @@ function cashAndDebt(ctx) {
     if (l.opening_balance != null) return { v: debitPos(l.opening_balance) - (move.get(nameKey(l.name)) || 0), how: 'opening + entries' };
     return null;
   };
-  // Judged by the ledger's group (and only for balance-sheet ledgers), so "INTEREST ON OD" is never a loan.
-  const isLoan = (l) => {
-    const b = ctx.cls(l.name);
-    if (b === 'bank_od') return true;
-    if (A.PL_BUCKETS.includes(b) || b === 'debtor' || b === 'creditor' || b === 'tax') return false;
-    return /\b(o\.?\s?d|overdraft|cash\s*credit|loans?)\b/i.test(l.parent || '') || (b === 'bank' && /\b(o\.?\s?d|overdraft|cash\s*credit)\b/i.test(l.name));
-  };
+  const isLoan = (l) => isBorrowing(ctx, l);
   const cashL = [], loans = [];
   for (const l of ctx.ledgers) {
     const b = ctx.cls(l.name);
@@ -1242,7 +1250,7 @@ function buildInsights(book, analytics, opts) {
 
 module.exports = {
   inr, pctStr, dayStr, resolvePeriod, PERIODS, MEASURES, GROUPS,
-  prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, insights, attention,
+  prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, isBorrowing, insights, attention,
   buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf, niceName,
   billRows, dailySales90, lateRanking, recentReceipts
 };

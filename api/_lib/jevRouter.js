@@ -35,7 +35,7 @@ const jev = require('./jev');
 const GROUPS = {
   books: {
     q: 'Answering it needs figures or records from the business\'s accounts, or how a figure is calculated: sales, purchases, profit, costs, expenses, a customer or vendor, products or stock, who owes money or is owed, cash, bank, loans, GST or tax, health score, a formula or where a number comes from.',
-    tools: ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'what_needs_attention',
+    tools: ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'cash_flow_statement', 'borrowing_history', 'what_needs_attention',
       // panel: live figures the app has loaded; WhatsApp: its own read tools
       'get_overview', 'query_parties', 'get_cash', 'get_gst', 'get_margin',
       'get_vitals', 'list_receivables', 'list_payables', 'get_tally_data', 'get_findings', 'get_invoice_status',

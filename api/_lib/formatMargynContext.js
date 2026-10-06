@@ -170,7 +170,7 @@ export function formatMargynContext(context) {
       if (tm.confidence) lines.push(`Margin confidence: ${tm.confidence}.${(tm.caveats || []).length ? ' Caveats: ' + tm.caveats.join(' ') : ''}${tm.open_questions ? ' ' + tm.open_questions + ' ledger question(s) are waiting for the user on the Margin page.' : ''}`);
       if (!tm.items_available) lines.push('Item-level margin is not available yet (Tally item lines not synced); do not guess per-product margins.');
       else lines.push('Item lines are synced: for product margins call the products tool.');
-      if (tm.overdraft) lines.push('The business runs on a bank overdraft. The cash forecast counts bank balances only and Margyn does not know the overdraft limit, so a forecast dip below zero or below the floor is NOT running out of money: say the overdraft covers it up to its limit, which Margyn can\'t see. cash_and_loans has the overdraft owed and the interest paid.');
+      if (tm.overdraft) lines.push('The business runs on a bank overdraft. The cash forecast counts bank balances only and Margyn does not know the overdraft limit, so a forecast dip below zero or below the floor is NOT running out of money: say the overdraft covers it up to its limit (borrowing_history has the limit and headroom if the owner entered it). cash_and_loans has the overdraft owed and the interest paid; borrowing_history has how it moved, its peak, the limit used when the owner entered one, and what it costs.');
       if (Array.isArray(tm.top_findings) && tm.top_findings.length) lines.push('What Margyn found in the books (biggest first): ' + tm.top_findings.join(' | '));
     }
     tallyBlock = lines.join('\n');
