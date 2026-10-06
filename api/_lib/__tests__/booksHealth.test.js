@@ -30,8 +30,11 @@ check('2. the current (unfinished) month is never flagged', !cost.some((x) => x.
 
 // 3. Ledger name contradicts its group
 const nm = kind('name_vs_group');
-check('3. TRANSPORT/COURIER EXPENSES under Sales Accounts is flagged', nm.length === 1 && nm[0].ledger === 'TRANSPORT/COURIER EXPENSES' && nm[0].amount === 120000 && /Sales Accounts/.test(nm[0].title), nm);
+check('3. TRANSPORT/COURIER EXPENSES under Sales Accounts is flagged', nm.length === 2 && nm.find((x) => x.ledger === 'TRANSPORT/COURIER EXPENSES').amount === 120000 && nm.find((x) => x.ledger === 'TRANSPORT/COURIER EXPENSES').severity !== 'low' && /Sales Accounts/.test(nm[0].title), nm);
 check('3. FREIGHT COLLECTED (charged to customers, money in) is not', !nm.some((x) => /FREIGHT COLLECTED/.test(x.ledger)));
+const dormant = nm.find((x) => x.ledger === 'TRANSPORT/ COURIER EXPENSES');
+check('3. an unused "... EXPENSES" ledger under Sales (Care Hygiene live) is a low tidy-up', dormant && dormant.severity === 'low' && /Nothing has gone through it this year/.test(dormant.detail), dormant);
+check('3. FREIGHT ON SALES under Sales (no "expenses" in the name) is not flagged', !nm.some((x) => x.ledger === 'FREIGHT ON SALES'));
 
 // 4. Cash in hand negative
 const cash = one('cash_negative');
@@ -198,7 +201,7 @@ check('same books, same keys (stable across runs)', JSON.stringify(H.check(E.pre
   const r2 = H.check(c2); await H.classifierPass(c2, r2, { fetchImpl });
   const t = r2.items.find((x) => x.ledger === 'TEMPO HIRE');
   check('live: a sure "expense" adds a low, "may be" item; the amount comes from the books', t && t.by === 'classifier' && t.amount === 60000 && t.severity === 'low' && /may be/.test(t.title), t);
-  check('live: ledgers the rules already flagged aren\'t asked again', r2.items.filter((x) => x.ledger === 'TRANSPORT/COURIER EXPENSES').length === 1);
+  check('live: ledgers the rules already flagged aren\'t asked again', r2.items.filter((x) => x.ledger === 'TRANSPORT/COURIER EXPENSES').length === 1 && r2.items.filter((x) => x.by === 'classifier').length === 1);
   if (save.k === undefined) delete process.env.JEV_API_KEY; else process.env.JEV_API_KEY = save.k;
   if (save.m === undefined) delete process.env.JEV_MODE_BOOKS_HEALTH; else process.env.JEV_MODE_BOOKS_HEALTH = save.m;
 

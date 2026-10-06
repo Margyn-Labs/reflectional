@@ -162,6 +162,16 @@ function checkNames(ctx, debits, found) {
         detail: `Its name says it’s an expense and ${inr(net)} went out on it this year, but it sits under ${groupName(l)}, so your ${g === 'sales' ? 'sales are' : 'income is'} understated by that much in your books’ own reports.`,
         fix: `Move the ledger “${l.name}” to Direct Expenses or Indirect Expenses, whichever fits.`
       });
+    } else if (INCOME_BUCKETS.has(g) && /\bexpenses?\b/i.test(l.name) && !INCOME_EXCEPTIONS.test(l.name)) {
+      // Named "... EXPENSES" but under Sales/Income with no money out this year (Care Hygiene: "TRANSPORT/ COURIER
+      // EXPENSES" under Sales Accounts, unused this year): nothing misstated yet, but whatever is booked there counts as sales.
+      found.push({
+        key: 'name_vs_group:' + keyOf(l.name), kind: 'name_vs_group', ledger: l.name, amount: r0(Math.abs(net)),
+        severity: 'low',
+        title: `“${l.name}” is filed under ${groupName(l)}`,
+        detail: `Its name says it’s an expense, but it sits under ${groupName(l)}. ${Math.abs(net) >= 1 ? inr(-net) + ' came in on it this year' : 'Nothing has gone through it this year'}, so little is misstated today, but any expense entered in it would count as ${g === 'sales' ? 'sales' : 'income'}.`,
+        fix: `Move the ledger “${l.name}” to Direct Expenses or Indirect Expenses (or rename it if it really is income).`
+      });
     } else if (EXPENSE_BUCKETS.has(g) && INCOME_WORDS.test(l.name) && !EXPENSE_WORDS.test(l.name) && -net >= 1000) {
       found.push({
         key: 'name_vs_group:' + keyOf(l.name), kind: 'name_vs_group', ledger: l.name, amount: r0(-net),
