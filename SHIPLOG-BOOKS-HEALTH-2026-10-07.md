@@ -7,7 +7,7 @@ VP: "We can't clean up once. It should be a recurring workflow within the app it
 |---|---|---|
 | interest_under_income | interest on an overdraft or loan filed under an income group, with money going out on it | INTEREST ON OD ₹5.43 L |
 | costs_not_booked | a closed month whose running costs are under 40% of the usual (analytics `costs_incomplete`) | Sep ₹2.66 L vs ₹41.8 L |
-| name_vs_group | an expense-named ledger in a Sales/Income group with net money out, or the other way round. The rules come first. The Jev classifier runs only behind `JEV_MODE_BOOKS_HEALTH` = off/shadow/live, default off | TRANSPORT/COURIER EXPENSES under Sales Accounts |
+| name_vs_group | an expense-named ledger in a Sales/Income group with net money out (or named "…EXPENSES" and unused: a low tidy-up), or the other way round. The rules come first. The Jev classifier runs only behind `JEV_MODE_BOOKS_HEALTH` = off/shadow/live, default off | "TRANSPORT/ COURIER EXPENSES" under Sales Accounts (no entries this year → low) |
 | cash_negative | cash in hand below zero, plus the biggest journal entries out of Cash | −₹41,091 (partner remuneration) |
 | supplier_bills_settled | supplier bills still open bill-wise while the ledger shows them settled (`billTieOut.partyGaps`) | Sanjay Plastics 7 bills ₹14 L vs ₹11.5k; Royal International ₹9.1 L vs 0 |
 | customer_bills_paid / customer_unbilled | customer bills still open but paid in the ledger / a ledger balance with no bill behind it | ₹47.2 L across 45 / ₹21.6 L across 21 |
@@ -41,6 +41,14 @@ VP: "We can't clean up once. It should be a recurring workflow within the app it
 - `api/_lib/__tests__/booksHealth.test.js`: 58 checks covering every check with the Care Hygiene shapes, the guard both ways, lifecycle, the accountant list, access and the classifier switch. The fixture is in `booksHealthFixture.js`.
 - `tools/ui-books-health-test.js`: the panel, Ignore/Bring back, the send dialog (nothing sent before a press), Home and What's new.
 - jevRouterHandler counts are now 12 of 18.
+
+## Live on Care Hygiene (7 Oct, read-only, before the SQL; as mihir@carehygiene.in via the API)
+78 open, 77 for the accountant, 4 high. Read in 8.7 s (cold).
+- Cash in hand −₹41,091 · INTEREST ON OD ₹5.43 L · September costs short by ₹39.1 L (₹2.66 L vs ₹41.8 L) · Sanjay Plastics 7 bills (₹13.9 L more than the ledger) · Royal International ₹9.1 L · 6 EMIs dated ahead ₹9.45 L. All match the 4 Oct audit.
+- Customers: 44 with paid bills still open (₹53.1 L) and 21 unbilled (₹21.5 L). Today's receivables tie-out gives 46 / ₹53.1 L and 22 / ₹21.5 L. The difference is three gaps under the ₹500 minimum (₹782 in all). The audit's ₹47.2 L was the books on 4 Oct.
+- 61 of 63 suppliers aren't kept bill-wise (₹1.72 Cr). 3 debts over a year, Manek Surgicorp ₹2.12 L the biggest.
+- Name vs group: "DISCOUNT RECEIVED" under Purchase Accounts (₹1.9 L credit). "TRANSPORT/ COURIER EXPENSES" sits under Sales Accounts with no entries this year. The first PR missed it because it only looked for money going out; PR #87 adds it as a low tidy-up. The courier ledgers that are actually used sit in the TRANSPORT CHARGES group, which is under Direct Expenses, so they're right.
+- Tie-out guard: 7 cash/OD ledgers walk back to Tally's opening with 0 gaps, so the EMIs are included in the balances. They're backed out as before, and cash is unchanged.
 
 ## Open
 - Watch WhatsApp messages don't mention new health items yet; the check is in the app only.

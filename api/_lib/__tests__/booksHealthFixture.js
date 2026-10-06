@@ -39,6 +39,8 @@ const L = [
   { name: 'INTEREST ON FD', parent: 'Indirect Incomes', opening_balance: 0, closing_balance: -18000 },
   { name: 'FREIGHT COLLECTED', parent: 'Indirect Incomes', opening_balance: 0, closing_balance: -30000 },
   { name: 'TRANSPORT/COURIER EXPENSES', parent: 'Sales Accounts', opening_balance: 0, closing_balance: 120000 },
+  { name: 'TRANSPORT/ COURIER EXPENSES', parent: 'Sales Accounts', opening_balance: 0, closing_balance: null },   // unused this year
+  { name: 'FREIGHT ON SALES', parent: 'Sales Accounts', opening_balance: 0, closing_balance: null },
   { name: 'Interest on Loan', parent: 'Indirect Expenses', opening_balance: 0, closing_balance: 181146 },
   { name: 'Cash', parent: 'Cash-in-Hand', opening_balance: 10000, closing_balance: null },
   { name: 'Kotak Bank', parent: 'Bank Accounts', opening_balance: 2000000, closing_balance: null },
