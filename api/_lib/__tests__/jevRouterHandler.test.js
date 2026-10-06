@@ -53,7 +53,7 @@ const names = (b) => (b.tools || []).map(t => t.name);
   claudeCalls = []; claudeQueue = [text('Sharma owes the most.')];
   let r = await call(H, { message: 'who owes me the most, is Sharma Traders top?', history: [], depth: 'balanced' });
   check('live: reply comes back', r.code === 200 && r.body.reply === 'Sharma owes the most.', r);
-  check('live: Claude gets only the books tools (11 of 17)', claudeCalls.length === 1 && names(claudeCalls[0]).length === 11 && !names(claudeCalls[0]).includes('propose_action'), names(claudeCalls[0]));
+  check('live: Claude gets only the books tools (12 of 18)', claudeCalls.length === 1 && names(claudeCalls[0]).length === 12 && !names(claudeCalls[0]).includes('propose_action'), names(claudeCalls[0]));
   check('live: Balanced dropped to Quick (Haiku)', /haiku/.test(claudeCalls[0].model) && r.body.depth === 'quick');
   check('live: the last sent tool carries the cache mark', claudeCalls[0].tools[claudeCalls[0].tools.length - 1].cache_control);
   check('Jev never saw the customer name', !/sharma/i.test(JSON.stringify(jevCalls)));
@@ -81,18 +81,18 @@ const names = (b) => (b.tools || []).map(t => t.name);
   jevAnswers = answers({ g_imports: NO(0.9) });
   claudeCalls = []; claudeQueue = [text("I don't have that data yet."), text('Here it is.')];
   r = await call(H, { message: 'what came in from the forwarded stuff', history: [], depth: 'balanced' });
-  check('live: an "I can\'t see that" reply retries with all 17 tools', claudeCalls.length === 2 && names(claudeCalls[0]).length < 17 && names(claudeCalls[1]).length === 17 && r.body.reply === 'Here it is.', claudeCalls.map(names));
+  check('live: an "I can\'t see that" reply retries with all 18 tools', claudeCalls.length === 2 && names(claudeCalls[0]).length < 18 && names(claudeCalls[1]).length === 18 && r.body.reply === 'Here it is.', claudeCalls.map(names));
   check('live: the retry is logged', /retry=1/.test(logs[logs.length - 1]), logs[logs.length - 1]);
 
   // live: a short "yes" -> full set, Jev not asked
   jevCalls = []; claudeCalls = []; claudeQueue = [text('Done.')];
   await call(H, { message: 'haan kar do', history: [{ role: 'user', content: 'remind sharma' }, { role: 'assistant', content: 'Shall I send it?' }], depth: 'balanced' });
-  check('live: "haan kar do" goes with every tool and no Jev call', jevCalls.length === 0 && names(claudeCalls[0]).length === 17);
+  check('live: "haan kar do" goes with every tool and no Jev call', jevCalls.length === 0 && names(claudeCalls[0]).length === 18);
 
   // live: Jev down -> today's turn
   jevDown = true; claudeCalls = []; claudeQueue = [text('ok')];
   await call(H, { message: 'sales this month', history: [], depth: 'balanced' });
-  check('live: Jev outage = full tools at the asked depth', names(claudeCalls[0]).length === 17 && !/haiku/.test(claudeCalls[0].model));
+  check('live: Jev outage = full tools at the asked depth', names(claudeCalls[0]).length === 18 && !/haiku/.test(claudeCalls[0].model));
   jevDown = false;
 
   // live panel: a paused turn keeps its pick
@@ -102,7 +102,7 @@ const names = (b) => (b.tools || []).map(t => t.name);
   r = await call(H, { message: 'open cash and tell me the balance', history: [], depth: 'balanced', surface: 'panel' });
   const sent1 = names(claudeCalls[0]);
   check('panel: paused for the browser with the pick in the signed state', r.body.clientCalls && r.body.resume && r.body.resume.rt && r.body.resume.rt.g.join() === 'books,screen', r.body.resume && r.body.resume.rt);
-  check('panel: trimmed below 37 tools, core tools present', sent1.length < 37 && ['get_screen', 'show_view', 'navigate'].every(n => sent1.includes(n)), sent1.length);
+  check('panel: trimmed below 38 tools, core tools present', sent1.length < 38 && ['get_screen', 'show_view', 'navigate'].every(n => sent1.includes(n)), sent1.length);
   jevCalls = [];
   r = await call(H, { resume: Object.assign({}, r.body.resume, { results: [{ id: 'tu1', content: '{"ok":true}' }] }), depth: 'balanced', surface: 'panel' });
   check('panel: resume uses the same tools, no new Jev call', r.body.reply === 'Cash is open.' && JSON.stringify(names(claudeCalls[1])) === JSON.stringify(sent1) && jevCalls.length === 0);
@@ -113,7 +113,7 @@ const names = (b) => (b.tools || []).map(t => t.name);
   claudeCalls = []; logs.length = 0;
   claudeQueue = [{ content: [{ type: 'tool_use', id: 'a', name: 'money_owed', input: {} }, { type: 'tool_use', id: 'b', name: 'list_chase_targets', input: {} }], stop_reason: 'tool_use', usage: {} }, text('Done.')];
   r = await call(H, { message: 'who owes me', history: [], depth: 'balanced' });
-  check('shadow: Claude gets all 17 tools at Balanced', names(claudeCalls[0]).length === 17 && !/haiku/.test(claudeCalls[0].model));
+  check('shadow: Claude gets all 18 tools at Balanced', names(claudeCalls[0]).length === 18 && !/haiku/.test(claudeCalls[0].model));
   check('shadow: log compares the pick with what Claude used', logs.length === 1 && /chat shadow/.test(logs[0]) && /g=books/.test(logs[0]) && /miss=change\+chase|miss=chase\+change/.test(logs[0]), logs);
   jevAnswers = answers({ talk: CH('greeting', 0.99) }); claudeCalls = [];
   r = await call(H, { message: 'hello', history: [], depth: 'balanced' });

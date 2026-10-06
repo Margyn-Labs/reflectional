@@ -62,6 +62,8 @@ const LW_CALLS = [
   [/\/api\/generate-findings\?action=parse-import/, 'documents', 'Reading the file you gave me', 'Read your file'],
   [/\/api\/generate-findings/, 'books', 'Recomputing your vitals and Pulse Score', 'Recomputed your vitals'],
   [/\/api\/generate-briefing/, 'watch', 'Writing your briefing', 'Wrote your briefing'],
+  [/\/api\/tally\?action=books-check-set/, 'books', 'Updating your books check', 'Updated your books check'],
+  [/\/api\/tally\?action=books-check/, 'books', 'Checking your books for things to fix', 'Checked your books'],
   [/\/api\/tally\?action=completeness/, 'books', 'Checking every Tally voucher reached Margyn', 'Checked Tally data is complete'],
   [/\/api\/tally\?action=analytics/, 'books', 'Working out margins from Tally', 'Worked out margins'],
   [/\/api\/tally\?action=(status|summary)/, 'books', 'Reading Tally', 'Read Tally'],

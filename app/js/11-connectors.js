@@ -1072,6 +1072,7 @@ function mgRenderDataCheck(){
 document.addEventListener('click', e => { if(e.target.closest && e.target.closest('[data-datacheck-run]')){ mgDataCheck = null; mgRenderDataCheck(); mgLoadDataCheck(true); } });
 function renderConnectionsHub(){
   ['renderRazorpayStatus','renderZohoStatus','renderOdooStatus','renderShopifyStatus','renderTallyStatus','renderCashfreeStatus'].forEach(fn => { if(typeof window[fn] === 'function'){ try { window[fn](); } catch(e){} } });
+  try { if(typeof mgRenderBooksHealth === 'function') mgRenderBooksHealth(); } catch(e){ console.error('[margyn] books check render:', e); }
   try { mgRenderDataCheck(); } catch(e){ console.error('[margyn] data check render:', e); }
   const anyLive = CONN_FEED_MAP.some(c => connIsLive(c.key));
   const nudge = document.getElementById('day1Nudge');

@@ -231,9 +231,18 @@ function impliedEntry(v, entries) {
  * out of each ledger's closing balance. Tally's balances share the entries' sign ('same', the default); books whose
  * balances carry debit as positive while entries carry it as negative (Zoho, Odoo adapters: `balance_convention:
  * 'opposite'`) add the entries back instead.
- * Returns { ledgers, vouchers, future } where future lists the entries waiting for their date.
+ *
+ * The tie-out guard (2026-10-07). Backing out assumes Tally's closing balances run to the end of the year. The
+ * agent's ledger request sends no SVTODATE, so Tally uses the company's current period; if that period ends today,
+ * the closing balances already leave the later entries out and backing them out again would overstate cash. So
+ * for cash, bank, overdraft and loan ledgers that later entries touch, the opening balance plus the synced entries
+ * up to today is compared with Tally's closing balance both ways. When the closing only ties WITHOUT the later
+ * entries (and no ledger ties with them), nothing is backed out (`guard.decision: 'kept'`), and the books health
+ * check raises it. opts.decision ('kept' | 'backed_out') applies a decision made earlier on the full books (the
+ * Cash page summary reads only the later entries, so it can't run the guard itself).
+ * Returns { ledgers, vouchers, future, guard } where future lists the entries waiting for their date.
  */
-function asOfToday(ledgers, vouchers, now, convention) {
+function asOfToday(ledgers, vouchers, now, convention, opts) {
   const dir = convention === 'opposite' ? 1 : -1;
   const today = todayIstMs(now);
   const past = [], future = [];
@@ -241,7 +250,7 @@ function asOfToday(ledgers, vouchers, now, convention) {
     const d = v && parseDate(v.date);
     if (d && d.getTime() > today) future.push(v); else past.push(v);
   }
-  if (!future.length) return { ledgers: ledgers || [], vouchers: vouchers || [], future };
+  if (!future.length) return { ledgers: ledgers || [], vouchers: vouchers || [], future, guard: { decision: 'not_needed', checked: 0, ledgers: [] } };
   const move = new Map();
   for (const v of future) {
     if (v.is_cancelled === true) continue;
@@ -251,11 +260,60 @@ function asOfToday(ledgers, vouchers, now, convention) {
       move.set(k, (move.get(k) || 0) + num(e.amount));
     }
   }
+  const guard = tieOutGuard(ledgers, past, move, convention);
+  const forced = opts && (opts.decision === 'kept' || opts.decision === 'backed_out') ? opts.decision : null;
+  if (forced) { guard.decision = forced; guard.forced = true; }
+  if (guard.decision === 'kept') return { ledgers: ledgers || [], vouchers: past, future, guard };
   const adj = (ledgers || []).map((l) => {
     const m = l && l.closing_balance != null ? move.get(nameKey(l.name)) : null;
     return m ? Object.assign({}, l, { closing_balance: Math.round((num(l.closing_balance) + dir * m) * 100) / 100, future_entries_backed_out: Math.round(m * 100) / 100 }) : l;
   });
-  return { ledgers: adj, vouchers: past, future };
+  return { ledgers: adj, vouchers: past, future, guard };
+}
+
+/* Cash, bank, overdraft and loan ledgers: the ones whose balances the later entries (EMIs) move. */
+function guardLedger(l) {
+  const b = bucketFromParent(l.primary_group) || bucketFromParent(l.parent);
+  if (b === 'cash' || b === 'bank' || b === 'bank_od') return true;
+  if (b && b !== 'balance_sheet') return false;
+  const g = String(l.parent || '') + ' ' + String(l.primary_group || '');
+  return /\b(loans?|o\.?\s?d|overdraft|cash\s*credit)\b/i.test(g) && !/advance|asset/i.test(g);
+}
+
+/**
+ * Does each such ledger's closing balance include the later entries? opening + entries to today (+ later ones)
+ * against Tally's closing, in the balances' own sign convention. Per ledger: 'with_future' (only ties with
+ * them), 'to_today' (only ties without), 'either' (too small to tell), 'neither' (entries missing from the sync).
+ * decision 'kept' only when none ties with the later entries and more tie to today than tie neither way.
+ */
+function tieOutGuard(ledgers, past, futureMove, convention) {
+  const s = convention === 'opposite' ? -1 : 1;
+  const cand = (ledgers || []).filter((l) => l && l.name && l.opening_balance != null && l.closing_balance != null && guardLedger(l) && Math.abs(futureMove.get(nameKey(l.name)) || 0) >= 1);
+  const out = { decision: 'backed_out', checked: cand.length, with_future: 0, to_today: 0, unclear: 0, ledgers: [] };
+  if (!cand.length) return out;
+  const want = new Set(cand.map((l) => nameKey(l.name)));
+  const pastMove = new Map(), seen = new Set();
+  for (const v of past || []) {
+    if (!v || v.is_cancelled === true || isNonAccounting(v.voucher_base || v.voucher_type)) continue;
+    if (v.tally_guid) { if (seen.has(v.tally_guid)) continue; seen.add(v.tally_guid); }
+    for (const e of Array.isArray(v.entries) ? v.entries : []) {
+      if (!e || !e.ledger) continue;
+      const k = nameKey(e.ledger);
+      if (want.has(k)) pastMove.set(k, (pastMove.get(k) || 0) + num(e.amount));
+    }
+  }
+  for (const l of cand) {
+    const k = nameKey(l.name);
+    const O = num(l.opening_balance), C = num(l.closing_balance), P = pastMove.get(k) || 0, F = futureMove.get(k) || 0;
+    const tol = Math.max(2, 0.0005 * (Math.abs(O) + Math.abs(C)));
+    const offWith = Math.abs(C - O - s * (P + F)), offToday = Math.abs(C - O - s * P);
+    const fit = offWith <= tol && offToday > tol ? 'with_future' : offToday <= tol && offWith > tol ? 'to_today' : offWith <= tol ? 'either' : 'neither';
+    if (fit === 'with_future') out.with_future++; else if (fit === 'to_today') out.to_today++; else if (fit === 'neither') out.unclear++;
+    out.ledgers.push({ name: l.name, fit, later_entries: Math.round(F * 100) / 100, off_with_later: Math.round((C - O - s * (P + F)) * 100) / 100 });
+  }
+  // Only on clear evidence: no ledger ties with the later entries, and more tie to today than don't tie at all.
+  if (out.to_today > 0 && out.with_future === 0 && out.to_today > out.unclear) out.decision = 'kept';
+  return out;
 }
 
 function computeAnalytics(input) {
@@ -878,7 +936,9 @@ function computeAnalytics(input) {
       count: today.future.length,
       first: today.future.map((v) => v.date).sort()[0], last: today.future.map((v) => v.date).sort().slice(-1)[0],
       items: today.future.slice().sort((x, y) => String(x.date).localeCompare(String(y.date))).slice(0, 24)
-        .map((v) => ({ date: v.date, type: v.voucher_type, number: v.voucher_number || null, party: v.party_name || null, amount: r2(Math.abs(num(v.amount))), narration: v.narration ? String(v.narration).slice(0, 80) : null }))
+        .map((v) => ({ date: v.date, type: v.voucher_type, number: v.voucher_number || null, party: v.party_name || null, amount: r2(Math.abs(num(v.amount))), narration: v.narration ? String(v.narration).slice(0, 80) : null })),
+      // Whether Tally's balances already left them out (asOfToday's tie-out guard): 'kept' = not backed out again.
+      guard: { decision: today.guard.decision, checked: today.guard.checked, with_future: today.guard.with_future || 0, to_today: today.guard.to_today || 0 }
     } : null,
     items: itemRows.slice(0, 100), margin_bridge,
     leaks, gst_estimate: gst, quality, questions, headlines,

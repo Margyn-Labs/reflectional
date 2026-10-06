@@ -1102,7 +1102,7 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-vx-g
 
 /* The books tools (api/_lib/booksTools.js) run on the server, through ?action=books: the same
    engine typed chat and WhatsApp use, reading every Tally entry rather than what the page loaded. */
-const VX_BOOK_TOOLS = ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'cash_flow_statement', 'borrowing_history', 'what_needs_attention'];
+const VX_BOOK_TOOLS = ['books_summary', 'books_breakdown', 'customer_or_vendor', 'products', 'money_owed', 'find_entries', 'cash_and_loans', 'cash_flow_statement', 'borrowing_history', 'what_needs_attention', 'books_health_check'];
 async function vxBooks(tool, input){
   const { data:{ session } } = await sbClient.auth.getSession();
   const res = await fetch('/api/ask-margyn?action=books', {

@@ -14,7 +14,6 @@
  */
 
 const A = require('./tallyAnalytics');
-const CF = require('./cashFlowModel');
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const r0 = (n) => Math.round(num(n));
@@ -138,24 +137,9 @@ function tallyCompleteness(book, ctx, opts) {
 
   // Customers: open bills against the customer's ledger balance. A gap means bills missing, or old ones not
   // knocked off in Tally.
-  const bal = CF.partyBalancesToday(ctx);
-  const billBy = new Map();
-  for (const b of ctx.billsAsInTally || ctx.bills || []) {
-    if (b.direction === 'payable' || b.advance) continue;
-    const k = A.nameKey(b.party_name);
-    billBy.set(k, (billBy.get(k) || 0) + Math.abs(num(b.closing_balance)));
-  }
-  let tied = 0, gaps = 0, gapAmt = 0;
-  const gapTop = [];
-  for (const [k, p] of bal) {
-    if (p.bucket !== 'debtor' || p.balance == null) continue;
-    const owed = Math.max(0, p.balance), billed = billBy.get(k) || 0;
-    if (owed < 1 && billed < 1) continue;
-    const diff = billed - owed;
-    if (Math.abs(diff) <= Math.max(1, 0.01 * Math.max(owed, billed))) tied++;
-    else { gaps++; gapAmt += Math.abs(diff); gapTop.push({ party: p.name, billed: r0(billed), ledger: r0(owed) }); }
-  }
-  gapTop.sort((a, b) => Math.abs(b.billed - b.ledger) - Math.abs(a.billed - a.ledger));
+  const pg = require('./billTieOut').partyGaps(ctx, 'receivable');
+  const tied = pg.tied, gaps = pg.gaps.length, gapAmt = pg.gaps.reduce((t, g) => t + Math.abs(g.diff), 0);
+  const gapTop = pg.gaps.map((g) => ({ party: g.party, billed: g.billed, ledger: g.ledger }));
   if (tied + gaps) checks.push(check('bills_tie', 'Customer bills tie to their ledgers', gaps ? 'warn' : 'ok',
     gaps ? `${tied} of ${tied + gaps} customers tie. For ${gaps}, Tally's open bills and the ledger balance differ by ₹${r0(gapAmt).toLocaleString('en-IN')} in all: paid bills not knocked off in Tally, or money owed that isn't split into bills. Margyn goes by the ledger balance for these customers (oldest bills treated as paid; the rest added from the entries); knocking the bills off in Tally clears this.`
       : `All ${tied} customers’ open bills add up to their ledger balance.`, { gaps: gapTop.slice(0, 8) }));

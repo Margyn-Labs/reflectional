@@ -58,6 +58,7 @@ const deliveries = require('./waDeliveries');
 const cashFlow = require('./cashFlowModel');
 const forecastStore = require('./forecastStore');
 const brief = require('./watchBrief');
+const booksHealth = require('./booksHealth');
 
 const DAY = 86400000;
 const MAX_PER_RUN = 3;
@@ -352,6 +353,12 @@ async function watchAccount(userId, opts) {
   // forecast's track record builds even on days nobody opens the app. The same forecast feeds the update.
   let fc = null;
   try { fc = cashFlow.build(ctx, { promises: await forecastStore.promises(userId) }); if (fc && !o.previewOnly) await forecastStore.recordDaily(userId, fc); } catch (e) { /* never blocks an update */ }
+  // The daily books health check (booksHealth.js): what the accountant should fix, kept open / fixed / ignored.
+  // Once a day, with the morning run, for every account with books; never blocks the update.
+  let health = null;
+  if (slot === 'morning' && !o.previewOnly && !o.dryRun) {
+    try { health = await booksHealth.runForAccount(userId, ctx, { now: o.now }); } catch (e) { health = { ran: false, reason: String(e.message || e).slice(0, 120) }; }
+  }
   const list = E.insights(ctx);
   let deep = [];
   try { deep = brief.deepInsights(ctx, fc); } catch (e) { /* the update goes out without it */ }
@@ -383,6 +390,7 @@ async function watchAccount(userId, opts) {
   }
 
   let sentInfo = null, result = { user: userId, mode, slot, found: all.length, chosen: sentItems.map((x) => x.kind) };
+  if (health) result.books_health = { open: health.open, opened: health.opened, closed: health.closed, stored: health.stored };
   if (!msg.send) result.quiet = 'nothing changed enough to send';
   if (msg.send) result.headline = msg.headline;
   if (msg.send && mode !== 'off') {
