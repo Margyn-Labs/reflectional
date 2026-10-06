@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-07-books-health', date:'7 Oct 2026', title:'A books health check, every morning',
+    items:[
+      { t:'What your accountant should fix', what:'Every morning Margyn checks your books for the things that make them wrong: interest you paid filed as income, a month whose costs aren’t entered yet, an expense filed under Sales, cash in hand below zero, bills still open that were already paid, balances with no bill behind them, suppliers not kept bill by bill, money owed for over a year, and entries dated after today. Each one says what to fix and since when. Once it’s fixed in your books, it closes by itself.',
+        how:'Open <b>Organisations and sources</b> → <b>Books health check</b>. Not one for you? Press <b>Ignore</b>; it comes back only if the amount changes by more than a quarter. Or ask Margyn: “what’s wrong in my books?”', act:'bookshealth' },
+      { t:'Send it to your accountant', what:'One clean list of everything to fix, grouped and with amounts. Margyn never sends it by itself.',
+        how:'<b>Books health check</b> → <b>Send to my accountant</b> → <b>Open in WhatsApp</b> (you press send) or <b>Copy</b>.', act:'bookshealth' }
+    ]
+  },
+  {
     id:'2026-10-06-cash-flow', date:'6 Oct 2026', title:'Your cash flow statement, and how your overdraft and loans move',
     items:[
       { t:'Cash flow statement', what:'Where your cash came from and where it went, month by month this year, from every entry in your books. The owner view says what the money was for (customers, suppliers, salaries, assets, loans); the accountant view is the statement your CA or bank asks for, starting from profit. It checks itself against your books every time.',
@@ -356,6 +365,7 @@ const MG_RELEASES = [
 ];
 const MG_WN_KEY = 'whats_new_seen', MG_WN_LS = 'margyn_whats_new_seen';
 const MG_WN_ACTS = {
+  bookshealth:{ label:'Open the books check', run:() => { if(typeof mgShowBooksHealth === 'function') mgShowBooksHealth(); } },
   panel:{ label:'Open Margyn', run:() => { if(typeof mgrOpen === 'function') mgrOpen(true); } },
   margin:{ label:'Open Margin', run:() => { if(typeof showView === 'function') showView('margin'); } },
   cashflow:{ label:'Open Cash flow', run:() => { if(typeof showView === 'function') showView('cashflow'); } },

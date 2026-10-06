@@ -580,6 +580,15 @@ function mgrNudgeRules(){
       acts:[{ label:'Show payables', run:() => mgrShowView('payables') }, { label:'Can we cover it?', run:() => mgrAsk('Can we cover the bills due in the next 7 days?') }] });
   } catch(e){}
   try {
+    // The daily books health check (19k-books-health.js): what the accountant should fix in the books.
+    const fix = typeof mgBHOpen === 'function' ? mgBHOpen().filter(x => x.for_accountant) : [];
+    if(fix.length){
+      const top = fix.find(x => x.severity === 'high') || fix[0];
+      out.push({ key:'bh:' + fix.length, text:name + (fix.length === 1 ? 'one thing in your books needs your accountant: ' + top.title + '.' : fix.length + ' things in your books need your accountant, starting with: ' + top.title + '.'),
+        acts:[{ label:'Show them', run:() => mgShowBooksHealth() }, { label:'Send to accountant', run:() => mgBHSend() }] });
+    }
+  } catch(e){}
+  try {
     const g = zohoConnected && zohoVitals && zohoVitals.gst_leakage;
     if(g && Number(g.total_leakage) > 0) out.push({ key:'itc', text:fmtINR(g.total_leakage, 'tile') + ' of input tax credit is at risk: ' + (g.vendors_not_filed || 'some') + ' vendor' + (g.vendors_not_filed === 1 ? ' hasn’t' : 's haven’t') + ' filed.',
       acts:[{ label:'Show GST', run:() => mgrShowView('gst') }] });

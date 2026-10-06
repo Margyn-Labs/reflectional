@@ -115,6 +115,11 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { top: { type: 'integer', description: 'How many (default 6).' } }, additionalProperties: false }
   },
   {
+    name: 'books_health_check',
+    description: 'What\'s wrong in the books that the accountant should fix, from Margyn\'s daily books check: interest on an overdraft or loan filed as income, a month\'s running costs not booked, ledgers filed under the wrong group (an expense under Sales), cash in hand below zero, supplier or customer bills still open that the ledger shows as paid, customer balances with no bill behind them, suppliers not kept bill by bill, money owed for over a year (settle, chase or write off), and entries dated after today. Each with what to fix, the amount and since when; what the owner ignored is left out. Use for "what\'s wrong in my books", "is my Tally clean", "what should my accountant fix", "books health", "anything to clean up in the books", "why don\'t my Tally and Margyn match".',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
     name: 'how_its_calculated',
     description: 'How a Margyn figure is worked out, the way an accountant explains it: what it is, the formula, which inputs and where they come from, its weight in the Pulse Score, and what can make it look off. Use for "how is my runway / Pulse Score / cash / margin / DSO calculated", "what is the formula", "where does this number come from", "why is the score low". figure in their words. With a how-Margyn-works question ("which source do you trust", "why do two screens differ", "do you use AI to calculate", "how fresh is this"), pass it as topic instead. Formulas only: get the live amounts from the other tools or the data you have, then work the sum through for them. (In the Margyn panel, explain does both at once.)',
     input_schema: { type: 'object', properties: { figure: { type: 'string' }, topic: { type: 'string' } }, additionalProperties: false }
@@ -132,6 +137,7 @@ const RUN = {
   cash_and_loans: E.cashAndDebt,
   cash_flow_statement: CFS.cashFlowTool,
   what_needs_attention: E.attention
+  // books_health_check runs in exec (it reads what the owner ignored).
 };
 
 // A conversation asks several questions of the same books; prepare them once per sync.
@@ -183,6 +189,7 @@ function allowed(name, input, perms) {
   if (name === 'cash_and_loans' || name === 'cash_flow_statement' || name === 'borrowing_history') return can('view_cash');
   if (name === 'money_owed') return /pay/i.test((input && input.direction) || '') ? can('view_payables') : can('view_receivables');
   if (name === 'customer_or_vendor') return can('view_receivables') || can('view_payables');
+  if (name === 'books_health_check') return can('view_cash') || can('view_receivables') || can('view_payables');   // filtered to their areas
   return can('view_cash') && can('view_receivables') && can('view_payables');
 }
 
@@ -199,6 +206,7 @@ async function exec(name, input, userId, perms) {
     if (!ctx) return { connected: false, note: 'No books are connected for this business (Tally, Zoho Books or Odoo), so there are no books to read. Connect one under Organisations and sources.' };
     if (!ctx.rows.length) return { connected: true, note: ctx.source === 'tally' ? 'Tally is connected but no entries have synced yet. Is the Tally PC on with the Margyn agent running?' : ctx.source_name + ' is connected but no entries have synced yet.' };
     if (name === 'borrowing_history') return CFS.borrowingTool(ctx, input || {}, await borrowLimits(userId));
+    if (name === 'books_health_check') { const BH = require('./booksHealth'); return BH.answer(ctx, (await BH.load(userId)).rows, perms); }
     return RUN[name](ctx, input || {});
   } catch (e) {
     console.error('[booksTools] ' + name + ' failed:', e.message);
@@ -223,6 +231,7 @@ const STEP_LABELS = {
   cash_flow_statement: 'Built the cash flow statement from your entries',
   borrowing_history: 'Traced your overdraft and loans day by day',
   what_needs_attention: 'Checked what needs your attention',
+  books_health_check: 'Ran the books health check',
   how_its_calculated: 'Looked up how that is worked out'
 };
 

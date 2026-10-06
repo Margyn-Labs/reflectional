@@ -128,6 +128,8 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET'  && action === 'summary')        return await handleSummary(req, res);
     if (req.method === 'GET'  && action === 'analytics')      return await handleAnalytics(req, res);
     if (req.method === 'GET'  && action === 'completeness')   return await handleCompleteness(req, res);
+    if (req.method === 'GET'  && action === 'books-check')    return await handleBooksCheck(req, res);
+    if (req.method === 'POST' && action === 'books-check-set') return await handleBooksCheckSet(req, res);
     if (req.method === 'POST' && action === 'classify')       return await handleClassify(req, res);
     if (req.method === 'POST' && action === 'revoke')         return await handleRevoke(req, res);
   } catch (err) {
@@ -197,7 +199,14 @@ async function handleSummary(req, res) {
       const todayYmd = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
       const F = await pagedAll('tally_vouchers', `select=date,is_cancelled,entries&install_id=in.${inList}&date=gt.${todayYmd}&order=date.asc,tally_guid.asc`, 2000);
       if (F.rows.length) {
-        ledgers = asOfToday(ledgers, F.rows, Date.now()).ledgers;
+        // This read has no opening balances or past entries, so it can't run asOfToday's tie-out guard itself: it
+        // follows the decision the last books check made on the full books (books_health 'run:last').
+        let decision;
+        try {
+          const run = await selectRows('books_health', `select=data&user_id=eq.${user.id}&key=eq.run:last&limit=1`);
+          decision = run[0] && run[0].data && run[0].data.as_of_decision === 'kept' ? { decision: 'kept' } : undefined;
+        } catch (e) { /* table not there yet: the usual reading */ }
+        ledgers = asOfToday(ledgers, F.rows, Date.now(), undefined, decision).ledgers;
         vouchers = vouchers.filter((v) => !(String(v.date || '').replace(/-/g, '') > todayYmd));
       }
     } catch (e) { /* keep Tally's figures */ }
@@ -414,6 +423,91 @@ async function handleCompleteness(req, res) {
     console.error('[tally] completeness failed:', e.message);
     return json(res, 500, { error: 'completeness_failed' });
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* books-check — GET ?action=books-check[&refresh=1]                   */
+/* The daily books health check (api/_lib/booksHealth.js): what's wrong */
+/* in the books for the accountant to fix, open / fixed / ignored. Runs */
+/* each morning with Margyn Watch; here it runs again when the last     */
+/* check is over 20 hours old or the person taps "Check again".         */
+/* Works for Tally, Zoho Books and Odoo (the Books layer).              */
+/* ------------------------------------------------------------------ */
+const BOOKS_CHECK_STALE_MS = 20 * 3600000;
+async function handleBooksCheck(req, res) {
+  let user;
+  try { user = await getUserFromRequest(req); }
+  catch { return json(res, 500, { error: 'auth_check_failed' }); }
+  if (!user) return json(res, 401, { error: 'unauthorized' });
+  const BH = require('./_lib/booksHealth');
+  const perms = user.member ? user.member.permissions : null;
+  try {
+    let st = await BH.load(user.id);
+    const runOf = (rows) => rows.find((r) => r.key === 'run:last') || null;
+    let run = runOf(st.rows);
+    const stale = !run || !run.last_seen || Date.now() - Date.parse(run.last_seen) > BOOKS_CHECK_STALE_MS;
+    const refresh = (req.query && req.query.refresh === '1') || stale || !st.ready;
+    let items = null, live = null;
+    if (refresh) {
+      const { ctx } = await require('./_lib/booksTools').contextFor(user.id);
+      if (!ctx) return json(res, 200, { connected: false });
+      if (!ctx.rows.length) return json(res, 200, { connected: true, empty: true, items: [] });
+      live = { company: ctx.company || null, source: ctx.source_name || 'Tally' };
+      const r = st.ready ? await BH.runForAccount(user.id, ctx) : null;
+      if (r && r.stored) { st = await BH.load(user.id); run = runOf(st.rows); }
+      else items = BH.merge(st.rows, BH.check(ctx));   // before the SQL, or a failed write: today's findings, unsaved
+    }
+    if (!items) items = st.rows.filter((r) => r.kind !== 'run');
+    const monthAgo = Date.now() - 30 * 86400000;
+    items = BH.filterFor(items, perms).filter((x) => x.status !== 'fixed' || (x.fixed_at && Date.parse(x.fixed_at) > monthAgo));
+    items.sort((a, b) => BH.ORDER.indexOf(a.kind) - BH.ORDER.indexOf(b.kind) || Number(b.amount || 0) - Number(a.amount || 0));
+    const company = (live && live.company) || (run && run.data && run.data.company) || null;
+    const open = items.filter((x) => x.status === 'open');
+    res.setHeader('Cache-Control', 'no-store');
+    return json(res, 200, {
+      connected: true, ready: st.ready, checked_at: run ? run.last_seen : new Date().toISOString(), company,
+      source: (live && live.source) || (run && run.data && run.data.source === 'zoho' ? 'Zoho Books' : run && run.data && run.data.source === 'odoo' ? 'Odoo' : 'Tally'),
+      counts: { open: open.length, for_accountant: open.filter((x) => x.for_accountant !== false).length, high: open.filter((x) => x.severity === 'high').length,
+        ignored: items.filter((x) => x.status === 'ignored').length, fixed: items.filter((x) => x.status === 'fixed').length },
+      groups: BH.GROUP_TITLE,
+      items: items.map((x) => ({ key: x.key, kind: x.kind, area: x.area, status: x.status, severity: x.severity, title: x.title, detail: x.detail, fix: x.fix,
+        party: x.party || null, ledger: x.ledger || null, amount: x.amount != null ? Number(x.amount) : null, for_accountant: x.for_accountant !== false,
+        first_seen: x.first_seen || null, last_seen: x.last_seen || null, fixed_at: x.fixed_at || null, ignored_by: x.ignored_by || null })),
+      // The list for the accountant: WhatsApp links have a length limit, the copy has everything.
+      accountant_text: BH.accountantText(items, { company, max: 3000 }),
+      accountant_text_full: BH.accountantText(items, { company, perKind: 100 })
+    });
+  } catch (e) {
+    console.error('[tally] books check failed:', e.message);
+    return json(res, 500, { error: 'books_check_failed' });
+  }
+}
+
+/* POST ?action=books-check-set  body { key, status: 'ignored' | 'open' }: the owner ignores an item, or brings it back. */
+async function handleBooksCheckSet(req, res) {
+  let user;
+  try { user = await getUserFromRequest(req); }
+  catch { return json(res, 500, { error: 'auth_check_failed' }); }
+  if (!user) return json(res, 401, { error: 'unauthorized' });
+  const body = parseBody(req);
+  const key = String(body.key || '').slice(0, 300), status = body.status;
+  if (!key || key.startsWith('run:') || !['ignored', 'open'].includes(status)) return json(res, 400, { error: 'key and status (ignored | open) required' });
+  let rows;
+  try { rows = await selectRows('books_health', `select=key,status,amount,title&user_id=eq.${user.id}&key=eq.${encodeURIComponent(key)}&limit=1`); }
+  catch (e) { return json(res, 409, { error: 'not_ready', note: 'Run the books health SQL (2026-10-07-books-health.sql) first.' }); }
+  const row = rows[0];
+  if (!row) return json(res, 404, { error: 'not_found' });
+  const who = user.member ? (user.member.name || user.email) : user.email;
+  const patch = status === 'ignored'
+    ? { status: 'ignored', ignored_at: new Date().toISOString(), ignored_amount: row.amount, ignored_by: who || null }
+    : { status: 'open', ignored_at: null, ignored_amount: null, ignored_by: null };
+  try { await updateRows('books_health', `user_id=eq.${user.id}&key=eq.${encodeURIComponent(key)}`, patch); }
+  catch (e) { return json(res, 500, { error: 'update_failed' }); }
+  // Who ignored what goes in the Audit log, like other changes to how the books are read.
+  try { await insertRows('ledger_events', [{ user_id: user.id, entity_type: 'books check', event: 'updated', party_name: String(row.title || key).slice(0, 200), source: 'margyn',
+    note: status === 'ignored' ? 'Ignored in the books health check' : 'Brought back into the books health check', actor_id: user.auth_id || user.id, actor_name: who || null, channel: 'app' }]); }
+  catch (e) { /* the audit columns may not exist yet; the change itself stands */ }
+  return json(res, 200, { key, status });
 }
 
 /* ------------------------------------------------------------------ */

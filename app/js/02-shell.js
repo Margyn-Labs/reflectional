@@ -358,6 +358,8 @@ async function refreshAll(){
   }
   // The books' analytics (19i-margin.js) carry day-by-day cash: saved readings take it when it arrives.
   if((typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected)) && typeof mgLoadMargin === 'function' && !mgMar) mgLoadMargin();
+  // The daily books health check (19k-books-health.js): Home's "Needs you" counts what the accountant should fix.
+  if(typeof mgBooksConnected === 'function' && mgBooksConnected() && typeof mgLoadBooksHealth === 'function') mgLoadBooksHealth();
   // The reconciled receivables / payables position, computed on the server
   // over every open row (19-pages.js). Falls back to the local model if slow.
   // Wait at most 4 s: a cold read of a big book (suppliers rebuilt from every entry) takes longer, and the

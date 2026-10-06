@@ -94,4 +94,39 @@ function tieReceivables(ctx) {
   return { bills: out.concat(extra), summary };
 }
 
-module.exports = { tieReceivables };
+/**
+ * Per party, Tally's open bills against the ledger balance, for the parties that don't tie (the books health check
+ * and the completeness panel). direction 'receivable' (customers) or 'payable' (suppliers). Reads the bills as Tally
+ * lists them (ctx.billsAsInTally), not the tied-out ones. Same tolerance as tieReceivables: within ₹1 or 1% ties.
+ * Returns { tied, gaps: [{ key, party, billed, ledger, diff (billed − ledger), bills, oldest_days }] } biggest first.
+ */
+function partyGaps(ctx, direction) {
+  const pay = direction === 'payable';
+  const todayMs = (ctx.today instanceof Date ? ctx.today : new Date(ctx.today)).getTime();
+  const bal = CF.partyBalancesToday(ctx);
+  const by = new Map();
+  for (const b of ctx.billsAsInTally || ctx.bills || []) {
+    if ((b.direction === 'payable') !== pay || b.advance) continue;
+    const k = keyOf(b.party_name);
+    const g = by.get(k) || { billed: 0, bills: 0, oldest: null };
+    g.billed += Math.abs(num(b.closing_balance)); g.bills++;
+    const ms = dayMs(b.bill_date);
+    if (Number.isFinite(ms) && (g.oldest == null || ms < g.oldest)) g.oldest = ms;
+    by.set(k, g);
+  }
+  let tied = 0;
+  const gaps = [];
+  for (const [k, p] of bal) {
+    if (p.bucket !== (pay ? 'creditor' : 'debtor') || p.balance == null) continue;
+    const owed = Math.max(0, pay ? -p.balance : p.balance);
+    const g = by.get(k) || { billed: 0, bills: 0, oldest: null };
+    if (owed < 1 && g.billed < 1) continue;
+    if (Math.abs(g.billed - owed) <= Math.max(1, 0.01 * Math.max(owed, g.billed))) { tied++; continue; }
+    gaps.push({ key: k, party: p.name, billed: Math.round(g.billed), ledger: Math.round(owed), diff: Math.round(g.billed - owed), bills: g.bills,
+      oldest_days: g.oldest == null ? null : Math.max(0, Math.round((todayMs - g.oldest) / DAY)) });
+  }
+  gaps.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  return { tied, gaps };
+}
+
+module.exports = { tieReceivables, partyGaps };

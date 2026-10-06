@@ -168,7 +168,7 @@ function prepare(book, opts) {
   const o = opts || {};
   const now = o.now ? new Date(o.now) : new Date();
   // The books as of today: entries dated later (EMIs entered in advance) wait for their date (tallyAnalytics.asOfToday).
-  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now, book.balance_convention);
+  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now, book.balance_convention, o.asOfDecision ? { decision: o.asOfDecision } : undefined);
   book = Object.assign({}, book, { ledgers: asOf.ledgers, vouchers: asOf.vouchers });
   const ledgers = A.dedupe(book.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
@@ -256,6 +256,8 @@ function prepare(book, opts) {
     coverage: { from: first, to: last },
     company: book.company || null, lastSync: book.lastSync || null,
     future: asOf.future,
+    // Did Tally's balances already stop at today? (tallyAnalytics.asOfToday's tie-out guard; books health reads it)
+    asOfGuard: asOf.guard,
     avgMonthlySales,
     // What counts as "worth mentioning" scales with the business: 0.5% of a month's sales, at least ₹50,000.
     material: Math.max(50000, 0.005 * avgMonthlySales)
