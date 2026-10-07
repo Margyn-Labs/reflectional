@@ -204,40 +204,44 @@ function headlineParams(headline, { company, firstName }, max) {
   return [String(firstName || shortCompany(company)).slice(0, 60), String(headline || '').replace(/\s+/g, ' ').slice(0, max || 300)];
 }
 /**
- * The numbers in one template (WHATSAPP_TEMPLATE_UPDATE, Utility, 8 Oct 2026): the update's own sections, one per
- * slot, so a closed chat still gets the figures in one message. WhatsApp's limits: no new lines inside a value and
- * the whole body at most 1024 characters, so each section is one line (points by title only, Why now / Backing /
- * Next left for the reply) and clipped. Body:
- *   Hi {{1}}, your Margyn account update, {{2}}.
- *   {{3}}  {{4}}  {{5}}  {{6}}   (one per paragraph)
- *   Reply here for the full update or any question. Reply STOP ALERTS to pause.
- * Sections that need the owner always make it; the rest in the update's own order, four at most.
+ * The numbers in one template (WHATSAPP_TEMPLATE_UPDATE, Utility, 8 Oct 2026), so a closed chat still gets the
+ * figures in one message. Meta keeps a template Utility when it reads as an account alert (balance updates are its
+ * own example) and every value sits behind fixed words saying what it is; a body that is mostly bare {{n}} reads as
+ * an "empty container" and gets rejected or filed as Marketing. So four fixed labels, each filled from the update's
+ * own sections. WhatsApp: no new lines inside a value, whole body at most 1024 characters. Body
+ * (WHATSAPP-TEMPLATES-MASTER.md §E):
+ *   Hi {{1}}, this is your scheduled Margyn account update ({{2}}), worked out from the books you connected.
+ *   Balances: {{3}} / Money in and out: {{4}} / Coming up: {{5}} / Needs your attention: {{6}}
+ *   Reply to this message for the full update or to ask about any figure. Reply STOP ALERTS to stop these updates.
+ * Points go by title only; Why now / Backing / Next come with the full update on any reply.
  */
 const UPDATE_SLOT_NAMES = { morning: 'morning', evening: 'evening wrap', midday: '10:30', noon: '12:30', afternoon: '3 pm', late: '5 pm' };
-const NEEDS_RE = /need|needs|new thing|points/i;
+const UPDATE_BUCKETS = [
+  { re: /where you stand/i, empty: 'same as the last update' },
+  { re: /^(yesterday|today|since|last week|getting better)/i, empty: 'nothing new entered in your books yet' },
+  { re: /^(this week|tomorrow)/i, empty: 'in the full update' },
+  { re: /need|new thing|points|not moving/i, empty: 'nothing new since the last update' }
+];
 function updateParams(msg, { company, firstName, slot, now }) {
   const clip = (t, n) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length <= n ? x : x.slice(0, n - 1).replace(/[\s,;:.]+\S*$/, '') + '…'; };
-  const paras = String(msg.text || '').split(/\n{2,}/);
   const secs = [];
-  for (const p of paras) {
+  for (const p of String(msg.text || '').split(/\n{2,}/)) {
     const lines = p.split('\n').map((l) => l.trim()).filter(Boolean);
     if (!lines.length || /STOP ALERTS/.test(p) || /^Preview for/i.test(lines[0])) continue;
-    const h = /^\*(.+)\*$/.exec(lines[0]);
+    const h = /^\*(.+?):?\*$/.exec(lines[0]);
     if (h) secs.push({ name: h[1], lines: lines.slice(1) });
     else if (secs.length) secs[secs.length - 1].lines.push(...lines);   // a point block under its header
   }
-  for (const sec of secs) sec.lines = sec.lines.filter((l) => !/^(Why now|Backing|Next):/i.test(l));
-  const needs = secs.filter((x) => NEEDS_RE.test(x.name));
-  const rest = secs.filter((x) => !NEEDS_RE.test(x.name)).slice(0, Math.max(0, 4 - Math.min(needs.length, 4)));
-  const keep = new Set(needs.slice(0, 4).concat(rest));
-  const chosen = secs.filter((x) => keep.has(x));
+  const joined = (lines) => lines.filter((l) => !/^(Why now|Backing|Next):/i.test(l)).map((l) => l.replace(/[.\s]+$/, '')).join('; ');
   const day = new Date(new Date(now || Date.now()).getTime() + 5.5 * 3600000);
-  const when = `${UPDATE_SLOT_NAMES[slot] || 'update'} ${day.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][day.getUTCMonth()]}`;
-  const fill = ['Nothing else to flag today.', 'Ask me anything about your books.', 'Everything is also in the Margyn app.', 'More in the app.'];
+  const when = `${UPDATE_SLOT_NAMES[slot] || 'update'}, ${day.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][day.getUTCMonth()]}`;
   const out = [clip(firstName || shortCompany(company), 30), when];
-  for (let i = 0; i < 4; i++) {
-    const sec = chosen[i];
-    out.push(sec ? clip(sec.name + ': ' + (sec.lines.length ? sec.lines.map((l) => l.replace(/[.\s]+$/, '')).join('; ') + '.' : '-'), 185) : fill[i]);
+  for (const b of UPDATE_BUCKETS) {
+    const mine = secs.filter((x) => b.re.test(x.name) && x.lines.length);
+    // One section fills the label as is; several say which is which ("Yesterday: …; Today: …").
+    const body = mine.length === 1 && !/^(yesterday|today|since|last week|getting better|tomorrow)/i.test(mine[0].name) ? joined(mine[0].lines)
+      : mine.map((x) => x.name + ': ' + joined(x.lines)).join('; ');
+    out.push(body ? clip(body + '.', 165) : b.empty);
   }
   return out;
 }
