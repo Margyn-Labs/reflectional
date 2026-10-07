@@ -151,14 +151,14 @@ const W = require('../margynWatch');
   r = await W.watchAccount(U, { slot: 'morning' });
   const t3 = JSON.parse(sent[sent.length - 1].template);
   check('uses the numbers template first', r.sent && t3.id === 'tpl-3' && t3.params.length === 6, t3);
-  check('values carry figures, one line each, body fits 1024', t3.params.every((x) => x && !/\n/.test(x)) && /₹/.test(t3.params.slice(2).join(' ')) && t3.params.join('').length + 180 <= 1024, t3.params);
-  check('greets by name, says which update', t3.params[0] === 'Mihir' && /^morning \d+ [A-Z][a-z]{2}$/.test(t3.params[1]), t3.params);
-  check('what needs him is in it', t3.params.slice(2).some((x) => /need/i.test(x)), t3.params);
+  check('values carry figures, one line each, body fits 1024', t3.params.every((x) => x && !/\n/.test(x)) && /₹/.test(t3.params.slice(2).join(' ')) && t3.params.join('').length + 330 <= 1024, t3.params);
+  check('greets by name, says which update', t3.params[0] === 'Mihir' && /^morning, \d+ [A-Z][a-z]{2}$/.test(t3.params[1]), t3.params);
+  check('what needs him is in it, under its own label', /late|days/i.test(t3.params[5]) && /₹/.test(t3.params[2]), t3.params);
   check('full update still follows a reply', DB.watch_pending.length === 1 && /Good morning Mihir/.test(DB.watch_pending[0].text));
   delete process.env.WHATSAPP_TEMPLATE_UPDATE;
   delete process.env.WHATSAPP_TEMPLATE_ALERT_V2;
   const sp = W.updateParams({ text: 'Good morning.\n\n*Where you stand*\nBank ₹5 L.\n\n*2 things that need you*\n\n1. A owes ₹1 L\nWhy now: x\nBacking: y\n\n2. B owes ₹2 L\nNext: z\n\nReply 1 or 2. Reply STOP ALERTS to pause these.' }, { company: 'Acme', firstName: null, slot: 'evening' });
-  check('points by title only, foot dropped, short updates padded', sp[2] === 'Where you stand: Bank ₹5 L.' && sp[3] === '2 things that need you: 1. A owes ₹1 L; 2. B owes ₹2 L.' && sp[4] && sp[5] && !/STOP/.test(sp.join(' ')), sp);
+  check('each section under its label, points by title only, foot dropped, gaps said plainly', sp[2] === 'Bank ₹5 L.' && sp[3] === 'nothing new entered in your books yet' && sp[4] === 'in the full update' && sp[5] === '1. A owes ₹1 L; 2. B owes ₹2 L.' && !/STOP/.test(sp.join(' ')), sp);
 
   console.log('preview today\'s update (app button)');
   DB.margyn_signals = [];
