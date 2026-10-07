@@ -18,6 +18,8 @@ const { selectRows, insertRows, updateRows } = require('./supabaseRest');
 const RANK = { queued: 0, accepted: 1, sent: 2, delivered: 3, read: 4 };
 const MAP = { enqueued: 'accepted', submitted: 'accepted', sent: 'sent', delivered: 'delivered', read: 'read', failed: 'failed', undelivered: 'failed' };
 const digits = (p) => String(p || '').replace(/[^\d]/g, '');
+/** 131049 in words the owner can act on (the fix on our side is a Utility template, which is not theirs to know). */
+const WA_PAUSED = 'WhatsApp paused it: it limits how many business template messages one number gets. Send Margyn any message on WhatsApp and the update comes straight through.';
 const clean = (a) => [...new Set(a.filter(Boolean).map(String))];
 
 /** After a send Gupshup accepted. kind: 'watch' | 'chase'. keys: the Margyn points it carried. */
@@ -88,7 +90,9 @@ function parseStatusEvents(body) {
 function explain(code, reason) {
   const c = String(code || '');
   const known = {
-    '131049': 'WhatsApp held it back: this number has had a lot of business marketing messages recently. A Utility template avoids this.',
+    // Meta's cap on marketing-category templates per person. Chat messages aren't capped, so a reply from them
+    // brings it through (onWatchFailed parks it in watch_pending).
+    '131049': WA_PAUSED,
     '131026': 'This number can’t receive it (not on WhatsApp, or an old WhatsApp version).',
     '131047': 'More than 24 hours since they last messaged, and it wasn’t sent as an approved template.',
     '132001': 'The template doesn’t exist or isn’t approved yet in this language.',
@@ -148,18 +152,38 @@ async function onWatchFailed(row, deps) {
     await updateRows('margyn_signals', `user_id=eq.${row.user_id}&key=eq.${encodeURIComponent(key)}&sent_to=eq.${row.sent_to || 'owner'}`,
       { status: 'open', last_sent_at: null, sent_via: null, sent_to: null }).catch(() => {});
   }
+  // Park the update so it goes out as a chat message (not capped, no template) the moment they message Margyn.
+  await parkFailed(row).catch(() => {});
   const team = process.env.MARGYN_WATCH_PREVIEW_PHONE;
   const send = deps.sendText || require('./whatsappBsp').sendText;
   if (team && digits(team) !== digits(row.to_phone)) {
-    await send({ to: team, text: `Margyn's update to …${String(row.to_phone || '').slice(-4)} didn't arrive. ${row.error}` }).catch(() => {});
+    const ours = String(row.error_code) === '131049' ? ' (131049: the alert template is Marketing category; it needs a Utility one, see WHATSAPP-TEMPLATES-MASTER.md §E.)' : '';
+    await send({ to: team, text: `Margyn's update to …${String(row.to_phone || '').slice(-4)} didn't arrive. ${row.error}${ours}` }).catch(() => {});
   }
   try { await require('./track').track(row.user_id, 'watch_failed', { code: row.error_code || null, to: row.sent_to }); } catch (e) { /* counters only */ }
 }
 
+/**
+ * The failed update's text, from the day's run log (margyn_signals watch_run rows carry message_id + text), into
+ * watch_pending for that phone. Never replaces a newer update already waiting.
+ */
+async function parkFailed(row) {
+  if (!row.user_id || !row.to_phone) return false;
+  const runs = await selectRows('margyn_signals', `select=detail&user_id=eq.${row.user_id}&kind=eq.watch_run&order=last_seen.desc&limit=12`).catch(() => []);
+  let run = null;
+  for (const r of runs) { try { const d = JSON.parse(r.detail); if (d && d.message_id && String(d.message_id) === String(row.message_id)) { run = d; break; } } catch (e) { /* skip */ } }
+  if (!run || !run.text) return false;
+  const phone = digits(row.to_phone);
+  const cur = await selectRows('watch_pending', `select=text,created_at&phone=eq.${phone}&limit=1`).catch(() => []);
+  if (cur[0] && cur[0].text && Date.parse(cur[0].created_at) > Date.parse(run.at || 0)) return false;
+  await insertRows('watch_pending', [{ phone, user_id: row.user_id, text: run.text, created_at: run.at || new Date().toISOString() }], { onConflict: 'phone', merge: true });
+  return true;
+}
+
 /** Latest deliveries for an account (the hub shows these). */
 async function recent(userId, limit) {
-  try { return await selectRows('wa_deliveries', `select=message_id,kind,sent_to,signal_keys,status,error,sent_at,delivered_at,read_at,failed_at&user_id=eq.${userId}&kind=eq.watch&order=sent_at.desc&limit=${limit || 20}`); }
+  try { return await selectRows('wa_deliveries', `select=message_id,kind,sent_to,signal_keys,status,error,error_code,sent_at,delivered_at,read_at,failed_at&user_id=eq.${userId}&kind=eq.watch&order=sent_at.desc&limit=${limit || 20}`); }
   catch (e) { return null; }
 }
 
-module.exports = { record, parseStatusEvents, apply, explain, recent, RANK };
+module.exports = { record, parseStatusEvents, apply, explain, recent, parkFailed, RANK, WA_PAUSED };

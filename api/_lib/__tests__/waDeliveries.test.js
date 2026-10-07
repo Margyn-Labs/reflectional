@@ -38,7 +38,7 @@ const texts = [];
   const meta = D.parseStatusEvents({ entry: [{ changes: [{ value: { statuses: [{ id: 'wamid.A', gs_id: 'gs-1', status: 'read', timestamp: '1759550000' }] } }] }] });
   check('Meta shape', meta[0].status === 'read' && meta[0].ids.includes('gs-1'), meta);
   check('a user message is not a report', D.parseStatusEvents({ type: 'message', payload: { type: 'text' } }).length === 0);
-  check('marketing limit explained', /marketing/.test(D.explain('131049')));
+  check('marketing limit explained as something the owner can do', /paused/.test(D.explain('131049')) && /Send Margyn any message/.test(D.explain('131049')) && !/Utility/.test(D.explain('131049')));
 
   console.log('tracking one update');
   await D.record({ messageId: 'gs-1', userId: 'u1', kind: 'watch', to: '+91 93240 00000', sentTo: 'owner', keys: ['overdue_total'] });
@@ -54,9 +54,11 @@ const texts = [];
 
   console.log('an update that never arrives');
   await D.record({ messageId: 'gs-2', userId: 'u1', kind: 'watch', to: '919324000000', sentTo: 'owner', keys: ['overdue_total'] });
+  DB.margyn_signals.push({ user_id: 'u1', key: 'run:2026-10-08:midday', kind: 'watch_run', detail: JSON.stringify({ slot: 'midday', at: new Date().toISOString(), message_id: 'gs-2', text: 'Since 7:30 am: ₹2 L came in.' }) });
   await D.apply(v2f, { sendText: async (m) => { texts.push(m); return { ok: true }; } });
   const row = DB.wa_deliveries.find((r) => r.message_id === 'gs-2');
-  check('failed with a reason in words', row.status === 'failed' && /marketing/.test(row.error), row);
+  check('failed with a reason in words', row.status === 'failed' && /paused/.test(row.error), row);
+  check('the update waits for their next message (a chat message isn\'t capped)', (DB.watch_pending || []).length === 1 && DB.watch_pending[0].phone === '919324000000' && /₹2 L came in/.test(DB.watch_pending[0].text), DB.watch_pending);
   check('its points go back to not sent, so the next run tries again', DB.margyn_signals[0].status === 'open' && DB.margyn_signals[0].last_sent_at === null, DB.margyn_signals[0]);
   check('the Margyn team hears about it', texts.length === 1 && texts[0].to === '919999900000' && /didn't arrive/.test(texts[0].text), texts);
 

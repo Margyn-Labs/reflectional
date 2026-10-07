@@ -39,6 +39,7 @@ function plainError(raw) {
   if (!s) return null;
   if (/not configured|has no configured id/i.test(s)) return 'The message template isn’t set up on the server yet.';
   if (/template/i.test(s) && /(reject|not approved|pending|disabled|paused|does not exist|not found)/i.test(s)) return 'WhatsApp hasn’t approved this message template.';
+  if (/131049|marketing messages/i.test(s)) return 'WhatsApp paused it: it limits how many business template messages one number gets. Send Margyn any message on WhatsApp and the update comes straight through.';
   if (/131026|not.*(whatsapp|opted)|undeliverable/i.test(s)) return 'That number can’t receive WhatsApp messages.';
   if (/131047|24.?hour|re-?engage/i.test(s)) return 'Outside WhatsApp’s 24-hour window, and no approved template to open the chat.';
   if (/401|403|unauthori[sz]ed|forbidden|invalid.*(key|token)/i.test(s)) return 'The messaging provider rejected our credentials.';
@@ -122,7 +123,7 @@ function buildChannelHealth({ chases = [], targets = [], bellLogs = [], deliveri
       const pending = rows.filter((d) => !['delivered', 'read', 'failed'].includes(d.status)).length;
       channels.push({ ...j, status: watch.mode === 'off' ? 'not_set_up' : 'quiet', headline: watch.mode === 'off' ? 'Off' : 'Nothing delivered yet',
         detail: toOwner + (pending ? ` ${pending} sent, waiting for WhatsApp to confirm delivery.` : '') });
-    } else channels.push({ ...j, detail: toOwner + ' ' + j.detail });
+    } else channels.push({ ...j, detail: j.status === 'failing' ? j.detail : toOwner + ' ' + j.detail });
   }
 
   return { generated_at: iso(now), window_days: WINDOW_DAYS, channels, recovered: recovered(chases, targets, now),

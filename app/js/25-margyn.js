@@ -530,12 +530,18 @@ function mgrShowView(view, extra){
   const out = VX_TOOLS.show_view(Object.assign({ view }, extra || {}));
   if(out && out.shown === false) mgGo(view === 'cash' ? 'cash' : view);
 }
+/* "Margyn updates didn't reach your WhatsApp. <reason>." Plural labels, one full stop. */
+function mgChanFailText(c, name){
+  const verb = /s$/.test(c.label) ? ' aren’t' : ' isn’t';
+  const lead = c.key === 'margyn_updates' ? 'your Margyn updates didn’t reach WhatsApp. ' : c.label + verb + ' getting through. ';
+  return (name ? name + lead : lead.charAt(0).toUpperCase() + lead.slice(1)) + String(c.detail || '').trim().replace(/\.*$/, '.');
+}
 function mgrNudgeRules(){
   const out = [];
   const name = mgrName ? mgrName + ', ' : '';
   try {
     if(typeof mgChan !== 'undefined' && mgChan) (mgChan.channels || []).filter(c => c.status === 'failing').slice(0, 1).forEach(c => out.push({
-      key:'chan:' + c.label, text:name + c.label + ' isn’t delivering: ' + c.detail + '.',
+      key:'chan:' + c.label, text:mgChanFailText(c, name),
       acts:[{ label:'Show me', run:() => mgGo('channels') }] }));
   } catch(e){}
   ['zoho', 'odoo', 'shopify', 'tally', 'razorpay', 'cashfree'].forEach(k => {
