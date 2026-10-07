@@ -143,6 +143,23 @@ const W = require('../margynWatch');
   check('...and only once', !(await W.takePending('919324000000')));
   delete process.env.WHATSAPP_TEMPLATE_ALERT_V2;
 
+  console.log('the numbers in one template');
+  DB.margyn_signals = [];
+  DB.watch_pending = [];
+  process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-3';
+  process.env.WHATSAPP_TEMPLATE_ALERT_V2 = 'tpl-2';
+  r = await W.watchAccount(U, { slot: 'morning' });
+  const t3 = JSON.parse(sent[sent.length - 1].template);
+  check('uses the numbers template first', r.sent && t3.id === 'tpl-3' && t3.params.length === 6, t3);
+  check('values carry figures, one line each, body fits 1024', t3.params.every((x) => x && !/\n/.test(x)) && /₹/.test(t3.params.slice(2).join(' ')) && t3.params.join('').length + 180 <= 1024, t3.params);
+  check('greets by name, says which update', t3.params[0] === 'Mihir' && /^morning \d+ [A-Z][a-z]{2}$/.test(t3.params[1]), t3.params);
+  check('what needs him is in it', t3.params.slice(2).some((x) => /need/i.test(x)), t3.params);
+  check('full update still follows a reply', DB.watch_pending.length === 1 && /Good morning Mihir/.test(DB.watch_pending[0].text));
+  delete process.env.WHATSAPP_TEMPLATE_UPDATE;
+  delete process.env.WHATSAPP_TEMPLATE_ALERT_V2;
+  const sp = W.updateParams({ text: 'Good morning.\n\n*Where you stand*\nBank ₹5 L.\n\n*2 things that need you*\n\n1. A owes ₹1 L\nWhy now: x\nBacking: y\n\n2. B owes ₹2 L\nNext: z\n\nReply 1 or 2. Reply STOP ALERTS to pause these.' }, { company: 'Acme', firstName: null, slot: 'evening' });
+  check('points by title only, foot dropped, short updates padded', sp[2] === 'Where you stand: Bank ₹5 L.' && sp[3] === '2 things that need you: 1. A owes ₹1 L; 2. B owes ₹2 L.' && sp[4] && sp[5] && !/STOP/.test(sp.join(' ')), sp);
+
   console.log('preview today\'s update (app button)');
   DB.margyn_signals = [];
   const n0 = sent.length;

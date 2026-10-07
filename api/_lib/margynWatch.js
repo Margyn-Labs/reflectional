@@ -38,7 +38,8 @@
  *    outside it, an approved template carries it: WHATSAPP_TEMPLATE_ALERT_V2
  *    (a short "your update is ready" with a See details button; the full
  *    update waits in watch_pending and goes out the moment they reply) or
- *    the older WHATSAPP_TEMPLATE_ALERT (points run together on one line).
+ *    the older WHATSAPP_TEMPLATE_ALERT (points run together on one line). Tried first:
+ *    WHATSAPP_TEMPLATE_UPDATE (the update's figures, a section per line; see updateParams).
  *    With neither, nothing is sent and the app says why.
  *
  * Every finding seen is kept in margyn_signals (status open / sent / muted /
@@ -201,6 +202,44 @@ function templateParams(items, { company, firstName }) {
 /** Template parameters from a message's one-line headline (no new lines allowed in parameters). */
 function headlineParams(headline, { company, firstName }, max) {
   return [String(firstName || shortCompany(company)).slice(0, 60), String(headline || '').replace(/\s+/g, ' ').slice(0, max || 300)];
+}
+/**
+ * The numbers in one template (WHATSAPP_TEMPLATE_UPDATE, Utility, 8 Oct 2026): the update's own sections, one per
+ * slot, so a closed chat still gets the figures in one message. WhatsApp's limits: no new lines inside a value and
+ * the whole body at most 1024 characters, so each section is one line (points by title only, Why now / Backing /
+ * Next left for the reply) and clipped. Body:
+ *   Hi {{1}}, your Margyn account update, {{2}}.
+ *   {{3}}  {{4}}  {{5}}  {{6}}   (one per paragraph)
+ *   Reply here for the full update or any question. Reply STOP ALERTS to pause.
+ * Sections that need the owner always make it; the rest in the update's own order, four at most.
+ */
+const UPDATE_SLOT_NAMES = { morning: 'morning', evening: 'evening wrap', midday: '10:30', noon: '12:30', afternoon: '3 pm', late: '5 pm' };
+const NEEDS_RE = /need|needs|new thing|points/i;
+function updateParams(msg, { company, firstName, slot, now }) {
+  const clip = (t, n) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length <= n ? x : x.slice(0, n - 1).replace(/[\s,;:.]+\S*$/, '') + '…'; };
+  const paras = String(msg.text || '').split(/\n{2,}/);
+  const secs = [];
+  for (const p of paras) {
+    const lines = p.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length || /STOP ALERTS/.test(p) || /^Preview for/i.test(lines[0])) continue;
+    const h = /^\*(.+)\*$/.exec(lines[0]);
+    if (h) secs.push({ name: h[1], lines: lines.slice(1) });
+    else if (secs.length) secs[secs.length - 1].lines.push(...lines);   // a point block under its header
+  }
+  for (const sec of secs) sec.lines = sec.lines.filter((l) => !/^(Why now|Backing|Next):/i.test(l));
+  const needs = secs.filter((x) => NEEDS_RE.test(x.name));
+  const rest = secs.filter((x) => !NEEDS_RE.test(x.name)).slice(0, Math.max(0, 4 - Math.min(needs.length, 4)));
+  const keep = new Set(needs.slice(0, 4).concat(rest));
+  const chosen = secs.filter((x) => keep.has(x));
+  const day = new Date(new Date(now || Date.now()).getTime() + 5.5 * 3600000);
+  const when = `${UPDATE_SLOT_NAMES[slot] || 'update'} ${day.getUTCDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][day.getUTCMonth()]}`;
+  const fill = ['Nothing else to flag today.', 'Ask me anything about your books.', 'Everything is also in the Margyn app.', 'More in the app.'];
+  const out = [clip(firstName || shortCompany(company), 30), when];
+  for (let i = 0; i < 4; i++) {
+    const sec = chosen[i];
+    out.push(sec ? clip(sec.name + ': ' + (sec.lines.length ? sec.lines.map((l) => l.replace(/[.\s]+$/, '')).join('; ') + '.' : '-'), 185) : fill[i]);
+  }
+  return out;
 }
 /** Short template: name and a one-line headline; the full update follows when they tap See details. */
 function teaserParams(items, { company, firstName }) {
@@ -409,6 +448,14 @@ async function watchAccount(userId, opts) {
         sent = await bsp.sendText({ to, text });
         if (sent && sent.ok) sentInfo = { via: 'session', to: preview ? 'preview' : 'owner' };
       }
+      if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_UPDATE) {
+        // The figures themselves, in one message; the full update (Why now, Backing) follows any reply.
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: updateParams({ text }, { company, firstName, slot, now: o.now }) });
+        if (sent && sent.ok) {
+          sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
+          await savePending(to, userId, text);
+        }
+      }
       if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_ALERT_V2) {
         sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT_V2, params: headlineParams(msg.headline, { company, firstName }) });
         if (sent && sent.ok) {
@@ -546,7 +593,7 @@ async function signals(userId) {
     // So the switch can say exactly whose phone "On" texts, e.g. "Mihir's WhatsApp (…4000)".
     owner_name: firstNameOf(p), owner_phone_end: p.whatsapp_phone ? digits(p.whatsapp_phone).slice(-4) : null,
     preview_available: !!process.env.MARGYN_WATCH_PREVIEW_PHONE,
-    template_ready: !!(process.env.WHATSAPP_TEMPLATE_ALERT || process.env.WHATSAPP_TEMPLATE_ALERT_V2),
+    template_ready: !!(process.env.WHATSAPP_TEMPLATE_UPDATE || process.env.WHATSAPP_TEMPLATE_ALERT || process.env.WHATSAPP_TEMPLATE_ALERT_V2),
     // Whether each update actually arrived (null = delivery tracking not set up yet).
     deliveries: await deliveries.recent(userId, 60),
     // Every scheduled run in the last 8 days: sent, stayed quiet (and why), or couldn't go.
@@ -555,4 +602,4 @@ async function signals(userId) {
   };
 }
 
-module.exports = { runs, logRun, headlineParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
