@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-08-wa-paused', date:'8 Oct 2026', title:'When WhatsApp holds back an update',
+    items:[
+      { t:'Your update still reaches you', what:'WhatsApp sometimes pauses business messages to a number that has had many lately. When it pauses one of Margyn’s updates, Margyn now keeps it ready and sends it the moment you message Margyn on WhatsApp.',
+        how:'Got a note that an update didn’t arrive? Send Margyn any message on WhatsApp (even “hi”) and the update comes straight through. Every update is also under <b>Conversations</b> → <b>Today’s updates</b>.' }
+    ]
+  },
+  {
     id:'2026-10-07-books-health', date:'7 Oct 2026', title:'A books health check, every morning',
     items:[
       { t:'What your accountant should fix', what:'Every morning Margyn checks your books for the things that make them wrong: interest you paid filed as income, a month whose costs aren’t entered yet, an expense filed under Sales, cash in hand below zero, bills still open that were already paid, balances with no bill behind them, suppliers not kept bill by bill, money owed for over a year, and entries dated after today. Each one says what to fix and since when. Once it’s fixed in your books, it closes by itself.',

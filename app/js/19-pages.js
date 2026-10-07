@@ -531,7 +531,7 @@ function mgRenderAudit(){
 /* ---------- notifications (source health + waiting items) ---------- */
 function mgNotifications(){
   const out = [];
-  try { if(typeof mgChan !== 'undefined' && mgChan) mgChan.channels.filter(c => c.status === 'failing').forEach(c => out.push({ t:c.label + ' isn’t delivering: ' + c.detail, go:'channel-health', warn:true })); } catch(e){}
+  try { if(typeof mgChan !== 'undefined' && mgChan) mgChan.channels.filter(c => c.status === 'failing').forEach(c => out.push({ t:(typeof mgChanFailText === 'function' ? mgChanFailText(c) : c.label + ': ' + c.detail), go:'channel-health', warn:true })); } catch(e){}
   ['razorpay', 'cashfree', 'zoho', 'tally', 'odoo'].forEach(k => {
     const h = mgSourceHealth(k);
     if(h.on && h.warn) out.push({ t:(MG_SRC_NAME[k] || MG_SRC_LABEL[k] || k) + ': ' + h.text, go:'sources', warn:true });

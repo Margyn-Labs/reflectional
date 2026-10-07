@@ -90,6 +90,11 @@ function mgHubOwnerLabel(w){
   const who = w.owner_name ? w.owner_name + '’s' : 'the owner’s';
   return who + ' WhatsApp' + (w.owner_phone_end ? ' (…' + w.owner_phone_end + ')' : '');
 }
+/* WhatsApp's reason, in owner words. 131049 rows stored before 8 Oct carry the old "Utility template" wording. */
+function mgHubWaError(d){
+  if(String(d.error_code) === '131049' || /marketing messages/i.test(d.error || '')) return 'WhatsApp paused it: it limits how many business template messages one number gets. Send Margyn any message on WhatsApp and the update comes straight through.';
+  return d.error || 'WhatsApp didn’t say why';
+}
 /* Did it arrive? From WhatsApp's own delivery report, not from "Gupshup accepted it". */
 function mgHubTime(iso){ return iso ? new Date(iso).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'numeric', minute:'2-digit' }) : ''; }
 function mgHubDeliveryText(d, w){
@@ -97,7 +102,7 @@ function mgHubDeliveryText(d, w){
   const who = d.sent_to === 'owner' ? mgHubOwnerLabel(w) : 'the Margyn test phone';
   if(d.status === 'read') return { cls:'pos', text:'Read on ' + who + ' · ' + mgHubTime(d.read_at) };
   if(d.status === 'delivered') return { cls:'pos', text:'Delivered to ' + who + ' · ' + mgHubTime(d.delivered_at) };
-  if(d.status === 'failed') return { cls:'neg', text:'Didn’t arrive on ' + who + ': ' + (d.error || 'WhatsApp didn’t say why') };
+  if(d.status === 'failed') return { cls:'neg', short:'Didn’t arrive on WhatsApp', text:'Didn’t arrive on ' + who + ': ' + mgHubWaError(d) };
   const mins = (Date.now() - Date.parse(d.sent_at)) / 60000;
   // "sent" = WhatsApp's servers have it but the phone hasn't taken it (usually off or offline); anything else = no report at all.
   if(mins > 30 && d.status === 'sent') return { cls:'warn', text:'With WhatsApp, not on ' + who + ' yet: the phone may be off or offline (sent ' + mgHubTime(d.sent_at) + ')' };
@@ -114,7 +119,7 @@ function mgHubRunRow(r, w){
     const st = d && d.status, test = r.to === 'preview' ? ' (test phone)' : '';
     bdg = st === 'read' ? { cls:'pos', text:'Read' + test } : st === 'delivered' ? { cls:'pos', text:'Delivered' + test }
       : st === 'failed' ? { cls:'neg', text:'Didn’t arrive' + test } : { cls:'', text:'Sent' + test };
-    if(st === 'failed' && d.error) r = Object.assign({}, r, { headline: 'WhatsApp said: ' + d.error });
+    if(st === 'failed') r = Object.assign({}, r, { headline: 'WhatsApp said: ' + mgHubWaError(d) });
   }
   else if(r.outcome === 'quiet') bdg = { cls:'', text:'Stayed quiet' };
   else if(r.outcome === 'off') bdg = { cls:'', text:'Updates off' };
@@ -184,7 +189,7 @@ function mgHubNoticed(){
     const when = s.last_sent_at ? fmtDay(s.last_sent_at) : null;
     const dv = mgHubDeliveryText(mgHubDeliveryFor(x.key), mgHub.watch || {});
     const badge = s.status === 'muted' ? '<span class="mg-bdg">Muted</span>'
-      : dv ? '<span class="mg-bdg ' + dv.cls + '">' + escapeHtml(dv.text) + '</span>'
+      : dv ? '<span class="mg-bdg ' + dv.cls + '" title="' + escapeHtml(dv.text) + '">' + escapeHtml(dv.short || dv.text) + '</span>'
       : when ? '<span class="mg-bdg">Sent ' + escapeHtml(when) + (s.sent_to === 'preview' ? ' to the test phone' : '') + ', not confirmed</span>'
       : '<span class="mg-bdg">In the app</span>';
     const sev = x.severity === 'high' ? 'neg' : x.severity === 'medium' ? 'warn' : '';
