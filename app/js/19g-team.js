@@ -105,7 +105,8 @@ function mgActorName(){
 
 /* ---------- who is this, and which account are they in? (from routeFor) ---------- */
 async function mgResolveAccount(user){
-  mgActor = null; mgMe = null; mgJoinNotice = null;
+  // The saved screen (30-boot-cache.js) may be on display: keep its person and access until the answer is in.
+  mgJoinNotice = null;
   const code = mgPendingJoin();
   let joined = null;
   if(code){
@@ -113,7 +114,9 @@ async function mgResolveAccount(user){
     catch(e){ mgJoinNotice = { ok:false, text:e.message }; }
     mgClearJoin();
   }
-  try { mgMe = await mgTeamApi('team-whoami'); } catch(e){ mgMe = null; }   // no server: the login is its own account, as before
+  let me = null;
+  try { me = await mgTeamApi('team-whoami'); } catch(e){ me = null; }   // no server: the login is its own account, as before
+  mgMe = me;
   const mems = (mgMe && mgMe.memberships) || [];
   const own = mgMe && mgMe.own_account;
   const saved = lsGet(MG_ACCT_LS, '');

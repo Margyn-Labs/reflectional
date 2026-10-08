@@ -33,6 +33,7 @@ async function mgLoadMargin(force){
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
     // The last sync's answer, served at once: fetch this sync's straight after and redraw.
     if(mgMar && mgMar.stale) setTimeout(() => mgLoadMargin(true), 0);
+    else if(!mgMarCompany && typeof mgBcSaveSoon === 'function') mgBcSaveSoon();
     // Saved readings now carry the books' cash for their day: re-draw the page that shows them.
     const moved = mgApplyCashHistory(typeof snapshots !== 'undefined' ? snapshots : null);
     if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView !== 'margin' && (moved || ['home', 'cash', 'cashflow', 'reports', 'cfopack'].includes(mgCurrentView))) mgRenderOwn(mgCurrentView);
