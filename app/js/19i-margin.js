@@ -25,14 +25,15 @@ async function mgLoadMargin(force){
     if(!session) return;
     // A full year of a busy company's books takes ~25 s to read (Care Hygiene, 19k vouchers): wait as long as the function may run (60 s).
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 55000);
-    // force (Refresh, a ledger just placed): work it out now, not the saved answer.
-    const res = await fetch('/api/tally?action=analytics' + (mgMarCompany ? '&company=' + encodeURIComponent(mgMarCompany) : '') + (force ? '&fresh=1' : ''),
+    // force: ask now (Refresh, a ledger just placed). The server answers from its saved copy when the books haven't
+    // moved, else with the last answer marked stale; 'fresh' (that follow-up) has it worked out again.
+    const res = await fetch('/api/tally?action=analytics' + (mgMarCompany ? '&company=' + encodeURIComponent(mgMarCompany) : '') + (force === 'fresh' ? '&fresh=1' : ''),
       { headers:{ 'Authorization':'Bearer ' + session.access_token }, signal:ctl.signal });
     clearTimeout(timer);
     if(!res.ok) throw new Error('HTTP ' + res.status);
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
     // The last sync's answer, served at once: fetch this sync's straight after and redraw.
-    if(mgMar && mgMar.stale) setTimeout(() => mgLoadMargin(true), 0);
+    if(mgMar && mgMar.stale) setTimeout(() => mgLoadMargin('fresh'), 0);
     else if(!mgMarCompany && typeof mgBcSaveSoon === 'function') mgBcSaveSoon();
     // Saved readings now carry the books' cash for their day: re-draw the page that shows them.
     const moved = mgApplyCashHistory(typeof snapshots !== 'undefined' ? snapshots : null);
@@ -49,7 +50,7 @@ async function mgLoadMargin(force){
 /* The answer for the latest sync (not the last sync's, served while it's worked out). Up to a minute. */
 async function mgMarginFresh(){
   for(let i = 0; i < 120 && (mgMarBusy || (mgMar && mgMar.stale)); i++){
-    if(!mgMarBusy && mgMar && mgMar.stale) mgLoadMargin(true);
+    if(!mgMarBusy && mgMar && mgMar.stale) mgLoadMargin('fresh');
     await new Promise(r => setTimeout(r, 500));
   }
 }

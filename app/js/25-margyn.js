@@ -94,6 +94,7 @@ function mgrHtmlLine(html, cls){
    free (the reply is already here). */
 function mgrType(el, text){
   return new Promise(resolve => {
+    if(document.hidden){ el.textContent = String(text || ''); mgrScroll(); resolve(); return; }   // timers crawl in a hidden tab
     const words = String(text || '').split(/(\s+)/);
     let i = 0; el.textContent = '';
     const tick = () => {
@@ -112,14 +113,23 @@ async function mgrTypeHtml(el, html){
   mgrScroll();
 }
 /* "> Opening receivables" — what Margyn is doing, typed out before the answer. */
-async function mgrStep(host, text){
-  if(!host || !text) return;
+/* Typed out, but never waited on (2026-10-09): Margyn's next step used to wait for each line's animation, and in
+   a background tab, where timers run once a second, one line took ~20 s. Lines still appear in order. */
+function mgrStep(host, text){
+  if(!host || !text) return Promise.resolve();
   const line = document.createElement('div');
   host.appendChild(line);
   const t = '› ' + text;
-  for(let i = 1; i <= t.length; i += 2){ line.textContent = t.slice(0, i); await new Promise(r => setTimeout(r, 8)); }
-  line.textContent = t;
-  mgrScroll();
+  if(document.hidden){ line.textContent = t; mgrScroll(); return Promise.resolve(); }
+  host._mgrQ = (host._mgrQ || Promise.resolve()).then(async () => {
+    for(let i = 1; i <= t.length; i += 3){
+      if(document.hidden) break;
+      line.textContent = t.slice(0, i); await new Promise(r => setTimeout(r, 8));
+    }
+    line.textContent = t;
+    mgrScroll();
+  });
+  return Promise.resolve();
 }
 const MGR_VIEW_LABEL = { pnl:'your P&L', receivables:'receivables', payables:'payables', cash:'cash and the forecast', gst:'GST', inbox:'what needs your OK', overview:'the overview', cfopack:'the CFO pack', cashflow:'the cash flow statement', party:'the party', mismatches:'where sources disagree' };
 function mgrStepLabel(name, a){

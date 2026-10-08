@@ -403,7 +403,8 @@ export default async function handler(req, res) {
             steps,
             resume: Object.assign(state, { sig: signState(state, user.id) }),
             depth: depthKey,
-            model
+            model,
+            timing: (tmark('total', Date.now() - T0), timing)
           });
           return;
         }
