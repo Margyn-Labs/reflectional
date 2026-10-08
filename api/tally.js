@@ -312,6 +312,8 @@ async function handleSummary(req, res) {
 // PostgREST caps a page at 1,000 rows. Fetch pages four at a time instead of one after
 // another so a year of vouchers fits comfortably inside the function's time limit.
 
+const AI_ASKED = new Map(), AI_ASK_AGAIN_MS = 24 * 3600000;   // user|company|ledger → when the model was last asked
+
 async function handleAnalytics(req, res) {
   let user;
   try { user = await getUserFromRequest(req); }
@@ -333,12 +335,16 @@ async function handleAnalytics(req, res) {
 
   // Whatever Tally's own groups could not place, the model places once and we remember it. Never overrides
   // a person's answer (those are in `overrides` already), and the arithmetic stays deterministic.
+  // Ledgers the model was already asked about and couldn't place aren't asked again for a day: asking on every
+  // load cost Care Hygiene up to 12 s a time for the same 5 ledgers and pushed the page past its time limit.
+  const askedKey = (l) => user.id + '|' + (company || '') + '|' + l;
   const pending = (out.quality.unclassified_ledgers || []).concat(out.quality.guessed_ledgers || [])
-    .filter((x) => !(x.ledger in overrides)).slice(0, 40);
+    .filter((x) => !(x.ledger in overrides) && !(Date.now() - (AI_ASKED.get(askedKey(x.ledger)) || 0) < AI_ASK_AGAIN_MS)).slice(0, 40);
   if (pending.length && process.env.ANTHROPIC_API_KEY) {
     const groupOf = new Map(ledgers.map((l) => [l.name, l.primary_group || null]));
     const placed = await classifyLedgersWithAI(pending.map((x) => ({ ledger: x.ledger, parent: x.parent, primary_group: groupOf.get(x.ledger) || null, vouchers: x.vouchers, volume: x.volume })),
-      { apiKey: process.env.ANTHROPIC_API_KEY });
+      { apiKey: process.env.ANTHROPIC_API_KEY, timeoutMs: 6000 });
+    for (const x of pending) AI_ASKED.set(askedKey(x.ledger), Date.now());
     if (placed.length) {
       try {
         await insertRows('tally_ledger_classes', placed.map((x) => ({

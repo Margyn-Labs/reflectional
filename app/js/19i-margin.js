@@ -21,7 +21,8 @@ async function mgLoadMargin(force){
   try {
     const { data:{ session } } = await sbClient.auth.getSession();
     if(!session) return;
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
+    // A full year of a busy company's books takes ~25 s to read (Care Hygiene, 19k vouchers): wait as long as the function may run (60 s).
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 55000);
     const res = await fetch('/api/tally?action=analytics' + (mgMarCompany ? '&company=' + encodeURIComponent(mgMarCompany) : ''),
       { headers:{ 'Authorization':'Bearer ' + session.access_token }, signal:ctl.signal });
     clearTimeout(timer);
