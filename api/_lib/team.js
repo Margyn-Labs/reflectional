@@ -79,11 +79,15 @@ async function companyNames(deps, ids) {
 /* ---------- whoami ---------- */
 async function whoami(deps, user) {
   const authId = user.auth_id || user.id;
-  const own = await deps.selectRows('profiles', `select=id,company_name&id=eq.${authId}&limit=1`).catch(() => []);
+  // Both reads at once: the app waits on this before anything else loads.
+  const ownP = deps.selectRows('profiles', `select=id,company_name&id=eq.${authId}&limit=1`).catch(() => []);
+  const memP = deps.selectRows('account_members',
+    `select=id,account_id,role,permissions,name,status,preferences&user_id=eq.${authId}&status=eq.active&order=created_at.asc`);
+  memP.catch(() => {});
+  const own = await ownP;
   let rows = [], ready = true, followups = true;
   try {
-    rows = await deps.selectRows('account_members',
-      `select=id,account_id,role,permissions,name,status,preferences&user_id=eq.${authId}&status=eq.active&order=created_at.asc`);
+    rows = await memP;
   } catch (e) {
     followups = false;   // before 2026-09-30-team-followups.sql: no preferences column
     try {
@@ -124,19 +128,23 @@ async function ownerEmail(accountId) {
   } catch (e) { return null; }
 }
 async function list(deps, c) {
-  const members = await deps.selectRows('account_members',
-    `select=id,user_id,email,name,role,permissions,status,created_at,last_seen_at&account_id=eq.${c.accountId}&order=created_at.asc`);
-  const invites = canManage(c)
-    ? await deps.selectRows('account_invites',
-      `select=id,email,name,role,expires_at,created_at&account_id=eq.${c.accountId}&used_at=is.null&revoked_at=is.null&order=created_at.desc`)
-    : [];
+  // Every read at once (was five in a row, ~6 s on open).
+  const [members, invites, primary, phones, ownerMail] = await Promise.all([
+    deps.selectRows('account_members',
+      `select=id,user_id,email,name,role,permissions,status,created_at,last_seen_at&account_id=eq.${c.accountId}&order=created_at.asc`),
+    canManage(c)
+      ? deps.selectRows('account_invites',
+        `select=id,email,name,role,expires_at,created_at&account_id=eq.${c.accountId}&used_at=is.null&revoked_at=is.null&order=created_at.desc`)
+      : [],
+    deps.selectRows('business_stakeholders', `select=name&business_id=eq.${c.accountId}&is_primary=eq.true&limit=1`).catch(() => []),
+    deps.selectRows('business_stakeholders', `select=member_id,phone&business_id=eq.${c.accountId}&member_id=not.is.null`).catch(() => []),
+    (deps.ownerEmail || ownerEmail)(c.accountId)
+  ]);
   const nowMs = deps.now ? deps.now() : Date.now();
-  const primary = await deps.selectRows('business_stakeholders', `select=name&business_id=eq.${c.accountId}&is_primary=eq.true&limit=1`).catch(() => []);
-  const phones = await deps.selectRows('business_stakeholders', `select=member_id,phone&business_id=eq.${c.accountId}&member_id=not.is.null`).catch(() => []);
   const phoneOf = Object.fromEntries(phones.map((r) => [r.member_id, r.phone]));
   return {
     you: { user_id: c.authId, role: c.role, can_manage: canManage(c), is_owner: c.isOwner },
-    owner: { user_id: c.accountId, email: await (deps.ownerEmail || ownerEmail)(c.accountId), name: (primary[0] && primary[0].name) || null, role: 'owner', role_label: ROLE_LABEL.owner },
+    owner: { user_id: c.accountId, email: ownerMail, name: (primary[0] && primary[0].name) || null, role: 'owner', role_label: ROLE_LABEL.owner },
     members: members.map((m) => ({
       id: m.id, user_id: m.user_id, email: m.email, name: m.name, role: m.role, role_label: ROLE_LABEL[m.role] || m.role,
       overrides: cleanOverrides(m.permissions), permissions: effectivePermissions(m.role, m.permissions),

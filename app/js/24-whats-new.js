@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-09-faster-books', date:'9 Oct 2026', title:'Margin, Cash flow and the books check open much faster',
+    items:[
+      { t:'Your books are read once per sync', what:'Margyn used to read every entry in your books again each time you opened Margin, Cash flow, the books health check or asked a question. Now it reads them once after each sync from Tally and keeps that copy, so these pages open in a few seconds instead of half a minute. Every figure is still from your latest sync.',
+        how:'Nothing to do. Open <b>Margin</b> or <b>Cash flow</b>; the first open after a new sync takes a little longer, every one after is quick.' }
+    ]
+  },
+  {
     id:'2026-10-08-wa-paused', date:'8 Oct 2026', title:'When WhatsApp holds back an update',
     items:[
       { t:'Your update still reaches you', what:'WhatsApp sometimes pauses business messages to a number that has had many lately. When it pauses one of Margyn’s updates, Margyn now keeps it ready and sends it the moment you message Margyn on WhatsApp.',
