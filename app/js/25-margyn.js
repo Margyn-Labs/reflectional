@@ -177,6 +177,15 @@ function mgrDepth(){
   }
   return d;
 }
+/* Once per open: Margyn's server reads the books ahead of the first question (~3 s saved on it). */
+let mgrWarmed = false;
+async function mgrWarm(){
+  if(mgrWarmed) return; mgrWarmed = true;
+  try {
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session) fetch('/api/ask-margyn?action=warm', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + session.access_token }, body:'{}' }).catch(() => {});
+  } catch(e){}
+}
 /* onDelta(text) gets the answer as Margyn writes it (2026-10-09: replies are streamed); onDelta(null) means
    "clear what you showed" (those words led into a tool call). Resolves with the same body as before. */
 async function mgrPost(body, onDelta){

@@ -359,6 +359,7 @@ async function refreshAll(){
     if(!on) return;
     if(typeof mgLoadMargin === 'function' && (!mgMar || !mgMarAt)) mgLoadMargin();
     if(typeof mgLoadBooksHealth === 'function') mgLoadBooksHealth();
+    if(typeof mgrWarm === 'function') mgrWarm();   // Margyn's first answer doesn't wait for the books
   };
   const [snaps, recv, pay, fnd, sugg, kp, ke, ki, , , , , rcn, acts] = await Promise.all([
     loadSnapshots(), loadReceivables(), loadPayables(), loadFindings(), loadPendingSuggestions(),
