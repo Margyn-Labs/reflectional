@@ -179,6 +179,8 @@ async function initSupabase(){
 }
 let mgRoutedAuthId = null;   // the signed-in person routeFor() last set the app up for
 async function routeFor(session){
+  // The saved screen (30-boot-cache.js) is drawn first: a ~50 ms read, never waited on for long.
+  if(window.mgBcReady && session && !mgRoutedAuthId) await Promise.race([window.mgBcReady, new Promise(r => setTimeout(r, 800))]);
   mgRoutedAuthId = session && session.user ? session.user.id : null;
   if(!session){
     if(typeof mgBcClear === 'function') mgBcClear();   // signed out: nothing of the account stays on this device
