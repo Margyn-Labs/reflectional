@@ -198,6 +198,21 @@ async function handleSummary(req, res) {
   try {
     // Totals must cover every open bill and ledger, not the first 500 (the old cap made
     // receivables look tiny and payables huge, and dropped most bank/GST ledgers).
+    const todayYmd = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
+    const ymd = (d) => String(d || '').replace(/-/g, '');
+    let futureRows = null;
+    // One company (Care Hygiene): the books already read once per sync (tallyData.js) instead of ~10 pages of
+    // fresh reads on every open (2026-10-09: 2.4-5.6 s). Same rows, orders and limits as the reads below.
+    const book = new Set(installs.map((i) => i.company_name || '')).size === 1 ? await loadTallyBook(user.id).catch(() => null) : null;
+    if (book && book.connected && book.chosen.length === installs.length) {
+      const num = (x) => (x == null ? -Infinity : Number(x));
+      bills = book.bills.slice().sort((a, b) => num(b.overdue_days) - num(a.overdue_days) || String(a.party_name || '').localeCompare(String(b.party_name || '')) || String(a.bill_ref || '').localeCompare(String(b.bill_ref || '')))
+        .slice(0, 20000);
+      vouchers = book.vouchers.slice().sort((a, b) => (ymd(b.date) > ymd(a.date) ? 1 : ymd(b.date) < ymd(a.date) ? -1 : String(a.tally_guid || '').localeCompare(String(b.tally_guid || ''))))
+        .slice(0, 4000);
+      ledgers = book.ledgers.slice(0, 10000);
+      futureRows = book.vouchers.filter((v) => ymd(v.date) > todayYmd).slice(0, 2000);
+    } else {
     const [B, V, L] = await Promise.all([
       pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=overdue_days.desc.nullslast,party_name.asc,bill_ref.asc`, 20000),
       // PostgREST returns at most 1,000 rows per request, so page: a busy book has more than
@@ -207,11 +222,11 @@ async function handleSummary(req, res) {
       pagedAll('tally_ledgers', `select=name,parent,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 10000)
     ]);
     bills = B.rows; vouchers = V.rows; ledgers = L.rows;
+    }
     // Balances as of today: Tally's closing balances include entries already made for later dates
     // (EMIs entered in advance), which made cash look ₹9.45 L lower than the bank. Back those out.
     try {
-      const todayYmd = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10).replace(/-/g, '');
-      const F = await pagedAll('tally_vouchers', `select=date,is_cancelled,entries&install_id=in.${inList}&date=gt.${todayYmd}&order=date.asc,tally_guid.asc`, 2000);
+      const F = futureRows ? { rows: futureRows } : await pagedAll('tally_vouchers', `select=date,is_cancelled,entries&install_id=in.${inList}&date=gt.${todayYmd}&order=date.asc,tally_guid.asc`, 2000);
       if (F.rows.length) {
         // This read has no opening balances or past entries, so it can't run asOfToday's tie-out guard itself: it
         // follows the decision the last books check made on the full books (books_health 'run:last').
