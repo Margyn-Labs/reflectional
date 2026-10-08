@@ -181,6 +181,7 @@ let mgRoutedAuthId = null;   // the signed-in person routeFor() last set the app
 async function routeFor(session){
   mgRoutedAuthId = session && session.user ? session.user.id : null;
   if(!session){
+    if(typeof mgBcClear === 'function') mgBcClear();   // signed out: nothing of the account stays on this device
     currentUser = null; currentProfile = null; snapshots = []; paymentsData = null;
     receivables = []; payables = []; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
     khataParties = []; khataEntries = []; khataInvoices = []; khataInvoiceLineItems = []; khataActivePartyId = null; khataActiveInvoiceId = null; invoiceDraftLines = [];
@@ -223,6 +224,7 @@ async function routeFor(session){
   mtrack('app_open');
   await refreshAll();
   if(typeof mgApplyActor === 'function') mgApplyActor();
+  if(typeof mgBcSaveSoon === 'function') mgBcSaveSoon();   // the next open draws this straight away (30-boot-cache.js)
 }
 /* Every row a query matches, past the database's 1,000-row ceiling (a plain .limit(3000) still returns
    1,000). `make` builds a fresh query each call; pages of 1,000 via .range(), up to `max`. Same { data, error }

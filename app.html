@@ -7,9 +7,11 @@
 <title>Margyn, your margin, live.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<!-- supabase-js is loaded programmatically at the bottom of this file -->
+<!-- supabase-js is loaded programmatically at the bottom of this file; fetched now so it is ready when asked for -->
+<link rel="preload" href="/supabase.js" as="script">
+<link rel="preconnect" href="https://lmegnxrixlrvyodqfthn.supabase.co" crossorigin>
 <link rel="stylesheet" href="/app/css/tokens.css">
 <link rel="stylesheet" href="/app/css/app.css">
 <link rel="stylesheet" href="/app/css/skin.css">
@@ -1386,5 +1388,6 @@
 <script src="/app/js/27-live-work.js"></script>
 <script src="/app/js/28-live-team.js"></script>
 <script src="/app/js/29-live-writes.js"></script>
+<script src="/app/js/30-boot-cache.js"></script>
 </body>
 </html>

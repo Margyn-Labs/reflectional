@@ -17,7 +17,7 @@ async function mgLoadBooksHealth(force){
   if(mgBHBusy || (!force && mgBH && !mgBH.error && Date.now() - mgBHAt < 10 * 60000)) return;
   if(typeof mgBooksConnected === 'function' ? !mgBooksConnected() : !(typeof tallyConnected !== 'undefined' && tallyConnected)) return;
   mgBHBusy = true;
-  try { mgBH = await mgBHFetch('/api/tally?action=books-check' + (force ? '&refresh=1' : '')); mgBHAt = Date.now(); }
+  try { mgBH = await mgBHFetch('/api/tally?action=books-check' + (force ? '&refresh=1' : '')); mgBHAt = Date.now(); if(typeof mgBcSaveSoon === 'function') mgBcSaveSoon(); }
   catch(e){ console.error('[margyn] books check:', e.message); mgBH = { error:true }; }
   finally {
     mgBHBusy = false; mgRenderBooksHealth();

@@ -326,27 +326,8 @@ function renderInvoicingView(){
   else if(typeof renderKhataParties === 'function') renderKhataParties();
 }
 document.querySelectorAll('.pagenav button').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
-async function refreshAll(){
-  // Independent reads go out together: one after another they took ~20 s on Care Hygiene before anything showed.
-  // Only two depend on another: Razorpay's summary on its connection check, Tally's data on its status.
-  let tallyP;
-  const [snaps, recv, pay, fnd, sugg, kp, ke, ki, , , , , rcn, acts] = await Promise.all([
-    loadSnapshots(), loadReceivables(), loadPayables(), loadFindings(), loadPendingSuggestions(),
-    loadKhataParties(), loadKhataEntries(), loadKhataInvoices(),
-    checkRazorpayConnection().then(async () => { razorpayLiveSummary = await loadRazorpayLiveSummary(); }),
-    checkCashfreeConnection(),
-    loadZohoVitals(), loadOdooStatus(),
-    loadReconSummary(), loadAgentActions(),
-    loadShopifyStatus(),
-    tallyP = loadTallyStatus().then(() => loadTallyData())
-  ]);
-  snapshots = snaps; receivables = recv; payables = pay; findings = fnd;
-  pendingSuggestions = sugg; renderSuggestionsBadge();
-  khataParties = kp; khataEntries = ke; khataInvoices = ki;
-  reconSummary = rcn; agentActions = acts;
-  tallyData = await tallyP;
-  // Restore session-only Payments-tab state from the latest snapshot so it
-  // survives refresh/re-login instead of resetting to empty each load.
+/* Session-only Payments-tab state comes back from the latest snapshot so it survives refresh/re-login. */
+function mgApplySnapshotState(){
   if(snapshots.length > 0){
     const latest = snapshots[0];
     paymentsData = latest.payments_data || null;
@@ -356,25 +337,65 @@ async function refreshAll(){
   } else {
     paymentsData = null; settlementRows = null; settlementDailyTrend = null; shopifyOrdersData = null;
   }
-  // The books' analytics (19i-margin.js) carry day-by-day cash: saved readings take it when it arrives.
-  if((typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected)) && typeof mgLoadMargin === 'function' && !mgMar) mgLoadMargin();
-  // The daily books health check (19k-books-health.js): Home's "Needs you" counts what the accountant should fix.
-  if(typeof mgBooksConnected === 'function' && mgBooksConnected() && typeof mgLoadBooksHealth === 'function') mgLoadBooksHealth();
-  // The reconciled receivables / payables position, computed on the server
-  // over every open row (19-pages.js). Falls back to the local model if slow.
-  // Wait at most 4 s: a cold read of a big book (suppliers rebuilt from every entry) takes longer, and the
-  // whole app waited on it. If it lands later, the page on screen redraws with it (19-pages.js).
-  if(typeof mgLoadPosition === 'function') await Promise.race([mgLoadPosition(), new Promise(r => setTimeout(r, 4000))]);
-  // Every connector global is loaded by this point. Rebuild the scoring
-  // inputs from the best source available per field; if that moved the
-  // picture, a fresh `resolved` snapshot is written and re-read so every
-  // render below sees the same numbers.
-  if(await resolveAndSaveSnapshot()){ snapshots = await loadSnapshots(); }
+}
+/* Everything on screen, from the state in memory. */
+function mgRenderAllViews(){
   renderHeader(); renderProfile(); renderScores(); renderFinancing(); renderPayments(); renderSummary();
   renderReconBooksCard(); renderReconLedger(); renderAgentQueue(); renderTallyTab();
   if(typeof renderBooksHub === 'function') renderBooksHub();
   if(typeof renderConnectionsHub === 'function') renderConnectionsHub();
   if(typeof renderAnalyticsView === 'function') renderAnalyticsView();
   if(typeof updateTopBar === 'function') updateTopBar();
+}
+let mgResolveBusy = null;
+async function refreshAll(){
+  // Independent reads go out together: one after another they took ~20 s on Care Hygiene before anything showed.
+  // Only two depend on another: Razorpay's summary on its connection check, Tally's data on its status.
+  // The books' reads that only need Tally's status (Margin, the books check) start the moment it's known,
+  // instead of after every other read (2026-10-09: they used to start ~9 s in).
+  let tallyP;
+  const booksKick = () => {
+    const on = typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected);
+    if(!on) return;
+    if(typeof mgLoadMargin === 'function' && (!mgMar || !mgMarAt)) mgLoadMargin();
+    if(typeof mgLoadBooksHealth === 'function') mgLoadBooksHealth();
+  };
+  const [snaps, recv, pay, fnd, sugg, kp, ke, ki, , , , , rcn, acts] = await Promise.all([
+    loadSnapshots(), loadReceivables(), loadPayables(), loadFindings(), loadPendingSuggestions(),
+    loadKhataParties(), loadKhataEntries(), loadKhataInvoices(),
+    checkRazorpayConnection().then(async () => { razorpayLiveSummary = await loadRazorpayLiveSummary(); }),
+    checkCashfreeConnection(),
+    loadZohoVitals(), loadOdooStatus(),
+    loadReconSummary(), loadAgentActions(),
+    loadShopifyStatus(),
+    tallyP = loadTallyStatus().then(() => { booksKick(); return loadTallyData(); })
+  ]);
+  snapshots = snaps; receivables = recv; payables = pay; findings = fnd;
+  pendingSuggestions = sugg; renderSuggestionsBadge();
+  khataParties = kp; khataEntries = ke; khataInvoices = ki;
+  reconSummary = rcn; agentActions = acts;
+  tallyData = await tallyP;
+  mgApplySnapshotState();
+  booksKick();
+  // The reconciled receivables / payables position, computed on the server over every open row (19-pages.js).
+  // Not waited for (it used to hold the whole screen up to 4 s): the page on screen redraws when it lands.
+  if(typeof mgLoadPosition === 'function') mgLoadPosition();
+  // Draw now with what has arrived (2026-10-09: the screen used to wait for Margin, the position and the
+  // saved reading below, ~15 s on Care Hygiene).
+  mgRenderAllViews();
   handleZohoHashReturn();
+  // Every connector global is loaded by this point. Rebuild the scoring inputs from the best source available
+  // per field; if that moved the picture, a fresh `resolved` snapshot is written and re-read and the screen
+  // redrawn with it. In the background: it waits for the latest sync's Margin figures.
+  if(!mgResolveBusy){
+    mgResolveBusy = (async () => {
+      try {
+        if(await resolveAndSaveSnapshot()){
+          snapshots = await loadSnapshots(); mgApplySnapshotState(); mgRenderAllViews();
+          if(typeof mgFirstLoadDone !== 'undefined' && mgFirstLoadDone && MG_PAGES[mgCurrentView] && MG_PAGES[mgCurrentView].own) mgRenderOwn(mgCurrentView);
+        }
+      } catch(e){ console.error('[margyn] resolve snapshot:', e.message); }
+      finally { mgResolveBusy = null; if(typeof mgBcSaveSoon === 'function') mgBcSaveSoon(); }
+    })();
+  }
 }

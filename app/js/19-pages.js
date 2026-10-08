@@ -95,6 +95,7 @@ function mgLoadPosition(){
       clearTimeout(timer);
       if(!res.ok) throw new Error('HTTP ' + res.status);
       mgPos = await res.json(); mgPosSigAt = sig; mgPosFailed = false;
+      if(typeof mgBcSaveSoon === 'function') mgBcSaveSoon();
     } catch(e){ mgPosFailed = true; console.error('[margyn] position:', e.message); }
     finally { mgPosBusy = null; }
     // Arrived after the app stopped waiting for it at start-up: redraw the page on screen with it.

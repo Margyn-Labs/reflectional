@@ -19,7 +19,9 @@ const MG_RELEASES = [
     id:'2026-10-09-faster-books', date:'9 Oct 2026', title:'Margin, Cash flow and the books check open much faster',
     items:[
       { t:'Your books are read once per sync', what:'Margyn used to read every entry in your books again each time you opened Margin, Cash flow, the books health check or asked a question. Now it reads them once after each sync from Tally and keeps that copy, so these pages open in a few seconds instead of half a minute. Every figure is still from your latest sync.',
-        how:'Nothing to do. Open <b>Margin</b> or <b>Cash flow</b>; the first open after a new sync takes a little longer, every one after is quick.' }
+        how:'Nothing to do. Open <b>Margin</b> or <b>Cash flow</b>; the first open after a new sync takes a little longer, every one after is quick.' },
+      { t:'Margyn opens straight away', what:'Margyn now shows your last screen the moment you open it, then brings every figure up to date in the background, like WhatsApp opening on your last chats. That copy stays on your device only and is wiped when you sign out.',
+        how:'Nothing to do. Open Margyn; the figures update by themselves a few seconds later.' }
     ]
   },
   {
