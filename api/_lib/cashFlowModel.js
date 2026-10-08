@@ -245,11 +245,26 @@ function supplierOpenItems(ctx) {
   return { items, total: r0(total), advances: r0(advances) };
 }
 
+/** wPct at 25/50/75 from one sort (same answers as three wPct calls). */
+function wQuartiles(samples) {
+  const s = samples.filter((x) => x.w > 0).sort((a, b) => a.v - b.v);
+  const tot = s.reduce((t, x) => t + x.w, 0);
+  if (!tot) return [null, null, null];
+  const ps = [0.25, 0.5, 0.75], out = [];
+  let acc = 0, j = 0;
+  for (const x of s) { acc += x.w; while (j < 3 && acc >= ps[j] * tot) out[j++] = x.v; if (j === 3) break; }
+  while (j < 3) out[j++] = s[s.length - 1].v;
+  return out;
+}
+// Everyone's pool is shared by every customer without three payments of their own: sort it once, not three times each.
+const _poolHabit = new WeakMap();
 function habitOf(p, pool) {
   const own = p && p.samples.length >= 3 && p.samples.reduce((t, s) => t + s.w, 0) > 0;
   const s = own ? p.samples : pool;
   if (!s.length) return { p25: 30, p50: 45, p75: 75, own: false, n: 0 };
-  return { p25: wPct(s, 0.25), p50: wPct(s, 0.5), p75: wPct(s, 0.75), own, n: own ? p.samples.length : 0 };
+  let q = !own && _poolHabit.get(pool);
+  if (!q || q.len !== pool.length) { q = { len: s.length, v: wQuartiles(s) }; if (!own) _poolHabit.set(pool, q); }
+  return { p25: q.v[0], p50: q.v[1], p75: q.v[2], own, n: own ? p.samples.length : 0 };
 }
 
 /**

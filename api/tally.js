@@ -63,6 +63,20 @@ function json(res, status, body) {
   res.status(status).json(body);
 }
 
+/* Server-Timing: where a slow request spent its time, visible in the browser's network panel (timings only). */
+function stopwatch() {
+  const t0 = Date.now(), marks = [];
+  let last = t0;
+  return {
+    mark(name) { const n = Date.now(); marks.push([name, n - last]); last = n; },
+    header(res, extra) {
+      const parts = marks.map(([k, ms]) => `${k};dur=${ms}`).concat([`total;dur=${Date.now() - t0}`]);
+      if (extra) parts.push(extra);
+      try { res.setHeader('Server-Timing', parts.join(', ')); } catch (e) { /* headers already sent */ }
+    }
+  };
+}
+
 function sha256(s) {
   return crypto.createHash('sha256').update(String(s)).digest('hex');
 }
@@ -314,24 +328,35 @@ async function handleSummary(req, res) {
 
 const AI_ASKED = new Map(), AI_ASK_AGAIN_MS = 24 * 3600000;   // user|company|ledger → when the model was last asked
 
+// The whole answer for a book this instance already worked out today (same rows, same placements, same rate).
+const _analyticsDone = new WeakMap();   // book -> { k, body }
+
 async function handleAnalytics(req, res) {
+  const sw = stopwatch();
   let user;
   try { user = await getUserFromRequest(req); }
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
+  sw.mark('auth');
 
   // One reader for the Margin page, Margyn's books tools and Margyn Watch (api/_lib/dataLayer/books.js).
-  // The page always reads fresh; the warm copy it leaves behind serves the questions that follow.
+  // Keyed on the last sync, so it is never older than the books (tallyData.js keeps a copy per sync).
   let book;
-  try { book = await loadBooks(user.id, { company: req.query && req.query.company, fresh: true }); }
+  try { book = await loadBooks(user.id, { company: req.query && req.query.company }); }
   catch (e) { return json(res, 500, { error: 'lookup_failed' }); }
+  sw.mark('books');
+  const rowsFrom = book.load ? `rows;desc="${book.load.rows_from}"` : null;
   if (!book.connected) return json(res, 200, { connected: false });
+  const doneKey = [req.query && req.query.company || '', req.query && req.query.credit_rate || '', new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 13)].join('|');
+  const done = _analyticsDone.get(book);
+  if (done && done.k === doneKey) { sw.mark('reused'); sw.header(res, rowsFrom); return json(res, 200, done.body); }
   const { company, companies, chosen, ledgers, bills, vouchers, truncated, overrides, aiPlaced, syncRuns, diagnostics } = book;
   const lastSync = book.lastSync;
 
   const rate = parseFloat(req.query && req.query.credit_rate);
   const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, diagnostics, balance_convention: book.balance_convention, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
   let out = run(overrides);
+  sw.mark('compute');
 
   // Whatever Tally's own groups could not place, the model places once and we remember it. Never overrides
   // a person's answer (those are in `overrides` already), and the arithmetic stays deterministic.
@@ -340,12 +365,14 @@ async function handleAnalytics(req, res) {
   const askedKey = (l) => user.id + '|' + (company || '') + '|' + l;
   const pending = (out.quality.unclassified_ledgers || []).concat(out.quality.guessed_ledgers || [])
     .filter((x) => !(x.ledger in overrides) && !(Date.now() - (AI_ASKED.get(askedKey(x.ledger)) || 0) < AI_ASK_AGAIN_MS)).slice(0, 40);
+  let placedNow = false;
   if (pending.length && process.env.ANTHROPIC_API_KEY) {
     const groupOf = new Map(ledgers.map((l) => [l.name, l.primary_group || null]));
     const placed = await classifyLedgersWithAI(pending.map((x) => ({ ledger: x.ledger, parent: x.parent, primary_group: groupOf.get(x.ledger) || null, vouchers: x.vouchers, volume: x.volume })),
       { apiKey: process.env.ANTHROPIC_API_KEY, timeoutMs: 6000 });
     for (const x of pending) AI_ASKED.set(askedKey(x.ledger), Date.now());
     if (placed.length) {
+      placedNow = true;
       try {
         await insertRows('tally_ledger_classes', placed.map((x) => ({
           user_id: user.id, company_name: company || '', ledger_name: x.ledger, bucket: x.bucket, set_by: null, updated_at: new Date().toISOString()
@@ -354,6 +381,7 @@ async function handleAnalytics(req, res) {
       for (const x of placed) { overrides[x.ledger] = x.bucket; aiPlaced.add(x.ledger); }
       out = run(overrides);
     }
+    sw.mark('ai');
   }
   if (aiPlaced.size) {
     out.quality.ai_classified = [...aiPlaced].slice(0, 30).map((l) => ({ ledger: l, bucket: overrides[l] }));
@@ -369,6 +397,7 @@ async function handleAnalytics(req, res) {
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
   let extra = {};
   try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
+  sw.mark('insights');
   // The 13-week forecast learned from how money actually moved (cashFlowModel.js), graded by its own past runs,
   // and today's run kept so tomorrow's can be graded (forecastStore.js). Never blocks the page.
   let forecast_v2 = null, ctxB = null;
@@ -398,15 +427,21 @@ async function handleAnalytics(req, res) {
     try { cash_flow = cashFlowStatement.yearStatement(ctxB); } catch (e) { console.error('[tally] cash flow failed:', e.message); }
     try { borrowing = cashFlowStatement.borrowing(ctxB); } catch (e) { console.error('[tally] borrowing failed:', e.message); }
   }
+  sw.mark('statement');
   try {
     const [promises, runs] = await Promise.all([forecastStore.promises(user.id), forecastStore.pastRuns(user.id)]);
     forecast_v2 = cashFlow.build(ctxB || prepareBooks(book, { analytics: out }), { promises, pastRuns: runs });
     if (forecast_v2 && !(req.query && req.query.company)) await forecastStore.recordDaily(user.id, forecast_v2);
   } catch (e) { console.error('[tally] forecast failed:', e.message); }
-  return json(res, 200, { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra,
+  sw.mark('forecast');
+  const body = { connected: true, company_name: company, companies, last_sync_at: lastSync, stale_hours: staleH, truncated, ...out, ...extra,
     // Which books system this is, the others connected, and their headline figures side by side (never added).
     forecast_v2, cash_flow, borrowing,
-    books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] });
+    books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] };
+  // A placement Margyn just made changes the book next time (it is read with the book), so this is never kept past it.
+  if (!placedNow) _analyticsDone.set(book, { k: doneKey, body });
+  sw.header(res, rowsFrom);
+  return json(res, 200, body);
 }
 
 /* ------------------------------------------------------------------ */
@@ -420,7 +455,7 @@ async function handleCompleteness(req, res) {
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
   try {
-    const book = await loadTallyBook(user.id, { fresh: true });
+    const book = await loadTallyBook(user.id);
     if (!book.connected) return json(res, 200, { connected: false });
     const out = tallyCompleteness(book, prepareBooks(book));
     res.setHeader('Cache-Control', 'no-store');
@@ -1035,26 +1070,18 @@ async function handleStatus(req, res) {
     return json(res, 500, { error: 'lookup_failed' });
   }
 
-  const out = [];
-  for (const inst of installs) {
-    const counts = { ledgers: 0, vouchers: 0, bills: 0 };
-    try {
-      counts.ledgers = await countRows('tally_ledgers', `install_id=eq.${inst.id}`);
-      counts.vouchers = await countRows('tally_vouchers', `install_id=eq.${inst.id}`);
-      counts.bills = await countRows('tally_bills', `install_id=eq.${inst.id}`);
-    } catch (e) { /* counts are cosmetic */ }
-
-    let lastRun = null;
-    try {
-      const runs = await selectRows(
-        'tally_sync_runs',
-        `select=kind,status,rows_upserted,started_at,error_message&install_id=eq.${inst.id}&order=started_at.desc&limit=1`
-      );
-      lastRun = runs && runs[0] ? runs[0] : null;
-    } catch (e) { /* non-fatal */ }
-
-    out.push({ ...inst, counts, last_run: lastRun });
-  }
+  // Every install and every count at once (was one after another: ~4 s for an account with a few old installs).
+  const zero = (p) => p.catch(() => 0);   // counts are cosmetic
+  const out = await Promise.all(installs.map(async (inst) => {
+    const [ledgersN, vouchersN, billsN, runs] = await Promise.all([
+      zero(countRows('tally_ledgers', `install_id=eq.${inst.id}`)),
+      zero(countRows('tally_vouchers', `install_id=eq.${inst.id}`)),
+      zero(countRows('tally_bills', `install_id=eq.${inst.id}`)),
+      selectRows('tally_sync_runs', `select=kind,status,rows_upserted,started_at,error_message&install_id=eq.${inst.id}&order=started_at.desc&limit=1`)
+        .catch(() => [])   // non-fatal
+    ]);
+    return { ...inst, counts: { ledgers: ledgersN, vouchers: vouchersN, bills: billsN }, last_run: runs && runs[0] ? runs[0] : null };
+  }));
 
   return json(res, 200, {
     connected: out.some((i) => i.status === 'active'),

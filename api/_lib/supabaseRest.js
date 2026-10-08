@@ -44,6 +44,12 @@ async function getUserFromRequest(req) {
     throw new Error('Supabase environment variables are not configured');
   }
 
+  // The app makes a dozen calls on open, each verified with Supabase Auth (~150-300 ms apiece). A token this
+  // instance verified in the last minute is taken as verified; the team check (accountFor) still runs every time.
+  const tk = require('crypto').createHash('sha256').update(accessToken).digest('hex');
+  const hit = _verified.get(tk);
+  if (hit && Date.now() - hit.at < VERIFIED_MS) return accountFor(req, hit.user);
+
   const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: {
       apikey: ANON_KEY,
@@ -52,8 +58,15 @@ async function getUserFromRequest(req) {
   });
 
   if (!res.ok) return null;
-  return accountFor(req, await res.json());
+  const user = await res.json();
+  if (user && user.id) {
+    _verified.set(tk, { at: Date.now(), user });
+    while (_verified.size > 500) _verified.delete(_verified.keys().next().value);
+  }
+  return accountFor(req, user);
 }
+const VERIFIED_MS = 60 * 1000;
+const _verified = new Map();   // sha256(access token) -> { at, user }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -80,6 +80,8 @@ const call = async (method, query, body) => {
 
   itemsColumnExists = true;
   DB.tally_vouchers[0].items = [{ item: 'W', qty: 10, unit: 'Nos', rate: 100, amount: 1000, abs_amount: 1000 }];
+  // Rows only change through a sync, which moves last_sync_at (the books are read once per sync).
+  DB.tally_installs.forEach((i) => { i.last_sync_at = new Date(Date.now() + 1000).toISOString(); });
   r = await call('GET', { action: 'analytics' });
   check('items flow through once the column exists', r.payload.items_available === true && r.payload.items.length === 1, r.payload.items);
 
