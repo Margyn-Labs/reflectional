@@ -157,6 +157,9 @@ async function bootAuth(){
 async function initSupabase(){
   const { createClient } = window.supabase;
   sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // supabase.js is preloaded, so this can run before the page's last scripts have: start-up needs them all
+  // (30-boot-cache.js draws the saved screen first).
+  if(document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once:true }));
   const { data:{ session } } = await sbClient.auth.getSession();
   if(mgRecovery && session){ showRecoveryGate(); }
   else {
