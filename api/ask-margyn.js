@@ -26,7 +26,7 @@ import jevNavPkg from './_lib/jevNav.js';
 import jevRouterPkg from './_lib/jevRouter.js';
 import crypto from 'crypto';
 
-const { callClaude, effortFor, escalate, supportsEffort } = claudePkg;
+const { callClaude, callClaudeStream, effortFor, escalate, supportsEffort } = claudePkg;
 const { topicsOf, isQuestion, looksUnanswered } = topicsPkg;
 const { track } = trackPkg;
 
@@ -47,13 +47,16 @@ async function overDailyCap(userId, authId) {
   const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);
   const base = `select=id&user_id=eq.${userId}&role=eq.user&created_at=gte.${startOfDay.toISOString()}`;
   try {
-    const all = await selectRows('chat_messages', `${base}&limit=${ACCOUNT_DAILY_CAP + 1}`);
+    // Both counts at once (they were one after the other on every message).
+    const me = authId || userId;
+    const allP = selectRows('chat_messages', `${base}&limit=${ACCOUNT_DAILY_CAP + 1}`);
+    const mineP = selectRows('chat_messages',
+      `${base}&${me === userId ? `or=(author_id.is.null,author_id.eq.${me})` : `author_id=eq.${me}`}&limit=${DAILY_MESSAGE_CAP + 1}`);
+    mineP.catch(() => {});
+    const all = await allP;
     if (all.length > ACCOUNT_DAILY_CAP) return true;
     // This person's own messages: the owner's have no author (or their own id).
-    const me = authId || userId;
-    const mine = await selectRows('chat_messages',
-      `${base}&${me === userId ? `or=(author_id.is.null,author_id.eq.${me})` : `author_id=eq.${me}`}&limit=${DAILY_MESSAGE_CAP + 1}`)
-      .catch(() => all);   // before the author column: the account's count, as before
+    const mine = await mineP.catch(() => all);   // before the author column: the account's count, as before
     return mine.length > DAILY_MESSAGE_CAP;
   } catch (e) {
     console.error('[ask-margyn] rate-limit check failed, allowing through:', e.message);
@@ -111,8 +114,34 @@ export default async function handler(req, res) {
   // The navigator: typed words -> a page, by Jev, no Claude call (⌘K and the panel).
   if (voiceAction === 'nav') return handleNav(req, res, user);
 
-  const { message, history, context, depth, surface, resume } = req.body || {};
+  const { message, history, context, depth, surface, resume, stream: wantStream } = req.body || {};
   const agent = getAgent();
+  // Streamed replies (2026-10-09): the page asks with stream:true and gets Server-Sent Events: `delta` with each
+  // piece of the answer as Margyn writes it, `reset` when a round ends in a tool call (its words were a lead-in),
+  // then `done` carrying exactly the JSON body this handler returns otherwise (plus its status). Anything answered
+  // before the first word (limits, bad input) is the usual JSON, so the page reads either.
+  let emit = null;
+  if (wantStream === true) {
+    let started = false, code = 200;
+    const origStatus = res.status.bind(res), origJson = res.json.bind(res);
+    const start = () => {
+      if (started) return;
+      started = true;
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('X-Accel-Buffering', 'no');
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    };
+    emit = (ev, obj) => { start(); res.write(`event: ${ev}\ndata: ${JSON.stringify(obj)}\n\n`); };
+    res.status = (c) => { code = c; return res; };
+    res.json = (b) => {
+      if (!started) { res.status = origStatus; res.json = origJson; return origStatus(code).json(b); }   // nothing streamed yet: plain JSON
+      res.write(`event: done\ndata: ${JSON.stringify(Object.assign({ status: code }, b))}\n\n`);
+      res.end();
+      return res;
+    };
+  }
   // The Margyn panel (app/js/25-margyn.js) drives the app while it answers:
   // it gets the same screen/workspace tools voice has. Those run in the
   // browser, so a turn can pause here, hand the calls to the page, and carry
@@ -243,6 +272,7 @@ export default async function handler(req, res) {
     if (pass === 1) {
       if (!appliedGroups || actionCard || (finalText && !looksUnanswered(finalText))) break;
       console.log('[ask-margyn] front door trimmed too much, retrying with every tool');
+      if (emit) emit('reset', {});
       routerRetry = true;
       appliedGroups = null;
       tools = fullTools; toolNames = new Set(tools.map(t => t.name)); cachedTools = withCache(tools);
@@ -256,6 +286,7 @@ export default async function handler(req, res) {
       const up = supportsEffort(model) ? escalate(effort) : null;
       if (!up || up === effort) break;
       console.log('[ask-margyn] escalating reasoning', effort, '->', up);
+      if (emit) emit('reset', {});
       effort = up;
       messages.length = baseLength;
       steps.length = 0;
@@ -266,14 +297,15 @@ export default async function handler(req, res) {
       // judge at medium), plus caching of the growing tail of the loop.
       let data;
       try {
-        data = await callClaude({
+        const req1 = {
           label: 'ask-margyn-' + depthKey, job, effort, cacheTail: true, apiKey,
           model,
           max_tokens: preset.max_tokens,
           system,
           tools: cachedTools,
           messages
-        });
+        };
+        data = emit ? await callClaudeStream(req1, (t) => emit('delta', { t })) : await callClaude(req1);
       } catch (e) {
         console.error('Anthropic API error:', e.status, e.body || e.message);
         res.status(502).json({ error: 'AI service error' });
@@ -314,6 +346,7 @@ export default async function handler(req, res) {
       }
 
       if (data.stop_reason === 'tool_use' && toolUses.length) {
+        if (emit && textOut) emit('reset', {});   // its words were a lead-in to the tool call
         messages.push({ role: 'assistant', content: blocks });
         const clientCalls = inPanel ? toolUses.filter(t => APP_TOOL_NAMES.has(t.name)) : [];
         const serverResults = [];

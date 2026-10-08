@@ -177,18 +177,37 @@ function mgrDepth(){
   }
   return d;
 }
-async function mgrPost(body){
+/* onDelta(text) gets the answer as Margyn writes it (2026-10-09: replies are streamed); onDelta(null) means
+   "clear what you showed" (those words led into a tool call). Resolves with the same body as before. */
+async function mgrPost(body, onDelta){
   const { data:{ session } } = await sbClient.auth.getSession();
   const res = await fetch('/api/ask-margyn', {
     method:'POST',
     headers:{ 'Content-Type':'application/json', ...(session ? { 'Authorization':'Bearer ' + session.access_token } : {}) },
-    body:JSON.stringify(body)
+    body:JSON.stringify(Object.assign({}, body, onDelta ? { stream:true } : {}))
   });
-  if(!res.ok){
-    const b = await res.json().catch(() => ({}));
-    throw new Error(res.status === 429 ? (b.error || 'You’ve hit today’s chat limit. Resets tomorrow.') : 'Couldn’t reach Margyn just now, try again in a moment.');
+  const fail = (status, b) => new Error(status === 429 ? ((b && b.error) || 'You’ve hit today’s chat limit. Resets tomorrow.') : 'Couldn’t reach Margyn just now, try again in a moment.');
+  if(!res.ok){ const b = await res.json().catch(() => ({})); throw fail(res.status, b); }
+  if(!/text\/event-stream/.test(res.headers.get('content-type') || '') || !res.body) return res.json();
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '', done = null;
+  for(;;){
+    const { value, done:end } = await reader.read();
+    if(end) break;
+    buf += dec.decode(value, { stream:true });
+    let i;
+    while((i = buf.indexOf('\n\n')) !== -1){
+      const blk = buf.slice(0, i); buf = buf.slice(i + 2);
+      const ev = (/^event: (.+)$/m.exec(blk) || [])[1], dl = (/^data: (.*)$/m.exec(blk) || [])[1];
+      let d = null; try { d = dl ? JSON.parse(dl) : null; } catch(e){}
+      if(ev === 'delta' && d && d.t) { try { onDelta(d.t); } catch(e){} }
+      else if(ev === 'reset') { try { onDelta(null); } catch(e){} }
+      else if(ev === 'done') done = d;
+    }
   }
-  return res.json();
+  if(!done) throw fail(0);
+  if(done.status && done.status !== 200) throw fail(done.status, done);
+  return done;
 }
 /* Run the screen tools the server handed back, in order, showing each step. */
 async function mgrRunCalls(calls, stepsEl){
@@ -297,27 +316,47 @@ async function mgrAsk(text, opts){
   const beats = [[4000, 'Still on it…'], [10000, 'Going through the figures, nearly there…'], [22000, 'This one is taking longer than usual. I’ll post the answer here the moment it’s ready; carry on meanwhile.']]
     .map(([ms, say]) => setTimeout(() => { if(row.classList.contains('working')){ mgrStep(stepsEl, say); mgStatus(say, true); } }, ms));
   let data;
+  // The answer as it's written: shown in place, under any cards this turn drew.
+  let live = null, liveText = '';
+  const onDelta = (t) => {
+    if(t === null){ liveText = ''; if(live) live.textContent = ''; return; }
+    if(!live){
+      live = document.createElement('div'); live.className = 'mgr-text';
+      const cardsAfter = row.nextElementSibling;
+      if(cardsAfter){ const again = mgrHtmlLine('', 'follow'); again.querySelector('.mgr-b').appendChild(live); }
+      else row.querySelector('.mgr-b').appendChild(live);
+      const d = row.querySelector('.mgr-dots'); if(d) d.style.display = 'none';
+    }
+    liveText += t; live.textContent = liveText; mgrScroll();
+  };
   try {
-    data = await mgrPost({ message:text, history, context:mgrContext(mgrFocus), depth, surface:'panel' });
+    data = await mgrPost({ message:text, history, context:mgrContext(mgrFocus), depth, surface:'panel' }, onDelta);
     let claudeNav = 'none';
     for(let n = 0; data && data.clientCalls && n < 5; n++){
       const nc = data.clientCalls.find(c => c.input && ((c.name === 'navigate' && c.input.page) || (c.name === 'show_view' && c.input.view)));
       if(nc && claudeNav === 'none') claudeNav = nc.name + ':' + (nc.input.page || nc.input.view);
       for(const s of (data.steps || [])) await mgrStep(stepsEl, s);
       if(data.interim) await mgrStep(stepsEl, data.interim.slice(0, 160));
+      onDelta(null);   // those words led into the screen steps shown above
+      if(live){ const host = live.closest('.mgr-msg'); live.remove(); live = null; if(host && host !== row && !host.querySelector('.mgr-text')) host.remove(); }
       const results = await mgrRunCalls(data.clientCalls, stepsEl);
-      data = await mgrPost({ resume:Object.assign({}, data.resume, { results }), context:mgrContext(mgrFocus), depth, surface:'panel' });
+      data = await mgrPost({ resume:Object.assign({}, data.resume, { results }), context:mgrContext(mgrFocus), depth, surface:'panel' }, onDelta);
     }
     for(const s of ((data && data.steps) || [])) await mgrStep(stepsEl, s);
     const reply = (data && data.reply) || 'I couldn’t work that out. Try saying it another way?';
-    row.querySelector('.mgr-dots').remove();
+    { const d = row.querySelector('.mgr-dots'); if(d) d.remove(); }
     row.classList.remove('working');
-    // Cards drawn during this turn sit above the answer; the answer comes last.
-    const body = document.createElement('div'); body.className = 'mgr-text';
-    const cardsAfter = row.nextElementSibling;
-    if(cardsAfter){ const again = mgrHtmlLine('', 'follow'); again.querySelector('.mgr-b').appendChild(body); }
-    else row.querySelector('.mgr-b').appendChild(body);
-    await mgrType(body, reply);
+    if(live){
+      // Already on screen as it was written: just make sure it's the final wording.
+      if(liveText.trim() !== reply.trim()) live.textContent = reply;
+    } else {
+      // Cards drawn during this turn sit above the answer; the answer comes last.
+      const body = document.createElement('div'); body.className = 'mgr-text';
+      const cardsAfter = row.nextElementSibling;
+      if(cardsAfter){ const again = mgrHtmlLine('', 'follow'); again.querySelector('.mgr-b').appendChild(body); }
+      else row.querySelector('.mgr-b').appendChild(body);
+      await mgrType(body, reply);
+    }
     mgrRemember('assistant', reply);
     saveChatMessage(tk, mgrFocus, 'assistant', reply, 'margyn');
     if(data && data.actionCard && data.actionCard.type) mgrShowChange(data.actionCard, text);
@@ -327,6 +366,7 @@ async function mgrAsk(text, opts){
     if(navMode === 'shadow') mgNavPick(text, 'panel', claudeNav.replace(/[^a-z_:]/g, '').slice(0, 41));
   } catch(err){
     const d = row.querySelector('.mgr-dots'); if(d) d.remove();
+    if(live){ live.remove(); live = null; }
     row.classList.remove('working');
     row.querySelector('.mgr-b').insertAdjacentHTML('beforeend', '<div class="mgr-text">' + escapeHtml(err.message || 'Something went wrong.') + '</div>');
   } finally {
