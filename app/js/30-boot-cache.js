@@ -121,16 +121,18 @@ function mgBcRender(){
   run('mgApplyActor');
 }
 
-/* As the page loads: the saved screen for whoever is signed in on this device. */
+/* As the page loads: the saved screen for whoever is signed in on this device. routeFor (01-core.js) waits for
+   this (window.mgBcReady, ~50 ms) so the saved screen always goes first. */
 async function mgBcEarly(){
   const auth = mgBcAuthUser();
-  if(!auth) return;
+  if(!auth || mgRoutedAuthId) return;            // signed out, or the real start-up began first
   try {
     const raw = await mgBcGet(auth.id);
-    if(!raw || mgRoutedAuthId) return;           // the real start-up already drew the screen
+    if(!raw) return;
     if(!mgBcHydrate(JSON.parse(raw), auth)) return;
     mgBcShownFor = auth.id;
     mgBcRender();
   } catch(e){ mgBcShownFor = null; console.warn('[margyn] instant open skipped:', e && e.message); }
 }
-if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mgBcEarly); else mgBcEarly();
+// This script is the last on the page, after all the markup: start straight away.
+window.mgBcReady = mgBcEarly();
