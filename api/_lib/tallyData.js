@@ -46,15 +46,19 @@ function snapPath(userId, inst) {
 }
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
-async function readSnap(path, snapKey) {
+/** A gzipped JSON file from the private bucket, or null (missing, unreadable, Storage down). */
+async function readSaved(path) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
   try {
     const r = await withTimeout(fetch(storageUrl(`object/${SNAP_BUCKET}/${path}`), { headers: storageHeaders() }), 8000);
     if (!r.ok) return null;
-    const snap = JSON.parse(zlib.gunzipSync(Buffer.from(await r.arrayBuffer())).toString('utf8'));
-    if (!snap || snap.key !== snapKey || !Array.isArray(snap.vouchers) || Date.now() - Date.parse(snap.at) > SNAP_MAX_AGE_MS) return null;
-    return snap;
+    return JSON.parse(zlib.gunzipSync(Buffer.from(await r.arrayBuffer())).toString('utf8'));
   } catch (e) { return null; }
+}
+async function readSnap(path, snapKey) {
+  const snap = await readSaved(path);
+  if (!snap || snap.key !== snapKey || !Array.isArray(snap.vouchers) || Date.now() - Date.parse(snap.at) > SNAP_MAX_AGE_MS) return null;
+  return snap;
 }
 async function ensureBucket() {
   if (_bucketReady) return;
@@ -63,7 +67,7 @@ async function ensureBucket() {
   if (!r.ok) { const t = await r.text(); if (!/exist|duplicate/i.test(t)) throw new Error('bucket ' + r.status + ' ' + t.slice(0, 120)); }
   _bucketReady = true;
 }
-async function writeSnap(path, snap) {
+async function writeSaved(path, snap) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return;
   const body = zlib.gzipSync(Buffer.from(JSON.stringify(snap)), { level: 6 });
   const put = () => fetch(storageUrl(`object/${SNAP_BUCKET}/${path}`), { method: 'POST',
@@ -146,7 +150,7 @@ async function snapshotFor(userId, inst, fresh) {
     if (!snap) {
       from = 'tables';
       snap = Object.assign({ v: 1, key: snapKey, at: new Date().toISOString() }, await readRows(`(${inst.chosen.map((i) => i.id).join(',')})`));
-      await writeSnap(path, snap);
+      await writeSaved(path, snap);
     }
     _cache.set(mk, { at: Date.now(), snap });
     while (_cache.size > CACHE_MAX) _cache.delete(_cache.keys().next().value);
@@ -207,9 +211,26 @@ async function loadTallyBook(userId, opts) {
   return book;
 }
 
+/**
+ * What the books are as of now, without reading them: the installs and their last sync, the owner's ledger
+ * placements and the newest sync run. Equal keys mean the same books (the Margin page's saved answer uses it).
+ * Null when Tally isn't connected.
+ */
+async function bookKey(userId, company) {
+  const inst = await installsFor(userId, company);
+  if (!inst.installs.length) return null;
+  const inList = `(${inst.chosen.map((i) => i.id).join(',')})`;
+  const [O, R] = await Promise.all([
+    selectRows('tally_ledger_classes', `select=ledger_name,bucket,set_by&user_id=eq.${userId}${inst.company ? '&company_name=eq.' + encodeURIComponent(inst.company) : ''}&order=ledger_name.asc`).catch(() => []),
+    selectRows('tally_sync_runs', `select=started_at,status&user_id=eq.${userId}&install_id=in.${inList}&order=started_at.desc&limit=1`).catch(() => [])
+  ]);
+  const raw = JSON.stringify([inst.company, inst.chosen, O.map((x) => [x.ledger_name, x.bucket, !x.set_by]), R[0] || null]);
+  return { key: crypto.createHash('sha1').update(raw).digest('hex'), company: inst.company, lastSync: inst.lastSync };
+}
+
 /** Drop what this instance remembers for an account (after a ledger is re-classified). The saved file stays: it holds no placements. */
 function forgetTallyBook(userId) {
   for (const k of [..._books.keys()]) if (k.startsWith(userId + '|')) _books.delete(k);
 }
 
-module.exports = { loadTallyBook, forgetTallyBook, installsFor, pagedAll };
+module.exports = { loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };
