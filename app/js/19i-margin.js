@@ -25,11 +25,14 @@ async function mgLoadMargin(force){
     if(!session) return;
     // A full year of a busy company's books takes ~25 s to read (Care Hygiene, 19k vouchers): wait as long as the function may run (60 s).
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 55000);
-    const res = await fetch('/api/tally?action=analytics' + (mgMarCompany ? '&company=' + encodeURIComponent(mgMarCompany) : ''),
+    // force (Refresh, a ledger just placed): work it out now, not the saved answer.
+    const res = await fetch('/api/tally?action=analytics' + (mgMarCompany ? '&company=' + encodeURIComponent(mgMarCompany) : '') + (force ? '&fresh=1' : ''),
       { headers:{ 'Authorization':'Bearer ' + session.access_token }, signal:ctl.signal });
     clearTimeout(timer);
     if(!res.ok) throw new Error('HTTP ' + res.status);
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
+    // The last sync's answer, served at once: fetch this sync's straight after and redraw.
+    if(mgMar && mgMar.stale) setTimeout(() => mgLoadMargin(true), 0);
     // Saved readings now carry the books' cash for their day: re-draw the page that shows them.
     const moved = mgApplyCashHistory(typeof snapshots !== 'undefined' ? snapshots : null);
     if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView !== 'margin' && (moved || ['home', 'cash', 'cashflow', 'reports', 'cfopack'].includes(mgCurrentView))) mgRenderOwn(mgCurrentView);
@@ -39,6 +42,14 @@ async function mgLoadMargin(force){
     if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'margin') mgRenderMargin();
     // Reports (view 'analytics') opened while the books were still loading said "Reading your books…" for good.
     if(typeof mgCurrentView !== 'undefined' && mgCurrentView === 'analytics' && typeof renderAnalyticsView === 'function') renderAnalyticsView();
+  }
+}
+
+/* The answer for the latest sync (not the last sync's, served while it's worked out). Up to a minute. */
+async function mgMarginFresh(){
+  for(let i = 0; i < 120 && (mgMarBusy || (mgMar && mgMar.stale)); i++){
+    if(!mgMarBusy && mgMar && mgMar.stale) mgLoadMargin(true);
+    await new Promise(r => setTimeout(r, 500));
   }
 }
 
@@ -162,7 +173,7 @@ function mgRenderMargin(){
   if(!mgMar && !mgMarBusy && !mgMarErr) mgLoadMargin();
   const d = mgMar;
   const head = mgPageHead({ group:'Insight', title:'Margin',
-    sub:'How much you keep, worked out from your ' + mgBooksName() + ' books. One source, so every figure is a signal until bank and GST agree with it.',
+    sub:'How much you keep, worked out from your ' + mgBooksName() + ' books. One source, so every figure is a signal until bank and GST agree with it.' + (d && d.stale ? ' Updating to your latest sync…' : ''),
     actions:mgBtn('Refresh', 'data-mar-refresh') + (d && d.connected ? mgExportBtn('marExport') : '') });
   if(!d){
     host.innerHTML = head + '<div class="mg-panel mg-empty-panel"><h2>' + (mgMarErr ? 'Couldn’t load margin' : 'Loading…') + '</h2>' +

@@ -116,7 +116,7 @@ function mgRenderCashFlow(){
     '<button type="button" data-cf-view="owner" class="' + (mgCfView === 'owner' ? 'on' : '') + '">Owner view</button>' +
     '<button type="button" data-cf-view="accountant" class="' + (mgCfView === 'accountant' ? 'on' : '') + '">Accountant view</button></div>';
   const head = mgPageHead({ group:'Insight', title:'Cash flow',
-    sub:'Where your cash came from and where it went, month by month, from every entry in your books.',
+    sub:'Where your cash came from and where it went, month by month, from every entry in your books.' + (typeof mgMar !== 'undefined' && mgMar && mgMar.stale ? ' Updating to your latest sync…' : ''),
     actions:(d ? seg + ' ' + mgExportBtn('cfExport') : '') + mgBtn('Refresh', 'data-cf-refresh') });
   if(!d){
     const loading = typeof mgMarBusy !== 'undefined' && mgMarBusy;

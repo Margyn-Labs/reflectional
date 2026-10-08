@@ -447,7 +447,7 @@ async function resolveAndSaveSnapshot(){
   let latest = snapshots[0];
   // Tally's monthly P&L feeds revenue, burn and profit (tallyInputCandidates); load it first.
   if(typeof mgLoadMargin === 'function' && (typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))){
-    try { await mgLoadMargin(); } catch(e){}
+    try { await mgLoadMargin(); if(typeof mgMarginFresh === 'function') await mgMarginFresh(); } catch(e){}   // a reading is saved from this sync's figures
   }
 
   const { inputs, provenance, conflicts, hasConnectorInput } = resolveSnapshotInputs();

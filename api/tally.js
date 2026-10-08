@@ -46,7 +46,7 @@ const { track } = require('./_lib/track');
 const { computeAnalytics, asOfToday, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
-const { pagedAll, loadTallyBook } = require('./_lib/tallyData');
+const { pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
 const { tallyCompleteness } = require('./_lib/dataCompleteness');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
 const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
@@ -331,6 +331,25 @@ const AI_ASKED = new Map(), AI_ASK_AGAIN_MS = 24 * 3600000;   // user|company|le
 // The whole answer for a book this instance already worked out today (same rows, same placements, same rate).
 const _analyticsDone = new WeakMap();   // book -> { k, body }
 
+/* The Margin answer is also saved per account (Storage, beside the books copy), keyed on the books as of now
+ * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
+ * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
+ * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
+const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+function savedAnalyticsPath(userId, q) {
+  return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;
+}
+async function analyticsKey(userId, q) {
+  const [bk, prom] = await Promise.all([bookKey(userId, q.company).catch(() => null), forecastStore.promises(userId).catch(() => [])]);
+  if (!bk) return null;
+  return sha256(JSON.stringify([bk.key, prom, String(q.credit_rate || ''), istDay()]));
+}
+function servedSaved(body) {
+  const b = Object.assign({}, body);
+  b.stale_hours = b.last_sync_at ? Math.round((Date.now() - Date.parse(b.last_sync_at)) / 3600000) : b.stale_hours;
+  return b;
+}
+
 async function handleAnalytics(req, res) {
   const sw = stopwatch();
   let user;
@@ -338,6 +357,17 @@ async function handleAnalytics(req, res) {
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
   sw.mark('auth');
+  const q = req.query || {};
+  const savedPath = savedAnalyticsPath(user.id, q);
+  const [aKey, saved] = await Promise.all([analyticsKey(user.id, q).catch(() => null), readSaved(savedPath)]);
+  sw.mark('saved');
+  const savedOk = saved && saved.body && saved.body.connected && saved.body.books_source === 'tally' && !(saved.body.books_sources || []).some((x) => x.source !== 'tally');
+  if (savedOk && aKey && q.fresh !== '1') {
+    if (saved.key === aKey) { sw.header(res, 'answer;desc="saved"'); return json(res, 200, servedSaved(saved.body)); }
+    // Last sync's answer now; the page asks for this sync's straight after.
+    sw.header(res, 'answer;desc="stale"');
+    return json(res, 200, Object.assign(servedSaved(saved.body), { stale: true }));
+  }
 
   // One reader for the Margin page, Margyn's books tools and Margyn Watch (api/_lib/dataLayer/books.js).
   // Keyed on the last sync, so it is never older than the books (tallyData.js keeps a copy per sync).
@@ -363,6 +393,8 @@ async function handleAnalytics(req, res) {
   // Ledgers the model was already asked about and couldn't place aren't asked again for a day: asking on every
   // load cost Care Hygiene up to 12 s a time for the same 5 ledgers and pushed the page past its time limit.
   const askedKey = (l) => user.id + '|' + (company || '') + '|' + l;
+  // What other instances already asked (kept with the saved answer).
+  if (saved && saved.ai_asked) for (const [l, at] of Object.entries(saved.ai_asked)) if (!AI_ASKED.has(askedKey(l))) AI_ASKED.set(askedKey(l), at);
   const pending = (out.quality.unclassified_ledgers || []).concat(out.quality.guessed_ledgers || [])
     .filter((x) => !(x.ledger in overrides) && !(Date.now() - (AI_ASKED.get(askedKey(x.ledger)) || 0) < AI_ASK_AGAIN_MS)).slice(0, 40);
   let placedNow = false;
@@ -440,6 +472,13 @@ async function handleAnalytics(req, res) {
     books_source: book.source || 'tally', books_source_name: srcName, books_sources: book.sources || [], books_compare: book.compare || [] };
   // A placement Margyn just made changes the book next time (it is read with the book), so this is never kept past it.
   if (!placedNow) _analyticsDone.set(book, { k: doneKey, body });
+  // Saved for every instance. A placement Margyn just made changes the key, so the next call works it out again.
+  if (aKey && !placedNow && body.books_source === 'tally') {
+    const prefix = user.id + '|' + (company || '') + '|', ai_asked = {};
+    for (const [k, at] of AI_ASKED) if (k.startsWith(prefix) && Date.now() - at < AI_ASK_AGAIN_MS) ai_asked[k.slice(prefix.length)] = at;
+    await writeSaved(savedPath, { key: aKey, at: new Date().toISOString(), body, ai_asked });
+    sw.mark('save');
+  }
   sw.header(res, rowsFrom);
   return json(res, 200, body);
 }
