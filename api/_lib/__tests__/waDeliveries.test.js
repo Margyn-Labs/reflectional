@@ -76,6 +76,26 @@ const texts = [];
   await D.record({ messageId: 'gs-early-f', userId: 'u1', kind: 'watch', to: '919324000000', sentTo: 'owner', keys: ['overdue_total'] });
   check('an early failure still puts the points back to not sent', DB.wa_deliveries.find((r) => r.message_id === 'gs-early-f').status === 'failed' && DB.margyn_signals[0].status === 'open', DB.margyn_signals[0]);
 
+  console.log('paused as Marketing, re-sent as the Utility numbers template (8 Oct, long-term fix)');
+  process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-update';
+  Object.assign(DB.margyn_signals[0], { status: 'sent', last_sent_at: '2026-10-08T02:41:00Z', sent_to: 'owner', sent_via: 'template' });
+  DB.watch_pending = [];
+  const runText = 'Good morning Mihir. As of 8 Oct.\n\n*Where you stand*\nBank and cash ₹13.8 L.\nCustomers owe you ₹4.51 Cr.\n\n*Yesterday*\nIn: ₹6.2 L.\n\n*2 things that need you*\n\n1. Glenmark owes ₹30 L\nWhy now: x\n\nReply STOP ALERTS to pause these.';
+  DB.margyn_signals.push({ user_id: 'u1', key: 'run:2026-10-08:morning', kind: 'watch_run', detail: JSON.stringify({ slot: 'morning', day: '2026-10-08', at: new Date().toISOString(), message_id: 'gs-m', tpl: 'alert', name: 'Mihir', text: runText }) });
+  await D.record({ messageId: 'gs-m', userId: 'u1', kind: 'watch', to: '919324000000', sentTo: 'owner', keys: ['overdue_total'] });
+  const tpls = [], notes = [];
+  const deps = { sendText: async (m) => { notes.push(m); return { ok: true }; }, sendTemplate: async (m) => { tpls.push(m); return { ok: true, messageId: 'gs-m2' }; } };
+  await D.apply(D.parseStatusEvents({ type: 'message-event', payload: { id: 'gs-m', type: 'failed', payload: { code: 131049 } } }), deps);
+  check('re-sent at once as the Utility template, with the figures', tpls.length === 1 && tpls[0].templateId === 'tpl-update' && tpls[0].params[0] === 'Mihir' && /₹13.8 L/.test(tpls[0].params[2]) && /Glenmark/.test(tpls[0].params[5]), tpls);
+  check('the new message is tracked for delivery', DB.wa_deliveries.some((r) => r.message_id === 'gs-m2' && r.kind === 'watch' && r.sent_to === 'owner'));
+  const rl = JSON.parse(DB.margyn_signals.find((x) => x.key === 'run:2026-10-08:morning').detail);
+  check('the day\'s log points at it', rl.message_id === 'gs-m2' && rl.tpl === 'update' && rl.retried_from === 'gs-m', rl);
+  check('points stay sent, no alarm to the team', DB.margyn_signals[0].status === 'sent' && notes.length === 0, { s: DB.margyn_signals[0], notes });
+  check('the full update still follows a reply', DB.watch_pending.length === 1 && /Why now/.test(DB.watch_pending[0].text));
+  await D.apply(D.parseStatusEvents({ type: 'message-event', payload: { id: 'gs-m2', type: 'failed', payload: { code: 131049 } } }), deps);
+  check('never retried twice', tpls.length === 1 && DB.margyn_signals[0].status === 'open', { tpls: tpls.length, s: DB.margyn_signals[0] });
+  delete process.env.WHATSAPP_TEMPLATE_UPDATE;
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

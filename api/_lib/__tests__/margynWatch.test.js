@@ -155,6 +155,8 @@ const W = require('../margynWatch');
   check('greets by name, says which update', t3.params[0] === 'Mihir' && /^morning, \d+ [A-Z][a-z]{2}$/.test(t3.params[1]), t3.params);
   check('what needs him is in it, under its own label', /late|days/i.test(t3.params[5]) && /₹/.test(t3.params[2]), t3.params);
   check('full update still follows a reply', DB.watch_pending.length === 1 && /Good morning Mihir/.test(DB.watch_pending[0].text));
+  const runLog = JSON.parse((DB.margyn_signals.find((x) => /^run:.*:morning$/.test(x.key)) || {}).detail || '{}');
+  check('the day\'s log knows which template and the name, for a re-send', runLog.tpl === 'update' && runLog.name === 'Mihir', runLog);
   delete process.env.WHATSAPP_TEMPLATE_UPDATE;
   delete process.env.WHATSAPP_TEMPLATE_ALERT_V2;
   const sp = W.updateParams({ text: 'Good morning.\n\n*Where you stand*\nBank ₹5 L.\n\n*2 things that need you*\n\n1. A owes ₹1 L\nWhy now: x\nBacking: y\n\n2. B owes ₹2 L\nNext: z\n\nReply 1 or 2. Reply STOP ALERTS to pause these.' }, { company: 'Acme', firstName: null, slot: 'evening' });
