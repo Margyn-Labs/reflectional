@@ -113,6 +113,14 @@ export default async function handler(req, res) {
   if (voiceAction === 'watch') return handleWatch(req, res, user);
   // The navigator: typed words -> a page, by Jev, no Claude call (⌘K and the panel).
   if (voiceAction === 'nav') return handleNav(req, res, user);
+  // Warm-up (2026-10-09): the app calls this when it opens, so the first question doesn't wait ~3 s for this
+  // instance to read the books (and to start). No model call, nothing returned but ok.
+  if (voiceAction === 'warm') {
+    const t = Date.now();
+    try { await booksTools.contextFor(user.id); } catch (e) { /* no books: nothing to warm */ }
+    res.status(200).json({ ok: true, ms: Date.now() - t });
+    return;
+  }
 
   const { message, history, context, depth, surface, resume, stream: wantStream } = req.body || {};
   const agent = getAgent();
@@ -153,13 +161,20 @@ export default async function handler(req, res) {
   const inPanel = surface === 'panel';
 
   tmark('auth', Date.now() - T0);
+  // The daily limit is checked while the work starts; no word goes out before it says yes (see `held` below).
   const tCap = Date.now();
-  const overCap = await overDailyCap(user.id, user.auth_id);
-  tmark('limit', Date.now() - tCap);
-  if (overCap) {
-    res.status(429).json({ error: `You've hit today's chat limit (${DAILY_MESSAGE_CAP} messages). Resets tomorrow.` });
-    return;
-  }
+  let capKnown = false, capOver = false;
+  const capP = overDailyCap(user.id, user.auth_id).then((v) => { capKnown = true; capOver = v; tmark('limit', Date.now() - tCap); return v; });
+  const overCapReply = () => res.status(429).json({ error: `You've hit today's chat limit (${DAILY_MESSAGE_CAP} messages). Resets tomorrow.` });
+  // Words written before the limit check answers wait here, then go out in order.
+  let held = [];
+  const say = (t) => {
+    if (!emit) return;
+    if (!capKnown || capOver) { held.push(t); return; }
+    if (held.length) { held.forEach((h) => emit('delta', { t: h })); held = []; }
+    if (t) emit('delta', { t });
+  };
+  const unsay = () => { if (!emit) return; if (!capKnown || capOver) { held = []; return; } held = []; emit('reset', {}); };
 
   const isResume = inPanel && resume && typeof resume === 'object';
   if (!isResume) {
@@ -207,6 +222,7 @@ export default async function handler(req, res) {
 
   const fullTools = inPanel ? [...agent.tools, ...APP_TOOLS] : agent.tools;
   if (route && route.apply.reply) {
+    if (await capP) { overCapReply(); return; }
     jevRouterPkg.logLine(route, { used: [], depthUsed: 'none', sent: 0, full: fullTools.length });
     res.status(200).json({ reply: route.apply.reply, actionCard: null, steps: [], agentId: agent.id, agentName: agent.name, depth: askedDepth, model: 'none' });
     return;
@@ -280,7 +296,7 @@ export default async function handler(req, res) {
     if (pass === 1) {
       if (!appliedGroups || actionCard || (finalText && !looksUnanswered(finalText))) break;
       console.log('[ask-margyn] front door trimmed too much, retrying with every tool');
-      if (emit) emit('reset', {});
+      unsay();
       routerRetry = true;
       appliedGroups = null;
       tools = fullTools; toolNames = new Set(tools.map(t => t.name)); cachedTools = withCache(tools);
@@ -294,7 +310,7 @@ export default async function handler(req, res) {
       const up = supportsEffort(model) ? escalate(effort) : null;
       if (!up || up === effort) break;
       console.log('[ask-margyn] escalating reasoning', effort, '->', up);
-      if (emit) emit('reset', {});
+      unsay();
       effort = up;
       messages.length = baseLength;
       steps.length = 0;
@@ -314,8 +330,10 @@ export default async function handler(req, res) {
           messages
         };
         const tc = Date.now(); let tFirst = null;
-        data = emit ? await callClaudeStream(req1, (t) => { if (tFirst === null) tFirst = Date.now() - tc; emit('delta', { t }); }) : await callClaude(req1);
+        data = emit ? await callClaudeStream(req1, (t) => { if (tFirst === null) tFirst = Date.now() - tc; say(t); }) : await callClaude(req1);
         tmark('model' + (tFirst !== null ? ' first word ' + tFirst : ''), Date.now() - tc);
+        if (await capP) { overCapReply(); return; }
+        if (held.length) say('');
       } catch (e) {
         console.error('Anthropic API error:', e.status, e.body || e.message);
         res.status(502).json({ error: 'AI service error' });
@@ -356,7 +374,7 @@ export default async function handler(req, res) {
       }
 
       if (data.stop_reason === 'tool_use' && toolUses.length) {
-        if (emit && textOut) emit('reset', {});   // its words were a lead-in to the tool call
+        if (textOut) unsay();   // its words were a lead-in to the tool call
         messages.push({ role: 'assistant', content: blocks });
         const clientCalls = inPanel ? toolUses.filter(t => APP_TOOL_NAMES.has(t.name)) : [];
         const serverResults = [];

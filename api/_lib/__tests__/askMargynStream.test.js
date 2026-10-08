@@ -38,7 +38,7 @@ function toolTurn(lead, tool) {
     ev({ type: 'content_block_stop', index: 1 }),
     ev({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 3 } }), ev({ type: 'message_stop' })].join('');
 }
-let turns = [], anthropicBodies = [];
+let turns = [], anthropicBodies = [], overCap = false;
 global.fetch = async (url, init) => {
   url = String(url);
   if (url.includes('/auth/v1/user')) return { ok: true, json: async () => ({ id: U, email: 'a@b.c' }) };
@@ -48,6 +48,7 @@ global.fetch = async (url, init) => {
     if (body.stream) return { ok: true, body: sseBody(t.sse) };
     return { ok: true, json: async () => t.json };
   }
+  if (overCap && url.includes('/rest/v1/chat_messages')) { const rows = Array.from({ length: 700 }, (_, i) => ({ id: i })); return { ok: true, status: 200, json: async () => rows, text: async () => JSON.stringify(rows), headers: { get: () => null } }; }
   return { ok: true, status: 200, json: async () => [], text: async () => '[]', headers: { get: () => null } };
 };
 function mkRes() {
@@ -106,6 +107,20 @@ function events(res) {
   res = mkRes();
   await M.default(req({ message: '', history: [], stream: true, surface: 'panel' }), res);
   check('an error before any word is plain JSON with its status', res.statusCode === 400 && res.body && res.body.error && !res.chunks.length, { s: res.statusCode, b: res.body });
+
+  // over the daily limit: nothing is streamed, the answer is the usual 429
+  overCap = true;
+  turns = [{ sse: textTurn(['This ', 'should ', 'not show.']) }];
+  res = mkRes();
+  await M.default(req({ message: 'how much cash?', history: [], context: {}, depth: 'quick', surface: 'panel', stream: true }), res);
+  check('over the limit: a 429, and no word of the answer went out', res.statusCode === 429 && !res.chunks.join('').includes('should'), { s: res.statusCode, c: res.chunks.join('').slice(0, 200) });
+  overCap = false;
+
+  // warm-up: reads the books, no model call
+  anthropicBodies = [];
+  res = mkRes();
+  await M.default({ method: 'POST', headers: { authorization: 'Bearer tok' }, query: { action: 'warm' }, body: {} }, res);
+  check('warm-up answers ok without calling the model', res.body && res.body.ok === true && anthropicBodies.length === 0, res.body);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
