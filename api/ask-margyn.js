@@ -116,6 +116,10 @@ export default async function handler(req, res) {
 
   const { message, history, context, depth, surface, resume, stream: wantStream } = req.body || {};
   const agent = getAgent();
+  // Where a reply's time went (ms), sent with the answer: auth, the limit check, each model call (to its first
+  // word, and in all) and each tool. Timings only, no content.
+  const T0 = Date.now(), timing = { start: T0 - (req.__t0 || T0), steps: [] };
+  const tmark = (k, ms) => timing.steps.push([k, ms]);
   // Streamed replies (2026-10-09): the page asks with stream:true and gets Server-Sent Events: `delta` with each
   // piece of the answer as Margyn writes it, `reset` when a round ends in a tool call (its words were a lead-in),
   // then `done` carrying exactly the JSON body this handler returns otherwise (plus its status). Anything answered
@@ -148,7 +152,11 @@ export default async function handler(req, res) {
   // on when the page posts the results back (`resume`).
   const inPanel = surface === 'panel';
 
-  if (await overDailyCap(user.id, user.auth_id)) {
+  tmark('auth', Date.now() - T0);
+  const tCap = Date.now();
+  const overCap = await overDailyCap(user.id, user.auth_id);
+  tmark('limit', Date.now() - tCap);
+  if (overCap) {
     res.status(429).json({ error: `You've hit today's chat limit (${DAILY_MESSAGE_CAP} messages). Resets tomorrow.` });
     return;
   }
@@ -305,7 +313,9 @@ export default async function handler(req, res) {
           tools: cachedTools,
           messages
         };
-        data = emit ? await callClaudeStream(req1, (t) => emit('delta', { t })) : await callClaude(req1);
+        const tc = Date.now(); let tFirst = null;
+        data = emit ? await callClaudeStream(req1, (t) => { if (tFirst === null) tFirst = Date.now() - tc; emit('delta', { t }); }) : await callClaude(req1);
+        tmark('model' + (tFirst !== null ? ' first word ' + tFirst : ''), Date.now() - tc);
       } catch (e) {
         console.error('Anthropic API error:', e.status, e.body || e.message);
         res.status(502).json({ error: 'AI service error' });
@@ -352,9 +362,11 @@ export default async function handler(req, res) {
         const serverResults = [];
         for (const tu of toolUses) {
           if (clientCalls.includes(tu)) continue;
+          const tt = Date.now();
           const out = !toolNames.has(tu.name) ? { error: 'Unknown tool ' + tu.name }
             : booksTools.has(tu.name) ? await booksTools.exec(tu.name, tu.input, user.id, user.member ? user.member.permissions : null)
             : await execReadTool(tu.name, tu.input, user.id);
+          tmark('tool ' + tu.name, Date.now() - tt);
           if (STEP_LABELS[tu.name]) steps.push(STEP_LABELS[tu.name]);
           serverResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
         }
@@ -393,6 +405,7 @@ export default async function handler(req, res) {
     if (isQuestion(asked)) {
       await track(user.id, 'question_asked', { channel: inPanel ? 'panel' : 'chat', topic: topicsOf(asked)[0], answered: !!finalText && !looksUnanswered(finalText) });
     }
+    tmark('total', Date.now() - T0);
     res.status(200).json({
       reply: finalText || "I couldn't generate a response there, try rephrasing that.",
       actionCard,
@@ -400,7 +413,8 @@ export default async function handler(req, res) {
       agentId: agent.id,
       agentName: agent.name,
       depth: depthKey,
-      model
+      model,
+      timing
     });
   } catch (err) {
     console.error('ask-margyn error:', err);
