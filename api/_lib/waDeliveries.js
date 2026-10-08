@@ -146,39 +146,65 @@ async function apply(events, deps) {
   return changed;
 }
 
-/** A Margyn update didn't arrive: its points go back to "not sent", and the team hears about it. */
+/**
+ * A Margyn update didn't arrive. If WhatsApp paused a Marketing template (131049) and the Utility numbers template
+ * is set, the same update goes again as that one, at once: Utility isn't capped (8 Oct 2026, the long-term fix after
+ * Mihir's morning update was paused). Otherwise its points go back to "not sent", the update waits for their next
+ * message, and the team hears about it.
+ */
 async function onWatchFailed(row, deps) {
+  const run = await findRun(row).catch(() => null);
+  if (await retryAsUtility(row, run, deps).catch(() => false)) return;
   for (const key of row.signal_keys || []) {
     await updateRows('margyn_signals', `user_id=eq.${row.user_id}&key=eq.${encodeURIComponent(key)}&sent_to=eq.${row.sent_to || 'owner'}`,
       { status: 'open', last_sent_at: null, sent_via: null, sent_to: null }).catch(() => {});
   }
   // Park the update so it goes out as a chat message (not capped, no template) the moment they message Margyn.
-  await parkFailed(row).catch(() => {});
+  await parkText(row, run).catch(() => {});
   const team = process.env.MARGYN_WATCH_PREVIEW_PHONE;
   const send = deps.sendText || require('./whatsappBsp').sendText;
   if (team && digits(team) !== digits(row.to_phone)) {
-    const ours = String(row.error_code) === '131049' ? ' (131049: the alert template is Marketing category; it needs a Utility one, see WHATSAPP-TEMPLATES-MASTER.md §E.)' : '';
+    const ours = String(row.error_code) === '131049' && !process.env.WHATSAPP_TEMPLATE_UPDATE ? ' (131049: only Marketing templates are set; approve the Utility one and set WHATSAPP_TEMPLATE_UPDATE, see WHATSAPP-TEMPLATES-MASTER.md §E.)' : '';
     await send({ to: team, text: `Margyn's update to …${String(row.to_phone || '').slice(-4)} didn't arrive. ${row.error}${ours}` }).catch(() => {});
   }
   try { await require('./track').track(row.user_id, 'watch_failed', { code: row.error_code || null, to: row.sent_to }); } catch (e) { /* counters only */ }
 }
 
-/**
- * The failed update's text, from the day's run log (margyn_signals watch_run rows carry message_id + text), into
- * watch_pending for that phone. Never replaces a newer update already waiting.
- */
-async function parkFailed(row) {
-  if (!row.user_id || !row.to_phone) return false;
+/** The run-log entry (margyn_signals watch_run, see margynWatch.logRun) that sent this message, or null. */
+async function findRun(row) {
+  if (!row.user_id || !row.message_id) return null;
   const runs = await selectRows('margyn_signals', `select=detail&user_id=eq.${row.user_id}&kind=eq.watch_run&order=last_seen.desc&limit=12`).catch(() => []);
-  let run = null;
-  for (const r of runs) { try { const d = JSON.parse(r.detail); if (d && d.message_id && String(d.message_id) === String(row.message_id)) { run = d; break; } } catch (e) { /* skip */ } }
-  if (!run || !run.text) return false;
+  for (const r of runs) { try { const d = JSON.parse(r.detail); if (d && d.message_id && String(d.message_id) === String(row.message_id)) return d; } catch (e) { /* skip */ } }
+  return null;
+}
+
+/** 131049 on a Marketing template → the same update as the Utility numbers template. Once per update. */
+async function retryAsUtility(row, run, deps) {
+  const tplId = process.env.WHATSAPP_TEMPLATE_UPDATE;
+  if (!tplId || String(row.error_code) !== '131049' || !run || !run.text || run.tpl === 'update' || run.retried_from) return false;
+  const d = deps || {};
+  const params = require('./margynWatch').updateParams({ text: run.text }, { company: run.name, firstName: run.name, slot: run.slot, now: run.at });
+  const sent = await (d.sendTemplate || require('./whatsappBsp').sendTemplate)({ to: row.to_phone, templateId: tplId, params });
+  if (!sent || !sent.ok) return false;
+  await record({ messageId: sent.messageId, userId: row.user_id, kind: 'watch', to: row.to_phone, sentTo: row.sent_to, keys: row.signal_keys || [] });
+  // The day's log now points at the message that went, so the app shows its delivery.
+  const entry = Object.assign({}, run, { message_id: sent.messageId || null, tpl: 'update', retried_from: row.message_id });
+  await updateRows('margyn_signals', `user_id=eq.${row.user_id}&key=eq.${encodeURIComponent(`run:${run.day}:${run.slot}`)}`, { detail: JSON.stringify(entry) }).catch(() => {});
+  await parkText(row, run).catch(() => {});   // the full update still follows any reply
+  try { await require('./track').track(row.user_id, 'watch_retried', { code: '131049' }); } catch (e) { /* counters only */ }
+  return true;
+}
+
+/** The update's full text into watch_pending for that phone. Never replaces a newer update already waiting. */
+async function parkText(row, run) {
+  if (!run || !run.text || !row.to_phone) return false;
   const phone = digits(row.to_phone);
   const cur = await selectRows('watch_pending', `select=text,created_at&phone=eq.${phone}&limit=1`).catch(() => []);
   if (cur[0] && cur[0].text && Date.parse(cur[0].created_at) > Date.parse(run.at || 0)) return false;
   await insertRows('watch_pending', [{ phone, user_id: row.user_id, text: run.text, created_at: run.at || new Date().toISOString() }], { onConflict: 'phone', merge: true });
   return true;
 }
+async function parkFailed(row) { return parkText(row, await findRun(row)); }
 
 /** Latest deliveries for an account (the hub shows these). */
 async function recent(userId, limit) {

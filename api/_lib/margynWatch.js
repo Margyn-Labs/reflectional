@@ -212,7 +212,7 @@ function headlineParams(headline, { company, firstName }, max) {
  * (WHATSAPP-TEMPLATES-MASTER.md §E):
  *   Hi {{1}}, this is your scheduled Margyn account update ({{2}}), worked out from the books you connected.
  *   Balances: {{3}} / Money in and out: {{4}} / Coming up: {{5}} / Needs your attention: {{6}}
- *   Reply to this message for the full update or to ask about any figure. Reply STOP ALERTS to stop these updates.
+ *   Reply to this message for the full update or to ask about any figure. (STOP line left out at submission, 8 Oct)
  * Points go by title only; Why now / Backing / Next come with the full update on any reply.
  */
 const UPDATE_SLOT_NAMES = { morning: 'morning', evening: 'evening wrap', midday: '10:30', noon: '12:30', afternoon: '3 pm', late: '5 pm' };
@@ -447,30 +447,34 @@ async function watchAccount(userId, opts) {
       // Changes in the middle of the day go out in an open chat; outside one, only when they matter (a customer
       // on this morning's list paid, a big receipt, a deadline). A template costs money and a ping.
       const templateOk = slot === 'morning' || slot === 'evening' || msg.important;
+      // The Utility numbers template (WHATSAPP_TEMPLATE_UPDATE) isn't capped like the Marketing ones and costs about
+      // a seventh, so with it every update goes out, the 10:30-5 pm changes too (8 Oct 2026: they were held for the
+      // evening because the only templates were Marketing). Pulses still go only when something moved, four at most.
+      const utilityOk = templateOk || INTRADAY.has(slot);
       let sent = null;
       if (await sessionOpen(to, o.now)) {
         sent = await bsp.sendText({ to, text });
         if (sent && sent.ok) sentInfo = { via: 'session', to: preview ? 'preview' : 'owner' };
       }
-      if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_UPDATE) {
+      if (!sentInfo && utilityOk && process.env.WHATSAPP_TEMPLATE_UPDATE) {
         // The figures themselves, in one message; the full update (Why now, Backing) follows any reply.
         sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: updateParams({ text }, { company, firstName, slot, now: o.now }) });
         if (sent && sent.ok) {
-          sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
+          sentInfo = { via: 'template', tpl: 'update', to: preview ? 'preview' : 'owner' };
           await savePending(to, userId, text);
         }
       }
       if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_ALERT_V2) {
         sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT_V2, params: headlineParams(msg.headline, { company, firstName }) });
         if (sent && sent.ok) {
-          sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
+          sentInfo = { via: 'template', tpl: 'v2', to: preview ? 'preview' : 'owner' };
           // The full update goes out when they tap See details (or reply anything) within a day.
           await savePending(to, userId, text);
         }
       }
       if (!sentInfo && templateOk && process.env.WHATSAPP_TEMPLATE_ALERT) {
         sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_ALERT, params: headlineParams(msg.headline, { company, firstName }, 900) });
-        if (sent && sent.ok) sentInfo = { via: 'template', to: preview ? 'preview' : 'owner' };
+        if (sent && sent.ok) sentInfo = { via: 'template', tpl: 'alert', to: preview ? 'preview' : 'owner' };
       }
       if (sentInfo) {
         result.sent = sentInfo;
@@ -484,6 +488,7 @@ async function watchAccount(userId, opts) {
         }
         await track(userId, 'watch_sent', { kind: (sentItems[0] && sentItems[0].kind) || slot, points: sentItems.length, mode, via: sentInfo.via });
       } else if (!templateOk) {
+        result.held = true;
         result.not_sent = 'No open WhatsApp chat, and this change isn\'t urgent enough to send a template for; it will be in the evening wrap.';
       } else {
         result.not_sent = (sent && sent.error) ? String(sent.error).slice(0, 160)
@@ -493,11 +498,13 @@ async function watchAccount(userId, opts) {
   }
   if (!o.dryRun) {
     // The day's log: what this run did and why.
-    const outcome = sentInfo ? 'sent' : !msg.send ? 'quiet' : mode === 'off' ? 'off' : 'not_sent';
+    const outcome = sentInfo ? 'sent' : !msg.send ? 'quiet' : mode === 'off' ? 'off' : result.held ? 'held' : 'not_sent';
     await logRun(userId, slot, {
       outcome, mode,
-      reason: outcome === 'quiet' ? (msg.reason || 'Nothing worth a message.') : outcome === 'off' ? 'Updates are switched off for this account.' : outcome === 'not_sent' ? result.not_sent : null,
+      reason: outcome === 'quiet' ? (msg.reason || 'Nothing worth a message.') : outcome === 'off' ? 'Updates are switched off for this account.' : (outcome === 'not_sent' || outcome === 'held') ? result.not_sent : null,
       via: sentInfo ? sentInfo.via : null, to: sentInfo ? sentInfo.to : null, message_id: result.message_id || null,
+      // Which template, and the name it greets: a Marketing one WhatsApp pauses is re-sent as the Utility one (waDeliveries).
+      tpl: sentInfo && sentInfo.tpl || null, name: msg.send ? (mode === 'preview' ? shortCompany(company) : (firstNameOf(profile) || shortCompany(company))) : null,
       headline: msg.send ? msg.headline : null, text: msg.send ? msg.text : null, points: sentItems.length
     }, o.now);
     await saveState(userId, all, sentItems, sentInfo, state);

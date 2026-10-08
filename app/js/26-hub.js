@@ -124,10 +124,12 @@ function mgHubRunRow(r, w){
   else if(r.outcome === 'quiet') bdg = { cls:'', text:'Stayed quiet' };
   else if(r.outcome === 'off') bdg = { cls:'', text:'Updates off' };
   else if(r.outcome === 'skipped') bdg = { cls:'', text:'No books yet' };
+  // Not a failure: a small change with no open chat waits for the next update (rows before 8 Oct say not_sent).
+  else if(r.outcome === 'held' || /urgent enough/.test(r.reason || '')){ bdg = { cls:'', text:'Held for the evening' }; r = Object.assign({}, r, { reason:'No open WhatsApp chat, so this small change goes in the evening wrap instead of a separate message.' }); }
   else bdg = { cls:'warn', text:'Couldn’t send' };
   const sub = r.outcome === 'sent' ? (r.headline || '') : (r.reason || '');
   // How it went: a chat message (inside the 24-hour window) or an approved template. Tells a delivery problem apart.
-  const via = r.outcome === 'sent' ? (r.via === 'template' ? ' · as a template' : r.via === 'session' ? ' · as a chat message' : '') : '';
+  const via = r.outcome === 'sent' ? (r.retried_from ? ' · WhatsApp paused the first try; re-sent as an account update' : r.via === 'template' ? ' · as a template' : r.via === 'session' ? ' · as a chat message' : '') : '';
   const head = '<span class="mg-bdg ' + bdg.cls + '">' + escapeHtml(bdg.text) + '</span> <b>' + escapeHtml(time + ' · ' + (MG_HUB_SLOTS[r.slot] || r.slot)) + '</b><span class="mg-fine">' + escapeHtml(via) + '</span>' + (sub ? '<div class="mg-li-s">' + escapeHtml(sub) + '</div>' : '');
   return r.text ? '<details class="mg-hub-run"><summary>' + head + '</summary><pre style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + escapeHtml(r.text) + '</pre></details>'
     : '<div class="mg-hub-run">' + head + '</div>';
