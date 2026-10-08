@@ -369,7 +369,8 @@ async function refreshAll(){
     loadZohoVitals(), loadOdooStatus(),
     loadReconSummary(), loadAgentActions(),
     loadShopifyStatus(),
-    tallyP = loadTallyStatus().then(() => { booksKick(); return loadTallyData(); })
+    // The summary doesn't need the status answer (it says connected:false itself): both at once.
+    tallyP = (async () => { const dataP = loadTallyData(); await loadTallyStatus(); booksKick(); return dataP; })()
   ]);
   snapshots = snaps; receivables = recv; payables = pay; findings = fnd;
   pendingSuggestions = sugg; renderSuggestionsBadge();

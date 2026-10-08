@@ -212,6 +212,32 @@ async function routeFor(session){
     showView('summary');
     return;
   }
+  // The saved screen is up (30-boot-cache.js): fetch fresh data for the business on screen straight away, while
+  // who-is-this and the profile are checked alongside (they used to come first, ~2-3 s). If the answer is a
+  // different business (a membership changed), the saved copy is dropped and the app starts again.
+  const joining = typeof mgPendingJoin === 'function' && mgPendingJoin();
+  if(typeof mgBcShownFor !== 'undefined' && mgBcShownFor === session.user.id && currentUser && currentProfile && !joining){
+    const shownAcct = currentUser.id, shownUser = currentUser;
+    const checkP = (async () => {
+      const acct = typeof mgResolveAccount === 'function' ? await mgResolveAccount(session.user) : session.user.id;
+      const prof = (await sbClient.from('profiles').select('*').eq('id', acct || session.user.id).maybeSingle()).data || null;
+      return { acct:acct || session.user.id, prof };
+    })();
+    const freshP = refreshAll();
+    let chk;
+    try { chk = await checkP; } catch(e){ chk = null; }
+    if(chk && (chk.acct !== shownAcct || !chk.prof)){
+      if(typeof mgBcClear === 'function') await mgBcClear();
+      location.reload();
+      return;
+    }
+    if(chk){ currentUser = shownUser; currentProfile = chk.prof; }
+    mtrack('app_open');
+    await freshP;
+    if(typeof mgApplyActor === 'function') mgApplyActor();
+    if(typeof mgBcSaveSoon === 'function') mgBcSaveSoon();
+    return;
+  }
   currentUser = session.user;
   document.getElementById('userEmail').textContent = currentUser.email;
   document.getElementById('authGate').classList.add('hidden');
