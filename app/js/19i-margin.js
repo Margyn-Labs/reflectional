@@ -17,6 +17,8 @@ function mgBooksName(){ return (mgMar && mgMar.books_source_name) || 'Tally'; }
 
 async function mgLoadMargin(force){
   if(mgMarBusy || (!force && mgMar && Date.now() - mgMarAt < 60000)) return;
+  // Opened straight on Margin or Cash flow, sign-in isn't set up yet: try again shortly instead of showing "Couldn't load".
+  if(typeof sbClient === 'undefined' || !sbClient){ clearTimeout(mgLoadMargin.retry); mgLoadMargin.retry = setTimeout(() => mgLoadMargin(force), 1500); return; }
   mgMarBusy = true;
   try {
     const { data:{ session } } = await sbClient.auth.getSession();
