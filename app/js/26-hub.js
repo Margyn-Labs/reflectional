@@ -277,13 +277,16 @@ document.addEventListener('click', async e => {
     mgHubRender(); return;
   }
   if(e.target.closest('[data-hub-send]')){
-    const b = e.target.closest('[data-hub-send]'); b.disabled = true;
+    // It reads the books and works out the whole update (10-15 s): say so, then show the result where it is.
+    const b = e.target.closest('[data-hub-send]'); b.disabled = true; b.textContent = 'Working out today’s update…';
     try {
       const r = await mgHubWatchPost({ op:'preview' });
       if(r.skipped) toast(r.skipped, { kind:'bad' });
       else mgHub.preview = { text:r.text || '', note:'This is the next update exactly as it would go out. Nothing was sent to ' + (mgHub.watch && mgHub.watch.owner_name || 'the owner') + ' and nothing is used up.' + (r.sent_to_preview_phone ? ' A copy went to the Margyn team’s test phone.' : '') };
     } catch(err){ toast(err.message, { kind:'bad' }); }
-    b.disabled = false; mgHubRender(); return;
+    b.disabled = false; mgHubRender();
+    const pvEl = document.querySelector('.mg-hub-preview'); if(pvEl) pvEl.scrollIntoView({ behavior:'smooth', block:'start' });
+    return;
   }
   const wa = e.target.closest('[data-hub-wa]');
   if(wa){ mgHubOpenWhatsApp(wa.getAttribute('data-hub-wa'), wa); return; }

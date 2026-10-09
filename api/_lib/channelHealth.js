@@ -37,9 +37,9 @@ const latest = (a, b) => (a == null ? b : b == null ? a : Math.max(a, b));
 function plainError(raw) {
   const s = String(raw || '').trim();
   if (!s) return null;
+  if (/131049|marketing messages|paused it|limits how many/i.test(s)) return 'WhatsApp paused it: it limits how many business template messages one number gets. Send Margyn any message on WhatsApp and the update comes straight through.';
   if (/not configured|has no configured id/i.test(s)) return 'The message template isn’t set up on the server yet.';
   if (/template/i.test(s) && /(reject|not approved|pending|disabled|paused|does not exist|not found)/i.test(s)) return 'WhatsApp hasn’t approved this message template.';
-  if (/131049|marketing messages/i.test(s)) return 'WhatsApp paused it: it limits how many business template messages one number gets. Send Margyn any message on WhatsApp and the update comes straight through.';
   if (/131026|not.*(whatsapp|opted)|undeliverable/i.test(s)) return 'That number can’t receive WhatsApp messages.';
   if (/131047|24.?hour|re-?engage/i.test(s)) return 'Outside WhatsApp’s 24-hour window, and no approved template to open the chat.';
   if (/401|403|unauthori[sz]ed|forbidden|invalid.*(key|token)/i.test(s)) return 'The messaging provider rejected our credentials.';

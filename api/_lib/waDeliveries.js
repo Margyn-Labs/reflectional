@@ -112,6 +112,21 @@ async function rowsFor(ids) {
   return selectRows('wa_deliveries', `select=*&wa_id=in.(${encodeURIComponent(list)})&limit=5`).catch(() => []);
 }
 
+/** The statuses a report may overwrite: anything lower; a failure only before delivery; delivery also over a failure. */
+function lowerThan(status) {
+  if (status === 'failed') return ['queued', 'accepted', 'sent'];
+  const out = Object.keys(RANK).filter((k) => RANK[k] < RANK[status]);
+  if (RANK[status] >= RANK.delivered) out.push('failed');
+  return out;
+}
+/** A row's status as its timestamps prove it (rows a race left on "sent" with a delivery time on them). */
+function settled(row) {
+  if (!row) return row;
+  if (row.read_at && row.status !== 'read') return Object.assign({}, row, { status: 'read' });
+  if (row.delivered_at && !['delivered', 'read'].includes(row.status)) return Object.assign({}, row, { status: 'delivered' });
+  return row;
+}
+
 /** Apply status reports. Never goes backwards (a late "sent" doesn't undo "read"). */
 async function apply(events, deps) {
   const d = deps || {};
@@ -125,7 +140,8 @@ async function apply(events, deps) {
       try { await insertRows('wa_deliveries', [seed]); rows = [seed]; }
       catch (e) { rows = await rowsFor(ev.ids); }   // recorded in the meantime: use that row
     }
-    for (const row of rows) {
+    for (const row0 of rows) {
+      const row = settled(row0);
       const cur = row.status || 'queued';
       const at = new Date(typeof ev.at === 'number' ? ev.at : Date.parse(ev.at) || Date.now()).toISOString();
       const patch = {};
@@ -138,7 +154,11 @@ async function apply(events, deps) {
         if (ev.status === 'read') { patch.read_at = at; if (!row.delivered_at) patch.delivered_at = at; }
       }
       if (!Object.keys(patch).length) continue;
-      await updateRows('wa_deliveries', `message_id=eq.${encodeURIComponent(row.message_id)}`, patch).catch(() => {});
+      // Only over a lower status, checked by the database itself: Gupshup sends "sent" and "delivered" a second
+      // apart and two webhook calls can run at once; both read "accepted", and a late "sent" write used to land
+      // on top of "delivered" (9 Oct 2026: Mihir's 8:12 am update showed "sent" with a delivery time on it).
+      const guard = patch.status ? `&status=in.(${lowerThan(patch.status).join(',')})` : '';
+      await updateRows('wa_deliveries', `message_id=eq.${encodeURIComponent(row.message_id)}${guard}`, patch).catch(() => {});
       changed++;
       if (patch.status === 'failed' && row.kind === 'watch') await onWatchFailed(Object.assign({}, row, patch), d).catch(() => {});
     }
@@ -208,8 +228,8 @@ async function parkFailed(row) { return parkText(row, await findRun(row)); }
 
 /** Latest deliveries for an account (the hub shows these). */
 async function recent(userId, limit) {
-  try { return await selectRows('wa_deliveries', `select=message_id,kind,sent_to,signal_keys,status,error,error_code,sent_at,delivered_at,read_at,failed_at&user_id=eq.${userId}&kind=eq.watch&order=sent_at.desc&limit=${limit || 20}`); }
+  try { return (await selectRows('wa_deliveries', `select=message_id,kind,sent_to,signal_keys,status,error,error_code,sent_at,delivered_at,read_at,failed_at&user_id=eq.${userId}&kind=eq.watch&order=sent_at.desc&limit=${limit || 20}`)).map(settled); }
   catch (e) { return null; }
 }
 
-module.exports = { record, parseStatusEvents, apply, explain, recent, parkFailed, RANK, WA_PAUSED };
+module.exports = { record, parseStatusEvents, apply, explain, recent, parkFailed, settled, RANK, WA_PAUSED };
