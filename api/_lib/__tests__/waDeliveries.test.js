@@ -76,6 +76,16 @@ const texts = [];
   await D.record({ messageId: 'gs-early-f', userId: 'u1', kind: 'watch', to: '919324000000', sentTo: 'owner', keys: ['overdue_total'] });
   check('an early failure still puts the points back to not sent', DB.wa_deliveries.find((r) => r.message_id === 'gs-early-f').status === 'failed' && DB.margyn_signals[0].status === 'open', DB.margyn_signals[0]);
 
+  console.log('"sent" and "delivered" processed at the same time (9 Oct, 8:12 am)');
+  DB.wa_deliveries.push({ message_id: 'gs-race', user_id: 'u1', kind: 'watch', to_phone: '919324000000', sent_to: 'owner', status: 'accepted', sent_at: new Date().toISOString() });
+  await Promise.all([
+    D.apply(D.parseStatusEvents({ type: 'message-event', payload: { id: 'gs-race', type: 'delivered' } })),
+    D.apply(D.parseStatusEvents({ type: 'message-event', payload: { id: 'gs-race', type: 'sent' } }))
+  ]);
+  const race = DB.wa_deliveries.find((r) => r.message_id === 'gs-race');
+  check('a late "sent" never lands on top of "delivered"', race.status === 'delivered' && race.delivered_at, race);
+  check('a row a race already left on "sent" with a delivery time reads as delivered', D.settled({ status: 'sent', delivered_at: '2026-10-09T02:42:03Z' }).status === 'delivered' && D.settled({ status: 'sent' }).status === 'sent');
+
   console.log('paused as Marketing, re-sent as the Utility numbers template (8 Oct, long-term fix)');
   process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-update';
   Object.assign(DB.margyn_signals[0], { status: 'sent', last_sent_at: '2026-10-08T02:41:00Z', sent_to: 'owner', sent_via: 'template' });
