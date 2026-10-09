@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agents · Margyn</title>
+<meta name="description" content="Margyn agents reconcile payments, chase customers, check your books and brief you every day, then wait for your approval.">
+<link rel="canonical" href="https://www.margynlabs.com/agents.html">
+<meta name="theme-color" content="#FAFAF8">
+<link rel="icon" type="image/png" href="img/margyn-logo-mark.png">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Margyn">
+<meta property="og:title" content="Agents · Margyn"><meta property="og:description" content="Margyn agents reconcile payments, chase customers, check your books and brief you every day, then wait for your approval.">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js'); if(!('onpagereveal' in window) || location.protocol === 'file:') document.documentElement.classList.add('no-vt');</script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body class="pg-agents">
+<nav id="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html" aria-label="Margyn home"><img src="img/margyn-logo-mark.webp" alt="" width="28" height="20"><span>margyn</span></a>
+    <div class="nav-links"><a href="platform.html"><span>Product</span></a><a href="ai.html"><span>Margyn AI</span></a><a href="agents.html" aria-current="page"><span class="nav-ind"></span><span>Agents</span></a><a href="trust.html"><span>Trust</span></a></div>
+    <div class="nav-right">
+      <a class="signin" href="/app.html">Sign in</a>
+      <button class="btn btn-primary" type="button" data-open-wl>Request access</button>
+    </div>
+  </div>
+  <div class="nav-m"><a href="platform.html"><span>Product</span></a><a href="ai.html"><span>Margyn AI</span></a><a href="agents.html" aria-current="page"><span class="nav-ind"></span><span>Agents</span></a><a href="trust.html"><span>Trust</span></a></div>
+</nav>
+<main id="top">
+<header class="page-hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="wrap ph-grid">
+    <div class="ph-copy">
+      <h1 style="view-transition-name:agents-title">Your finance team works the night shift.</h1>
+      <p class="lede">Each agent has one job. It works while you sleep, gets everything ready, and waits for your OK. None of them ever acts on a number only one system reports.</p>
+    </div>
+    <div class="ph-viz" style="display:grid;place-items:center"><div class="log" data-play="650" style="view-transition-name:agents-log"><div class="log-h"><span class="live-dot"></span>Last night<small>Anvaya Home Goods</small></div><ol><li><time>02:00</time><i style="--c:#0C2651"></i><span>Razorpay synced <small>412 payments</small></span></li><li><time>02:05</time><i style="--c:#1F3B73"></i><span>Tally synced <small>1,284 vouchers</small></span></li><li><time>02:15</time><i style="--c:var(--emerald)"></i><span>Reconciler matched 398 of 412</span></li><li><time>02:16</time><i style="--c:var(--emerald)"></i><span>Close &amp; Collections lined up 6 fixes</span></li><li><time>06:10</time><i style="--c:var(--warn)"></i><span>Books check found 6 things to fix</span></li><li><time>07:30</time><i style="--c:var(--orange)"></i><span>Morning update sent <small>to 3 people</small></span></li><li><time>09:00</time><i style="--c:var(--orange)"></i><span>Payment reminders delivered <small>4 of 4</small></span></li></ol></div></div>
+  </div>
+</header>
+<section id="agents" class="tight"><div class="wrap"><div class="bento">
+      <div class="bcard wide dark spot reveal">
+        <div class="bcard-h"><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span><h3>Briefing</h3><span class="pill live">Live</span></div>
+        <p>A full picture every morning, short updates when money moves during the day, and a wrap-up at 7. If nothing changed, Margyn stays quiet.</p>
+        <div class="bviz day" id="dayline">
+          <div class="day-track"><i class="day-fill"></i>
+            <span class="day-n" style="--x:0%">7:30</span><span class="day-n" style="--x:20%">10:30</span><span class="day-n" style="--x:40%">12:30</span><span class="day-n" style="--x:60%">3:00</span><span class="day-n" style="--x:80%">5:00</span><span class="day-n" style="--x:100%">7:00</span>
+          </div>
+          <div class="day-card bm" id="dayCard"><b>Morning update · 7:30 am</b><ul><li><span>Cash</span><span>₹1.84 Cr</span></li><li><span>Late from customers</span><span>₹88.4 L</span></li><li><span>Cash in 7 days</span><span>₹1.52 Cr</span></li></ul></div>
+        </div>
+      </div>
+      <div class="bcard spot reveal" data-d="1" id="reconCard">
+        <div class="bcard-h"><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span><h3>Reconciler</h3><span class="pill live">Live</span></div>
+        <p>Matches every gateway payment to its invoice, every night. Anything that doesn't line up comes to you first.</p>
+        <div class="bviz match">
+          <div class="mrow"><span>RZP ₹5,92,500</span><em>●</em><span>INV-00266</span></div>
+          <div class="mrow"><span>RZP ₹2,04,000</span><em>●</em><span>INV-00288</span></div>
+          <div class="mrow"><span>CF ₹3,13,920</span><em>●</em><span>INV-00284</span></div>
+          <div class="mrow"><span>RZP ₹1,12,400</span><em>●</em><span>INV-00291</span></div>
+        </div>
+      </div>
+      <div class="bcard spot reveal">
+        <div class="bcard-h"><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></span><h3>Close &amp; Collections</h3><span class="pill live">Live</span></div>
+        <p>Goes through your books overnight and lines up the fixes a finance team would make. You approve each one.</p>
+        <div class="bviz props">
+          <div class="prop"><i>Match</i>Blue Door Interiors<b>₹11,85,000</b></div>
+          <div class="prop"><i>Hold</i>Rathi Textiles, GSTR-1<b>₹1,04,600</b></div>
+          <div class="prop"><i>Journal</i>Short-paid, likely TDS<b>₹4,080</b></div>
+        </div>
+      </div>
+      <div class="bcard wide spot reveal" data-d="1">
+        <div class="bcard-h"><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></span><h3>Document intake</h3><span class="pill live">Live</span></div>
+        <p>Forward a bill or invoice on WhatsApp, or upload a spreadsheet. Margyn reads it and suggests where each figure goes. Nothing is saved until you say yes.</p>
+        <div class="bviz doc-flow">
+          <div class="doc"><i></i><i></i><i></i><i></i><i></i><i></i><b>PDF</b></div>
+          <div class="fields"><div><span>Vendor</span><span>Kiran Packaging</span></div><div><span>Amount</span><span>₹36,200</span></div><div><span>Due</span><span>14 Oct 2026</span></div><div><span>Goes to</span><span>Payables, pending approval</span></div></div>
+        </div>
+      </div>
+      <div class="bcard wide spot reveal" id="remindCard">
+        <div class="bcard-h"><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></span><h3>Payment reminders</h3><span class="pill live">Live</span></div>
+        <p>Polite WhatsApp reminders to customers who owe you, only from the list you approve. You see which ones arrived, which were read, and which got paid.</p>
+        <div class="bviz remind">
+          <div class="rm-thread">
+            <div class="rm-msg">Hi Greenleaf team, a reminder that invoice INV-00271 for ₹3,18,000 was due on 12 Sept. Thank you!<span class="rm-ticks"><svg viewBox="0 0 18 12"><path d="M1 6.5l3 3L10 3"/><path class="t2" d="M7 9.5L13 3"/></svg></span></div>
+            <div class="rm-status"><span>Sent</span><span>Delivered</span><span>Read</span><span class="paid">Paid ₹3,18,000</span></div>
+          </div>
+          <div class="rm-stat"><small>Recovered after reminders, this month</small><b class="num" data-count="14.2" data-dp="1" data-pre="₹" data-suf=" L">₹14.2 L</b></div>
+        </div>
+      </div>
+      <div class="bcard spot reveal" data-d="1">
+        <div class="bcard-h"><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 12l3 3 5-6"/></svg></span><h3>Books check</h3><span class="pill live">Live</span></div>
+        <p>Every morning, what your accountant should fix, and since when. Closes itself once it's fixed.</p>
+        <div class="bviz notice">
+          <div class="nt on"><i style="background:var(--warn)"></i>Interest paid filed as income</div>
+          <div class="nt on"><i style="background:var(--warn)"></i>September salaries not entered</div>
+          <div class="nt on"><i style="background:var(--emerald)"></i>4 paid bills knocked off</div>
+        </div>
+      </div>
+      </div></div></section>
+<section id="loop" class="tight">
+  <div class="wrap">
+    <div class="sec-head solo reveal"><div><h2 class="h" style="margin-top:14px">Watch. Prepare. Ask. <span class="soft">Then act.</span></h2></div></div>
+    <div class="pipe reveal" id="pipe">
+      <div class="pipe-line"><i></i></div>
+      <div class="pp"><div class="pp-n">01</div><b>Something happens</b><p>A payment lands, a bill falls due, or 2 am comes round.</p></div>
+      <div class="pp"><div class="pp-n">02</div><b>It reads and checks</b><p>Every related entry, across your books, gateway and store.</p></div>
+      <div class="pp"><div class="pp-n">03</div><b>It lines up the work</b><p>The fix, the reminder or the briefing, with its evidence.</p></div>
+      <div class="pp you"><div class="pp-n">04</div><b>You approve</b><p>In the app or on WhatsApp. One tap.</p></div>
+      <div class="pp"><div class="pp-n">05</div><b>It's done</b><div class="ladder"><span><em class="pill live">Today</em>In Margyn and on WhatsApp</span><span><em class="pill soon">Next</em>In your books</span><span><em class="pill soon">Later</em>The payment itself</span></div></div>
+    </div>
+  </div>
+</section>
+<section id="coming">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="reveal"><h2 class="h">Joining the team <span class="soft">next.</span></h2></div>
+      <p class="lede reveal" data-d="1">Same rules as every agent today: it shows its evidence, and nothing happens without your OK.</p>
+    </div>
+    <div class="next-grid reveal">
+      <article class="nx big">
+        <header><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 12l3 3 5-6"/></svg></span><h3>Posts to your books</h3><span class="pill soon">Coming</span></header>
+        <p>Approve an entry once and it lands in Tally, Zoho Books or Odoo. Nobody types it in twice.</p>
+        <div class="r2-viz" data-steps="4" data-ms="1150" data-hold="2800">
+          <div class="lg"><div class="lg-h"><span>TallyPrime · Journal</span><span>Oct 2026</span></div>
+            <div class="lg-r"><span>Kaveri Stores · receipt</span><b>₹6,20,000</b></div>
+            <div class="lg-r"><span>Kiran Packaging · bill</span><b>₹36,200</b></div>
+            <div class="lg-r"><span>HDFC OD · interest</span><b>₹28,410</b></div>
+            <div class="lg-r"><span>Blue Door Interiors · receipt</span><b>₹11,85,000</b></div>
+            <div class="lg-r"><span>Freight · reclass from Sales</span><b>₹92,400</b></div></div>
+          <div class="en"><div>Urban Nest paid<small>INV-00271 · Razorpay</small></div><span class="num">₹10,00,000</span><span class="go">Approve</span><span class="stamp">Posted ✓</span></div>
+        </div>
+      </article>
+      <article class="nx">
+        <header><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></span><h3>GST Guard</h3><span class="pill soon">Coming</span></header>
+        <p>Catches vendors who haven't filed, before it costs you input tax credit.</p>
+        <div class="r2-viz" data-steps="3" data-ms="1100" data-hold="3000"><div class="gst">
+          <div>Kiran Packaging<em>₹6,520</em><span class="st">Filed</span></div>
+          <div>Rathi Textiles<em>₹18,830</em><span class="st">Not filed</span></div>
+          <div>Sahyadri Traders<em>₹3,410</em><span class="st">Filed</span></div>
+        </div></div>
+      </article>
+      <article class="nx">
+        <header><span class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><h3>45-Day Clock</h3><span class="pill soon">Coming</span></header>
+        <p>Warns you before an MSME bill crosses 45 days and you lose the deduction.</p>
+        <div class="r2-viz"><div class="clock" id="clock" data-steps="3" data-ms="1200" data-hold="3000">
+          <svg viewBox="0 0 96 96"><circle class="bg" cx="48" cy="48" r="40"/><circle class="fg" cx="48" cy="48" r="40"/></svg>
+          <div><b class="day">Day 30</b><small>Kiran Packaging · ₹36,200<br>MSME bill, 45-day limit</small><span class="warn">Pay by 14 Oct to keep the deduction</span></div>
+        </div></div>
+      </article>
+    </div>
+  </div>
+</section>
+<section class="cta-panel" id="cta">
+  <div class="hero-aura"></div>
+  <div class="wrap">
+    <div class="cta-inner reveal">
+      <div class="kicker on-dark">Early access</div>
+      <h2>Deploy your <span class="accent">AI finance team</span> now.</h2>
+      <p>We're onboarding a small group of Indian digital-native founders. Join the waitlist for a direct line to the team and first access as agents go live.</p>
+      <div class="hero-ctas">
+        <button class="cta-btn" type="button" data-open-wl>
+          Join the waitlist
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+        <a class="cta-ghost" href="mailto:business@margynlabs.com">Talk to us</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer>
+  <div class="wrap">
+    <div class="f-grid">
+      <div>
+        <div class="f-brand"><img src="img/margyn-logo-mark.webp" alt=""><span>margyn</span></div>
+        <p class="f-desc">The AI finance team for Indian businesses.</p>
+        <div class="f-badges"><span>Acts only with your approval</span><span>Built for DPDPA</span></div>
+      </div>
+      <div><h5>Product</h5><ul><li><a href="platform.html">Product</a></li><li><a href="ai.html">Margyn AI</a></li><li><a href="agents.html">Agents</a></li></ul></div>
+      <div><h5>Company</h5><ul><li><a href="trust.html">Trust</a></li><li><a href="trust.html#faq">FAQ</a></li><li><a href="/app.html">Sign in</a></li></ul></div>
+      <div><h5>Contact</h5><ul><li><a href="mailto:business@margynlabs.com">business@margynlabs.com</a></li><li><a href="#" data-open-wl>Request access</a></li></ul></div>
+    </div>
+    <div class="f-legal"><span>© 2026 Margyn Labs</span><span style="display:flex;gap:20px"><a href="/privacy.html">Privacy policy</a><a href="/terms.html">Terms of use</a></span></div>
+    <div class="f-mark" aria-hidden="true">margyn</div>
+  </div>
+</footer>
+<!-- ================= WAITLIST MODAL ================= -->
+<div class="wl-backdrop gate-closed" id="wlBackdrop">
+  <div class="wl-modal" role="dialog" aria-modal="true" aria-labelledby="wlTitle">
+    <button class="wl-close" id="wlClose" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div id="wlFormWrap">
+      <div class="label">Early access</div>
+      <h3 id="wlTitle">Request access to Margyn</h3>
+      <p class="wl-sub">We onboard a few businesses at a time and set each one up with you. Tell us a little about yours.</p>
+      <form id="wlForm">
+        <div class="wl-field"><label for="wlName">Name</label><input type="text" id="wlName" name="name" required autocomplete="name"></div>
+        <div class="wl-field"><label for="wlEmail">Work email</label><input type="email" id="wlEmail" name="email" required autocomplete="email"></div>
+        <div class="wl-field"><label for="wlBusiness">Business name</label><input type="text" id="wlBusiness" name="business_name" required autocomplete="organization"></div>
+        <div class="wl-field"><label for="wlRevenue">Annual revenue</label>
+          <select id="wlRevenue" name="revenue_range" required>
+            <option value="" disabled selected>Select a range</option>
+            <option value="1-5 Cr">₹1 to 5 Cr</option><option value="5-10 Cr">₹5 to 10 Cr</option>
+            <option value="10-50 Cr">₹10 to 50 Cr</option><option value="50-100 Cr">₹50 to 100 Cr</option>
+            <option value="100-500 Cr">₹100 to 500 Cr</option><option value="500-1000 Cr">₹500 to 1000 Cr</option>
+          </select></div>
+        <label class="wl-check"><input type="checkbox" id="wlOptIn" name="marketing_opt_in">Send me occasional product updates.</label>
+        <button type="submit" class="btn btn-brand wl-submit" id="wlSubmit">Request access</button>
+        <p class="wl-fine">By submitting you agree to our <a href="/privacy.html">privacy policy</a>. We never share your details.</p>
+        <div class="wl-error" id="wlError">Something went wrong. Please try again.</div>
+      </form>
+    </div>
+    <div class="wl-success" id="wlSuccess">
+      <div class="ws-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg></div>
+      <h3>You're on the list.</h3>
+      <p class="wl-sub">We review every request personally and will reply to the email you gave us.</p>
+    </div>
+  </div>
+</div>
+
+
+<script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="site.js"></script>
+</body>
+</html>
