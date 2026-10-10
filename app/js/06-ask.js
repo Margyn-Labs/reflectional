@@ -479,7 +479,11 @@ function buildMargynContext(focusLabel){
       lastSuccessAt: (zohoVitals && zohoVitals.last_synced_at) || null },
     { type: 'Shopify', connected: !!shopifyConnected,
       needsReauth: !!(shopifyStore && shopifyStore.status === 'needs_reauthentication'),
-      lastSuccessAt: (shopifyStore && shopifyStore.last_synced_at) || null }
+      lastSuccessAt: (shopifyStore && shopifyStore.last_synced_at) || null },
+    // Tally was missing here, so the AI never saw its freshness even though
+    // the Tally block above reads its data.
+    { type: 'Tally', connected: !!tallyConnected, needsReauth: false,
+      lastSuccessAt: (tallyInstalls || []).map(i => i.last_sync_at).filter(Boolean).sort().pop() || null }
   ];
 
   return {
