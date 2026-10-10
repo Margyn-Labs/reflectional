@@ -267,6 +267,9 @@ function prepare(book, opts) {
   // Tally lists them stay in billsAsInTally (the completeness check compares the two).
   ctx.billsAsInTally = bills;
   if (o.tieBills !== false) {
+    // A bill that points the wrong way for a customer whose own balance says it's theirs is turned round first.
+    try { const r = require('./billTieOut').rescueMisSigned(ctx); if (r.rescued) { ctx.bills = r.bills; ctx.billsAsInTally = r.bills; ctx.billsTurned = r.rescued; } }
+    catch (e) { /* keep the bills as they were */ }
     try { const t = require('./billTieOut').tieReceivables(ctx); ctx.bills = t.bills; ctx.billTie = t.summary; }
     catch (e) { /* keep Tally's bills */ }
   }
