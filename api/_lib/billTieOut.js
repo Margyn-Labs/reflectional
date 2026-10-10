@@ -95,6 +95,51 @@ function tieReceivables(ctx) {
 }
 
 /**
+ * Bills that point the wrong way for a customer or supplier whose own ledger says otherwise (2026-10-11).
+ *
+ * calibrateBills (tallyBills.js) decides whether Tally's signs are backwards for the WHOLE company, by a vote of
+ * the bills against the sales/purchase vouchers. The vote needs at least 3 bills and can be outweighed by a few
+ * big on-account amounts, so on a small company a customer's one real invoice could be labelled a payable,
+ * treated as an advance and rebuilt from the voucher: right amount, but the voucher number as its reference and
+ * the invoice date as its due date (a Chase message then says "invoice 2 ... 9 days overdue" instead of
+ * "TEST-001 ... 3 days overdue").
+ *
+ * The party's own balance settles it. For a customer who owes X, with no bill of their own that points the right
+ * way, if their bills labelled the other way add up to X, those ARE the open bills, signed backwards: point them
+ * the right way. Suppliers the same, with what we owe. Parties whose normal bills exist are never touched, so a
+ * company that already reads correctly (hundreds of bills, signs voted right) changes by nothing. A customer
+ * with a credit balance owes nothing (owed 0), so a genuine overpayment is never turned into a receivable.
+ * Returns { bills, rescued: number of bills turned round }.
+ */
+function rescueMisSigned(ctx) {
+  const bills = ctx.bills || [];
+  const bal = CF.partyBalancesToday(ctx);
+  const byParty = new Map();
+  for (const b of bills) {
+    const k = keyOf(b.party_name);
+    if (!byParty.has(k)) byParty.set(k, []);
+    byParty.get(k).push(b);
+  }
+  const turn = new Map();   // bill -> direction it should have
+  for (const [k, list] of byParty) {
+    const p = bal.get(k);
+    if (!p || p.balance == null || (p.bucket !== 'debtor' && p.bucket !== 'creditor')) continue;
+    const customer = p.bucket === 'debtor';
+    const owed = Math.max(0, customer ? p.balance : -p.balance);
+    if (owed < 1) continue;
+    const right = customer ? 'receivable' : 'payable';
+    const isRight = (b) => (b.direction === 'payable') === (right === 'payable') && !b.advance;
+    if (list.some(isRight)) continue;                              // this party already has bills pointing the right way
+    const wrong = list.filter((b) => !isRight(b));
+    const sum = wrong.reduce((a, b) => a + Math.abs(num(b.closing_balance)), 0);
+    if (!wrong.length || Math.abs(sum - owed) > Math.max(1, 0.01 * owed)) continue;
+    for (const b of wrong) turn.set(b, right);
+  }
+  if (!turn.size) return { bills, rescued: 0 };
+  return { bills: bills.map((b) => (turn.has(b) ? Object.assign({}, b, { direction: turn.get(b), advance: false, turned: true }) : b)), rescued: turn.size };
+}
+
+/**
  * Per party, Tally's open bills against the ledger balance, for the parties that don't tie (the books health check
  * and the completeness panel). direction 'receivable' (customers) or 'payable' (suppliers). Reads the bills as Tally
  * lists them (ctx.billsAsInTally), not the tied-out ones. Same tolerance as tieReceivables: within ₹1 or 1% ties.
@@ -129,4 +174,4 @@ function partyGaps(ctx, direction) {
   return { tied, gaps };
 }
 
-module.exports = { tieReceivables, partyGaps };
+module.exports = { tieReceivables, partyGaps, rescueMisSigned };
