@@ -34,7 +34,8 @@ const DEFAULT_CONFIG = {
   auto_include: 'overdue_only',     // overdue_only | all_open
   min_amount: 0,
   opt_out: [],                      // customer phone numbers (digits) to never contact
-  per_segment: null                 // v2 hook — always null in v1
+  per_segment: null,                // v2 hook — always null in v1
+  include_connectors: false         // true = also chase Tally/Zoho/Odoo receivables (off unless set per account)
 };
 
 function mergeConfig(raw) {
@@ -503,7 +504,61 @@ function applyReplyToTarget(target, classified, config) {
   return { patch, ack };
 }
 
+/* ------------------------------------------------------------------ */
+/* Open receivables -> chase items (2026-10-08)                       */
+/* ------------------------------------------------------------------ */
+/** A stable uuid-shaped id for a connector customer, so it maps to the same chase target every day. */
+function stableChaseId(src, key) {
+  const h = require('crypto').createHash('sha256').update('chase|' + src + '|' + key).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+/**
+ * The reconciled receivables position (moneyModel.position(..., { withRows: true }).groups) -> what
+ * Chase works on. Manual entries stay one chase per entry (their own receivables.id, as before).
+ * A customer whose most trusted source is a connector (Tally, Zoho Books, Odoo) is ONE chase for the
+ * whole customer: their total open from that source, the oldest due date, the oldest invoice's number
+ * ("INV-12 + 3 more"). Chasing bill by bill would send one customer ten messages on the same morning.
+ *
+ * @returns {{ items: [{receivable_id, party, amount, due, ref, src, key}], openIds: Set<string> }}
+ *   openIds also holds manual entries that sit under a connector customer, so their older chase
+ *   targets are not mistaken for paid.
+ */
+function chaseItemsFromPosition(groups) {
+  const items = [], openIds = new Set();
+  for (const g of groups || []) {
+    for (const s of g.sources || []) {
+      if (s === 'manual') for (const r of (g.by[s] && g.by[s].rows) || []) if (r.id) openIds.add(r.id);
+    }
+    const src = g.primary;
+    const rows = ((g.by[src] && g.by[src].rows) || []).filter((r) => (Number(r.amount) || 0) > 0);
+    if (!rows.length) continue;
+    if (src === 'manual') {
+      for (const r of rows) {
+        if (!r.id) continue;
+        items.push({ receivable_id: r.id, party: r.party || g.party, amount: Number(r.amount) || 0, due: r.due || null, ref: r.ref || null, src, key: g.key });
+      }
+      continue;
+    }
+    const byDue = rows.slice().sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')));
+    const refs = byDue.map((r) => r.ref).filter((x) => x && x !== '(unspecified)');
+    const id = stableChaseId(src, g.key);
+    openIds.add(id);
+    items.push({
+      receivable_id: id,
+      party: g.party,
+      amount: Math.round(rows.reduce((t, r) => t + (Number(r.amount) || 0), 0) * 100) / 100,
+      due: (byDue.find((r) => r.due) || {}).due || null,
+      ref: refs.length ? refs[0] + (rows.length > 1 ? ` + ${rows.length - 1} more` : '') : null,
+      src, key: g.key
+    });
+  }
+  return { items, openIds };
+}
+
 module.exports = {
+  stableChaseId,
+  chaseItemsFromPosition,
   DEFAULT_CONFIG,
   mergeConfig,
   chaseOffsets,

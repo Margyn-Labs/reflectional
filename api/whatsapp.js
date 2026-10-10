@@ -26,6 +26,7 @@ const bsp = require('./_lib/whatsappBsp');
 const { runConversation } = require('./_lib/whatsappAgent');
 const { track } = require('./_lib/track');
 const chase = require('./_lib/chaseEngine');
+const moneyModel = require('./_lib/moneyModel');
 const { runImportMapper } = require('./_lib/importMapper');
 const marginActions = require('./_lib/marginActions');
 const { runWatchAll } = require('./_lib/margynWatch');
@@ -50,6 +51,7 @@ module.exports = async function handler(req, res) {
 
 // Raw body needed for webhook signature verification — see verifyInboundRequest.
 module.exports.config = { api: { bodyParser: false } };
+module.exports._syncChaseQueue = syncChaseQueue;   // test hook
 
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -1092,12 +1094,137 @@ async function businessNameFor(userId) {
 }
 
 /**
- * Reconcile whatsapp_chase_targets against the current open receivables:
- *   - create a target (with a resolved phone) for each newly-eligible receivable
- *   - mark a target resolved_paid when its receivable is no longer open
- * Returns { created, skipped_no_phone }.
+ * ONLY for accounts whose chase config has include_connectors: true (off by default; added 2026-10-08).
+ * Reconcile whatsapp_chase_targets against the current open receivables, from every source
+ * (manual entries, Tally, Zoho Books, Odoo — the same reconciled position the Receivables page shows):
+ *   - create a target (with a resolved phone) for each newly-eligible item; a connector customer is
+ *     one target for the whole customer (chaseEngine.chaseItemsFromPosition)
+ *   - keep a connector customer's amount / oldest due / invoice number current
+ *   - give a waiting target its phone once one turns up (owner adds it, or Tally sends it)
+ *   - mark a target resolved_paid when its receivable is no longer open (only when every source read cleanly)
+ * Returns { created, skipped_no_phone, phones_added, sources }.
  */
-async function syncChaseQueue(userId, config) {
+async function syncChaseQueueAllSources(userId, config) {
+  const c = chase.mergeConfig(config);
+  let created = 0, skipped_no_phone = 0, phones_added = 0;
+
+  let pos;
+  try {
+    pos = (await moneyModel.positionForAccount(userId, { dirs: ['recv'], withRows: true })).receivables;
+  } catch (err) {
+    console.error('chase: could not read receivables for', userId, err.message);
+    return { created, skipped_no_phone, phones_added };
+  }
+  const { items, openIds } = chase.chaseItemsFromPosition(pos.groups);
+  const readCleanly = !Object.keys(pos.errors || {}).length;
+
+  let parties = [];
+  try {
+    parties = await selectRows('ledger_parties', `select=id,name,phone&user_id=eq.${userId}&limit=5000`);
+  } catch (e) { /* no parties — nothing to resolve phones from */ }
+  const phoneByName = new Map();
+  const idByName = new Map();
+  for (const p of parties) {
+    const k = normPartyName(p.name);
+    if (p.phone && !phoneByName.has(k)) phoneByName.set(k, normalizePhone(p.phone));
+    if (!idByName.has(k)) idByName.set(k, p.id);
+  }
+
+  let existing = [];
+  try {
+    existing = await selectRows(
+      'whatsapp_chase_targets',
+      `select=id,receivable_id,party_name,state,contact_phone,amount,due_date,invoice_ref,chases_sent,last_chase_at&user_id=eq.${userId}&limit=5000`
+    );
+  } catch (e) { /* treat as none */ }
+  const targetByRecv = new Map(existing.filter((t) => t.receivable_id).map((t) => [t.receivable_id, t]));
+  const liveByName = new Set(existing.filter((t) => ['active', 'paused_promise'].includes(t.state)).map((t) => normPartyName(t.party_name)));
+
+  const now = new Date();
+  for (const r of items) {
+    const k = normPartyName(r.party);
+    const phone = phoneByName.get(k) || '';
+    const t = targetByRecv.get(r.receivable_id);
+
+    if (t) {
+      if (!['active', 'paused_promise'].includes(t.state)) continue;
+      const patch = {};
+      if (r.src !== 'manual') {
+        if (Math.abs((Number(t.amount) || 0) - r.amount) >= 1) patch.amount = r.amount;
+        if ((t.due_date || null) !== (r.due || null)) patch.due_date = r.due || null;
+        if ((t.invoice_ref || null) !== (r.ref || null)) patch.invoice_ref = r.ref || null;
+      }
+      if (!t.contact_phone && phone) {
+        patch.contact_phone = phone;
+        const at = chase.nextChaseAt(patch.due_date !== undefined ? patch.due_date : t.due_date, t.chases_sent || 0, c, t.last_chase_at || null);
+        patch.next_chase_at = at ? at.toISOString() : null;
+        phones_added++;
+      }
+      if (Object.keys(patch).length) await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, patch).catch(() => {});
+      continue;
+    }
+
+    if ((Number(r.amount) || 0) < c.min_amount) continue;
+    // A customer already being chased under another entry (e.g. an older manual one) isn't chased twice.
+    if (r.src !== 'manual' && liveByName.has(k)) continue;
+
+    const od = chase.daysOverdue(r.due, now);
+    const overdue = od !== null ? od > 0 : false;
+    if (c.auto_include === 'overdue_only' && !overdue) {
+      // still create it if a pre-due chase is configured and due soon
+      const preDue = (c.days_before_due || []).some((d) => od !== null && od >= -Math.abs(d) && od <= 0);
+      if (!preDue) continue;
+    }
+
+    if (!phone) { skipped_no_phone++; }
+
+    const firstAt = chase.nextChaseAt(r.due, 0, c, null);
+    try {
+      await insertRows('whatsapp_chase_targets', [{
+        user_id: userId,
+        receivable_id: r.receivable_id,
+        party_id: idByName.get(k) || null,
+        party_name: r.party || 'Customer',
+        contact_phone: phone,
+        amount: Number(r.amount) || 0,
+        due_date: r.due || null,
+        invoice_ref: r.ref || null,
+        state: 'active',
+        current_tier: 'pre_due',
+        next_chase_at: phone && firstAt ? firstAt.toISOString() : null
+      }], { onConflict: 'user_id,receivable_id', merge: false });
+      created++;
+      liveByName.add(k);
+    } catch (err) {
+      console.error('chase: could not create target for receivable', r.receivable_id, err.message);
+    }
+  }
+
+  // Receivable settled/removed out from under an active chase -> stop chasing. Skipped when a source
+  // failed to load: a missing read must never look like a paid customer.
+  if (readCleanly) {
+    for (const t of existing) {
+      if (!t.receivable_id || openIds.has(t.receivable_id)) continue;
+      if (['active', 'paused_promise'].includes(t.state)) {
+        await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, {
+          state: 'resolved_paid',
+          resolution: 'No longer open in the books.',
+          resolved_at: new Date().toISOString(),
+          next_chase_at: null
+        }).catch(() => {});
+      }
+    }
+  }
+
+  return { created, skipped_no_phone, phones_added, sources: Object.keys(pos.coverage || {}) };
+}
+
+/**
+ * The Chase queue as it has always worked: only receivables typed into Margyn. Every account runs this
+ * unless its chase config says include_connectors: true (see syncChaseQueueAllSources above), so an account
+ * that hasn't been switched over behaves exactly as before.
+ */
+async function syncChaseQueueManualOnly(userId, config) {
   const c = chase.mergeConfig(config);
   let created = 0, skipped_no_phone = 0;
 
@@ -1188,6 +1315,13 @@ async function syncChaseQueue(userId, config) {
   }
 
   return { created, skipped_no_phone };
+}
+
+/** Per-account switch: include_connectors is true only where it was explicitly set. */
+async function syncChaseQueue(userId, config) {
+  return chase.mergeConfig(config).include_connectors === true
+    ? syncChaseQueueAllSources(userId, config)
+    : syncChaseQueueManualOnly(userId, config);
 }
 
 /**
