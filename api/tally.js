@@ -47,6 +47,7 @@ const { computeAnalytics, asOfToday, PL_BUCKETS } = require('./_lib/tallyAnalyti
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 const { pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
+const { syncTallyPartyContacts, cleanContact } = require('./_lib/tallyParties');
 const { tallyCompleteness } = require('./_lib/dataCompleteness');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
 const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
@@ -816,6 +817,9 @@ const INGEST = {
       opening_balance: num(r.opening_balance),
       closing_balance: num(r.closing_balance),
       closing_balance_raw: str(r.closing_balance_raw != null ? r.closing_balance_raw : r.closing_balance),
+      // Agent 0.2.5+: phone/email/GSTIN/... from the ledger master. Older agents send none, and then the
+      // key is dropped below so their syncs never blank details a newer agent stored.
+      contact: cleanContact(r.contact),
       currency: str(r.currency) || 'INR',
       as_of_date: ctx.asOfDate,
       source: 'tally',
@@ -909,6 +913,8 @@ async function handleIngest(req, res) {
     mapped.push(spec.map(r, ctx));
   }
 
+  if (kind === 'ledgers' && !mapped.some((m) => m.contact)) mapped.forEach((m) => { delete m.contact; });
+
   if (mapped.length === 0) {
     // An empty, verified voucher window still matters: everything we hold in it was deleted in Tally.
     const swept0 = kind === 'vouchers' ? await sweepVoucherWindow(inst, body, now) : { removed: 0 };
@@ -928,7 +934,7 @@ async function handleIngest(req, res) {
         break;
       } catch (e) {
         const col = /Could not find the '([a-z_]+)' column/i.exec(String(e && e.message));
-        if (!col || attempt >= 4 || !['items', 'voucher_base', 'primary_group'].includes(col[1])) throw e;
+        if (!col || attempt >= 4 || !['items', 'voucher_base', 'primary_group', 'contact'].includes(col[1])) throw e;
         console.warn(`[tally] ${spec.table}.${col[1]} missing; storing without it. Run the SQL migration.`);
         rows = rows.map((r) => { const o = Object.assign({}, r); delete o[col[1]]; return o; });
       }
@@ -943,13 +949,18 @@ async function handleIngest(req, res) {
     ? await sweepVoucherWindow(inst, body, now)
     : await sweepStale(kind, inst, mapped, snapshotCutoff(body, now), body.partial === true);
 
+  // Customer/supplier phone, email, GSTIN -> the party master (fills blanks only; never fails the sync).
+  const parties = kind === 'ledgers' && mapped.some((m) => m.contact)
+    ? await syncTallyPartyContacts(inst.user_id, mapped) : null;
+
   await updateRows('tally_installs', `id=eq.${inst.id}`, { last_sync_at: now }).catch(() => {});
   await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted, status: 'ok',
     error: swept.skipped ? 'stale_sweep_skipped: ' + swept.skipped : null });
   track(inst.user_id, 'tally_agent_sync', { kind, rows: upserted }); // ops console — fire-and-forget
 
   // server_time: agents chunk big snapshots/windows and use THIS clock (never their PC's) as the cutoff.
-  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed, server_time: now, agent: agentDirective() });
+  return json(res, 200, { upserted, received: rawRows.length, skipped, removed: swept.removed, server_time: now, agent: agentDirective(),
+    ...(parties ? { parties } : {}) });
 }
 
 // A chunked ledger snapshot sweeps on its last batch with the server time of its first batch as the

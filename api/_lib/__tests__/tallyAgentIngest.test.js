@@ -168,6 +168,23 @@ const v = (guid, date, amt) => ({ guid, voucher_type: 'Sales', voucher_number: g
   check('min_version follows the env var', r.payload.agent.min_version === '0.3.0', r.payload);
   delete process.env.TALLY_AGENT_MIN_VERSION;
 
+  // 2026-10-08 party contacts: a 0.2.5 agent fills the party master; a 0.2.4 agent never blanks it.
+  DB.ledger_parties = [];
+  const lg = (o) => Object.assign({ guid: 'L-' + o.name, parent: 'Sundry Debtors', primary_group: 'Sundry Debtors', opening_balance: 0 }, o);
+  const c1 = await call('POST', { action: 'ingest' }, { kind: 'ledgers', rows: [
+    lg({ name: 'Acme Retail', contact: { mobile: '98200 12345', email: 'ac@acme.in' } }),
+    lg({ name: 'Cash', parent: 'Cash-in-Hand', primary_group: 'Cash-in-Hand' })
+  ] });
+  check('new agent: ingest ok and reports parties', c1.status === 200 && c1.payload.parties && c1.payload.parties.inserted === 1, c1.payload);
+  check('new agent: customer lands in party master with +91 mobile', DB.ledger_parties.length === 1 && DB.ledger_parties[0].phone === '+919820012345' && DB.ledger_parties[0].source === 'tally', DB.ledger_parties);
+  check('new agent: contact stored on the ledger', DB.tally_ledgers.some((r) => r.name === 'Acme Retail' && r.contact && r.contact.email === 'ac@acme.in'));
+  let posted = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, opts = {}) => { if ((opts.method || 'GET') === 'POST' && /tally_ledgers/.test(url)) posted = JSON.parse(opts.body); return realFetch(url, opts); };
+  const c2 = await call('POST', { action: 'ingest' }, { kind: 'ledgers', rows: [lg({ name: 'Acme Retail' })] });
+  global.fetch = realFetch;
+  check('old agent: ingest ok, no contact key sent (stored details survive)', c2.status === 200 && posted.length === 1 && !('contact' in posted[0]) && !c2.payload.parties, posted);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
