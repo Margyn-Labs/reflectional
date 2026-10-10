@@ -111,6 +111,10 @@ async function installsFor(userId, wantCompany) {
   return { installs, companies, company, chosen, lastSync };
 }
 
+// Rows are read oldest first, so a cap cuts off the NEWEST entries. Care Hygiene (two years in one Tally company)
+// stood at 19,450 of the old 20,000 on 11 Oct 2026; 60,000 is about five years of a company that size.
+const VOUCHER_CAP = 60000;
+
 /** Ledgers, bills and vouchers straight from the tables (the slow path). */
 async function readRows(inList) {
   const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries,narration';
@@ -118,7 +122,7 @@ async function readRows(inList) {
   const voucherQ = async () => {
     let last;
     for (const extra of [',items,voucher_base', ',items', ',voucher_base', '']) {
-      try { return await pagedAll('tally_vouchers', `select=${base}${extra}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000, 8); }
+      try { return await pagedAll('tally_vouchers', `select=${base}${extra}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, VOUCHER_CAP, 8); }
       catch (e) { last = e; }
     }
     throw last;
@@ -133,8 +137,8 @@ async function readRows(inList) {
     voucherQ()
   ]);
   return { ledgers: L.rows, bills: B.rows, vouchers: V.rows, truncated: V.truncated,
-    // Read caps (5,000 ledgers, 10,000 bills, 20,000 vouchers): the completeness check says when one is hit.
-    caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: 20000, truncated: V.truncated } } };
+    // Read caps (5,000 ledgers, 10,000 bills, 60,000 vouchers): the completeness check says when one is hit.
+    caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: VOUCHER_CAP, truncated: V.truncated } } };
 }
 
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */

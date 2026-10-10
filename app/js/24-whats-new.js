@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-11-this-year', date:'11 Oct 2026', title:'This year’s figures, and balances that are always today’s',
+    items:[
+      { t:'Margin shows this financial year', what:'If your Tally company holds more than one year, Margin used to add the years together. The figures at the top are now for this financial year (April to today), and a new <b>Year by year</b> table shows each year on its own.',
+        how:'Open <b>Margin</b>. The dates under <b>Net sales</b> show the period; last year is in <b>Year by year</b>.', act:'margin' },
+      { t:'Cash, loans and what you’re owed are as of today', what:'Tally sends balances for whichever period is open on its screen. If that was last year, Margyn showed last year-end’s cash, loans and customer balances. Margyn now works out which period Tally used and brings every balance to today from your entries since then. Nobody needs to change anything in Tally.',
+        how:'Nothing to do. <b>Cash</b>, <b>Cash flow</b>, <b>Receivables</b> and <b>Payables</b> all use today’s balances.' },
+      { t:'Days to get paid is truer', what:'It now uses the same “owed to you” figure as the rest of Margyn, and compares it with what customers were billed including GST.',
+        how:'Open <b>Margin</b> → <b>Days to get paid</b>.', act:'margin' }
+    ]
+  },
+  {
     id:'2026-10-09-faster-books', date:'9 Oct 2026', title:'Margin, Cash flow and the books check open much faster',
     items:[
       { t:'Your books are read once per sync', what:'Margyn used to read every entry in your books again each time you opened Margin, Cash flow, the books health check or asked a question. Now it reads them once after each sync from Tally and keeps that copy, so these pages open in a few seconds instead of half a minute. Every figure is still from your latest sync.',

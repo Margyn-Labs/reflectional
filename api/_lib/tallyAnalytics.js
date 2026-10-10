@@ -223,6 +223,159 @@ function impliedEntry(v, entries) {
 
 /* ---------------- the engine ---------------- */
 
+/* ---------------- which period do Tally's balances cover? (2026-10-11) ---------------- */
+
+/**
+ * The agent asks Tally for ledger balances without dates, so Tally answers for whatever period is set on its
+ * screen. Care Hygiene keeps two financial years in one company; with the screen on 2025-26 the "closing"
+ * balances stopped at 31 Mar 2026 while the vouchers ran to October, and Margyn showed March's cash, loans and
+ * customer balances as today's and failed 10 of 12 ledger tie-outs. Nobody has to tell us the period: every
+ * ledger's closing less opening equals its entries over exactly that period, so the window (whole months, from
+ * the first synced month or any 1 April) that the most ledgers tie to is the one Tally used.
+ * Returns null when there are too few ledgers to be sure (then nothing changes), else
+ * { from, to (UTC ms), from_idx, covers_all, sign ('same' | 'opposite'), tied, tested, tie:[per ledger] }.
+ */
+const _periodCache = new WeakMap();   // vouchers array -> { ledgers, out }
+const monthIdx = (dt) => dt.getUTCFullYear() * 12 + dt.getUTCMonth();
+const fyStartMs = (ms) => { const d = new Date(ms); return Date.UTC(d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1, 3, 1); };
+const dayIso = (ms) => new Date(ms).toISOString().slice(0, 10);
+function countedOnce(vouchers) {
+  const seen = new Set(), out = [];
+  for (const v of vouchers || []) {
+    if (!v || v.is_cancelled === true || isNonAccounting(v.voucher_base || v.voucher_type)) continue;
+    if (v.tally_guid) { if (seen.has(v.tally_guid)) continue; seen.add(v.tally_guid); }
+    const dt = parseDate(v.date);
+    if (dt) out.push([v, dt]);
+  }
+  return out;
+}
+function balancePeriod(ledgers, vouchers) {
+  if (!Array.isArray(vouchers) || !vouchers.length || !Array.isArray(ledgers)) return null;
+  const hit = _periodCache.get(vouchers);
+  if (hit && hit.ledgers === ledgers) return hit.out;
+  const out = findBalancePeriod(ledgers, vouchers);
+  _periodCache.set(vouchers, { ledgers, out });
+  return out;
+}
+function findBalancePeriod(ledgers, vouchers) {
+  const rows = countedOnce(vouchers);
+  let lo = null, hi = null;
+  for (const [, dt] of rows) { const i = monthIdx(dt); if (lo == null || i < lo) lo = i; if (hi == null || i > hi) hi = i; }
+  if (lo == null) return null;
+  const n = hi - lo + 1;
+  if (n > 120) return null;
+  const byLedger = new Map();   // nameKey -> movement per month
+  for (const [v, dt] of rows) {
+    const i = monthIdx(dt) - lo;
+    for (const e of Array.isArray(v.entries) ? v.entries : []) {
+      if (!e || !e.ledger) continue;
+      const k = nameKey(e.ledger);
+      let a = byLedger.get(k);
+      if (!a) { a = new Float64Array(n); byLedger.set(k, a); }
+      a[i] += num(e.amount);
+    }
+  }
+  const seenL = new Set(), cand = [];
+  for (const l of ledgers) {
+    if (!l || !l.name || l.opening_balance == null || l.closing_balance == null) continue;
+    const k = nameKey(l.name);
+    if (seenL.has(k) || !byLedger.has(k)) continue;
+    seenL.add(k);
+    const m = byLedger.get(k), pre = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + m[i];
+    cand.push({ l, pre, delta: num(l.closing_balance) - num(l.opening_balance) });
+  }
+  if (cand.length < 5) return null;
+  const starts = [0];
+  for (let i = 1; i < n; i++) if ((lo + i) % 12 === 3) starts.push(i);
+  const fits = (delta, mv) => Math.abs(delta - mv) <= Math.max(1, 0.0002 * Math.max(Math.abs(delta), Math.abs(mv)));
+  let best = null, anyTie = 0;
+  const scores = [];
+  const tiedSomewhere = new Uint8Array(cand.length);
+  for (const s of starts) {
+    for (let e = s; e < n; e++) {
+      let same = 0, opp = 0;
+      for (let c = 0; c < cand.length; c++) {
+        const mv = cand[c].pre[e + 1] - cand[c].pre[s];
+        const a = fits(cand[c].delta, mv), b = fits(cand[c].delta, -mv);
+        if (a) same++;
+        if (b) opp++;
+        if (a || b) tiedSomewhere[c] = 1;
+      }
+      const w = { s, e, score: Math.max(same, opp), sign: same >= opp ? 'same' : 'opposite' };
+      scores.push(w);
+      // Equal scores: the later end (nothing was entered in between), then the earlier start.
+      if (!best || w.score > best.score || (w.score === best.score && (w.e > best.e || (w.e === best.e && w.s < best.s)))) best = w;
+    }
+  }
+  for (let c = 0; c < cand.length; c++) anyTie += tiedSomewhere[c];
+  const runner = scores.reduce((m, w) => (w.score < best.score && w.score > m ? w.score : m), 0);
+  // Only on clear evidence: most of the ledgers that tie to any period tie to this one, well ahead of the next.
+  if (best.score < 5 || best.score < 0.5 * anyTie || best.score - runner < Math.max(2, 0.1 * best.score)) return null;
+  const sg = best.sign === 'same' ? 1 : -1;
+  const tie = cand.map((c) => {
+    const mv = c.pre[best.e + 1] - c.pre[best.s];
+    return { ledger: c.l.name, vouchers_movement: r2(Math.abs(mv)), tally_movement: r2(Math.abs(c.delta)), ok: fits(c.delta, sg * mv) };
+  });
+  const y = (i) => Math.floor((lo + i) / 12), m = (i) => (lo + i) % 12;
+  return {
+    from: Date.UTC(y(best.s), m(best.s), 1), to: Date.UTC(y(best.e), m(best.e) + 1, 0),
+    from_idx: best.s, covers_all: best.s === 0 && best.e === n - 1,
+    sign: best.sign, tied: best.score, tested: cand.length, tie
+  };
+}
+
+/**
+ * Balances brought to today when Tally's period is not "first synced entry to today or later". Opening balances
+ * move back to the first synced entry and closing balances forward to today (or back to today when the period
+ * runs past it), using the synced entries, so every reader's "opening plus the entries is the closing" holds
+ * again. Returns null when the period is unknown or already fits (the reading below, with its guard, is kept).
+ */
+function alignToToday(ledgers, vouchers, now) {
+  const bp = balancePeriod(ledgers, vouchers);
+  if (!bp) return null;
+  const today = todayIstMs(now);
+  if (bp.from_idx === 0 && bp.to >= today) return null;
+  const sg = bp.sign === 'same' ? 1 : -1;
+  const before = new Map(), after = new Map(), beyond = new Map();
+  let carried = 0;
+  for (const [v, dt] of countedOnce(vouchers)) {
+    const t = dt.getTime();
+    const into = t < bp.from ? before : t > bp.to && t <= today ? after : t > today && t <= bp.to ? beyond : null;
+    if (!into) continue;
+    if (into === after) carried++;
+    for (const e of Array.isArray(v.entries) ? v.entries : []) {
+      if (!e || !e.ledger) continue;
+      const k = nameKey(e.ledger);
+      into.set(k, (into.get(k) || 0) + num(e.amount));
+    }
+  }
+  const past = [], future = [];
+  for (const v of vouchers || []) {
+    const d = v && parseDate(v.date);
+    if (d && d.getTime() > today) future.push(v); else past.push(v);
+  }
+  // Balances that start at the first synced entry with nothing entered after them need nothing done.
+  if (bp.from_idx === 0 && !carried && !future.length) return null;
+  const adj = (ledgers || []).map((l) => {
+    if (!l || !l.name) return l;
+    const k = nameKey(l.name);
+    const b = before.get(k) || 0, a = after.get(k) || 0, y = beyond.get(k) || 0;
+    if (!b && !a && !y) return l;
+    const o = Object.assign({}, l, { tally_opening_balance: l.opening_balance, tally_closing_balance: l.closing_balance });
+    if (l.opening_balance != null && b) o.opening_balance = r2(num(l.opening_balance) - sg * b);
+    if (l.closing_balance != null && (a || y)) o.closing_balance = r2(num(l.closing_balance) + sg * (a - y));
+    if (y) o.future_entries_backed_out = r2(y);
+    return o;
+  });
+  const rolled = bp.to < today && carried > 0;
+  return {
+    ledgers: adj, vouchers: past, future,
+    guard: { decision: rolled ? 'rolled_forward' : 'backed_out', checked: 0, with_future: 0, to_today: 0, unclear: 0, ledgers: [] },
+    balances: { from: dayIso(bp.from), to: dayIso(bp.to), sign: bp.sign, tied: bp.tied, tested: bp.tested, rolled_forward: rolled, carried_vouchers: carried, aligned: true, tie: bp.tie }
+  };
+}
+
 /**
  * The books as of today (India date). Tally's closing balances take in every entry in the financial year,
  * including ones dated in the future: on 3 Oct Care Hygiene's accountant entered the Kotak loan EMIs for
@@ -241,8 +394,12 @@ function impliedEntry(v, entries) {
  * check raises it. opts.decision ('kept' | 'backed_out') applies a decision made earlier on the full books (the
  * Cash page summary reads only the later entries, so it can't run the guard itself).
  * Returns { ledgers, vouchers, future, guard } where future lists the entries waiting for their date.
+ * When Tally's balances cover some other period than the synced entries, alignToToday (above) brings them to
+ * today from the entries instead and `balances` says which period Tally used.
  */
 function asOfToday(ledgers, vouchers, now, convention, opts) {
+  const aligned = alignToToday(ledgers, vouchers, now);
+  if (aligned) return aligned;
   const dir = convention === 'opposite' ? 1 : -1;
   const today = todayIstMs(now);
   const past = [], future = [];
@@ -320,6 +477,7 @@ function computeAnalytics(input) {
   const hint = input.balance_convention === 'same' || input.balance_convention === 'opposite' ? input.balance_convention : null;
   const today = asOfToday(input.ledgers, input.vouchers, input.now, hint);
   input = Object.assign({}, input, { ledgers: today.ledgers, vouchers: today.vouchers });
+  const B = today.balances || null;   // the period Tally's balances covered, when it had to be worked out
   const ledgers = dedupe(input.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);
   // A renamed voucher type ("KANDIVALI SALE") is judged by the base type Tally rolls it up to, when we have it.
@@ -356,17 +514,24 @@ function computeAnalytics(input) {
     discounts: 0, freight: 0, tax_out: 0, tax_in: 0, tds_tcs: 0, vouchers: 0
   });
   const ledgerMove = new Map();              // ledger -> signed movement (tie-out)
+  const ledgerMoveFy = new Map();            // the same, this financial year only (where the money goes)
   const ledgerActivity = new Map();          // ledger -> { n, abs }
   const customers = new Map();               // norm -> row
   const C = (name) => {
     const k = normParty(name) || '(no party)';
-    if (!customers.has(k)) customers.set(k, { party: name || '(no party)', sales: 0, returns: 0, sales_90d: 0, cost: 0, cost_known: 0, vouchers: 0 });
+    if (!customers.has(k)) customers.set(k, { party: name || '(no party)', sales: 0, returns: 0, sales_90d: 0, billed_90d: 0, cost: 0, cost_known: 0, vouchers: 0 });
     return customers.get(k);
   };
   let minD = null, maxD = null;
   const asOf = now;
+  // Totals are for one financial year (April to March), the year of the latest entry: books that carry two
+  // years in one Tally company used to be added together (Care Hygiene: 18 months shown as one figure).
+  let lastMs = null;
+  for (const v of live) { const d = parseDate(v.date); if (d && (lastMs == null || d.getTime() > lastMs)) lastMs = d.getTime(); }
+  const fyFrom = lastMs == null ? null : fyStartMs(lastMs);
+  let minFy = null;
   const cut90 = new Date(asOf.getTime() - 90 * DAY);
-  const win = { sales: 0, purchases: 0, direct_expense: 0, direct_income: 0, returns: 0 };   // last 90d
+  const win = { sales: 0, purchases: 0, direct_expense: 0, direct_income: 0, returns: 0, billed: 0 };   // last 90d
   const bought30 = new Map();   // vendor -> purchases in the last 30 days (are suppliers tracked bill by bill?)
   const cut30 = new Date(asOf.getTime() - 30 * DAY);
   let salesNoParty = 0;
@@ -384,9 +549,11 @@ function computeAnalytics(input) {
     const mk = monthKey(dt);
     const m = M(mk); m.vouchers++;
     const in90 = dt >= cut90;
+    const inFy = fyFrom == null || dt.getTime() >= fyFrom;
+    if (inFy && (!minFy || dt < minFy)) minFy = dt;
     const entries = Array.isArray(v.entries) ? v.entries : [];
     const partyName = v.party_name || (entries.find((e) => e.is_party) || {}).ledger || null;
-    let voucherSales = 0, voucherReturns = 0;
+    let voucherSales = 0, voucherReturns = 0, voucherTax = 0;
 
     const imp = impliedEntry(v, entries);
     if (imp) impliedVouchers++;
@@ -397,6 +564,7 @@ function computeAnalytics(input) {
         if (!display.has(lk)) display.set(lk, e.ledger);
         if (!e.is_party) nonParty.add(lk);
         ledgerMove.set(lk, (ledgerMove.get(lk) || 0) + a);
+        if (inFy) ledgerMoveFy.set(lk, (ledgerMoveFy.get(lk) || 0) + a);
         const act = ledgerActivity.get(lk) || { n: 0, abs: 0 };
         act.n++; act.abs += Math.abs(a); ledgerActivity.set(lk, act);
       }
@@ -416,6 +584,8 @@ function computeAnalytics(input) {
         case 'other_income': m.other_income += a; break;
         case 'tax':
           if (/\b(tds|tcs)\b/i.test(lname)) m.tds_tcs += a;
+          else voucherTax += a;
+          if (/\b(tds|tcs)\b/i.test(lname)) { /* counted above */ }
           else if (/input/i.test(lname)) m.tax_in += -a;
           else if (/output/i.test(lname)) m.tax_out += a;
           else if (a >= 0) m.tax_out += a; else m.tax_in += -a;
@@ -429,10 +599,12 @@ function computeAnalytics(input) {
     }
 
     if (isSalesType(v.voucher_type) || isCreditNote(v.voucher_type)) {
-      const c = C(partyName);
-      if (!partyName) salesNoParty++;
-      c.sales += voucherSales; c.returns += voucherReturns; c.vouchers++;
-      if (in90) c.sales_90d += voucherSales - voucherReturns;
+      if (inFy || in90) {
+        const c = C(partyName);
+        if (inFy) { if (!partyName) salesNoParty++; c.sales += voucherSales; c.returns += voucherReturns; c.vouchers++; }
+        // What the customer was billed, GST included: what they owe includes GST, so days-to-pay must too.
+        if (in90) { c.sales_90d += voucherSales - voucherReturns; c.billed_90d += voucherSales - voucherReturns + voucherTax; win.billed += voucherSales - voucherReturns + voucherTax; }
+      }
       if (isSalesType(v.voucher_type)) salesVouchersTotal++;
     }
 
@@ -448,10 +620,10 @@ function computeAnalytics(input) {
           if (!it || !it.item) continue;
           const val = it.abs_amount != null ? num(it.abs_amount) : Math.abs(num(it.amount));
           const qty = num(it.qty);
-          const a = items[it.item] || (items[it.item] = { item: it.item, unit: it.unit || null, sold_qty: 0, sold_value: 0, purchased_qty: 0, purchased_value: 0 });
+          const a = items[it.item] || (items[it.item] = { item: it.item, unit: it.unit || null, sold_qty: 0, sold_value: 0, purchased_qty: 0, purchased_value: 0, cost_qty: 0, cost_value: 0 });
           const im = itemMonth[it.item + '|' + mk] || (itemMonth[it.item + '|' + mk] = { item: it.item, month: mk, sq: 0, sv: 0, pq: 0, pv: 0 });
-          if (isS) { a.sold_qty += sign * qty; a.sold_value += sign * val; im.sq += sign * qty; im.sv += sign * val; }
-          else { a.purchased_qty += sign * qty; a.purchased_value += sign * val; im.pq += sign * qty; im.pv += sign * val; }
+          if (isS) { if (inFy) { a.sold_qty += sign * qty; a.sold_value += sign * val; } im.sq += sign * qty; im.sv += sign * val; }
+          else { if (inFy) { a.purchased_qty += sign * qty; a.purchased_value += sign * val; } a.cost_qty += sign * qty; a.cost_value += sign * val; im.pq += sign * qty; im.pv += sign * val; }
         }
       }
     }
@@ -531,6 +703,12 @@ function computeAnalytics(input) {
     };
     if (!stock.available) stock.reason = 'zero_balance';
   }
+  // Tally's stock value is as at the end of the period its balances cover; no entry moves it, so it can't be
+  // carried forward. Its movement belongs to that period's margin and to no other.
+  const stockStale = !!(B && B.rolled_forward);
+  const fyFromIso = fyFrom == null ? null : dayIso(fyFrom);
+  const stockInFy = stock.available && (!B || (!stockStale && B.from >= fyFromIso));
+  if (stock.available && B) Object.assign(stock, { as_at: stockStale ? B.to : null, period_from: B.from, period_to: B.to, applies_to_period: stockInFy });
 
   // ----- cash: Tally's balance when it gave one, otherwise derived from vouchers -----
   // Sweep deposits count: the bank moves that money back into the current account on its own.
@@ -589,31 +767,54 @@ function computeAnalytics(input) {
   const bsLedgers = ledgers.filter((l) => BS.includes(cls(l.name).bucket));
   const bsMissing = bsLedgers.filter((l) => l.closing_balance == null).length;
 
-  const tot = pnl.reduce((a, r) => {
+  const fyMonth = fyFromIso ? fyFromIso.slice(0, 7) : '';
+  const inFyMonth = (k) => k >= fyMonth;
+  const sumRows = (rows) => rows.reduce((a, r) => {
     a.net_sales += r.net_sales; a.gross_sales += r.gross_sales; a.returns += r.sales_returns;
     a.cogs += r.cogs_pre_stock; a.direct_income += r.direct_income; a.opex += r.opex; a.other_income += r.other_income;
     return a;
   }, { net_sales: 0, gross_sales: 0, returns: 0, cogs: 0, direct_income: 0, opex: 0, other_income: 0 });
+  const tot = sumRows(pnl.filter((r) => inFyMonth(r.month)));
   const gross_pre_total = tot.net_sales + tot.direct_income - tot.cogs;
-  const stockAdj = stock.available ? stock.change : 0;
+  const stockAdj = stockInFy ? stock.change : 0;
   const gross_adj_total = gross_pre_total + stockAdj;
   const period = {
-    from: minD ? minD.toISOString().slice(0, 10) : null,
+    from: (minFy || minD) ? (minFy || minD).toISOString().slice(0, 10) : null,
     to: maxD ? maxD.toISOString().slice(0, 10) : null,
     gross_sales: r2(tot.gross_sales), sales_returns: r2(tot.returns), net_sales: r2(tot.net_sales),
     cogs_pre_stock: r2(tot.cogs),
     gross_profit_pre_stock: r2(gross_pre_total), gross_margin_pct_pre_stock: pct(gross_pre_total, tot.net_sales),
-    gross_profit_after_stock: stock.available ? r2(gross_adj_total) : null,
-    gross_margin_pct_after_stock: stock.available ? pct(gross_adj_total, tot.net_sales) : null,
+    gross_profit_after_stock: stockInFy ? r2(gross_adj_total) : null,
+    gross_margin_pct_after_stock: stockInFy ? pct(gross_adj_total, tot.net_sales) : null,
     opex: r2(tot.opex), other_income: r2(tot.other_income),
-    net_profit_after_stock: stock.available ? r2(gross_adj_total + tot.other_income - tot.opex) : null,
+    net_profit_after_stock: stockInFy ? r2(gross_adj_total + tot.other_income - tot.opex) : null,
     net_profit_pre_stock: r2(gross_pre_total + tot.other_income - tot.opex),
-    net_margin_pct_after_stock: stock.available ? pct(gross_adj_total + tot.other_income - tot.opex, tot.net_sales) : null
+    net_margin_pct_after_stock: stockInFy ? pct(gross_adj_total + tot.other_income - tot.opex, tot.net_sales) : null
   };
+  // Each financial year on its own (the page shows last year beside this one). Stock movement goes to the year
+  // Tally's balances cover.
+  const years = [];
+  {
+    const by = new Map();
+    for (const r of pnl) { const k = dayIso(fyStartMs(Date.parse(r.month + '-01T00:00:00Z'))); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
+    for (const [k, rows] of [...by.entries()].sort()) {
+      const t = sumRows(rows), y = +k.slice(0, 4);
+      const gp = t.net_sales + t.direct_income - t.cogs;
+      const hasStock = stock.available && (B ? B.from === k && B.to === (y + 1) + '-03-31' : k === fyFromIso);
+      years.push({
+        fy: y + '-' + String((y + 1) % 100).padStart(2, '0'), from: k, months: rows.length, current: k === fyFromIso,
+        net_sales: r2(t.net_sales), cogs_pre_stock: r2(t.cogs), gross_profit_pre_stock: r2(gp), gross_margin_pct_pre_stock: pct(gp, t.net_sales),
+        stock_change: hasStock ? stock.change : null,
+        gross_margin_pct_after_stock: hasStock ? pct(gp + stock.change, t.net_sales) : null,
+        opex: r2(t.opex), net_profit_pre_stock: r2(gp + t.other_income - t.opex),
+        net_profit_after_stock: hasStock ? r2(gp + stock.change + t.other_income - t.opex) : null
+      });
+    }
+  }
 
   // ----- cost structure (where the money goes) -----
   const expenseByLedger = new Map();
-  for (const [lk, mv] of ledgerMove) {
+  for (const [lk, mv] of ledgerMoveFy) {
     const name = display.get(lk) || lk;
     const b = cls(name).bucket;
     if (b === 'opex' || b === 'direct_expense' || b === 'purchases') {
@@ -660,7 +861,9 @@ function computeAnalytics(input) {
   // about three months of vouchers the ratios compare unlike things, so say nothing rather than 768 days.
   const spanDays = minD && maxD ? Math.round((maxD - minD) / DAY) + 1 : 0;
   const shortHistory = spanDays < 80;
-  let dso = sales90 > 0 && !shortHistory ? r2((recv / sales90) * 90) : null;
+  // Days to get paid: what customers owe (GST included) against what they were billed (GST included) in 90 days.
+  const billed90 = win.billed > 0 ? win.billed : sales90;
+  let dso = billed90 > 0 && !shortHistory ? r2((recv / billed90) * 90) : null;
   if (dso != null && dso > 1825) { dso = null; implausible = true; }
   // Supplier days only mean something when supplier bills are kept bill by bill in Tally. A supplier bought from
   // in the last month almost always still has an open bill; if most of last month's purchases are from
@@ -670,12 +873,14 @@ function computeAnalytics(input) {
   const covered30 = [...bought30.entries()].filter(([k]) => payParties.has(k)).reduce((x, [, v]) => x + v, 0);
   const suppliersTracked = b30 <= 0 ? null : covered30 / b30 >= 0.4;
   const dpo = win.purchases > 0 && !shortHistory && suppliersTracked !== false ? r2((pay / win.purchases) * 90) : null;
-  const dio = stockVal != null && cogs90 > 0 && !shortHistory ? r2((stockVal / cogs90) * 90) : null;
+  // A stock value from the end of an earlier period says nothing about how many days of stock are held now.
+  const dio = stockVal != null && cogs90 > 0 && !shortHistory && !stockStale ? r2((stockVal / cogs90) * 90) : null;
   const working_capital = {
     receivables: r2(recv), receivables_overdue: r2(recvOverdue), payables: r2(pay),
     customer_advances: r2(custAdvances), vendor_advances: r2(vendorAdvances),
     suppliers_tracked_billwise: suppliersTracked,
-    stock_value: stockVal,
+    stock_value: stockVal, stock_as_at: stock.as_at || null,
+    billed_90d: r2(billed90),
     cash: cash ? cash.total : null,
     dso_days: dso, dpo_days: dpo, dio_days: dio,
     cash_conversion_days: dso != null && dio != null && dpo != null ? r2(dso + dio - dpo) : null,
@@ -694,10 +899,12 @@ function computeAnalytics(input) {
   const itemRows = [];
   if (itemsAvailable) {
     for (const a of Object.values(items)) {
+      if (!a.sold_qty && !a.sold_value && !a.purchased_qty && !a.purchased_value) continue;   // last year only
       const avg_price = a.sold_qty > 0 ? a.sold_value / a.sold_qty : null;
       const asm = assembled[a.item];
-      const fromAssembly = !(a.purchased_qty > 0) && asm && asm.qty > 0;
-      const avg_cost = a.purchased_qty > 0 ? a.purchased_value / a.purchased_qty : fromAssembly ? asm.value / asm.qty : null;
+      const fromAssembly = !(a.cost_qty > 0) && asm && asm.qty > 0;
+      // Cost per unit is the average over everything synced (last year's purchases still say what an item costs).
+      const avg_cost = a.cost_qty > 0 ? a.cost_value / a.cost_qty : fromAssembly ? asm.value / asm.qty : null;
       const cogs = avg_cost != null ? a.sold_qty * avg_cost : null;
       const margin = cogs != null ? a.sold_value - cogs : null;
       const flags = [];
@@ -723,7 +930,7 @@ function computeAnalytics(input) {
     if (mset.length >= 2) {
       const m0 = mset[mset.length - 2], m1 = mset[mset.length - 1];
       const overallCost = {};
-      for (const a of Object.values(items)) overallCost[a.item] = a.purchased_qty > 0 ? a.purchased_value / a.purchased_qty : null;
+      for (const a of Object.values(items)) overallCost[a.item] = a.cost_qty > 0 ? a.cost_value / a.cost_qty : null;
       const at = (item, mk) => itemMonth[item + '|' + mk] || { sq: 0, sv: 0, pq: 0, pv: 0 };
       let price = 0, cost = 0, volume = 0, m0tot = 0, m1tot = 0;
       for (const item of Object.keys(items)) {
@@ -746,10 +953,11 @@ function computeAnalytics(input) {
   const customerRows = [];
   const keys = new Set([...customers.keys(), ...recvBy.keys()]);
   for (const k of keys) {
-    const c = customers.get(k) || { party: (recvBy.get(k) || {}).party, sales: 0, returns: 0, sales_90d: 0, vouchers: 0 };
+    const c = customers.get(k) || { party: (recvBy.get(k) || {}).party, sales: 0, returns: 0, sales_90d: 0, billed_90d: 0, vouchers: 0 };
     const r = recvBy.get(k) || { outstanding: 0, overdue: 0, max_overdue_days: 0 };
     const net = c.sales - c.returns;
-    const dsoP = c.sales_90d > 0 ? r2((r.outstanding / c.sales_90d) * 90) : null;
+    const b90 = c.billed_90d > 0 ? c.billed_90d : c.sales_90d;
+    const dsoP = b90 > 0 ? r2((r.outstanding / b90) * 90) : null;
     const carry = carryPctOfSales(dsoP);
     const flags = [];
     if (r.outstanding > 0 && c.sales_90d <= 0) flags.push('owes_with_no_sales_in_90d');
@@ -757,7 +965,7 @@ function computeAnalytics(input) {
     if (c.sales > 0 && c.returns / c.sales > 0.1) flags.push('high_returns');
     customerRows.push({
       party: c.party, gross_sales: r2(c.sales), returns: r2(c.returns), net_sales: r2(net),
-      returns_pct: pct(c.returns, c.sales), sales_90d: r2(c.sales_90d),
+      returns_pct: pct(c.returns, c.sales), sales_90d: r2(c.sales_90d), billed_90d: r2(c.billed_90d || 0),
       outstanding: r2(r.outstanding), overdue: r2(r.overdue), max_overdue_days: r.max_overdue_days,
       dso_days: dsoP, credit_cost_pct_of_sales: carry,
       margin_basis: 'company_average_pre_stock',
@@ -772,8 +980,8 @@ function computeAnalytics(input) {
 
   // ----- leaks -----
   const sumMonths = (f) => pnl.reduce((s, r) => s + f(r), 0);
-  const discounts = monthKeys.reduce((s, k) => s + months[k].discounts, 0);
-  const freight = monthKeys.reduce((s, k) => s + months[k].freight, 0);
+  const discounts = monthKeys.filter(inFyMonth).reduce((s, k) => s + months[k].discounts, 0);
+  const freight = monthKeys.filter(inFyMonth).reduce((s, k) => s + months[k].freight, 0);
   const leaks = {
     returns: { value: r2(tot.returns), pct_of_gross_sales: pct(tot.returns, tot.gross_sales) },
     discounts_booked: { value: r2(discounts), pct_of_net_sales: pct(discounts, tot.net_sales) },
@@ -815,8 +1023,9 @@ function computeAnalytics(input) {
   if (!stock.available) questions.push({ kind: 'stock_missing', why: stock.reason === 'balance_not_returned' ? 'Tally sent the Stock-in-hand ledger but no balance for it (it often leaves balance-sheet ledgers empty), so gross margin is before stock movement. If you hold inventory, margin is overstated or understated by the change in stock.' : 'No stock balance is available, so gross margin is before stock movement. If you hold inventory, margin is overstated or understated by the change in stock.' });
 
   // tie-out: does the vouchers' movement on a P&L ledger match Tally's own opening→closing?
-  const tie = [];
-  for (const l of ledgers) {
+  // When the period of Tally's balances was worked out, the entries of that same period are what must match.
+  const tie = B ? B.tie.filter((t) => PL_BUCKETS.includes(cls(t.ledger).bucket) && (t.vouchers_movement >= 1 || t.tally_movement >= 1)) : [];
+  for (const l of B ? [] : ledgers) {
     const b = cls(l.name).bucket;
     if (!PL_BUCKETS.includes(b)) continue;
     if (!ledgerMove.has(nameKey(l.name))) continue;
@@ -844,6 +1053,7 @@ function computeAnalytics(input) {
   const failedKinds = syncHealth.filter((x) => x.status === 'error');
 
   const reasons = [];
+  const longDay = (iso) => { const [y, m, d] = String(iso).split('-'); return `${+d} ${MON[+m - 1]} ${y}`; };
   // Connector plumbing (how Tally's export behaved) is for Margyn's team, not the owner's screen (2026-10-04).
   const internal = [];
   let level = 'medium';
@@ -872,6 +1082,16 @@ function computeAnalytics(input) {
     if (!short.length && shown.length) reasons.push(`Every month from ${shown[0]} to ${shown[shown.length - 1]} matches Tally's own voucher count (${tallyTotal.toLocaleString('en-IN')} vouchers).`);
   }
   const agentOld = !diagnostics || !diagnostics.agent_version;
+  // The agent reads one financial year, chosen from what Tally reports as its last voucher date. When Tally
+  // reports a date in an earlier year (its screen left on last year), the agent reads that year and this
+  // year's new entries stop arriving. The figures can't show what never arrived, so say it first.
+  const agentPeriod = diagnostics && diagnostics.vouchers && diagnostics.vouchers.period && diagnostics.vouchers.period.to ? diagnostics.vouchers.period : null;
+  const todayIso = dayIso(todayIstMs(now));
+  const readingPastYear = !!(agentPeriod && String(agentPeriod.to).slice(0, 10) < todayIso && maxD && dayIso(maxD.getTime()) > String(agentPeriod.to).slice(0, 10));
+  if (readingPastYear) {
+    reasons.unshift(`Tally is sending Margyn last year's entries at the moment (${longDay(String(agentPeriod.from).slice(0, 10))} to ${longDay(String(agentPeriod.to).slice(0, 10))}). Entries made after ${longDay(dayIso(maxD.getTime()))} may not have arrived yet.`);
+    internal.push(`Agent period ${agentPeriod.from} to ${agentPeriod.to} (source ${agentPeriod.source || '?'}) does not include today: new current-year vouchers are not syncing. Needs the agent's period fix (voucherSync.choosePeriod).`);
+  }
   if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. ` +
     (agentOld ? 'The installed Margyn Tally agent reads only the current day from Tally; installing the latest agent sends the full financial year.' : 'The agent is fetching the rest of the year; this clears after the next sync.'));
   if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
@@ -880,6 +1100,17 @@ function computeAnalytics(input) {
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
   if (!stock.available) reasons.push('No stock balance: margin is before stock movement.');
+  if (B && B.rolled_forward) {
+    reasons.push(`Tally's balances stop at ${longDay(B.to)}, so Margyn carried cash, bank, loans, customers and suppliers forward to today from the ${B.carried_vouchers.toLocaleString('en-IN')} entries made since.`);
+    if (stock.available) reasons.push(`Tally's stock value is as at ${longDay(B.to)}, so this year's margin is before stock movement.`);
+  }
+  if (B) internal.push(`Tally's balances cover ${B.from} to ${B.to}: ${B.tied} of ${B.tested} ledgers with entries tie to that period (signs ${B.sign}).` + (B.rolled_forward ? ` Carried forward through ${B.carried_vouchers} vouchers.` : ''));
+  if (years.length > 1) reasons.push(`Totals are for ${years[years.length - 1].fy} (from ${longDay(period.from)}). Earlier years are shown separately.`);
+  {
+    const counted = completeness ? Object.keys(dm).filter((k) => dm[k] && dm[k].tally != null) : [];
+    const unchecked = counted.length ? monthKeys.filter((k) => k <= currentMonth && !counted.includes(k)) : [];
+    if (unchecked.length) internal.push(`Tally's own voucher count has not been checked for ${unchecked[0]} to ${unchecked[unchecked.length - 1]} (its count follows the period on the Tally screen).`);
+  }
   if (tieBad.length && agentOld) reasons.push('Vouchers deleted or edited in Tally stay in Margyn until the latest Margyn Tally agent is installed (it removes them automatically), which is the usual reason ledgers stop tying out.');
   if (!itemsAvailable) reasons.push('Stock lines not synced yet, so item-level margin is unavailable (agent update pending).');
   reasons.push('Single source (Tally). Not yet corroborated by bank or GST.');
@@ -891,9 +1122,11 @@ function computeAnalytics(input) {
     reasons, internal,
     coverage: { from: period.from, to: period.to, vouchers: live.length, cancelled: cancelled.length, months: monthKeys.length },
     tally_completeness: completeness,
+    agent_reading_past_year: readingPastYear ? { from: agentPeriod.from, to: agentPeriod.to } : null,
     unclassified_ledgers: unclassified.slice(0, 20),
     guessed_ledgers: guessed.slice(0, 20),
     tie_out: tieTop,
+    balances_period: B ? { from: B.from, to: B.to, tied: B.tied, tested: B.tested, rolled_forward: B.rolled_forward, carried_vouchers: B.carried_vouchers } : null,
     balance_sign,
     balance_sheet_balances: { missing: bsMissing, total: bsLedgers.length },
     excluded_non_accounting_vouchers: { count: excludedCount, by_type: excludedTypes },
@@ -918,7 +1151,7 @@ function computeAnalytics(input) {
     const sd = pct(b.net_sales - a.net_sales, a.net_sales);
     if (sd != null) headlines.push(`Net sales ${b.net_sales >= a.net_sales ? 'rose' : 'fell'} ${p1(Math.abs(sd))}% from ${monthLabel(a.month)} to ${monthLabel(b.month)}.`);
   }
-  if (period.gross_margin_pct_after_stock != null) headlines.push(`Gross margin for the whole period, after stock movement, is ${p1(period.gross_margin_pct_after_stock)}% (indicative).`);
+  if (period.gross_margin_pct_after_stock != null) headlines.push(`Gross margin for ${years.length > 1 ? 'this financial year' : 'the whole period'}, after stock movement, is ${p1(period.gross_margin_pct_after_stock)}% (indicative).`);
   if (leaks.returns.pct_of_gross_sales > 2) headlines.push(`Returns and credit notes are ${p1(leaks.returns.pct_of_gross_sales)}% of gross sales.`);
   if (dso != null) headlines.push(`Customers take about ${Math.round(dso)} days to pay on the last 90 days of sales. Carrying ₹${Math.round(recv).toLocaleString('en-IN')} owed to you at ${Math.round(creditRate * 100)}% costs about ₹${Math.round(annualCarry).toLocaleString('en-IN')} a year.`);
   if (margin_bridge) headlines.push(`Item margin moved ₹${Math.round(margin_bridge.margin_to - margin_bridge.margin_from).toLocaleString('en-IN')} from ${monthLabel(margin_bridge.from_month)} to ${monthLabel(margin_bridge.to_month)}: selling price ${Math.round(margin_bridge.price_effect).toLocaleString('en-IN')}, purchase cost ${Math.round(margin_bridge.cost_effect).toLocaleString('en-IN')}, volume and mix ${Math.round(margin_bridge.volume_mix_effect).toLocaleString('en-IN')}.`);
@@ -929,7 +1162,7 @@ function computeAnalytics(input) {
     basis: 'Tally ledgers, vouchers and bills. One source; not yet corroborated by bank or GST. Sales figures exclude GST.',
     as_of: asOf.toISOString(),
     items_available: itemsAvailable,
-    period, pnl, stock, cash, cost_structure,
+    period, years, pnl, stock, cash, cost_structure,
     working_capital, customers: customerTop, cash_history,
     // Entries already in Tally for a later date (EMIs, post-dated cheques): not in today's figures.
     entered_ahead: today.future.length ? {
@@ -944,6 +1177,57 @@ function computeAnalytics(input) {
     leaks, gst_estimate: gst, quality, questions, headlines,
     assumptions: { credit_rate_annual: creditRate, margin_window: 'period', dso_window_days: 90 }
   };
+}
+
+/**
+ * What customers owe, once their bills are lined up with their ledger balances (billTieOut.js): the same
+ * figure the Receivables page shows. Days to get paid, the cost of waiting and each customer's row used to
+ * stay on Tally's raw bill list (Care Hygiene: ₹9.95 Cr and 122 days beside a card saying ₹5.66 Cr).
+ * `tiedBills` are the receivable bills after the tie. Changes `out` in place.
+ */
+function applyTiedReceivables(out, tiedBills) {
+  const wc = out.working_capital || {}, rate = (out.assumptions || {}).credit_rate_annual || 0.12;
+  const by = new Map();
+  let recv = 0, overdue = 0;
+  for (const b of tiedBills || []) {
+    if (!b || b.direction === 'payable' || b.advance) continue;
+    const bal = Math.abs(num(b.closing_balance)), od = num(b.overdue_days);
+    recv += bal; if (od > 0) overdue += bal;
+    const k = normParty(b.party_name) || '(no party)';
+    const r = by.get(k) || { party: b.party_name, outstanding: 0, overdue: 0, max_overdue_days: 0 };
+    r.outstanding += bal; if (od > 0) r.overdue += bal; if (od > r.max_overdue_days) r.max_overdue_days = od;
+    by.set(k, r);
+  }
+  const hadDso = wc.dso_days != null;
+  if (hadDso && wc.billed_90d > 0) {
+    wc.dso_days = r2((recv / wc.billed_90d) * 90);
+    wc.cash_conversion_days = wc.dio_days != null && wc.dpo_days != null ? r2(wc.dso_days + wc.dio_days - wc.dpo_days) : null;
+  }
+  const carry = r2(recv * rate);
+  if (out.leaks) {
+    out.leaks.overdue_receivables = { value: r2(overdue), pct_of_receivables: pct(overdue, recv) };
+    out.leaks.carrying_cost_of_receivables_annual = { value: carry, rate_assumed: rate };
+  }
+  const seen = new Set();
+  for (const c of out.customers || []) {
+    const k = normParty(c.party) || '(no party)';
+    seen.add(k);
+    const r = by.get(k) || { outstanding: 0, overdue: 0, max_overdue_days: 0 };
+    const b90 = c.billed_90d > 0 ? c.billed_90d : c.sales_90d;
+    c.outstanding = r2(r.outstanding); c.overdue = r2(r.overdue); c.max_overdue_days = r.max_overdue_days;
+    c.dso_days = b90 > 0 ? r2((r.outstanding / b90) * 90) : null;
+    c.credit_cost_pct_of_sales = c.dso_days == null ? null : r2((c.dso_days / 365) * rate * 100);
+    c.est_margin_after_credit_pct = c.est_margin_pct != null && c.credit_cost_pct_of_sales != null ? r2(c.est_margin_pct - c.credit_cost_pct_of_sales) : null;
+    c.flags = (c.flags || []).filter((f) => f !== 'owes_with_no_sales_in_90d' && f !== 'over_90_days');
+    if (r.outstanding > 0 && !(c.sales_90d > 0)) c.flags.push('owes_with_no_sales_in_90d');
+    if (r.max_overdue_days > 90) c.flags.push('over_90_days');
+  }
+  if (Array.isArray(out.headlines)) {
+    const i = out.headlines.findIndex((h) => /^Customers take about \d+ days to pay/.test(h));
+    const line = wc.dso_days != null ? `Customers take about ${Math.round(wc.dso_days)} days to pay on the last 90 days of sales. Carrying ₹${Math.round(recv).toLocaleString('en-IN')} owed to you at ${Math.round(rate * 100)}% costs about ₹${Math.round(carry).toLocaleString('en-IN')} a year.` : null;
+    if (i >= 0) { if (line) out.headlines[i] = line; else out.headlines.splice(i, 1); }
+  }
+  return { receivables: r2(recv), overdue: r2(overdue) };
 }
 
 /* Manufacturing Journals: the finished item's line is worth what its components cost (Tally values it that
@@ -974,7 +1258,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
-  computeAnalytics, asOfToday, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  computeAnalytics, asOfToday, balancePeriod, applyTiedReceivables, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
   isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES

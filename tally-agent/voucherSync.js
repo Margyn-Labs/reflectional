@@ -172,17 +172,26 @@ async function resolveCompany(cfg, log) {
 }
 
 /* ---------------------------- period ---------------------------- */
+/**
+ * Which dates to read. Always this financial year, plus last year when the books began before this year.
+ *
+ * It used to follow Tally's "last voucher date" into the past: if that date fell before this financial year
+ * the agent read only that earlier year. Care Hygiene keeps 2025-26 and 2026-27 in one company; on 9 Oct 2026
+ * Tally reported 31 Mar 2026 as the last voucher date (its screen was on last year for the audit), so the agent
+ * re-read all of 2025-26 and stopped reading 2026-27: new entries no longer reached Margyn. Tally's facts
+ * describe what is on its screen, so they must never decide whether this year is read.
+ * Only the dates change here. The requests are the same proven ones, sent month by month.
+ */
 function choosePeriod(cfg, fact, today) {
   if (cfg.fromDateExplicit) return { from: compact(cfg.fromDate), to: compact(cfg.toDate), source: 'config' };
   const t = ymd(today);
-  const last = fact && compact(fact.last_voucher_date);
-  // A closed past-year company (books end before today) syncs the year its vouchers are in.
-  const anchor = last && last < fyOf(t).from ? last : t;
-  const fy = fyOf(anchor);
-  let from = fy.from;
+  const cur = fyOf(t);
+  const prev = fyOf(`${+cur.from.slice(0, 4) - 1}0401`);
   const booksFrom = fact && compact(fact.books_from);
-  if (booksFrom && booksFrom > from && booksFrom <= fy.to) from = booksFrom;
-  return { from, to: fy.to, source: fact ? 'tally' : 'default' };
+  let from = cur.from;
+  if (booksFrom && booksFrom > cur.from && booksFrom <= cur.to) from = booksFrom;           // books began this year
+  else if (booksFrom && booksFrom < cur.from) from = booksFrom > prev.from ? booksFrom : prev.from;   // began earlier: last year too
+  return { from, to: cur.to, source: fact ? 'tally' : 'default' };
 }
 
 /* ---------------------------- Tally calls ---------------------------- */
@@ -427,9 +436,25 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
     wholePeriod = await fetchWindow(ctx, state.strategy, { from: period.from, to: horizon < period.to ? horizon : period.to, key: 'period' });
   }
 
+  // Tally counts vouchers for the period on its screen. A month it didn't count is unknown, not zero.
+  const countKeys = counts ? Object.keys(counts).sort() : [];
+  const counted = (key) => countKeys.length > 0 && key >= countKeys[0] && key <= countKeys[countKeys.length - 1];
+  const curFyFrom = fyOf(today).from;
+  const before = state.months || {};
   for (const m of months) {
     if (run.done.includes(m.key)) continue;
-    const expected = counts ? (counts[m.key] || 0) : null;
+    let expected = counts ? (counts[m.key] || 0) : null;
+    // A month of an earlier year that Tally still counts the same as when it was last read in full is not
+    // read again (a whole extra year every day would freeze the client's Tally for nothing). An entry
+    // edited there still arrives: edits come through the change counter between full reads.
+    const was = before[m.key];
+    if (m.to < curFyFrom && expected != null && counted(m.key) && was && was.complete === true && was.tally === expected && was.synced >= expected && canVerifyDeletes) {
+      monthStats[m.key] = was;
+      log(`${m.key}: unchanged in Tally (${expected} vouchers), not read again.`);
+      run.done.push(m.key);
+      save({ fullRun: run, months: monthStats });
+      continue;
+    }
     const parts = expected && expected > MONTH_SPLIT_AT ? Math.ceil(expected / 2000) : 1;
     const rows = [];
     if (wholePeriod) rows.push(...wholePeriod.filter((r) => inWindow(r, m)));
@@ -437,6 +462,7 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
     const seen = new Set();
     const uniq = rows.filter((r) => { const k = r.guid || `${r.voucher_type}|${r.voucher_number}|${r.date}`; if (seen.has(k)) return false; seen.add(k); return true; });
     const live = uniq.filter((r) => !r.is_cancelled).length;
+    if (counts && !counted(m.key) && live > 0) expected = null;   // vouchers in a month Tally didn't count: no count to check against
     const complete = expected == null ? null : live >= expected;
     const final = canVerifyDeletes && complete !== false;
     const r = await uploadWindow(ctx, uniq, m, { final, voucherTypes, dryRun });

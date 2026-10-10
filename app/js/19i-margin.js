@@ -192,6 +192,13 @@ function mgRenderMargin(){
   const gm = p.gross_margin_pct_after_stock != null ? p.gross_margin_pct_after_stock : p.gross_margin_pct_pre_stock;
   const gmLabel = p.gross_margin_pct_after_stock != null ? 'Gross margin, after stock movement' : 'Gross margin, before stock movement';
   const conf = MG_MAR_CONF[q.confidence] || MG_MAR_CONF.medium;
+  // Books that hold more than one financial year in one company: the tiles are this year, each year has its own row.
+  const yrs = d.years || [], st = d.stock || {};
+  const dayLong = iso => { const x = String(iso || '').split('-'); return x.length === 3 ? (+x[2]) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+x[1] - 1] + ' ' + x[0] : ''; };
+  const yearsPanel = yrs.length > 1 ? mgMarPanel('Year by year', 'Each financial year on its own, April to March',
+    '<table class="mg-grid"><thead><tr><th>Year</th><th class="r">Net sales (₹)</th><th class="r">Gross profit (₹)</th><th class="r">Gross %</th><th class="r">Gross % after stock</th><th class="r">Running cost (₹)</th><th class="r">Net profit (₹)</th></tr></thead><tbody>' +
+    yrs.slice().reverse().map(y => '<tr><td>' + escapeHtml(y.fy) + (y.current ? ' <span class="mg-muted">(so far)</span>' : '') + '</td><td class="r">' + mgNum(y.net_sales) + '</td><td class="r">' + mgNum(y.gross_profit_pre_stock) + '</td><td class="r">' + mgMarPct(y.gross_margin_pct_pre_stock) + '</td><td class="r">' + (y.gross_margin_pct_after_stock == null ? '—' : mgMarPct(y.gross_margin_pct_after_stock)) + '</td><td class="r">' + mgNum(y.opex) + '</td><td class="r">' + mgNum(y.net_profit_after_stock != null ? y.net_profit_after_stock : y.net_profit_pre_stock) + '</td></tr>').join('') +
+    '</tbody></table>' + mgMarNote('The tiles above are for ' + escapeHtml(yrs[yrs.length - 1].fy) + '. Stock movement is counted in the year Tally’s stock value belongs to.')) : '';
 
   const companySel = (d.companies || []).length > 1
     ? '<div class="mg-panel-b"><label class="mg-muted">Company&nbsp;</label><select data-mar-company>' +
@@ -225,7 +232,7 @@ function mgRenderMargin(){
       '<td class="r">' + mgNum(i.sold_qty) + '</td><td class="r">' + mgNum(i.sold_value) + '</td><td class="r">' + (i.avg_price == null ? '—' : mgNum(i.avg_price)) + '</td>' +
       '<td class="r">' + (i.avg_cost == null ? '—' : mgNum(i.avg_cost)) + '</td><td class="r">' + (i.est_margin == null ? '—' : mgNum(i.est_margin)) + '</td><td class="r">' + mgMarPct(i.est_margin_pct) + '</td></tr>').join('');
     const b = d.margin_bridge;
-    itemsPanel = mgMarPanel('Margin by item', 'Average purchase cost over the period', '<table class="mg-grid"><thead><tr><th>Item</th><th class="r">Qty sold</th><th class="r">Sales (₹)</th><th class="r">Avg price (₹)</th><th class="r">Avg cost (₹)</th><th class="r">Margin (₹)</th><th class="r">Margin %</th></tr></thead><tbody>' + ir + '</tbody></table>' +
+    itemsPanel = mgMarPanel('Margin by item', yrs.length > 1 ? 'Sold this year; cost is the average purchase price in your books' : 'Average purchase cost over the period', '<table class="mg-grid"><thead><tr><th>Item</th><th class="r">Qty sold</th><th class="r">Sales (₹)</th><th class="r">Avg price (₹)</th><th class="r">Avg cost (₹)</th><th class="r">Margin (₹)</th><th class="r">Margin %</th></tr></thead><tbody>' + ir + '</tbody></table>' +
       (b ? mgMarNote('Between ' + mgMarMonth(b.from_month) + ' and ' + mgMarMonth(b.to_month) + ' margin moved ' + fmtINR(b.margin_to - b.margin_from) + ': selling price ' + fmtINR(b.price_effect) + ', purchase cost ' + fmtINR(b.cost_effect) + ', volume and mix ' + fmtINR(b.volume_mix_effect) + '.') : ''));
   } else {
     itemsPanel = mgMarPanel('Margin by item', 'Not available yet',
@@ -254,12 +261,12 @@ function mgRenderMargin(){
       escapeHtml(d.basis || '') + '<div class="mg-muted" style="margin-top:4px">' + escapeHtml((q.reasons || []).slice(0, 4).join(' ')) + '</div></div></div>' + companySel + '</div>' +
     '<div class="mg-tiles four">' +
       mgMarTile('Net sales, before GST', fmtINR(p.net_sales || 0, 'tile'), (p.from || '') + ' to ' + (p.to || ''), 'flat', fmtINR(p.net_sales || 0)) +
-      mgMarTile(gmLabel, mgMarPct(gm), p.gross_margin_pct_after_stock == null ? 'Stock balance not available' : 'Indicative: depends on Tally’s stock value', gm != null && gm < 15 ? 'bad' : 'flat') +
+      mgMarTile(gmLabel, mgMarPct(gm), p.gross_margin_pct_after_stock == null ? (st.as_at ? 'Tally’s stock value is as at ' + dayLong(st.as_at) : 'Stock balance not available') : 'Indicative: depends on Tally’s stock value', gm != null && gm < 15 ? 'bad' : 'flat') +
       mgMarTile('Returns and credit notes', mgMarPct((lk.returns || {}).pct_of_gross_sales), fmtINR((lk.returns || {}).value || 0, 'tile') + ' of gross sales', ((lk.returns || {}).pct_of_gross_sales || 0) > 5 ? 'bad' : 'flat') +
       mgMarTile('Days to get paid', wc.dso_days == null ? '—' : Math.round(wc.dso_days) + ' days', 'Last 90 days of sales', (wc.dso_days || 0) > 60 ? 'bad' : 'flat') +
     '</div>' +
     mgMarPanel('What stands out', 'Worked out from your figures, not written by AI', stand) +
-    mgMarComparePanel(d) + mgMarInsightsPanel(d) +
+    mgMarComparePanel(d) + mgMarInsightsPanel(d) + yearsPanel +
     mgMarPanel('Month by month', 'Before stock movement', '<table class="mg-grid"><thead><tr><th>Month</th><th class="r">Net sales (₹)</th><th class="r">Cost of goods (₹)</th><th class="r">Gross profit (₹)</th><th class="r">Gross %</th><th class="r">Running cost (₹)</th><th class="r">Net profit (₹)</th><th class="r">Net %</th></tr></thead><tbody>' + (pnlRows || '<tr><td colspan="8" class="mg-muted">No vouchers yet.</td></tr>') + '</tbody></table>' +
       mgMarNote('Sales here exclude GST. Gross profit is sales less purchases and direct costs in each month. Stock movement is only known for the whole period, so it isn’t spread across months. Orders and delivery notes are left out because they don’t move money.')) +
     itemsPanel +
@@ -272,7 +279,7 @@ function mgRenderMargin(){
     '<div class="mg-tiles four">' +
       mgMarTile('Owed to you', fmtINR(wc.receivables || 0, 'tile'), fmtINR(wc.receivables_overdue || 0, 'tile') + ' overdue', (wc.receivables_overdue || 0) > 0 ? 'bad' : 'flat', fmtINR(wc.receivables || 0)) +
       mgMarTile('You owe', fmtINR(wc.payables || 0, 'tile'), wc.dpo_days == null ? (wc.suppliers_tracked_billwise === false ? (wc.payables_basis === 'supplier_ledgers' ? 'From supplier balances' + (wc.supplier_advances >= 1 ? '; ' + fmtINR(wc.supplier_advances, 'tile') + ' paid ahead' : '') : 'Supplier bills aren’t tracked bill by bill in Tally') : '') : 'Paid in about ' + Math.round(wc.dpo_days) + ' days', 'flat', fmtINR(wc.payables || 0)) +
-      mgMarTile('Stock held', wc.stock_value == null ? '—' : fmtINR(wc.stock_value, 'tile'), wc.dio_days == null ? 'Days of stock not available' : Math.round(wc.dio_days) + ' days of stock', 'flat', wc.stock_value == null ? '' : fmtINR(wc.stock_value)) +
+      mgMarTile('Stock held', wc.stock_value == null ? '—' : fmtINR(wc.stock_value, 'tile'), wc.stock_as_at ? 'As at ' + dayLong(wc.stock_as_at) + ' in Tally' : wc.dio_days == null ? 'Days of stock not available' : Math.round(wc.dio_days) + ' days of stock', 'flat', wc.stock_value == null ? '' : fmtINR(wc.stock_value)) +
       mgMarTile('Cash cycle', wc.cash_conversion_days == null ? '—' : Math.round(wc.cash_conversion_days) + ' days', 'Days to pay + days of stock − days to be paid') +
     '</div>' +
     mgMarPanel('GST estimate from your books', 'From booked tax ledgers, not the GST portal. The GST and tax page has the filing view', '<table class="mg-grid"><thead><tr><th>Month</th><th class="r">Output tax (₹)</th><th class="r">Input tax (₹)</th><th class="r">Net payable (₹)</th></tr></thead><tbody>' + (gstRows || '<tr><td colspan="4" class="mg-muted">No tax ledgers found.</td></tr>') + '</tbody></table>') +
