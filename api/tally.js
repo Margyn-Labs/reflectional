@@ -451,7 +451,7 @@ async function handleAnalytics(req, res) {
   if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind ${srcName}.`);
   for (const n of book.notes || []) out.quality.reasons.unshift(n);
   if (book.source && book.source !== 'tally') out.quality.reasons = out.quality.reasons.map((r) => r.replace(/^Single source \(Tally\)/, `Single source (${srcName})`));
-  if (truncated) out.quality.reasons.unshift('Voucher history was capped at 20,000 rows, so older months may be incomplete.');
+  if (truncated) { out.quality.confidence = 'low'; out.quality.reasons.unshift('These books hold more entries than Margyn reads in one go, so the newest entries are missing from these figures.'); }
   // What else the books say (kits, branches, commission, customers gone quiet, old debts...): the same list
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
   let extra = {};
@@ -1051,6 +1051,17 @@ async function handleHealth(req, res) {
       if (!(body.ledgers && body.ledgers.received != null) && prev.ledgers && prev.ledgers.received != null) { diagnostics.ledgers = prev.ledgers; kept.ledgers = (prev.kept_from && prev.kept_from.ledgers) || prev.at || null; }
       if (!body.bills && prev.bills) { diagnostics.bills = prev.bills; kept.bills = (prev.kept_from && prev.kept_from.bills) || prev.at || null; }
       if (Object.keys(kept).length) diagnostics.kept_from = kept;
+      // The agent reports the months of the year it is reading. When it moves to another year (Care Hygiene,
+      // 9 Oct 2026: from 2026-27 back to 2025-26) the other year's month-by-month check used to be wiped.
+      // Months outside the new report are kept, each with the date it was last checked.
+      try {
+        const pm = prev.vouchers && prev.vouchers.months, nm = diagnostics.vouchers && diagnostics.vouchers.months;
+        if (pm && nm && diagnostics.vouchers !== prev.vouchers) {
+          const stamp = (prev.kept_from && prev.kept_from.vouchers) || prev.at || null, merged = {};
+          for (const k of Object.keys(pm)) if (!(k in nm) && pm[k]) merged[k] = pm[k].checked_at ? pm[k] : Object.assign({}, pm[k], { checked_at: stamp });
+          if (Object.keys(merged).length) diagnostics.vouchers = Object.assign({}, diagnostics.vouchers, { months: Object.assign(merged, nm) });
+        }
+      } catch (e) { /* keep the report as sent */ }
     }
   } catch (e) { /* column missing or read failed: store the report as sent */ }
   try {

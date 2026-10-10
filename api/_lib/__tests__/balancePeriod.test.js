@@ -79,6 +79,16 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   check('...and follows the tied "owed to you" figure, on the tile, the customer row and the headline', a.working_capital.dso_days === r2(1500000 / billed90 * 90) && a.customers.find((c) => c.party === 'Alkem').outstanding === 1500000 && a.headlines.some((h) => /Carrying ₹15,00,000 owed/.test(h)), { wc: a.working_capital.dso_days, h: a.headlines });
 }
 
+/* ---- the agent itself was told last year by Tally: this year's new entries stop arriving ---- */
+{
+  const led = tallyLedgers('20250401', '20260331');
+  const diag = { agent_version: '0.2.4', vouchers: { period: { from: '2025-04-01', to: '2026-03-31', source: 'tally' }, months: { '2025-04': { tally: 5, synced: 5, complete: true } } } };
+  const a = A.computeAnalytics({ ledgers: led, vouchers: all, bills: [], now: NOW, diagnostics: diag });
+  check('when Tally is sending last year, the page says so first', /Tally is sending Margyn last year's entries/.test(a.quality.reasons[0]) && a.quality.agent_reading_past_year && a.quality.agent_reading_past_year.to === '2026-03-31', a.quality.reasons.slice(0, 2));
+  const ok = A.computeAnalytics({ ledgers: led, vouchers: all, bills: [], now: NOW, diagnostics: { agent_version: '0.2.6', vouchers: { period: { from: '2025-04-01', to: '2027-03-31', source: 'tally' }, months: {} } } });
+  check('...and says nothing when the agent is reading this year', !ok.quality.agent_reading_past_year && !ok.quality.reasons.some((r) => /last year's entries/.test(r)));
+}
+
 /* ---- the screen on this year (1 Apr 2026 to 31 Mar 2027), last year's entries also synced ---- */
 {
   const led = tallyLedgers('20260401', '20270331');

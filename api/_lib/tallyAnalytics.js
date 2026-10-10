@@ -1053,6 +1053,7 @@ function computeAnalytics(input) {
   const failedKinds = syncHealth.filter((x) => x.status === 'error');
 
   const reasons = [];
+  const longDay = (iso) => { const [y, m, d] = String(iso).split('-'); return `${+d} ${MON[+m - 1]} ${y}`; };
   // Connector plumbing (how Tally's export behaved) is for Margyn's team, not the owner's screen (2026-10-04).
   const internal = [];
   let level = 'medium';
@@ -1081,6 +1082,16 @@ function computeAnalytics(input) {
     if (!short.length && shown.length) reasons.push(`Every month from ${shown[0]} to ${shown[shown.length - 1]} matches Tally's own voucher count (${tallyTotal.toLocaleString('en-IN')} vouchers).`);
   }
   const agentOld = !diagnostics || !diagnostics.agent_version;
+  // The agent reads one financial year, chosen from what Tally reports as its last voucher date. When Tally
+  // reports a date in an earlier year (its screen left on last year), the agent reads that year and this
+  // year's new entries stop arriving. The figures can't show what never arrived, so say it first.
+  const agentPeriod = diagnostics && diagnostics.vouchers && diagnostics.vouchers.period && diagnostics.vouchers.period.to ? diagnostics.vouchers.period : null;
+  const todayIso = dayIso(todayIstMs(now));
+  const readingPastYear = !!(agentPeriod && String(agentPeriod.to).slice(0, 10) < todayIso && maxD && dayIso(maxD.getTime()) > String(agentPeriod.to).slice(0, 10));
+  if (readingPastYear) {
+    reasons.unshift(`Tally is sending Margyn last year's entries at the moment (${longDay(String(agentPeriod.from).slice(0, 10))} to ${longDay(String(agentPeriod.to).slice(0, 10))}). Entries made after ${longDay(dayIso(maxD.getTime()))} may not have arrived yet.`);
+    internal.push(`Agent period ${agentPeriod.from} to ${agentPeriod.to} (source ${agentPeriod.source || '?'}) does not include today: new current-year vouchers are not syncing. Needs the agent's period fix (voucherSync.choosePeriod).`);
+  }
   if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. ` +
     (agentOld ? 'The installed Margyn Tally agent reads only the current day from Tally; installing the latest agent sends the full financial year.' : 'The agent is fetching the rest of the year; this clears after the next sync.'));
   if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
@@ -1089,7 +1100,6 @@ function computeAnalytics(input) {
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
   if (!stock.available) reasons.push('No stock balance: margin is before stock movement.');
-  const longDay = (iso) => { const [y, m, d] = String(iso).split('-'); return `${+d} ${MON[+m - 1]} ${y}`; };
   if (B && B.rolled_forward) {
     reasons.push(`Tally's balances stop at ${longDay(B.to)}, so Margyn carried cash, bank, loans, customers and suppliers forward to today from the ${B.carried_vouchers.toLocaleString('en-IN')} entries made since.`);
     if (stock.available) reasons.push(`Tally's stock value is as at ${longDay(B.to)}, so this year's margin is before stock movement.`);
@@ -1112,6 +1122,7 @@ function computeAnalytics(input) {
     reasons, internal,
     coverage: { from: period.from, to: period.to, vouchers: live.length, cancelled: cancelled.length, months: monthKeys.length },
     tally_completeness: completeness,
+    agent_reading_past_year: readingPastYear ? { from: agentPeriod.from, to: agentPeriod.to } : null,
     unclassified_ledgers: unclassified.slice(0, 20),
     guessed_ledgers: guessed.slice(0, 20),
     tie_out: tieTop,
