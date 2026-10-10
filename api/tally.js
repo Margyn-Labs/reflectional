@@ -43,7 +43,7 @@ const {
   selectRows
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
-const { computeAnalytics, asOfToday, PL_BUCKETS } = require('./_lib/tallyAnalytics');
+const { computeAnalytics, asOfToday, applyTiedReceivables, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 const { pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
@@ -226,7 +226,16 @@ async function handleSummary(req, res) {
     }
     // Balances as of today: Tally's closing balances include entries already made for later dates
     // (EMIs entered in advance), which made cash look ₹9.45 L lower than the bank. Back those out.
-    try {
+    // Tally's balances may cover another period than today's (its screen left on last year): with the whole
+    // books in hand they are brought to today from the entries (tallyAnalytics.alignToToday).
+    let aligned = false;
+    if (book && futureRows) {
+      try {
+        const t = asOfToday(book.ledgers, book.vouchers, Date.now());
+        if (t.balances) { ledgers = t.ledgers.slice(0, 10000); vouchers = vouchers.filter((v) => !(ymd(v.date) > todayYmd)); aligned = true; }
+      } catch (e) { /* the usual reading below */ }
+    }
+    if (!aligned) try {
       const F = futureRows ? { rows: futureRows } : await pagedAll('tally_vouchers', `select=date,is_cancelled,entries&install_id=in.${inList}&date=gt.${todayYmd}&order=date.asc,tally_guid.asc`, 2000);
       if (F.rows.length) {
         // This read has no opening balances or past entries, so it can't run asOfToday's tie-out guard itself: it
@@ -234,7 +243,7 @@ async function handleSummary(req, res) {
         let decision;
         try {
           const run = await selectRows('books_health', `select=data&user_id=eq.${user.id}&key=eq.run:last&limit=1`);
-          decision = run[0] && run[0].data && run[0].data.as_of_decision === 'kept' ? { decision: 'kept' } : undefined;
+          decision = run[0] && run[0].data && ['kept', 'rolled_forward'].includes(run[0].data.as_of_decision) ? { decision: 'kept' } : undefined;
         } catch (e) { /* table not there yet: the usual reading */ }
         ledgers = asOfToday(ledgers, F.rows, Date.now(), undefined, decision).ledgers;
         vouchers = vouchers.filter((v) => !(String(v.date || '').replace(/-/g, '') > todayYmd));
@@ -351,6 +360,7 @@ const _analyticsDone = new WeakMap();   // book -> { k, body }
  * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
  * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
  * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
+const ANSWER_VERSION = '2026-10-11-balance-period';
 const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 function savedAnalyticsPath(userId, q) {
   return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;
@@ -358,7 +368,8 @@ function savedAnalyticsPath(userId, q) {
 async function analyticsKey(userId, q) {
   const [bk, prom] = await Promise.all([bookKey(userId, q.company).catch(() => null), forecastStore.promises(userId).catch(() => [])]);
   if (!bk) return null;
-  return sha256(JSON.stringify([bk.key, prom, String(q.credit_rate || ''), istDay()]));
+  // ANSWER_VERSION: bump when the sums change, so an answer saved by older code is worked out again.
+  return sha256(JSON.stringify([bk.key, prom, String(q.credit_rate || ''), istDay(), ANSWER_VERSION]));
 }
 function servedSaved(body) {
   const b = Object.assign({}, body);
@@ -444,8 +455,6 @@ async function handleAnalytics(req, res) {
   // What else the books say (kits, branches, commission, customers gone quiet, old debts...): the same list
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
   let extra = {};
-  try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
-  sw.mark('insights');
   // The 13-week forecast learned from how money actually moved (cashFlowModel.js), graded by its own past runs,
   // and today's run kept so tomorrow's can be graded (forecastStore.js). Never blocks the page.
   let forecast_v2 = null, ctxB = null;
@@ -465,9 +474,14 @@ async function handleAnalytics(req, res) {
     const tot = recvB.reduce((a, b) => a + Math.abs(Number(b.closing_balance) || 0), 0);
     const od = recvB.filter((b) => Number(b.overdue_days) > 0).reduce((a, b) => a + Math.abs(Number(b.closing_balance) || 0), 0);
     Object.assign(wc, { receivables_billwise: wc.receivables, receivables: Math.round(tot * 100) / 100, receivables_overdue: Math.round(od * 100) / 100, receivables_basis: 'bills_tied_to_ledgers', bill_tie: ctxB.billTie });
+    // Days to get paid, the cost of waiting and each customer's row follow the same figure as the card.
+    try { applyTiedReceivables(out, recvB); } catch (e) { console.error('[tally] tied receivables failed:', e.message); }
     const t = ctxB.billTie;
     out.quality.reasons.push(`What customers owe follows their ledger balances: ${t.trimmed.parties ? `₹${t.trimmed.amount.toLocaleString('en-IN')} of bills for ${t.trimmed.parties} customers is already paid by their ledgers (not knocked off in Tally)` : ''}${t.trimmed.parties && t.added.parties ? '; ' : ''}${t.added.parties ? `₹${t.added.amount.toLocaleString('en-IN')} owed by ${t.added.parties} customers isn't split into bills in Tally, so it is taken from their entries` : ''}.`);
   }
+  // After the receivables tie, so "customers take N days to pay" quotes the same figure as the page.
+  try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
+  sw.mark('insights');
   // The cash flow statement (month by month, owner and accountant views) and every overdraft and loan day by day
   // (cashFlowStatement.js). Never blocks the page.
   let cash_flow = null, borrowing = null;
