@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-11-this-year', date:'11 Oct 2026', title:'This year’s figures, and balances that are always today’s',
+    items:[
+      { t:'Margin shows this financial year', what:'If your Tally company holds more than one year, Margin used to add the years together. The figures at the top are now for this financial year (April to today), and a new <b>Year by year</b> table shows each year on its own.',
+        how:'Open <b>Margin</b>. The dates under <b>Net sales</b> show the period; last year is in <b>Year by year</b>.', act:'margin' },
+      { t:'Cash, loans and what you’re owed are as of today', what:'Many businesses keep one Tally company file per year. When last year’s file was the one open, Margyn took its balances as today’s and mixed up the two years. Margyn now keeps each year’s file apart, takes balances and open bills from the current year’s file, and when it only has last year’s balances it brings them to today from your entries since. Nobody needs to change anything in Tally.',
+        how:'Nothing to do. <b>Cash</b>, <b>Cash flow</b>, <b>Receivables</b> and <b>Payables</b> all use today’s balances.' },
+      { t:'A check that no invoice is missing', what:'Margyn now checks that your sales invoice numbers run without gaps. If a run of numbers is missing in a month, Margin and the data check say so, with how many.',
+        how:'Open <b>Organisations and sources</b> → <b>Is all your data in?</b>', act:'connectors' },
+      { t:'Days to get paid is truer', what:'It now uses the same “owed to you” figure as the rest of Margyn, and compares it with what customers were billed including GST.',
+        how:'Open <b>Margin</b> → <b>Days to get paid</b>.', act:'margin' }
+    ]
+  },
+  {
     id:'2026-10-09-faster-books', date:'9 Oct 2026', title:'Margin, Cash flow and the books check open much faster',
     items:[
       { t:'Your books are read once per sync', what:'Margyn used to read every entry in your books again each time you opened Margin, Cash flow, the books health check or asked a question. Now it reads them once after each sync from Tally and keeps that copy, so these pages open in a few seconds instead of half a minute. Every figure is still from your latest sync.',

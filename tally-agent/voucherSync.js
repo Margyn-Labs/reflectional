@@ -153,14 +153,19 @@ async function resolveCompany(cfg, log) {
   if (!facts.length) return { company: cfg.company, fact: null, open: [] };
   const want = String(cfg.company || '').trim().toLowerCase();
   const exact = facts.find((f) => f.name.toLowerCase() === want);
-  if (exact) return { company: exact.name, fact: exact, open: facts.map((f) => f.name) };
-
+  // Tally users keep a company file per financial year. Of the open files of this business, the one whose
+  // books begin latest is the current year's and is the one to read, every time. It used to stay with the
+  // configured name whenever that was open: on 9 Oct 2026 Care Hygiene's accountant opened the 2025-26 file
+  // for the audit, the agent moved to it, and would have stayed there with both files open.
   const base = baseCompanyName(cfg.company);
   const same = base ? facts.filter((f) => baseCompanyName(f.name) === base) : [];
-  if (same.length) {
-    same.sort((x, y) => String(y.last_voucher_date || y.books_from || y.name).localeCompare(String(x.last_voucher_date || x.books_from || x.name)));
-    const pick = same[0];
-    log(`"${cfg.company}" is not open in Tally; switching to "${pick.name}" (same business, newer books).`);
+  const age = (f) => String(f.books_from || '') + '|' + f.name;
+  same.sort((x, y) => age(y).localeCompare(age(x)));
+  const pick = same.length ? same[0] : exact;
+  if (pick && exact && pick.name === exact.name) return { company: exact.name, fact: exact, open: facts.map((f) => f.name) };
+  if (pick) {
+    log(exact ? `"${pick.name}" is open too and its books are newer than "${cfg.company}"; reading it.`
+      : `"${cfg.company}" is not open in Tally; switching to "${pick.name}" (same business).`);
     config.save({ company: pick.name });
     return { company: pick.name, fact: pick, open: facts.map((f) => f.name), switchedFrom: cfg.company };
   }
@@ -172,11 +177,15 @@ async function resolveCompany(cfg, log) {
 }
 
 /* ---------------------------- period ---------------------------- */
+/**
+ * Which dates to read: the financial year of this company FILE. Tally users keep one company file per year,
+ * so a file whose last voucher falls before this financial year is last year's file and its year is read;
+ * otherwise this year, never before the file's books begin.
+ */
 function choosePeriod(cfg, fact, today) {
   if (cfg.fromDateExplicit) return { from: compact(cfg.fromDate), to: compact(cfg.toDate), source: 'config' };
   const t = ymd(today);
   const last = fact && compact(fact.last_voucher_date);
-  // A closed past-year company (books end before today) syncs the year its vouchers are in.
   const anchor = last && last < fyOf(t).from ? last : t;
   const fy = fyOf(anchor);
   let from = fy.from;
@@ -323,7 +332,25 @@ async function uploadWindow(ctx, rows, w, { final, voucherTypes, dryRun }) {
 /* ---------------------------- main ---------------------------- */
 async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}, now = new Date() } = {}) {
   const ctx = makeCtx(cfg, company || cfg.company, log);
-  const state = Object.assign({}, cfg.syncState || {});
+  // Sync progress belongs to one company file. When the open file changes (last year's opened for the audit,
+  // then this year's again) the other file's progress is parked, not thrown away: coming back to a file
+  // picks up from its own change counter instead of re-reading its whole year (13,000 vouchers on 9 Oct).
+  let state = Object.assign({}, cfg.syncState || {});
+  {
+    const was = state.periodKey ? String(state.periodKey).split('|')[0] : null;
+    if (was && was !== ctx.company) {
+      const { byCompany, blockedRequests, provenRequests, inflight, ...mine } = state;
+      const parked = Object.assign({}, byCompany || {}, { [was]: mine });
+      const back = parked[ctx.company] || {};
+      delete parked[ctx.company];
+      state = Object.assign({}, back, { byCompany: parked });
+      log(`Now reading "${ctx.company}"${back.periodKey ? ' (carrying on from where it was left)' : ''}.`);
+      if (!dryRun) {
+        const disk = config.load().syncState || {};
+        config.save({ syncState: Object.assign({}, state, { blockedRequests: disk.blockedRequests || blockedRequests || [], provenRequests: disk.provenRequests || provenRequests || [], inflight: disk.inflight || null }) });
+      }
+    }
+  }
   // Merge with what's on disk: the crash guard writes its notes there between our saves.
   const save = (patch) => { Object.assign(state, patch); if (!dryRun) config.save({ syncState: Object.assign({}, config.load().syncState || {}, state, { blockedRequests: (config.load().syncState || {}).blockedRequests || state.blockedRequests, provenRequests: (config.load().syncState || {}).provenRequests || state.provenRequests, inflight: (config.load().syncState || {}).inflight || null }) }); };
 
@@ -427,9 +454,25 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
     wholePeriod = await fetchWindow(ctx, state.strategy, { from: period.from, to: horizon < period.to ? horizon : period.to, key: 'period' });
   }
 
+  // Tally counts vouchers for the period on its screen. A month it didn't count is unknown, not zero.
+  const countKeys = counts ? Object.keys(counts).sort() : [];
+  const counted = (key) => countKeys.length > 0 && key >= countKeys[0] && key <= countKeys[countKeys.length - 1];
+  const curFyFrom = fyOf(today).from;
+  const before = state.months || {};
   for (const m of months) {
     if (run.done.includes(m.key)) continue;
-    const expected = counts ? (counts[m.key] || 0) : null;
+    let expected = counts ? (counts[m.key] || 0) : null;
+    // A month of an earlier year that Tally still counts the same as when it was last read in full is not
+    // read again (a whole extra year every day would freeze the client's Tally for nothing). An entry
+    // edited there still arrives: edits come through the change counter between full reads.
+    const was = before[m.key];
+    if (m.to < curFyFrom && expected != null && counted(m.key) && was && was.complete === true && was.tally === expected && was.synced >= expected && canVerifyDeletes) {
+      monthStats[m.key] = was;
+      log(`${m.key}: unchanged in Tally (${expected} vouchers), not read again.`);
+      run.done.push(m.key);
+      save({ fullRun: run, months: monthStats });
+      continue;
+    }
     const parts = expected && expected > MONTH_SPLIT_AT ? Math.ceil(expected / 2000) : 1;
     const rows = [];
     if (wholePeriod) rows.push(...wholePeriod.filter((r) => inWindow(r, m)));
@@ -437,6 +480,7 @@ async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}
     const seen = new Set();
     const uniq = rows.filter((r) => { const k = r.guid || `${r.voucher_type}|${r.voucher_number}|${r.date}`; if (seen.has(k)) return false; seen.add(k); return true; });
     const live = uniq.filter((r) => !r.is_cancelled).length;
+    if (counts && !counted(m.key) && live > 0) expected = null;   // vouchers in a month Tally didn't count: no count to check against
     const complete = expected == null ? null : live >= expected;
     const final = canVerifyDeletes && complete !== false;
     const r = await uploadWindow(ctx, uniq, m, { final, voucherTypes, dryRun });

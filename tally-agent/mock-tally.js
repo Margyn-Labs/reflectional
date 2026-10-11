@@ -73,6 +73,21 @@ function infoXml() {
 </ENVELOPE>`;
 }
 
+/** Party contact details (MargynLedgerContacts): blank on most ledgers, filled on two parties. */
+const CONTACTS = {
+  'Acme Retail Pvt Ltd': { MARGYNPHONE: '022-2650 1100', MARGYNMOBILE: '98200 12345', MARGYNEMAIL: 'accounts@acme.example', MARGYNCONTACT: 'R. Shah', MARGYNGSTIN: '27AABCA1234A1Z5', MARGYNSTATE: 'Maharashtra', MARGYNPIN: '400001', MARGYNADDRESS: '12 MG Road Fort Mumbai' },
+  'Verma Supplies': { MARGYNMOBILE: '+91 99300 54321' }
+};
+function ledgerContactsXml() {
+  const body = LEDGERS.map((l) => {
+    const c = CONTACTS[l.name] || {};
+    const tags = ['MARGYNPHONE', 'MARGYNMOBILE', 'MARGYNEMAIL', 'MARGYNCONTACT', 'MARGYNGSTIN', 'MARGYNSTATE', 'MARGYNPIN', 'MARGYNPAN', 'MARGYNADDRESS']
+      .map((t) => `<${t} TYPE="String">${xmlEscape(c[t] || '')}</${t}>`).join('');
+    return `<LEDGER><MARGYNNAME TYPE="String">${xmlEscape(l.name)}</MARGYNNAME><MARGYNGUID TYPE="String">${l.guid}</MARGYNGUID>${tags}</LEDGER>`;
+  }).join('');
+  return `<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>${body}</COLLECTION></DATA></BODY></ENVELOPE>`;
+}
+
 /** Reproduces the exact real response shape from the SOURCECOLLECTION/COMPUTE request. */
 function ledgerXml() {
   const body = LEDGERS.map((l, i) => {
@@ -353,6 +368,8 @@ const server = http.createServer((req, res) => {
     else if (/DayBook|Day Book/i.test(body)) { xml = dayBookXml(); kind = 'day book (ignores dates)'; }
     else if (/Bills Receivable/i.test(body)) { xml = billsXml('receivable'); kind = 'bills receivable (simulated)'; }
     else if (/Bills Payable/i.test(body)) { xml = billsXml('payable'); kind = 'bills payable (simulated)'; }
+    else if (/MargynLedgerGstin/.test(body)) { xml = `<ENVELOPE><BODY><DATA><COLLECTION>${LEDGERS.filter((l) => l.name === 'Acme Retail Pvt Ltd').map((l) => `<LEDGER><MARGYNNAME TYPE="String">${l.name}</MARGYNNAME><MARGYNGUID TYPE="String">${l.guid}</MARGYNGUID><MARGYNGSTIN TYPE="String">27AABCA1234A1Z5</MARGYNGSTIN></LEDGER>`).join('')}</COLLECTION></DATA></BODY></ENVELOPE>`; kind = 'ledger gstin'; }
+    else if (/MargynLedgerContacts/.test(body)) { xml = ledgerContactsXml(); kind = 'ledger contacts'; }
     else if (/SOURCECOLLECTION|MargynLedgers|List of Ledgers/i.test(body)) { xml = ledgerXml(); kind = 'ledgers'; }
     else { xml = `<ENVELOPE><HEADER><VERSION>1</VERSION></HEADER><BODY><DESC><LINEERROR>Unknown request</LINEERROR></DESC></BODY></ENVELOPE>`; kind = 'unknown'; }
 

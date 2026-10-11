@@ -21,14 +21,15 @@ function matches(row, search) {
   const p = new URLSearchParams(search);
   for (const [k, v] of p.entries()) {
     if (['select', 'order', 'limit', 'offset', 'on_conflict'].includes(k)) continue;
-    const m = /^(eq|gte|lte|lt|in)\.(.*)$/.exec(v);
+    const m = /^(eq|neq|gte|lte|lt|in)\.(.*)$/.exec(v);
     if (!m) continue;
     const val = row[k] == null ? '' : String(row[k]);
     if (m[1] === 'eq' && val !== m[2]) return false;
+    if (m[1] === 'neq' && (row[k] == null || val === m[2])) return false;   // SQL: NULL <> x is not true
     if (m[1] === 'gte' && !(val >= m[2])) return false;
     if (m[1] === 'lte' && !(val <= m[2])) return false;
     if (m[1] === 'lt' && !(val < m[2])) return false;
-    if (m[1] === 'in' && !m[2].replace(/[()]/g, '').split(',').includes(val)) return false;
+    if (m[1] === 'in' && !m[2].replace(/^\(|\)$/g, '').split(',').map((x) => x.replace(/^"|"$/g, '')).includes(val)) return false;
   }
   return true;
 }
@@ -184,6 +185,55 @@ const v = (guid, date, amt) => ({ guid, voucher_type: 'Sales', voucher_number: g
   const c2 = await call('POST', { action: 'ingest' }, { kind: 'ledgers', rows: [lg({ name: 'Acme Retail' })] });
   global.fetch = realFetch;
   check('old agent: ingest ok, no contact key sent (stored details survive)', c2.status === 200 && posted.length === 1 && !('contact' in posted[0]) && !c2.payload.parties, posted);
+
+  /* ---- two Tally company files on one install (a file per financial year, the new one copied from the old) ---- */
+  {
+    DB.tally_vouchers = []; DB.tally_ledgers = []; DB.tally_bills = [];
+    const NEW = 'CARE (2026-27)', OLD = 'CARE (2025-26)';
+    const send = (company, kind, rows, extra) => call('POST', { action: 'ingest' }, Object.assign({ kind, company_name: company, rows }, extra || {}));
+    // This year's file is read first: April invoices, the ledgers and an open bill.
+    await send(NEW, 'vouchers', [v('guid-65091', '2026-04-02', 500), v('guid-65092', '2026-04-03', 700), v('guid-70000', '2026-09-01', 900)], { partial: true });
+    await send(NEW, 'ledgers', [lg({ name: 'Kotak Bank', guid: 'led-1', closing_balance: -500 }), lg({ name: 'Alkem', guid: 'led-2', closing_balance: -900 })]);
+    await send(NEW, 'bills', [{ direction: 'receivable', party_name: 'Alkem', bill_ref: '808', closing_balance: 900 }]);
+    await new Promise((x) => setTimeout(x, 5));
+    // Then the accountant opens last year's file. Its late entries carry the SAME GUIDs as this year's first ones.
+    const r1 = await send(OLD, 'vouchers', [v('guid-65091', '2026-03-31', 11), v('guid-65092', '2026-03-31', 22), v('guid-60000', '2025-06-01', 33)],
+      { partial: true, window: { from: '2026-03-01', to: '2026-03-31' }, window_final: true });
+    const ty = DB.tally_vouchers.filter((x) => x.company_name === NEW), ly = DB.tally_vouchers.filter((x) => x.company_name === OLD);
+    check('two files: last year\'s file does not overwrite this year\'s vouchers that share its GUIDs', r1.status === 200 && ty.length === 3 && ly.length === 3 && ty.every((x) => x.date >= '2026-04-01') && ty.find((x) => x.tally_guid === 'guid-65091').amount === 500, DB.tally_vouchers.map((x) => [x.company_name, x.tally_guid, x.date, x.amount]));
+    check('two files: the shared GUIDs are stored under a per-file key, the rest as they are', ly.filter((x) => /~[0-9a-f]{8}$/.test(x.tally_guid)).length === 2 && ly.some((x) => x.tally_guid === 'guid-60000'));
+    await send(OLD, 'vouchers', [v('guid-65091', '2026-03-31', 12)], { partial: true });
+    check('two files: reading the same file again updates its own row, never adds another', DB.tally_vouchers.length === 6 && DB.tally_vouchers.find((x) => x.company_name === OLD && x.date === '2026-03-31' && x.amount === 12));
+    await new Promise((x) => setTimeout(x, 5));
+    const r2 = await send(OLD, 'ledgers', [lg({ name: 'Kotak Bank', guid: 'led-1', closing_balance: -100 })]);
+    const bankNew = DB.tally_ledgers.find((x) => x.company_name === NEW && x.name === 'Kotak Bank');
+    check('two files: this year\'s ledger balances survive last year\'s snapshot', r2.status === 200 && bankNew && bankNew.closing_balance === -500 && DB.tally_ledgers.some((x) => x.company_name === NEW && x.name === 'Alkem') && DB.tally_ledgers.filter((x) => x.company_name === OLD).length === 1, DB.tally_ledgers.map((x) => [x.company_name, x.name, x.closing_balance, x.tally_guid]));
+    const r3 = await send(OLD, 'bills', [{ direction: 'receivable', party_name: 'Alkem', bill_ref: '808', closing_balance: 5000 }, { direction: 'receivable', party_name: 'Old Co', bill_ref: '1', closing_balance: 77 }]);
+    check('two files: last year\'s open bills are not laid over this year\'s', r3.status === 200 && r3.payload.note === 'past_year_file' && DB.tally_bills.length === 1 && DB.tally_bills[0].closing_balance === 900, { p: r3.payload, b: DB.tally_bills });
+    const r4 = await send(NEW, 'bills', [{ direction: 'receivable', party_name: 'Alkem', bill_ref: '808', closing_balance: 850 }]);
+    check('two files: this year\'s file still updates its bills', r4.status === 200 && DB.tally_bills.length === 1 && DB.tally_bills[0].closing_balance === 850, r4.payload);
+    // The readers: entries from both files, balances and bills from the current one.
+    const { companyFiles } = require('../tallyData');
+    const f = companyFiles(DB.tally_ledgers, DB.tally_bills.concat([{ company_name: OLD, party_name: 'Old Co', bill_ref: '1' }]), DB.tally_vouchers);
+    check('two files: balances and bills are read from the current year\'s file', f.summary.current === NEW && f.ledgers.length === 2 && f.ledgers.every((x) => x.company_name === NEW) && f.bills.length === 1 && f.summary.files.length === 2, f.summary);
+    const g = companyFiles(DB.tally_ledgers.filter((x) => x.company_name === OLD), DB.tally_bills, DB.tally_vouchers);
+    check('two files: if only last year\'s ledgers are held, they are used (and carried forward) rather than nothing', g.ledgers.length === 1 && g.summary.ledgers_from === OLD, g.summary);
+  }
+
+  /* ---- every batch is kept exactly as it arrived ---- */
+  {
+    const kept = [];
+    const realFetch2 = global.fetch;
+    global.fetch = async (url, opts = {}) => { if (/\/storage\/v1\/object\/margyn-cache\/raw\//.test(url)) { kept.push({ url: String(url), body: opts.body }); return { ok: true, status: 200, text: async () => '' }; } return realFetch2(url, opts); };
+    const batch = { kind: 'vouchers', company_name: 'CARE (2026-27)', partial: true, rows: [v('raw-1', '2026-10-01', 10), v('raw-2', '2026-10-02', 20)] };
+    await call('POST', { action: 'ingest' }, batch);
+    await call('POST', { action: 'ingest' }, batch);
+    await call('POST', { action: 'ingest' }, Object.assign({}, batch, { rows: [v('raw-1', '2026-10-01', 11)] }));
+    global.fetch = realFetch2;
+    const raw = kept.length ? JSON.parse(require('zlib').gunzipSync(kept[0].body).toString('utf8')) : null;
+    check('raw: the batch is kept as it arrived, with its company file and time', kept.length === 3 && raw && raw.rows.length === 2 && raw.rows[0].guid === 'raw-1' && raw.company_name === 'CARE (2026-27)' && !!raw.received_at && /\/raw\/1{8}-/.test(kept[0].url) && /\/i1\/vouchers\//.test(kept[0].url), kept.map((k) => k.url));
+    check('raw: the same batch sent again is the same file; a changed one is a new file', kept[0].url === kept[1].url && kept[2].url !== kept[0].url);
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

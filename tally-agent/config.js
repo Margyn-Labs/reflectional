@@ -68,6 +68,9 @@ function load() {
     companyGuid: file.companyGuid || null,
     tallyProduct: file.tallyProduct || null,
     tallyVersion: file.tallyVersion || null,
+    // The separate GSTIN request has never been answered by a real Tally (0.2.6). Off unless switched on
+    // for a test on our own Tally: "readGstin": true in the config file, or TALLY_READ_GSTIN=1.
+    readGstin: process.env.TALLY_READ_GSTIN === '1' || file.readGstin === true,
     // Voucher sync memory: which request shape this Tally answers, AlterID high-water mark, backfill progress.
     syncState: file.syncState && typeof file.syncState === 'object' ? file.syncState : {}
   };

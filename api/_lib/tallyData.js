@@ -111,35 +111,69 @@ async function installsFor(userId, wantCompany) {
   return { installs, companies, company, chosen, lastSync };
 }
 
+// Rows are read oldest first, so a cap cuts off the NEWEST entries. Care Hygiene (two years in one Tally company)
+// stood at 19,450 of the old 20,000 on 11 Oct 2026; 60,000 is about five years of a company that size.
+const VOUCHER_CAP = 60000;
+
+/**
+ * A business that keeps one Tally company file per financial year has several files on one install. Entries
+ * from every file are history and are all read. Balances and open bills are a picture of now, so they come
+ * from the CURRENT file only: the one whose entries run latest (up to today). When that file's ledgers are not
+ * held (they were replaced by an older file's before files were kept apart), the ledgers that are held are
+ * used and tallyAnalytics carries their balances forward from the entries.
+ */
+function companyFiles(ledgers, bills, vouchers) {
+  const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+  const by = new Map();
+  for (const v of vouchers) {
+    const c = v && v.company_name; if (!c || !v.date) continue;
+    const d = String(v.date).slice(0, 10);
+    let o = by.get(c); if (!o) { o = { name: c, vouchers: 0, from: d, to: d, last: '' }; by.set(c, o); }
+    o.vouchers++; if (d < o.from) o.from = d; if (d > o.to) o.to = d; if (d <= today && d > o.last) o.last = d;
+  }
+  const list = [...by.values()].sort((a, b) => (a.last < b.last ? -1 : a.last > b.last ? 1 : 0));
+  if (list.length < 2) return { ledgers, bills, summary: list.length ? { current: list[0].name, files: list, ledgers_from: list[0].name, bills_from: list[0].name } : null };
+  const current = list[list.length - 1].name;
+  const mine = (rows) => rows.filter((r) => r && r.company_name === current);
+  const L = mine(ledgers), B = mine(bills);
+  return {
+    ledgers: L.length ? L : ledgers, bills: B.length ? B : bills,
+    summary: { current, files: list, ledgers_from: L.length ? current : [...new Set(ledgers.map((r) => r && r.company_name).filter(Boolean))].join(' + ') || null,
+      bills_from: B.length ? current : 'all files', bills_set_aside: B.length ? bills.length - B.length : 0 }
+  };
+}
+
 /** Ledgers, bills and vouchers straight from the tables (the slow path). */
 async function readRows(inList) {
-  const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries,narration';
+  const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries,narration,company_name';
   // Newer columns arrive with migrations; try the richest select first and fall back column by column.
   const voucherQ = async () => {
     let last;
     for (const extra of [',items,voucher_base', ',items', ',voucher_base', '']) {
-      try { return await pagedAll('tally_vouchers', `select=${base}${extra}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, 20000, 8); }
+      try { return await pagedAll('tally_vouchers', `select=${base}${extra}&install_id=in.${inList}&order=date.asc,tally_guid.asc`, VOUCHER_CAP, 8); }
       catch (e) { last = e; }
     }
     throw last;
   };
   const ledgerQ = async () => {
-    try { return await pagedAll('tally_ledgers', `select=name,parent,primary_group,opening_balance,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
-    catch (e) { return await pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
+    try { return await pagedAll('tally_ledgers', `select=name,parent,primary_group,opening_balance,closing_balance,company_name&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
+    catch (e) { return await pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance,company_name&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
   };
   const [L, B, V] = await Promise.all([
     ledgerQ(),
-    pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, 10000),
+    pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, 10000),
     voucherQ()
   ]);
-  return { ledgers: L.rows, bills: B.rows, vouchers: V.rows, truncated: V.truncated,
-    // Read caps (5,000 ledgers, 10,000 bills, 20,000 vouchers): the completeness check says when one is hit.
-    caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: 20000, truncated: V.truncated } } };
+  const files = companyFiles(L.rows, B.rows, V.rows);
+  return { ledgers: files.ledgers, bills: files.bills, vouchers: V.rows, truncated: V.truncated, files: files.summary,
+    // Read caps (5,000 ledgers, 10,000 bills, 60,000 vouchers): the completeness check says when one is hit.
+    caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: VOUCHER_CAP, truncated: V.truncated } } };
 }
 
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
-  const snapKey = `${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  // v2: rows carry their company file; a copy saved before that is read again from the tables.
+  const snapKey = `v2|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };
@@ -203,7 +237,7 @@ async function loadTallyBook(userId, opts) {
     edition: (inst.chosen.find((i) => i.tally_edition) || {}).tally_edition || null,
     agentVersion: (inst.chosen.find((i) => i.agent_version) || {}).agent_version || null,
     diagnostics: (inst.chosen.find((i) => i.diagnostics) || {}).diagnostics || null,
-    ledgers: snap.ledgers, bills: snap.bills, vouchers: snap.vouchers, truncated: snap.truncated, caps: snap.caps,
+    ledgers: snap.ledgers, bills: snap.bills, vouchers: snap.vouchers, truncated: snap.truncated, caps: snap.caps, files: snap.files || null,
     overrides: X.overrides, aiPlaced: X.aiPlaced, syncRuns: X.syncRuns, load
   };
   _books.set(bk, { snap, book });
@@ -233,4 +267,25 @@ function forgetTallyBook(userId) {
   for (const k of [..._books.keys()]) if (k.startsWith(userId + '|')) _books.delete(k);
 }
 
-module.exports = { loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };
+/**
+ * Everything the agent sends is kept exactly as it arrived, before anything is worked out from it (2026-10-11).
+ * The tables hold the latest picture and are overwritten in place: when last year's company file replaced
+ * April 2026 at Care Hygiene, the vouchers that had arrived the day before were simply gone. With the raw
+ * batches kept, anything the tables lose can be rebuilt, and a new way of reading old data needs no re-sync.
+ * One gzipped file per distinct batch in the private bucket (the name is the hash of its content, so the same
+ * batch re-sent every day is stored once). Never blocks or fails a sync.
+ */
+async function archiveRaw(userId, installId, kind, companyName, body) {
+  try {
+    const rows = Array.isArray(body && body.rows) ? body.rows : null;
+    const payload = rows ? { company_name: companyName || null, kind, rows } : { company_name: companyName || null, kind, report: body };
+    const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex');
+    if (rows && !rows.length) return null;
+    const name = rows ? hash : new Date().toISOString().replace(/[:.]/g, '-') + '-' + hash.slice(0, 8);
+    const path = `raw/${userId}/${installId}/${kind}/${name}.json.gz`;
+    await writeSaved(path, Object.assign({ received_at: new Date().toISOString(), window: (body && body.window) || null, voucher_types: (body && body.voucher_types) || null, as_of_date: (body && body.as_of_date) || null }, payload));
+    return path;
+  } catch (e) { console.warn('[tallyData] raw batch not kept:', e.message); return null; }
+}
+
+module.exports = { archiveRaw, companyFiles, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };

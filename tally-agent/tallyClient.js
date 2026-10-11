@@ -149,6 +149,129 @@ function buildLedgerRequest({ company }) {
 }
 
 /**
+ * Party contact details off the ledger masters: phone, mobile, email, contact person, GSTIN, state,
+ * pincode, PAN, address (the "Mailing Details" / "Contact Details" a Tally user fills in when they
+ * create a customer or supplier ledger). Added 2026-10-08 so Margyn can chase customers on WhatsApp.
+ *
+ * Kept as its OWN request, sent after the proven ledger request, so a Tally build that dislikes one
+ * of these formulas costs only the contacts, never the ledgers. Same SOURCECOLLECTION + COMPUTE shape
+ * as buildLedgerRequest (the shape that doesn't hang real Tally). `full` adds the fields whose method
+ * names moved between Tally.ERP 9 and TallyPrime 3+ (GSTIN, address, state); the agent falls back to
+ * the lean form if the full one errors.
+ */
+function buildLedgerContactsRequest({ company, full = true }) {
+  const fields = [
+    'MARGYNNAME:$Name',
+    'MARGYNGUID:$Guid',
+    'MARGYNPHONE:$LedgerPhone',
+    'MARGYNMOBILE:$LedgerMobile',
+    'MARGYNEMAIL:$Email',
+    'MARGYNCONTACT:$LedgerContact'
+  ];
+  if (full) fields.push(
+    'MARGYNGSTIN:$PartyGSTIN',
+    'MARGYNSTATE:$LedStateName',
+    'MARGYNPIN:$PinCode',
+    'MARGYNPAN:$IncomeTaxNumber',
+    'MARGYNADDRESS:$$FullList:Address:$Address'
+  );
+  return [
+    '<ENVELOPE>',
+    '<HEADER>',
+    '<VERSION>1</VERSION>',
+    '<TALLYREQUEST>Export</TALLYREQUEST>',
+    '<TYPE>Collection</TYPE>',
+    '<ID>MargynLedgerContacts</ID>',
+    '</HEADER>',
+    '<BODY>',
+    '<DESC>',
+    '<STATICVARIABLES>',
+    '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>',
+    `<SVCURRENTCOMPANY>${xmlEscape(company)}</SVCURRENTCOMPANY>`,
+    '</STATICVARIABLES>',
+    '<TDL>',
+    '<TDLMESSAGE>',
+    '<COLLECTION NAME="MargynLedgerContacts"><SOURCECOLLECTION>List of Ledgers</SOURCECOLLECTION>',
+    ...fields.map((f) => `<COMPUTE>${f}</COMPUTE>`),
+    '</COLLECTION>',
+    '</TDLMESSAGE>',
+    '</TDL>',
+    '</DESC>',
+    '</BODY>',
+    '</ENVELOPE>'
+  ].join('');
+}
+
+/**
+ * GSTIN, as its own request that runs AFTER the contacts request (so the proven contacts read is never
+ * touched). The expression is the one the open-source tally-database-loader uses on real TallyPrime
+ * installs for a ledger's GSTIN: $PartyGSTIN when set, else the LAST entry of the GST registration
+ * history, which is where TallyPrime keeps it ("GST Registration Details (History)").
+ * Same SOURCECOLLECTION + COMPUTE shape as the contacts request.
+ */
+function buildLedgerGstinRequest({ company }) {
+  return [
+    '<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>',
+    '<TYPE>Collection</TYPE><ID>MargynLedgerGstin</ID></HEADER>',
+    '<BODY><DESC><STATICVARIABLES>',
+    '<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>',
+    `<SVCURRENTCOMPANY>${xmlEscape(company)}</SVCURRENTCOMPANY>`,
+    '</STATICVARIABLES><TDL><TDLMESSAGE>',
+    '<COLLECTION NAME="MargynLedgerGstin"><SOURCECOLLECTION>List of Ledgers</SOURCECOLLECTION>',
+    '<COMPUTE>MARGYNNAME:$Name</COMPUTE>',
+    '<COMPUTE>MARGYNGUID:$Guid</COMPUTE>',
+    '<COMPUTE>MARGYNGSTIN:if $$IsEmpty:$PartyGSTIN then $LedGSTRegDetails[Last].GSTIN else $PartyGSTIN</COMPUTE>',
+    '</COLLECTION></TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>'
+  ].join('');
+}
+
+/** Ledgers that came back with a valid 15-character GSTIN: [{ name, guid, gstin }]. */
+function parseLedgerGstins(xml) {
+  const err = responseError(xml);
+  if (err) throw new Error(`Tally: ${err}`);
+  const out = [];
+  for (const b of extractBlocks(xml, 'LEDGER')) {
+    const name = tagText(b, 'MARGYNNAME');
+    const g = String(tagText(b, 'MARGYNGSTIN') || '').replace(/\s/g, '').toUpperCase();
+    if (name && /^[0-9A-Z]{15}$/.test(g)) out.push({ name, guid: tagText(b, 'MARGYNGUID') || null, gstin: g });
+  }
+  return out;
+}
+
+/**
+ * Parse buildLedgerContactsRequest's response. Returns only ledgers that carry at least one detail
+ * (most ledgers — bank, expense, tax — have none), keyed for a merge onto the ledger rows.
+ */
+function parseLedgerContacts(xml) {
+  const err = responseError(xml);
+  if (err) throw new Error(`Tally: ${err}`);
+  const out = [];
+  for (const b of extractBlocks(xml, 'LEDGER')) {
+    const name = tagText(b, 'MARGYNNAME');
+    if (!name) continue;
+    const c = {
+      phone: tagText(b, 'MARGYNPHONE') || null,
+      mobile: tagText(b, 'MARGYNMOBILE') || null,
+      email: tagText(b, 'MARGYNEMAIL') || null,
+      contact_person: tagText(b, 'MARGYNCONTACT') || null,
+      gstin: tagText(b, 'MARGYNGSTIN') || null,
+      state: tagText(b, 'MARGYNSTATE') || null,
+      pincode: tagText(b, 'MARGYNPIN') || null,
+      pan: tagText(b, 'MARGYNPAN') || null,
+      address: tagText(b, 'MARGYNADDRESS') || null
+    };
+    for (const k of Object.keys(c)) {
+      if (c[k] == null) { delete c[k]; continue; }
+      c[k] = String(c[k]).replace(/\s+/g, ' ').trim().slice(0, k === 'address' ? 400 : 120);
+      if (!c[k]) delete c[k];
+    }
+    if (!Object.keys(c).length) continue;
+    out.push({ name, guid: tagText(b, 'MARGYNGUID') || null, contact: c });
+  }
+  return out;
+}
+
+/**
  * Voucher types and the base type each one rolls up to. Companies rename them ("KANDIVALI SALE",
  * "VASAI SALES"); the base type ($Parent: Sales, Purchase, Receipt, ...) is what Tally treats them as.
  *
@@ -945,6 +1068,10 @@ function normaliseDate(raw) {
 module.exports = {
   buildInfoRequest,
   buildLedgerRequest,
+  buildLedgerContactsRequest,
+  parseLedgerContacts,
+  buildLedgerGstinRequest,
+  parseLedgerGstins,
   buildVoucherRequest,
   buildVoucherTypesRequest,
   parseVoucherTypes,

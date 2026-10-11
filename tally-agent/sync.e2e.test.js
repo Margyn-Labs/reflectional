@@ -57,7 +57,7 @@ function startCloud(port) {
         res.end(JSON.stringify({ upserted: body.rows.length, received: body.rows.length, removed, server_time: now }));
         return;
       }
-      if (body.kind === 'ledgers') store.ledgers += body.rows.length;
+      if (body.kind === 'ledgers') { store.ledgers += body.rows.length; store.contacts = (store.contacts || []).concat(body.rows.filter((r) => r.contact)); }
       if (body.kind === 'bills') store.bills.push(...body.rows);
       res.end(JSON.stringify({ upserted: body.rows.length, received: body.rows.length, server_time: now }));
     });
@@ -93,6 +93,11 @@ function startCloud(port) {
   assert.ok(inv.entries.some((e) => e.ledger === 'SALES @18%'), 'sales line from the stock allocation');
   assert.ok(Math.abs(inv.entries.reduce((s, e) => s + e.amount, 0)) < 0.01, 'entries balance');
   assert.ok(store.bills.length > 0, 'bills still sync');
+  // party contacts ride on the ledger rows
+  const acme = (store.contacts || []).find((r) => r.name === 'Acme Retail Pvt Ltd');
+  assert.ok(acme && acme.contact.mobile === '98200 12345' && acme.contact.email === 'accounts@acme.example', 'customer phone/email/GSTIN arrive');
+  assert.strictEqual(acme.contact.gstin, '27AABCA1234A1Z5', 'GSTIN arrives');
+  assert.ok(!(store.contacts || []).some((r) => r.name === 'Bharat Distributors'), 'a ledger with no details carries no contact');
 
   // 2) Second tick, nothing changed in Tally: no voucher traffic.
   const before = store.requests;
