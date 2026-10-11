@@ -139,6 +139,20 @@ function classifyLedgers(ledgers, overrides, partyRoles) {
   return out;
 }
 
+/**
+ * Each year's entries are classified by that year's own Tally file. A ledger can sit under another group in
+ * next year's file (Care Hygiene: about 5.3 L moved between running costs and cost of goods), and using this
+ * year's grouping for last year's entries shifted last year's gross margin from 21.8% to 21.6%.
+ * Returns (name, company) -> { bucket, confidence } or null when that file has no such ledger.
+ */
+function priorClassifier(priorLedgers, overrides, partyRoles) {
+  const by = new Map();
+  for (const l of priorLedgers || []) { if (!l || !l.name || !l.company_name) continue; if (!by.has(l.company_name)) by.set(l.company_name, []); by.get(l.company_name).push(l); }
+  const maps = new Map();
+  for (const [c, rows] of by) maps.set(c, classifyLedgers(rows, overrides || {}, partyRoles));
+  return (name, company) => { const m = company ? maps.get(company) : null; return m ? (m.get(name) || m.get(nameKey(name)) || null) : null; };
+}
+
 /* ---------------- small helpers ---------------- */
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -384,7 +398,8 @@ function alignToToday(ledgers, vouchers, now) {
     const b = before.get(k) || 0, a = after.get(k) || 0, y = beyond.get(k) || 0;
     if (!b && !a && !y) return l;
     const o = Object.assign({}, l, { tally_opening_balance: l.opening_balance, tally_closing_balance: l.closing_balance });
-    if (l.opening_balance != null && b) o.opening_balance = r2(num(l.opening_balance) - sg * b);
+    // The opening Tally gave is as at the start of ITS period; readers that check a year against its own opening need it.
+    if (l.opening_balance != null && b) { o.opening_balance = r2(num(l.opening_balance) - sg * b); o.period_opening_balance = l.opening_balance; o.period_from = dayIso(bp.from); }
     const hold = incomplete && guardLedger(l);
     if (hold && a) { o.held_at = dayIso(bp.to); heldCash++; }
     if (l.closing_balance != null && (a || y)) o.closing_balance = r2(num(l.closing_balance) + sg * ((hold ? 0 : a) - y));
@@ -519,7 +534,9 @@ function computeAnalytics(input) {
   classes.set(nameKey(IMPLIED_SALES), { bucket: 'sales', confidence: 'group' });
   classes.set(nameKey(IMPLIED_PURCHASES), { bucket: 'purchases', confidence: 'group' });
   let impliedVouchers = 0;
-  const cls = (name) => classes.get(name) || classes.get(nameKey(name)) || { bucket: 'unknown', confidence: 'unknown' };
+  const prior = priorClassifier(input.priorLedgers, overrides, partyRolesFromVouchers(allVouchers));
+  const cls = (name, company) => (company && prior(name, company)) || classes.get(name) || classes.get(nameKey(name)) || { bucket: 'unknown', confidence: 'unknown' };
+  const coFy = new Map();   // company file -> the financial year its entries begin in
   const display = new Map();   // nameKey -> first spelling seen, for output
   const nonParty = new Set();  // ledgers that appear as something other than a voucher's party
 
@@ -553,10 +570,13 @@ function computeAnalytics(input) {
   for (const v of live) { const d = parseDate(v.date); if (d && (lastMs == null || d.getTime() > lastMs)) lastMs = d.getTime(); }
   const fyFrom = lastMs == null ? null : fyStartMs(lastMs);
   let minFy = null;
-  const cut90 = new Date(asOf.getTime() - 90 * DAY);
+  // "The last 90 days" end where the data ends: after three days without a sync, a window to today would hold
+  // three empty days and overstate days-to-pay.
+  const dataEnd = input.dataAsOf && Date.parse(input.dataAsOf) < asOf.getTime() ? new Date(Date.parse(input.dataAsOf)) : asOf;
+  const cut90 = new Date(dataEnd.getTime() - 90 * DAY);
   const win = { sales: 0, purchases: 0, direct_expense: 0, direct_income: 0, returns: 0, billed: 0 };   // last 90d
   const bought30 = new Map();   // vendor -> purchases in the last 30 days (are suppliers tracked bill by bill?)
-  const cut30 = new Date(asOf.getTime() - 30 * DAY);
+  const cut30 = new Date(dataEnd.getTime() - 30 * DAY);
   let salesNoParty = 0;
 
   const items = {};        // item -> agg
@@ -570,6 +590,7 @@ function computeAnalytics(input) {
     if (!minD || dt < minD) minD = dt;
     if (!maxD || dt > maxD) maxD = dt;
     const mk = monthKey(dt);
+    if (v.company_name && !coFy.has(v.company_name)) coFy.set(v.company_name, dayIso(fyStartMs(dt.getTime())));
     const m = M(mk); m.vouchers++;
     const in90 = dt >= cut90;
     const inFy = fyFrom == null || dt.getTime() >= fyFrom;
@@ -591,7 +612,7 @@ function computeAnalytics(input) {
         const act = ledgerActivity.get(lk) || { n: 0, abs: 0 };
         act.n++; act.abs += Math.abs(a); ledgerActivity.set(lk, act);
       }
-      let { bucket } = cls(e.ledger);
+      let { bucket } = cls(e.ledger, v.company_name);
       // A customer or vendor is never a P&L line, whatever its group name suggests.
       if (e.is_party && PL_BUCKETS.includes(bucket)) bucket = 'balance_sheet';
       const lname = String(e.ledger || '');
@@ -847,6 +868,52 @@ function computeAnalytics(input) {
         opex: r2(t.opex), net_profit_pre_stock: r2(gp + t.other_income - t.opex),
         net_profit_after_stock: hasStock ? r2(gp + sc + t.other_income - t.opex) : null
       });
+    }
+  }
+  // Last year's own file: its stock movement belongs to last year, and its closing balances should be where this
+  // year's file opens. Where they differ (usual while last year's audit is open) the page says so.
+  let year_join = null;
+  {
+    const pl = input.priorLedgers || [];
+    const byCo = new Map();
+    for (const l of pl) { if (!l || !l.company_name) continue; if (!byCo.has(l.company_name)) byCo.set(l.company_name, []); byCo.get(l.company_name).push(l); }
+    let lastCo = null;
+    for (const [co, rows] of byCo) {
+      const fy = coFy.get(co); if (!fy) continue;
+      if (!lastCo || fy > coFy.get(lastCo)) lastCo = co;
+      const st = rows.filter((l) => (prior(l.name, co) || {}).bucket === 'stock' && l.closing_balance != null);
+      const y = years.find((x) => x.from === fy);
+      if (st.length && y && y.stock_change == null) {
+        const c = st.reduce((a, l) => a + Math.abs(num(l.closing_balance)), 0), o = st.reduce((a, l) => a + Math.abs(num(l.opening_balance)), 0);
+        const gp = y.gross_profit_pre_stock, ch = r2(c - o);
+        Object.assign(y, { stock_change: ch, stock_opening: r2(o), stock_closing: r2(c), stock_estimated: false,
+          gross_margin_pct_after_stock: pct(gp + ch, y.net_sales), net_profit_after_stock: r2(y.net_profit_pre_stock + ch) });
+      }
+    }
+    if (lastCo && fyFromIso && coFy.get(lastCo) < fyFromIso) {
+      const BSJ = ['debtor', 'creditor', 'bank', 'bank_od', 'cash', 'stock', 'balance_sheet', 'tax'];
+      const cur = new Map();
+      for (const l of ledgers) if (l && !l.history_only) cur.set(nameKey(l.name), l);
+      const diffs = [];
+      let checked = 0;
+      for (const l of byCo.get(lastCo)) {
+        if (!l || l.closing_balance == null || !BSJ.includes((prior(l.name, lastCo) || {}).bucket)) continue;
+        const c = cur.get(nameKey(l.name)); if (!c) continue;
+        const open = c.period_opening_balance != null ? c.period_opening_balance : c.opening_balance;
+        if (open == null) continue;
+        checked++;
+        const d = num(open) - num(l.closing_balance);
+        if (Math.abs(d) > Math.max(1, 0.001 * Math.abs(num(l.closing_balance)))) diffs.push({ ledger: l.name, last_year_closed: r2(Math.abs(num(l.closing_balance))), this_year_opens: r2(Math.abs(num(open))), difference: r2(Math.abs(d)) });
+      }
+      diffs.sort((a, b) => b.difference - a.difference);
+      year_join = { last_year_file: lastCo, checked, differ: diffs.length, total: r2(diffs.reduce((a, x) => a + x.difference, 0)), top: diffs.slice(0, 8) };
+      // Stock is the one that moves the margin: say what it would be on last year's closing figure.
+      const ly = years.find((x) => x.from === coFy.get(lastCo));
+      if (stock.available && stockKnown && ly && ly.stock_closing != null && Math.abs(ly.stock_closing - stock.opening) > Math.max(1000, 0.005 * stock.opening)) {
+        const alt = stock.closing - ly.stock_closing;
+        Object.assign(stock, { last_year_closing: ly.stock_closing, opening_differs: true });
+        period.gross_margin_pct_after_stock_on_last_year_closing = pct(gross_pre_total + alt, tot.net_sales);
+      }
     }
   }
 
@@ -1127,7 +1194,7 @@ function computeAnalytics(input) {
   const todayIso = dayIso(todayIstMs(now));
   const readingPastYear = !!(agentPeriod && String(agentPeriod.to).slice(0, 10) < todayIso && maxD && dayIso(maxD.getTime()) > String(agentPeriod.to).slice(0, 10));
   if (readingPastYear) {
-    reasons.unshift(`Tally is sending Margyn last year's entries at the moment (${longDay(String(agentPeriod.from).slice(0, 10))} to ${longDay(String(agentPeriod.to).slice(0, 10))}). Entries made after ${longDay(dayIso(maxD.getTime()))} may not have arrived yet.`);
+    reasons.unshift(`Tally is sending Margyn last year's entries at the moment (${longDay(String(agentPeriod.from).slice(0, 10))} to ${longDay(String(agentPeriod.to).slice(0, 10))}). Entries made after ${longDay(dayIso(todayIstMs(dataEnd)))} may not have arrived yet.`);
     internal.push(`Agent period ${agentPeriod.from} to ${agentPeriod.to} (source ${agentPeriod.source || '?'}) does not include today: new current-year vouchers are not syncing. Needs the agent's period fix (voucherSync.choosePeriod).`);
   }
   if (shortHistory && vouchers.length) reasons.push(`Only ${spanDays} days of vouchers are synced (${period.from} to ${period.to}), so days-to-pay and other ratios are hidden. ` +
@@ -1144,6 +1211,16 @@ function computeAnalytics(input) {
       (worst ? ` (for example ${worst.longest_gap.n} numbers ${worst.longest_gap.after ? 'after ' + worst.longest_gap.after : 'before ' + worst.longest_gap.before} in “${worst.series}”)` : '') +
       `. Sales and everything worked out from them are understated for ${gaps.short_months.length > 1 ? 'those months' : 'that month'}.`);
   }
+  // Cash, bank, overdraft and loan ledgers against their own entries over the period Tally's balances cover.
+  let cashTie = [];
+  if (B) {
+    const guardNames = new Set(ledgers.filter((l) => l && !l.history_only && guardLedger(l)).map((l) => nameKey(l.name)));
+    cashTie = B.tie.filter((t) => guardNames.has(nameKey(t.ledger)));
+  }
+  const cashTieBad = cashTie.filter((t) => !t.ok).sort((a, b) => Math.abs(b.vouchers_movement - b.tally_movement) - Math.abs(a.vouchers_movement - a.tally_movement));
+  if (cashTieBad.length) reasons.push(`${cashTieBad.length} cash, bank or loan ledger(s) don't match their entries (largest: ${cashTieBad[0].ledger}, entries ₹${Math.round(cashTieBad[0].vouchers_movement).toLocaleString('en-IN')} against Tally's ₹${Math.round(cashTieBad[0].tally_movement).toLocaleString('en-IN')}).`);
+  if (year_join && year_join.differ) reasons.push(`This year's Tally file doesn't open where last year's closed for ${year_join.differ} of ${year_join.checked} ledgers (₹${Math.round(year_join.total).toLocaleString('en-IN')} in all; largest ${year_join.top[0].ledger}). That is usual until last year's books are finalised and the opening balances are updated.`);
+  if (stock.opening_differs) reasons.push(`Stock opens this year at ₹${Math.round(stock.opening).toLocaleString('en-IN')} but closed last year at ₹${Math.round(stock.last_year_closing).toLocaleString('en-IN')}. Gross margin after stock is ${p1(period.gross_margin_pct_after_stock)}% on this year's opening figure and ${p1(period.gross_margin_pct_after_stock_on_last_year_closing)}% on last year's closing figure.`);
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
@@ -1167,6 +1244,8 @@ function computeAnalytics(input) {
   reasons.push('Single source (Tally). Not yet corroborated by bank or GST.');
   if (vouchers.length && !(gaps && gaps.short_months.length) && !unclassified.length && !guessed.length && !tieBad.length && !failedKinds.length && !(completeness && completeness.short_months.length) && stock.available && tie.length >= 3 && tieTop.every((t) => t.ok)) level = 'high-for-a-single-source';
   else if (unclassified.length > 3 || tieBad.length > 2 || !vouchers.length || failedKinds.some((f) => f.kind === 'vouchers') || (gaps && gaps.short_months.length)) level = 'low';
+  // Profit lines can all tie while a bank ledger doesn't: that is not "high".
+  if (cashTieBad.length && level === 'high-for-a-single-source') level = 'medium';
 
   const quality = {
     confidence: level,
@@ -1178,6 +1257,7 @@ function computeAnalytics(input) {
     unclassified_ledgers: unclassified.slice(0, 20),
     guessed_ledgers: guessed.slice(0, 20),
     tie_out: tieTop,
+    cash_tie_out: cashTie.slice().sort((a, b) => b.vouchers_movement - a.vouchers_movement).slice(0, 12),
     balances_period: B ? { from: B.from, to: B.to, tied: B.tied, tested: B.tested, rolled_forward: B.rolled_forward, carried_vouchers: B.carried_vouchers, entries_incomplete: !!B.entries_incomplete, cash_held: !!B.cash_held } : null,
     balance_sign,
     balance_sheet_balances: { missing: bsMissing, total: bsLedgers.length },
@@ -1214,7 +1294,7 @@ function computeAnalytics(input) {
     basis: 'Tally ledgers, vouchers and bills. One source; not yet corroborated by bank or GST. Sales figures exclude GST.',
     as_of: asOf.toISOString(),
     items_available: itemsAvailable,
-    period, years, pnl, stock, cash, cost_structure,
+    period, years, year_join, pnl, stock, cash, cost_structure,
     working_capital, customers: customerTop, cash_history,
     // Entries already in Tally for a later date (EMIs, post-dated cheques): not in today's figures.
     entered_ahead: today.future.length ? {
@@ -1459,7 +1539,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
-  computeAnalytics, asOfToday, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  computeAnalytics, asOfToday, priorClassifier, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
   isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES

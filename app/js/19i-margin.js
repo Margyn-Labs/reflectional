@@ -32,6 +32,8 @@ async function mgLoadMargin(force){
     clearTimeout(timer);
     if(!res.ok) throw new Error('HTTP ' + res.status);
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
+    // The header's "As of" follows the date the books are really as at.
+    try { if(typeof mgRefreshScope === 'function') mgRefreshScope(); } catch(e){}
     // The last sync's answer, served at once: fetch this sync's straight after and redraw.
     if(mgMar && mgMar.stale) setTimeout(() => mgLoadMargin('fresh'), 0);
     else if(!mgMarCompany && typeof mgBcSaveSoon === 'function') mgBcSaveSoon();
@@ -258,10 +260,10 @@ function mgRenderMargin(){
 
   host.innerHTML = head +
     '<div class="mg-panel"><div class="mg-panel-b" style="display:flex;gap:12px;align-items:flex-start"><span class="mg-dot ' + conf[1] + '" style="margin-top:6px"></span><div><strong>' + conf[0] + '.</strong> ' +
-      escapeHtml(d.basis || '') + '<div class="mg-muted" style="margin-top:4px">' + escapeHtml((q.reasons || []).slice(0, 4).join(' ')) + '</div></div></div>' + companySel + '</div>' +
+      escapeHtml(d.basis || '') + '<div class="mg-muted" style="margin-top:4px">' + escapeHtml((q.reasons || []).slice(0, 6).join(' ')) + '</div></div></div>' + companySel + '</div>' +
     '<div class="mg-tiles four">' +
       mgMarTile('Net sales, before GST', fmtINR(p.net_sales || 0, 'tile'), (p.from || '') + ' to ' + (p.to || ''), 'flat', fmtINR(p.net_sales || 0)) +
-      mgMarTile(gmLabel, mgMarPct(gm), p.gross_margin_pct_after_stock == null ? (st.as_at ? 'Tally’s stock value is as at ' + dayLong(st.as_at) : 'Stock balance not available') : p.stock_estimated ? 'Stock worked out from your entries since ' + dayLong(st.as_at) : 'Indicative: depends on Tally’s stock value', gm != null && gm < 15 ? 'bad' : 'flat') +
+      mgMarTile(gmLabel, mgMarPct(gm), p.gross_margin_pct_after_stock == null ? (st.as_at ? 'Tally’s stock value is as at ' + dayLong(st.as_at) : 'Stock balance not available') : p.stock_estimated ? 'Stock worked out from your entries since ' + dayLong(st.as_at) : p.gross_margin_pct_after_stock_on_last_year_closing != null ? mgMarPct(p.gross_margin_pct_after_stock_on_last_year_closing) + ' if stock opened where last year closed' : 'Indicative: depends on Tally’s stock value', gm != null && gm < 15 ? 'bad' : 'flat') +
       mgMarTile('Returns and credit notes', mgMarPct((lk.returns || {}).pct_of_gross_sales), fmtINR((lk.returns || {}).value || 0, 'tile') + ' of gross sales', ((lk.returns || {}).pct_of_gross_sales || 0) > 5 ? 'bad' : 'flat') +
       mgMarTile('Days to get paid', wc.dso_days == null ? '—' : Math.round(wc.dso_days) + ' days', 'Last 90 days of sales', (wc.dso_days || 0) > 60 ? 'bad' : 'flat') +
     '</div>' +

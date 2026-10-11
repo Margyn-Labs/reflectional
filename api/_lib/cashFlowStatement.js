@@ -269,9 +269,18 @@ function statement(ctx, columns, opts) {
   for (const l of eqLedgers) {
     if (l.closing_balance == null || l.opening_balance == null) continue;
     checked++;
-    const walked = S.debitPos(l.closing_balance) + (fyMove.get(nk(l.name)) || 0);
-    const gap = walked - S.debitPos(l.opening_balance);
-    if (Math.abs(gap) >= Math.max(1, 0.001 * Math.abs(S.debitPos(l.opening_balance)))) gaps.push({ ledger: l.name, tally_opening: r0(S.debitPos(l.opening_balance)), walked_back: r0(walked), gap: r0(gap) });
+    // The opening Tally gave belongs to the start of ITS period. When older history sits beside this year's file
+    // the ledger's opening is moved back to the first entry (tallyAnalytics.alignToToday) and Tally's own is kept
+    // as period_opening_balance: walk back to THAT date and compare with THAT figure. (Comparing a walk to
+    // 1 April with a balance moved back a year reported last year's whole movement as a gap: Kotak OD 2.75 Cr.)
+    const own = l.period_opening_balance != null && l.period_from;
+    const from = own ? String(l.period_from).slice(0, 10) : fyKey;
+    let mv = fyMove.get(nk(l.name)) || 0;
+    if (own && from !== fyKey) { mv = 0; const k = nk(l.name); for (const r of ctx.rows) if (r.day >= from) for (const x of r.lines) if (nk(x.ledger) === k) mv += x.amount; }
+    const opening = S.debitPos(own ? l.period_opening_balance : l.opening_balance);
+    const walked = S.debitPos(l.closing_balance) + mv;
+    const gap = walked - opening;
+    if (Math.abs(gap) >= Math.max(1, 0.001 * Math.abs(opening))) gaps.push({ ledger: l.name, tally_opening: r0(opening), walked_back: r0(walked), gap: r0(gap) });
   }
   const tot = out[out.length - 1] || null;
   const notes = [];
