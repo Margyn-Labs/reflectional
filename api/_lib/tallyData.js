@@ -122,6 +122,26 @@ const VOUCHER_CAP = 60000;
  * held (they were replaced by an older file's before files were kept apart), the ledgers that are held are
  * used and tallyAnalytics carries their balances forward from the entries.
  */
+/**
+ * The current file's ledgers, plus the ledgers that exist only in an older file: name and group with NO balance.
+ * An expense ledger used last year and dropped from this year's file still has last year's entries against it,
+ * and without its group those entries fall out of last year's costs (Care Hygiene: "PACKING MATERIAL & CHARGES",
+ * 93.9 L, lifted last year's margin from 21.8% to 25.2%). Balances come from the current file only.
+ */
+function withHistoryLedgers(current, others) {
+  const key = (n) => String(n == null ? '' : n).replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const have = new Set(current.map((l) => key(l && l.name)));
+  const out = current.slice();
+  for (const l of others || []) {
+    if (!l || !l.name) continue;
+    const k = key(l.name);
+    if (have.has(k)) continue;
+    have.add(k);
+    out.push(Object.assign({}, l, { opening_balance: null, closing_balance: null, history_only: true }));
+  }
+  return out;
+}
+
 function companyFiles(ledgers, bills, vouchers) {
   const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
   const by = new Map();
@@ -137,7 +157,7 @@ function companyFiles(ledgers, bills, vouchers) {
   const mine = (rows) => rows.filter((r) => r && r.company_name === current);
   const L = mine(ledgers), B = mine(bills);
   return {
-    ledgers: L.length ? L : ledgers, bills: B.length ? B : bills,
+    ledgers: L.length ? withHistoryLedgers(L, ledgers) : ledgers, bills: B.length ? B : bills,
     summary: { current, files: list, ledgers_from: L.length ? current : [...new Set(ledgers.map((r) => r && r.company_name).filter(Boolean))].join(' + ') || null,
       bills_from: B.length ? current : 'all files', bills_set_aside: B.length ? bills.length - B.length : 0 }
   };
@@ -180,7 +200,7 @@ async function recoverCurrentFile(userId, inst, rows) {
   const tag = (r) => Object.assign({}, r, { company_name: f.current });
   const asAt = String(snap.key || '').split('|').pop() || snap.at || null;
   return {
-    ledgers: snap.ledgers.map(tag), bills: Array.isArray(snap.bills) && snap.bills.length ? snap.bills.map(tag) : rows.bills, vouchers,
+    ledgers: withHistoryLedgers(snap.ledgers.map(tag), rows.ledgers), bills: Array.isArray(snap.bills) && snap.bills.length ? snap.bills.map(tag) : rows.bills, vouchers,
     files: Object.assign({}, f, { ledgers_from: f.current, bills_from: f.current, bills_set_aside: 0,
       recovered: { as_at: asAt, saved_at: snap.at || null, ledgers: snap.ledgers.length, bills: Array.isArray(snap.bills) ? snap.bills.length : 0, vouchers_restored: back.length, was_ledgers_from: f.ledgers_from } })
   };
@@ -216,7 +236,7 @@ async function readRows(inList) {
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
   // v2: rows carry their company file; a copy saved before that is read again from the tables.
-  const snapKey = `v3|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  const snapKey = `v4|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };
