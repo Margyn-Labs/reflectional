@@ -20,8 +20,10 @@ const MG_RELEASES = [
     items:[
       { t:'Margin shows this financial year', what:'If your Tally company holds more than one year, Margin used to add the years together. The figures at the top are now for this financial year (April to today), and a new <b>Year by year</b> table shows each year on its own.',
         how:'Open <b>Margin</b>. The dates under <b>Net sales</b> show the period; last year is in <b>Year by year</b>.', act:'margin' },
-      { t:'Cash, loans and what you’re owed are as of today', what:'Tally sends balances for whichever period is open on its screen. If that was last year, Margyn showed last year-end’s cash, loans and customer balances. Margyn now works out which period Tally used and brings every balance to today from your entries since then. Nobody needs to change anything in Tally.',
+      { t:'Cash, loans and what you’re owed are as of today', what:'Many businesses keep one Tally company file per year. When last year’s file was the one open, Margyn took its balances as today’s and mixed up the two years. Margyn now keeps each year’s file apart, takes balances and open bills from the current year’s file, and when it only has last year’s balances it brings them to today from your entries since. Nobody needs to change anything in Tally.',
         how:'Nothing to do. <b>Cash</b>, <b>Cash flow</b>, <b>Receivables</b> and <b>Payables</b> all use today’s balances.' },
+      { t:'A check that no invoice is missing', what:'Margyn now checks that your sales invoice numbers run without gaps. If a run of numbers is missing in a month, Margin and the data check say so, with how many.',
+        how:'Open <b>Organisations and sources</b> → <b>Is all your data in?</b>', act:'connectors' },
       { t:'Days to get paid is truer', what:'It now uses the same “owed to you” figure as the rest of Margyn, and compares it with what customers were billed including GST.',
         how:'Open <b>Margin</b> → <b>Days to get paid</b>.', act:'margin' }
     ]
