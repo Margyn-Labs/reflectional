@@ -193,7 +193,8 @@ async function handleSummary(req, res) {
 
   const ids = installs.map((i) => i.id);
   const inList = `(${ids.join(',')})`;
-  const asOf = installs.map((i) => i.last_sync_at).filter(Boolean).sort().pop() || null;
+  let asOf = installs.map((i) => i.last_sync_at).filter(Boolean).sort().pop() || null;
+  let currentFile = null;
 
   let bills = [], vouchers = [], ledgers = [];
   try {
@@ -206,6 +207,10 @@ async function handleSummary(req, res) {
     // fresh reads on every open (2026-10-09: 2.4-5.6 s). Same rows, orders and limits as the reads below.
     const book = new Set(installs.map((i) => i.company_name || '')).size === 1 ? await loadTallyBook(user.id).catch(() => null) : null;
     if (book && book.connected && book.chosen.length === installs.length) {
+      // The time and file these balances are really from. The install's last sync may be a later read of
+      // ANOTHER year's file: the Cash page stamped 8 Oct balances "9 Oct, 7:52 pm" (found 11 Oct 2026).
+      if (book.files && book.files.recovered && book.files.recovered.as_at) asOf = book.files.recovered.as_at;
+      if (book.files && book.files.current) currentFile = book.files.current;
       const num = (x) => (x == null ? -Infinity : Number(x));
       bills = book.bills.slice().sort((a, b) => num(b.overdue_days) - num(a.overdue_days) || String(a.party_name || '').localeCompare(String(b.party_name || '')) || String(a.bill_ref || '').localeCompare(String(b.bill_ref || '')))
         .slice(0, 20000);
@@ -311,7 +316,7 @@ async function handleSummary(req, res) {
 
   return json(res, 200, {
     connected: true,
-    company_name: installs[0].company_name || (bills[0] && bills[0].company_name) || null,
+    company_name: currentFile || installs[0].company_name || (bills[0] && bills[0].company_name) || null,
     as_of: asOf,
     bills: {
       receivable_total: round2(receivableTotal),
@@ -360,7 +365,7 @@ const _analyticsDone = new WeakMap();   // book -> { k, body }
  * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
  * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
  * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
-const ANSWER_VERSION = '2026-10-11-per-file-classes';
+const ANSWER_VERSION = '2026-10-11-as-at';
 const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 function savedAnalyticsPath(userId, q) {
   return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;

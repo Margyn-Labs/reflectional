@@ -114,7 +114,11 @@ function mgAsOf(){
   try {
     const s = snapshots && snapshots[0];
     if(!s) return 'No data yet';
-    return 'As of ' + new Date(s.created_at).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric' });
+    // The date the books' figures are really as at. A reading saved today from books last sent three days ago
+    // is not "as of today" (Care Hygiene, 11 Oct 2026: 8 Oct balances under "As of 11 Oct").
+    let t = Date.parse(s.created_at);
+    try { const b = typeof mgMar !== 'undefined' && mgMar && (mgMar.balances_as_at || mgMar.last_sync_at); if(b && Date.parse(b) < t) t = Date.parse(b); } catch(e){}
+    return 'As of ' + new Date(t).toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', year:'numeric' });
   } catch(e){ return 'Latest'; }
 }
 

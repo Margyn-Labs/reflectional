@@ -32,6 +32,8 @@ async function mgLoadMargin(force){
     clearTimeout(timer);
     if(!res.ok) throw new Error('HTTP ' + res.status);
     mgMar = await res.json(); mgMarAt = Date.now(); mgMarErr = false;
+    // The header's "As of" follows the date the books are really as at.
+    try { if(typeof mgRefreshScope === 'function') mgRefreshScope(); } catch(e){}
     // The last sync's answer, served at once: fetch this sync's straight after and redraw.
     if(mgMar && mgMar.stale) setTimeout(() => mgLoadMargin('fresh'), 0);
     else if(!mgMarCompany && typeof mgBcSaveSoon === 'function') mgBcSaveSoon();
