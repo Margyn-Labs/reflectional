@@ -180,6 +180,49 @@ async function fetchLedgers(cfg) {
 }
 
 /**
+ * Party contact details (phone, email, GSTIN, ...) as a separate request after the ledgers. Tries the
+ * full field list, then the lean one; any failure returns [] so the ledger sync is never affected.
+ */
+async function fetchLedgerContacts(cfg) {
+  for (const full of [true, false]) {
+    try {
+      const xml = tally.buildLedgerContactsRequest({ company: cfg.company, full });
+      const resp = await tally.postXml({ host: cfg.tallyHost, port: cfg.tallyPort, xml, timeoutMs: 20000 });
+      return tally.parseLedgerContacts(resp);
+    } catch (e) {
+      log(`Party contacts (${full ? 'full' : 'lean'}) not read: ${e.message}`);
+    }
+  }
+  return [];
+}
+
+/** GSTIN (see tallyClient.buildLedgerGstinRequest). Its own request; any failure just means no GSTIN. */
+async function fetchLedgerGstins(cfg) {
+  if (!cfg.readGstin) return [];   // not proven on a real Tally yet: never sent to a client's Tally
+  try {
+    const xml = tally.buildLedgerGstinRequest({ company: cfg.company });
+    const resp = await tally.postXml({ host: cfg.tallyHost, port: cfg.tallyPort, xml, timeoutMs: 20000 });
+    return tally.parseLedgerGstins(resp);
+  } catch (e) {
+    log(`GSTIN not read: ${e.message}`);
+    return [];
+  }
+}
+
+/** Put each ledger's contact details on its row (by GUID, else by name). */
+function mergeContacts(rows, contacts) {
+  if (!contacts.length) return 0;
+  const byGuid = new Map(), byName = new Map();
+  for (const c of contacts) { if (c.guid) byGuid.set(c.guid, c.contact); byName.set(c.name, c.contact); }
+  let n = 0;
+  for (const r of rows) {
+    const c = (r.guid && byGuid.get(r.guid)) || byName.get(r.name);
+    if (c) { r.contact = c; n++; }
+  }
+  return n;
+}
+
+/**
  * Vouchers/bills — Phase 2/3. UNCONFIRMED against real Tally (see
  * tallyClient.js's buildVoucherRequest/buildBillsRequest comments). Kept as
  * separate fetch functions from fetchLedgers so a failure here never touches
@@ -265,6 +308,13 @@ async function runLedgerSync(cfg, { dryRun = false, company } = {}) {
 
   const { rows } = await fetchLedgers(Object.assign({}, cfg, { company }));
   log(`Parsed ${rows.length} ledgers from Tally.`);
+  const contacts = await fetchLedgerContacts(Object.assign({}, cfg, { company }));
+  for (const g of await fetchLedgerGstins(Object.assign({}, cfg, { company }))) {
+    const c = contacts.find((x) => (g.guid && x.guid === g.guid) || x.name === g.name);
+    if (c) c.contact.gstin = g.gstin; else contacts.push({ name: g.name, guid: g.guid, contact: { gstin: g.gstin } });
+  }
+  const withContact = mergeContacts(rows, contacts);
+  if (withContact) log(`Contact details (phone/email/GSTIN) on ${withContact} ledgers.`);
 
   const t = new Date();
   const asOf = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;

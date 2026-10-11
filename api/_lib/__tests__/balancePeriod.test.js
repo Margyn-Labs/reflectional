@@ -118,5 +118,64 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   check('balances that carry debit as positive are carried forward the right way round', t.balances && t.balances.sign === 'opposite' && bal(t, 'Kotak Bank').closing_balance === -truth('Kotak Bank'), t.balances && { ...t.balances, tie: undefined });
 }
 
+/* ---- stock: Tally's value stops at 31 Mar 2026; carried to today from the item lines, graded on last year ---- */
+{
+  // Three items: A and B are bought and sold, K is a kit made from A and B in manufacturing journals and sold.
+  // Tally (average cost) holds opening quantities Margyn never sees. Purchase prices drift up 0.5% a month.
+  const hold = { A: { q: 9000, v: 9000 * 100 }, B: { q: 12000, v: 12000 * 40 }, K: { q: 300, v: 300 * 185 } };
+  const rate = (n) => hold[n].v / hold[n].q;
+  const IN = (n, q, v) => { hold[n].q += q; hold[n].v += v; };
+  const OUT = (n, q) => { const v = q * rate(n); hold[n].q -= q; hold[n].v -= v; return v; };
+  const value = () => Object.values(hold).reduce((t, h) => t + h.v, 0);
+  const line = (item, qty, amount) => ({ item, qty, unit: 'Nos', rate: Math.abs(amount) / qty, amount, abs_amount: Math.abs(amount) });
+  const sv = [];
+  let k = 0, openingValue = value(), marchValue = null, septValue = null;
+  const push = (type, date, entries, items) => sv.push({ tally_guid: 's' + (++k), voucher_type: type, voucher_number: String(k), date, party_name: null, amount: 1, is_cancelled: false,
+    entries: entries.map(([ledger, amount]) => ({ ledger, amount, is_party: false })), items });
+  months.forEach(([y, m], i) => {
+    if (y === 2026 && m === 10) return;
+    const pa = 100 * Math.pow(1.005, i), pb = 40 * Math.pow(1.005, i);
+    const qa = 5000 + (i % 3) * 400, qb = 9000 + (i % 4) * 300;
+    IN('A', qa, qa * pa); IN('B', qb, qb * pb);
+    push('Purchase', ymd(y, m, 3), [['Supplier A', qa * pa + qb * pb], ['Purchase GST', -(qa * pa + qb * pb)]], [line('A', qa, -qa * pa), line('B', qb, -qb * pb)]);
+    // 400 kits: each takes 1 A and 2 B. Tally values the kit at what its parts cost.
+    const va = OUT('A', 400), vb = OUT('B', 800); IN('K', 400, va + vb);
+    sv.push({ tally_guid: 's' + (++k), voucher_type: 'Manufacturing Journal', voucher_number: String(k), date: ymd(y, m, 8), party_name: null, amount: va + vb, is_cancelled: false, entries: [],
+      items: [line('K', 400, -(va + vb)), line('A', 400, va), line('B', 800, vb)] });
+    const sa = 4300 + (i % 5) * 150, sb = 8000 + (i % 2) * 500, sk = 380;
+    OUT('A', sa); OUT('B', sb); OUT('K', sk);
+    const bill = sa * 135 + sb * 55 + sk * 260;
+    push('Sales', ymd(y, m, 18), [['Alkem', -bill], ['GST Sale', bill]], [line('A', sa, sa * 135), line('B', sb, sb * 55), line('K', sk, sk * 260)]);
+    if (y === 2026 && m === 3) marchValue = value();
+    if (y === 2026 && m === 9) septValue = value();
+  });
+  // Enough plain ledgers for the period to be found; stock ledger as Tally sends it with the screen on 2025-26.
+  const withItems = all.concat(sv);
+  const mv = (name, from, to) => withItems.filter((v) => v.date >= from && v.date <= to).reduce((t, v) => t + v.entries.filter((e) => e.ledger === name).reduce((x, e) => x + e.amount, 0), 0);
+  const led = Object.keys(GROUP).map((name) => {
+    const pl = /Sales|Purchase|Expenses/.test(GROUP[name]);
+    const opening = pl ? 0 : (OPEN[name] || 0);
+    if (name === 'Stock-in-hand') return { name, parent: GROUP[name], primary_group: GROUP[name], opening_balance: -r2(openingValue), closing_balance: -r2(marchValue) };
+    return { name, parent: GROUP[name], primary_group: GROUP[name], opening_balance: opening, closing_balance: r2(opening + mv(name, '20250401', '20260331')) };
+  });
+  const a = A.computeAnalytics({ ledgers: led, vouchers: withItems, bills: [], now: NOW });
+  const roll = a.stock.roll;
+  check('stock: the method is graded on the period Tally\'s own two values span, and lands close', roll && roll.ok && roll.backtest.error_pct_of_stock <= 5 && roll.journals_used, roll);   // ~3%: prices rise 6% a year here and stock already held is revalued by Tally, which the item lines can't show
+  check('stock: today\'s stock is Tally\'s March value plus the change since, close to what Tally itself would say', a.stock.estimated === true && Math.abs(a.stock.value_today - septValue) / septValue <= 0.03 && a.working_capital.stock_value === a.stock.value_today && a.working_capital.stock_estimated === true, { est: a.stock.value_today, tally_would_say: r2(septValue), march: r2(marchValue) });
+  check('stock: March\'s value alone would have been wrong by more than the method\'s error', Math.abs(marchValue - septValue) > Math.abs(a.stock.value_today - septValue));
+  check('stock: this year\'s margin now counts stock movement, marked as worked out', a.period.gross_margin_pct_after_stock != null && a.period.stock_estimated === true && a.years[1].stock_estimated === true && a.years[0].stock_estimated === false && a.years[0].stock_change === r2(marchValue - openingValue), { p: a.period, y: a.years });
+  check('stock: days of stock is back, and the owner is told how the figure was reached', a.working_capital.dio_days != null && a.quality.reasons.some((r) => /Stock today .* worked out item by item/.test(r)), a.quality.reasons);
+
+  // Item lines missing for half of last year (an old agent): the sum can't reproduce Tally's change, so nothing is claimed.
+  const holes = withItems.map((v) => (v.items && v.voucher_type === 'Purchase' && v.date < '20251001' ? Object.assign({}, v, { items: null }) : v));
+  const b = A.computeAnalytics({ ledgers: led, vouchers: holes, bills: [], now: NOW });
+  check('stock: when the sum does not reproduce Tally\'s own change, no figure is made up', b.stock.roll && !b.stock.roll.ok && b.stock.estimated !== true && b.working_capital.stock_as_at === '2026-03-31' && b.period.gross_margin_pct_after_stock == null && b.working_capital.dio_days == null, b.stock.roll);
+
+  // A stock value typed by hand that has nothing to do with the item movements: same refusal.
+  const typed = led.map((l) => (l.name === 'Stock-in-hand' ? Object.assign({}, l, { closing_balance: -r2(marchValue * 1.6) }) : l));
+  const c = A.computeAnalytics({ ledgers: typed, vouchers: withItems, bills: [], now: NOW });
+  check('stock: a typed stock value that the entries don\'t explain is left as Tally gave it, dated', c.stock.roll && !c.stock.roll.ok && c.stock.roll.why === 'backtest_off_by_more_than_10pct' && c.working_capital.stock_value === r2(marchValue * 1.6), c.stock.roll);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

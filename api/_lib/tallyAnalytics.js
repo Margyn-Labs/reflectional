@@ -709,6 +709,17 @@ function computeAnalytics(input) {
   const fyFromIso = fyFrom == null ? null : dayIso(fyFrom);
   const stockInFy = stock.available && (!B || (!stockStale && B.from >= fyFromIso));
   if (stock.available && B) Object.assign(stock, { as_at: stockStale ? B.to : null, period_from: B.from, period_to: B.to, applies_to_period: stockInFy });
+  // Stale stock is carried to today from the item lines, if that sum reproduces Tally's own change for the
+  // period its two values span (stockRoll). Otherwise it stays dated.
+  let roll = null;
+  if (stock.available && stockStale) {
+    try { roll = stockRoll(allVouchers, { from: B.from, to: B.to }, todayIstMs(now), stock.opening, stock.closing); } catch (e) { roll = { ok: false, why: 'error: ' + e.message }; }
+    stock.roll = roll;
+    if (roll.ok) Object.assign(stock, { value_today: roll.value_today, change_since: roll.change_since, estimated: true });
+  }
+  const rolledStock = !!(roll && roll.ok);
+  // This year's stock movement, when last year's closing is this year's opening.
+  const rollInFy = rolledStock && fyFrom != null && dayIso(fyFrom - DAY) === B.to;
 
   // ----- cash: Tally's balance when it gave one, otherwise derived from vouchers -----
   // Sweep deposits count: the bank moves that money back into the current account on its own.
@@ -776,7 +787,8 @@ function computeAnalytics(input) {
   }, { net_sales: 0, gross_sales: 0, returns: 0, cogs: 0, direct_income: 0, opex: 0, other_income: 0 });
   const tot = sumRows(pnl.filter((r) => inFyMonth(r.month)));
   const gross_pre_total = tot.net_sales + tot.direct_income - tot.cogs;
-  const stockAdj = stockInFy ? stock.change : 0;
+  const stockAdj = stockInFy ? stock.change : rollInFy ? roll.change_since : 0;
+  const stockKnown = stockInFy || rollInFy;
   const gross_adj_total = gross_pre_total + stockAdj;
   const period = {
     from: (minFy || minD) ? (minFy || minD).toISOString().slice(0, 10) : null,
@@ -784,12 +796,13 @@ function computeAnalytics(input) {
     gross_sales: r2(tot.gross_sales), sales_returns: r2(tot.returns), net_sales: r2(tot.net_sales),
     cogs_pre_stock: r2(tot.cogs),
     gross_profit_pre_stock: r2(gross_pre_total), gross_margin_pct_pre_stock: pct(gross_pre_total, tot.net_sales),
-    gross_profit_after_stock: stockInFy ? r2(gross_adj_total) : null,
-    gross_margin_pct_after_stock: stockInFy ? pct(gross_adj_total, tot.net_sales) : null,
+    gross_profit_after_stock: stockKnown ? r2(gross_adj_total) : null,
+    gross_margin_pct_after_stock: stockKnown ? pct(gross_adj_total, tot.net_sales) : null,
     opex: r2(tot.opex), other_income: r2(tot.other_income),
-    net_profit_after_stock: stockInFy ? r2(gross_adj_total + tot.other_income - tot.opex) : null,
+    net_profit_after_stock: stockKnown ? r2(gross_adj_total + tot.other_income - tot.opex) : null,
     net_profit_pre_stock: r2(gross_pre_total + tot.other_income - tot.opex),
-    net_margin_pct_after_stock: stockInFy ? pct(gross_adj_total + tot.other_income - tot.opex, tot.net_sales) : null
+    net_margin_pct_after_stock: stockKnown ? pct(gross_adj_total + tot.other_income - tot.opex, tot.net_sales) : null,
+    stock_estimated: rollInFy
   };
   // Each financial year on its own (the page shows last year beside this one). Stock movement goes to the year
   // Tally's balances cover.
@@ -800,14 +813,16 @@ function computeAnalytics(input) {
     for (const [k, rows] of [...by.entries()].sort()) {
       const t = sumRows(rows), y = +k.slice(0, 4);
       const gp = t.net_sales + t.direct_income - t.cogs;
-      const hasStock = stock.available && (B ? B.from === k && B.to === (y + 1) + '-03-31' : k === fyFromIso);
+      const own = stock.available && (B ? B.from === k && B.to === (y + 1) + '-03-31' : k === fyFromIso);
+      const est = !own && rollInFy && k === fyFromIso;
+      const hasStock = own || est, sc = est ? roll.change_since : stock.change;
       years.push({
         fy: y + '-' + String((y + 1) % 100).padStart(2, '0'), from: k, months: rows.length, current: k === fyFromIso,
         net_sales: r2(t.net_sales), cogs_pre_stock: r2(t.cogs), gross_profit_pre_stock: r2(gp), gross_margin_pct_pre_stock: pct(gp, t.net_sales),
-        stock_change: hasStock ? stock.change : null,
-        gross_margin_pct_after_stock: hasStock ? pct(gp + stock.change, t.net_sales) : null,
+        stock_change: hasStock ? sc : null, stock_estimated: est,
+        gross_margin_pct_after_stock: hasStock ? pct(gp + sc, t.net_sales) : null,
         opex: r2(t.opex), net_profit_pre_stock: r2(gp + t.other_income - t.opex),
-        net_profit_after_stock: hasStock ? r2(gp + stock.change + t.other_income - t.opex) : null
+        net_profit_after_stock: hasStock ? r2(gp + sc + t.other_income - t.opex) : null
       });
     }
   }
@@ -856,7 +871,7 @@ function computeAnalytics(input) {
   // ----- working capital -----
   const sales90 = win.sales - win.returns;
   const cogs90 = win.purchases + win.direct_expense;
-  const stockVal = stock.available ? stock.closing : null;
+  const stockVal = stock.available ? (rolledStock ? stock.value_today : stock.closing) : null;
   // Receivables and payables carry the whole history; sales and purchases only what was synced. With less than
   // about three months of vouchers the ratios compare unlike things, so say nothing rather than 768 days.
   const spanDays = minD && maxD ? Math.round((maxD - minD) / DAY) + 1 : 0;
@@ -874,12 +889,12 @@ function computeAnalytics(input) {
   const suppliersTracked = b30 <= 0 ? null : covered30 / b30 >= 0.4;
   const dpo = win.purchases > 0 && !shortHistory && suppliersTracked !== false ? r2((pay / win.purchases) * 90) : null;
   // A stock value from the end of an earlier period says nothing about how many days of stock are held now.
-  const dio = stockVal != null && cogs90 > 0 && !shortHistory && !stockStale ? r2((stockVal / cogs90) * 90) : null;
+  const dio = stockVal != null && cogs90 > 0 && !shortHistory && (!stockStale || rolledStock) ? r2((stockVal / cogs90) * 90) : null;
   const working_capital = {
     receivables: r2(recv), receivables_overdue: r2(recvOverdue), payables: r2(pay),
     customer_advances: r2(custAdvances), vendor_advances: r2(vendorAdvances),
     suppliers_tracked_billwise: suppliersTracked,
-    stock_value: stockVal, stock_as_at: stock.as_at || null,
+    stock_value: stockVal, stock_as_at: rolledStock ? null : stock.as_at || null, stock_estimated: rolledStock, stock_tally_as_at: stock.as_at || null,
     billed_90d: r2(billed90),
     cash: cash ? cash.total : null,
     dso_days: dso, dpo_days: dpo, dio_days: dio,
@@ -1102,7 +1117,9 @@ function computeAnalytics(input) {
   if (!stock.available) reasons.push('No stock balance: margin is before stock movement.');
   if (B && B.rolled_forward) {
     reasons.push(`Tally's balances stop at ${longDay(B.to)}, so Margyn carried cash, bank, loans, customers and suppliers forward to today from the ${B.carried_vouchers.toLocaleString('en-IN')} entries made since.`);
-    if (stock.available) reasons.push(`Tally's stock value is as at ${longDay(B.to)}, so this year's margin is before stock movement.`);
+    if (rolledStock) reasons.push(`Stock today (₹${Math.round(stock.value_today).toLocaleString('en-IN')}) is Tally's value at ${longDay(B.to)} plus what was bought, made and sold since, worked out item by item. The same sum for the period before came within ${roll.backtest.error_pct_of_stock}% of Tally's own figure.`);
+    else if (stock.available) reasons.push(`Tally's stock value is as at ${longDay(B.to)}, so this year's margin is before stock movement.`);
+    if (roll) internal.push(`Stock roll: ${roll.ok ? 'published' : 'held back (' + roll.why + ')'}; backtest ${JSON.stringify(roll.backtest || null)}; journals ${roll.journals_used ? 'used' : 'not used'} (signs ${JSON.stringify(roll.sign_check || null)}); items without cost ${JSON.stringify(roll.items_without_cost || null)}.`);
   }
   if (B) internal.push(`Tally's balances cover ${B.from} to ${B.to}: ${B.tied} of ${B.tested} ledgers with entries tie to that period (signs ${B.sign}).` + (B.rolled_forward ? ` Carried forward through ${B.carried_vouchers} vouchers.` : ''));
   if (years.length > 1) reasons.push(`Totals are for ${years[years.length - 1].fy} (from ${longDay(period.from)}). Earlier years are shown separately.`);
@@ -1228,6 +1245,105 @@ function applyTiedReceivables(out, tiedBills) {
     if (i >= 0) { if (line) out.headlines[i] = line; else out.headlines.splice(i, 1); }
   }
   return { receivables: r2(recv), overdue: r2(overdue) };
+}
+
+/**
+ * Stock carried forward from Tally's last valuation (2026-10-11).
+ *
+ * Tally values stock for the period on its screen; nothing in the ledger entries moves that figure, so when the
+ * screen sits on last year the stock value is last year-end's. But every sale, purchase, credit and debit note,
+ * stock journal and manufacturing journal carries its item lines, so the QUANTITY of each item that came in and
+ * went out since then is known exactly. Stock today = Tally's value then + (net quantity change of each item x
+ * what a unit of it costs). Per item and net, so a small error in a unit cost touches only the change in that
+ * item's stock, not the whole year's purchases.
+ *
+ * It grades itself before it is believed: the same sum over the period Tally's two stock values span must
+ * reproduce Tally's own change (opening to closing). `ok` only when it lands within 10% of the closing stock.
+ * What it cannot know: each item's opening quantity and Tally's valuation method per item (it assumes
+ * average cost), and free quantities (the agent sends billed quantity). The backtest measures all of that.
+ *
+ * Direction of a line: sales and debit notes take stock out, purchases and credit notes bring it in; journals
+ * go by the sign of the line's amount (Tally: negative = inward), used only when that sign agrees with the
+ * trade vouchers on these very books.
+ */
+function stockRoll(vouchers, win, todayMs, tallyOpening, tallyClosing) {
+  const out = { ok: false, why: null, from: win.from, to: win.to };
+  const fromMs = Date.parse(win.from + 'T00:00:00Z'), toMs = Date.parse(win.to + 'T00:00:00Z');
+  const items = new Map();   // nameKey -> { name, inWin, after, buyQty, buyVal, winBuyQty, winBuyVal }
+  const I = (name) => { const k = nameKey(name); let x = items.get(k); if (!x) { x = { name, inWin: 0, after: 0, buyQty: 0, buyVal: 0, winBuyQty: 0, winBuyVal: 0 }; items.set(k, x); } return x; };
+  let first = null, lines = 0, both = 0, agree = 0;
+  const journal = [];
+  for (const [v, dt] of countedOnceAll(vouchers)) {
+    if (!Array.isArray(v.items) || !v.items.length) continue;
+    const t = dt.getTime();
+    if (t > todayMs) continue;
+    if (first == null || t < first) first = t;
+    const ty = v.voucher_base || v.voucher_type || '';
+    const typeDir = isSalesType(ty) ? -1 : isCreditNote(ty) ? 1 : isPurchaseType(ty) ? 1 : isDebitNote(ty) ? -1 : 0;
+    for (const it of v.items) {
+      const qty = it && it.item ? Math.abs(num(it.qty)) : 0;
+      if (!qty) continue;
+      lines++;
+      const amt = num(it.amount), signDir = amt < 0 ? 1 : amt > 0 ? -1 : 0;
+      if (typeDir && signDir) { both++; if (typeDir === signDir) agree++; }
+      if (!typeDir) { journal.push([it, t, signDir, qty]); continue; }
+      const x = I(it.item), val = it.abs_amount != null ? num(it.abs_amount) : Math.abs(amt);
+      if (t >= fromMs && t <= toMs) x.inWin += typeDir * qty; else if (t > toMs) x.after += typeDir * qty;
+      if (isPurchaseType(ty) || isDebitNote(ty)) {
+        x.buyQty += typeDir * qty; x.buyVal += typeDir * val;
+        if (t >= fromMs && t <= toMs) { x.winBuyQty += typeDir * qty; x.winBuyVal += typeDir * val; }
+      }
+    }
+  }
+  // Journals (kits made, stock moved or written off) count only when the amount's sign is a proven guide here.
+  const signsProven = both >= 20 && agree / both >= 0.95;
+  let journalLines = 0, journalUnsigned = 0;
+  if (signsProven) for (const [it, t, d, qty] of journal) {
+    if (!d) { journalUnsigned++; continue; }
+    journalLines++;
+    const x = I(it.item);
+    if (t >= fromMs && t <= toMs) x.inWin += d * qty; else if (t > toMs) x.after += d * qty;
+  }
+  const made = assemblyCosts(vouchers);
+  const costOf = (x, inWindow) => {
+    if (inWindow && x.winBuyQty > 0 && x.winBuyVal > 0) return x.winBuyVal / x.winBuyQty;
+    if (x.buyQty > 0 && x.buyVal > 0) return x.buyVal / x.buyQty;
+    const k = made[x.name];
+    return k && k.qty > 0 && k.value > 0 ? k.value / k.qty : null;
+  };
+  let predicted = 0, since = 0, unvaluedWin = 0, unvaluedAfter = 0;
+  for (const x of items.values()) {
+    const cw = costOf(x, true), ca = costOf(x, false);
+    if (x.inWin) { if (cw != null) predicted += x.inWin * cw; else unvaluedWin++; }
+    if (x.after) { if (ca != null) since += x.after * ca; else unvaluedAfter++; }
+  }
+  const actual = tallyClosing - tallyOpening;
+  Object.assign(out, {
+    lines, journal_lines: journalLines, journal_lines_without_value: journalUnsigned, journals_used: signsProven,
+    sign_check: { compared: both, agree }, items: items.size, items_without_cost: { in_backtest: unvaluedWin, since: unvaluedAfter },
+    backtest: { predicted_change: r2(predicted), tally_change: r2(actual), error: r2(predicted - actual), error_pct_of_stock: tallyClosing > 0 ? r2((Math.abs(predicted - actual) / tallyClosing) * 100) : null },
+    change_since: r2(since), value_today: r2(tallyClosing + since)
+  });
+  if (!lines) out.why = 'no_item_lines';
+  else if (first == null || first > fromMs + 31 * DAY) out.why = 'item_lines_start_after_the_period';
+  else if (toMs - fromMs < 150 * DAY) out.why = 'period_too_short_to_grade';
+  else if (!(tallyClosing > 0)) out.why = 'no_stock_value_to_grade_against';
+  else if (out.backtest.error_pct_of_stock > 10) out.why = 'backtest_off_by_more_than_10pct';
+  else if (out.value_today < 0) out.why = 'negative_stock';
+  else out.ok = true;
+  return out;
+}
+/* Every voucher once (cancelled left out), INCLUDING stock and manufacturing journals: they don't touch the
+   accounts but they do move stock. */
+function countedOnceAll(vouchers) {
+  const seen = new Set(), out = [];
+  for (const v of vouchers || []) {
+    if (!v || v.is_cancelled === true) continue;
+    if (v.tally_guid) { if (seen.has(v.tally_guid)) continue; seen.add(v.tally_guid); }
+    const dt = parseDate(v.date);
+    if (dt) out.push([v, dt]);
+  }
+  return out;
 }
 
 /* Manufacturing Journals: the finished item's line is worth what its components cost (Tally values it that
