@@ -360,7 +360,7 @@ const _analyticsDone = new WeakMap();   // book -> { k, body }
  * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
  * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
  * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
-const ANSWER_VERSION = '2026-10-11-cash-held';
+const ANSWER_VERSION = '2026-10-11-saved-copy';
 const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 function savedAnalyticsPath(userId, q) {
   return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;
@@ -453,6 +453,13 @@ async function handleAnalytics(req, res) {
   if (book.source && book.source !== 'tally') out.quality.reasons = out.quality.reasons.map((r) => r.replace(/^Single source \(Tally\)/, `Single source (${srcName})`));
   if (book.files && book.files.files && book.files.files.length > 1) {
     out.company_files = book.files;
+    const rc = book.files.recovered;
+    if (rc) {
+      const when = rc.as_at ? new Date(Date.parse(rc.as_at) + 5.5 * 3600000).toISOString().replace('T', ' ').slice(0, 16) : 'its last sync';
+      out.quality.reasons.unshift(`Your Tally keeps a company file per year. Balances and open bills are as this year's file stood when Tally last sent it (${when} India time)` +
+        (rc.vouchers_restored ? `, and ${rc.vouchers_restored.toLocaleString('en-IN')} entries that last year's file had overwritten were put back from Margyn's own saved copy.` : '.'));
+      out.balances_as_at = rc.as_at || null;
+    }
     if (book.files.ledgers_from !== book.files.current) out.quality.reasons.unshift(`Your Tally keeps a company file per year. The balances Margyn holds are from ${book.files.ledgers_from}, so they are carried forward from the entries until Tally sends ${book.files.current}'s again.`);
   }
   if (truncated) { out.quality.confidence = 'low'; out.quality.reasons.unshift('These books hold more entries than Margyn reads in one go, so the newest entries are missing from these figures.'); }

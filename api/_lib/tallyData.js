@@ -143,6 +143,49 @@ function companyFiles(ledgers, bills, vouchers) {
   };
 }
 
+/**
+ * The current year's file as Margyn last saw it, from Margyn's own saved copy of the books (2026-10-11).
+ *
+ * When an older year's file replaced the current file's balances in the tables (before files were kept apart),
+ * the tables can no longer say what the current file's balances were. But the books are saved after each sync
+ * in one file per company NAME (snapPath), so the copy saved while the current file was the one being read is
+ * still there under its name, untouched by the other file. From it come: every ledger balance and open bill as
+ * at that file's last sync, and any of its vouchers the tables no longer hold (their GUIDs were taken by the
+ * other file's rows). Nothing is written back; the moment Tally sends the current file again this is not used.
+ * Returns the rows to use, or null when there is no such copy or it is not clearly better.
+ */
+async function recoverCurrentFile(userId, inst, rows) {
+  const f = rows && rows.files;
+  if (!f || !Array.isArray(f.files) || f.files.length < 2 || f.ledgers_from === f.current) return null;
+  const ids = inst.chosen.map((i) => i.id).sort().join(',');
+  const path = `tally/${userId}/${crypto.createHash('sha1').update(f.current + '|' + ids).digest('hex')}.json.gz`;
+  const snap = await readSaved(path);
+  if (!snap || !Array.isArray(snap.vouchers) || !Array.isArray(snap.ledgers) || !snap.ledgers.length) return null;
+  if (!String(snap.key || '').includes(f.current)) return null;
+  const cur = f.files.find((x) => x.name === f.current);
+  const day = (v) => String(v.date || '').slice(0, 10);
+  const savedCur = snap.vouchers.filter((v) => v && v.date && day(v) >= cur.from);
+  const heldCur = rows.vouchers.filter((v) => v && v.company_name === f.current);
+  if (savedCur.length < 0.9 * heldCur.length) return null;   // an older, smaller copy is not better than the tables
+  const held = new Map();
+  for (const v of rows.vouchers) if (v && v.tally_guid) held.set(v.tally_guid, v);
+  const back = [];
+  for (const v of savedCur) {
+    const h = v.tally_guid ? held.get(v.tally_guid) : null;
+    if (h && day(h) === day(v)) continue;                     // still held as it was
+    back.push(Object.assign({}, v, { tally_guid: String(v.tally_guid || '') + '~saved', company_name: f.current, restored: true }));
+  }
+  if (back.length > 0.3 * savedCur.length) return null;       // far too many: this copy is not of the same books
+  const vouchers = back.length ? rows.vouchers.concat(back).sort((a, b) => (day(a) < day(b) ? -1 : day(a) > day(b) ? 1 : String(a.tally_guid || '').localeCompare(String(b.tally_guid || '')))) : rows.vouchers;
+  const tag = (r) => Object.assign({}, r, { company_name: f.current });
+  const asAt = String(snap.key || '').split('|').pop() || snap.at || null;
+  return {
+    ledgers: snap.ledgers.map(tag), bills: Array.isArray(snap.bills) && snap.bills.length ? snap.bills.map(tag) : rows.bills, vouchers,
+    files: Object.assign({}, f, { ledgers_from: f.current, bills_from: f.current, bills_set_aside: 0,
+      recovered: { as_at: asAt, saved_at: snap.at || null, ledgers: snap.ledgers.length, bills: Array.isArray(snap.bills) ? snap.bills.length : 0, vouchers_restored: back.length, was_ledgers_from: f.ledgers_from } })
+  };
+}
+
 /** Ledgers, bills and vouchers straight from the tables (the slow path). */
 async function readRows(inList) {
   const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries,narration,company_name';
@@ -173,7 +216,7 @@ async function readRows(inList) {
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
   // v2: rows carry their company file; a copy saved before that is read again from the tables.
-  const snapKey = `v2|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  const snapKey = `v3|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };
@@ -183,7 +226,10 @@ async function snapshotFor(userId, inst, fresh) {
     let snap = fresh ? null : await readSnap(path, snapKey), from = 'storage';
     if (!snap) {
       from = 'tables';
-      snap = Object.assign({ v: 1, key: snapKey, at: new Date().toISOString() }, await readRows(`(${inst.chosen.map((i) => i.id).join(',')})`));
+      const rows = await readRows(`(${inst.chosen.map((i) => i.id).join(',')})`);
+      let rec = null;
+      try { rec = await recoverCurrentFile(userId, inst, rows); } catch (e) { console.warn('[tallyData] saved copy not used:', e.message); }
+      snap = Object.assign({ v: 1, key: snapKey, at: new Date().toISOString() }, rows, rec || {});
       await writeSaved(path, snap);
     }
     _cache.set(mk, { at: Date.now(), snap });
@@ -288,4 +334,4 @@ async function archiveRaw(userId, installId, kind, companyName, body) {
   } catch (e) { console.warn('[tallyData] raw batch not kept:', e.message); return null; }
 }
 
-module.exports = { archiveRaw, companyFiles, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };
+module.exports = { archiveRaw, companyFiles, recoverCurrentFile, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };
