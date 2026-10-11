@@ -46,7 +46,7 @@ const { track } = require('./_lib/track');
 const { computeAnalytics, asOfToday, applyTiedReceivables, PL_BUCKETS } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
-const { pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
+const { archiveRaw, pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
 const { syncTallyPartyContacts, cleanContact } = require('./_lib/tallyParties');
 const { tallyCompleteness } = require('./_lib/dataCompleteness');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
@@ -963,6 +963,9 @@ async function handleIngest(req, res) {
   const vt = body.voucher_types && typeof body.voucher_types === 'object' && !Array.isArray(body.voucher_types) ? body.voucher_types : null;
   const ctx = { userId: inst.user_id, installId: inst.id, companyName, asOfDate, now, voucherTypes: vt };
 
+  // Keep the batch exactly as it arrived before anything is done with it (tallyData.archiveRaw).
+  await archiveRaw(inst.user_id, inst.id, kind, companyName, body);
+
   const mapped = [];
   let skipped = 0;
   for (const r of rawRows) {
@@ -1103,6 +1106,7 @@ async function handleHealth(req, res) {
   // A sync that stopped early (Tally closed, PC asleep) reports no counts. Keep the last report's Tally counts
   // (ledgers, monthly vouchers, bills) beside the new errors, dated, instead of wiping them (4 Oct 2026: Care
   // Hygiene's only report was a failed one, so "does Margyn have everything Tally holds?" had no answer).
+  await archiveRaw(inst.user_id, inst.id, 'health', typeof body.company === 'string' ? body.company : inst.company_name, body);
   let diagnostics = body;
   try {
     const prevRows = await selectRows('tally_installs', `select=diagnostics&id=eq.${inst.id}&limit=1`);

@@ -267,4 +267,25 @@ function forgetTallyBook(userId) {
   for (const k of [..._books.keys()]) if (k.startsWith(userId + '|')) _books.delete(k);
 }
 
-module.exports = { companyFiles, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };
+/**
+ * Everything the agent sends is kept exactly as it arrived, before anything is worked out from it (2026-10-11).
+ * The tables hold the latest picture and are overwritten in place: when last year's company file replaced
+ * April 2026 at Care Hygiene, the vouchers that had arrived the day before were simply gone. With the raw
+ * batches kept, anything the tables lose can be rebuilt, and a new way of reading old data needs no re-sync.
+ * One gzipped file per distinct batch in the private bucket (the name is the hash of its content, so the same
+ * batch re-sent every day is stored once). Never blocks or fails a sync.
+ */
+async function archiveRaw(userId, installId, kind, companyName, body) {
+  try {
+    const rows = Array.isArray(body && body.rows) ? body.rows : null;
+    const payload = rows ? { company_name: companyName || null, kind, rows } : { company_name: companyName || null, kind, report: body };
+    const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex');
+    if (rows && !rows.length) return null;
+    const name = rows ? hash : new Date().toISOString().replace(/[:.]/g, '-') + '-' + hash.slice(0, 8);
+    const path = `raw/${userId}/${installId}/${kind}/${name}.json.gz`;
+    await writeSaved(path, Object.assign({ received_at: new Date().toISOString(), window: (body && body.window) || null, voucher_types: (body && body.voucher_types) || null, as_of_date: (body && body.as_of_date) || null }, payload));
+    return path;
+  } catch (e) { console.warn('[tallyData] raw batch not kept:', e.message); return null; }
+}
+
+module.exports = { archiveRaw, companyFiles, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };

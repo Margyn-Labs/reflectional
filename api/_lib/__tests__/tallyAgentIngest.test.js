@@ -220,6 +220,21 @@ const v = (guid, date, amt) => ({ guid, voucher_type: 'Sales', voucher_number: g
     check('two files: if only last year\'s ledgers are held, they are used (and carried forward) rather than nothing', g.ledgers.length === 1 && g.summary.ledgers_from === OLD, g.summary);
   }
 
+  /* ---- every batch is kept exactly as it arrived ---- */
+  {
+    const kept = [];
+    const realFetch2 = global.fetch;
+    global.fetch = async (url, opts = {}) => { if (/\/storage\/v1\/object\/margyn-cache\/raw\//.test(url)) { kept.push({ url: String(url), body: opts.body }); return { ok: true, status: 200, text: async () => '' }; } return realFetch2(url, opts); };
+    const batch = { kind: 'vouchers', company_name: 'CARE (2026-27)', partial: true, rows: [v('raw-1', '2026-10-01', 10), v('raw-2', '2026-10-02', 20)] };
+    await call('POST', { action: 'ingest' }, batch);
+    await call('POST', { action: 'ingest' }, batch);
+    await call('POST', { action: 'ingest' }, Object.assign({}, batch, { rows: [v('raw-1', '2026-10-01', 11)] }));
+    global.fetch = realFetch2;
+    const raw = kept.length ? JSON.parse(require('zlib').gunzipSync(kept[0].body).toString('utf8')) : null;
+    check('raw: the batch is kept as it arrived, with its company file and time', kept.length === 3 && raw && raw.rows.length === 2 && raw.rows[0].guid === 'raw-1' && raw.company_name === 'CARE (2026-27)' && !!raw.received_at && /\/raw\/1{8}-/.test(kept[0].url) && /\/i1\/vouchers\//.test(kept[0].url), kept.map((k) => k.url));
+    check('raw: the same batch sent again is the same file; a changed one is a new file', kept[0].url === kept[1].url && kept[2].url !== kept[0].url);
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });
