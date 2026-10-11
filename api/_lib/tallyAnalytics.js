@@ -295,23 +295,34 @@ function findBalancePeriod(ledgers, vouchers) {
   for (const s of starts) {
     for (let e = s; e < n; e++) {
       let same = 0, opp = 0;
+      const ta = new Uint8Array(cand.length), tb = new Uint8Array(cand.length);
       for (let c = 0; c < cand.length; c++) {
         const mv = cand[c].pre[e + 1] - cand[c].pre[s];
         const a = fits(cand[c].delta, mv), b = fits(cand[c].delta, -mv);
-        if (a) same++;
-        if (b) opp++;
+        if (a) { same++; ta[c] = 1; }
+        if (b) { opp++; tb[c] = 1; }
         if (a || b) tiedSomewhere[c] = 1;
       }
-      const w = { s, e, score: Math.max(same, opp), sign: same >= opp ? 'same' : 'opposite' };
+      const w = { s, e, score: Math.max(same, opp), sign: same >= opp ? 'same' : 'opposite', ties: same >= opp ? ta : tb };
       scores.push(w);
       // Equal scores: the later end (nothing was entered in between), then the earlier start.
       if (!best || w.score > best.score || (w.score === best.score && (w.e > best.e || (w.e === best.e && w.s < best.s)))) best = w;
     }
   }
   for (let c = 0; c < cand.length; c++) anyTie += tiedSomewhere[c];
-  const runner = scores.reduce((m, w) => (w.score < best.score && w.score > m ? w.score : m), 0);
-  // Only on clear evidence: most of the ledgers that tie to any period tie to this one, well ahead of the next.
-  if (best.score < 5 || best.score < 0.5 * anyTie || best.score - runner < Math.max(2, 0.1 * best.score)) return null;
+  // Only on clear evidence: most of the ledgers that tie to any period tie to this one, and no other period
+  // explains ledgers that this one cannot. (A shorter period inside the best one ties a subset of the same
+  // ledgers: with EMIs entered ahead, "April to October" ties everything "April to March" does except the
+  // three EMI ledgers. That is the same answer, not a rival; counting it as one made detection fail on a
+  // current-year file with older history beside it, 11 Oct 2026.)
+  let rival = 0;
+  for (const w of scores) {
+    if (w === best) continue;
+    let only = 0;
+    for (let c = 0; c < cand.length; c++) if (w.ties[c] && !best.ties[c]) only++;
+    if (only > rival) rival = only;
+  }
+  if (best.score < 5 || best.score < 0.5 * anyTie || rival > Math.max(2, 0.05 * best.score)) return null;
   const sg = best.sign === 'same' ? 1 : -1;
   const tie = cand.map((c) => {
     const mv = c.pre[best.e + 1] - c.pre[best.s];

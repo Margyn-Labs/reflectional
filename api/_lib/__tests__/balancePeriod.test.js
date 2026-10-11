@@ -94,6 +94,7 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   const led = tallyLedgers('20260401', '20270331');
   const t = A.asOfToday(led, all, NOW);
   check('this year on screen: the period is found and the later EMIs are backed out', t.balances && t.balances.from === '2026-04-01' && !t.balances.rolled_forward && t.guard.decision === 'backed_out' && bal(t, 'Kotak Bank').closing_balance === truth('Kotak Bank') && bal(t, 'Kotak Loan').closing_balance === truth('Kotak Loan'), t.balances && { ...t.balances, tie: undefined, bank: bal(t, 'Kotak Bank') });
+  check('this year on screen: shorter periods inside it (no EMI months) are not rivals; the tie-out compares this year only', t.balances.tied === t.balances.tested && (() => { const a9 = A.computeAnalytics({ ledgers: led, vouchers: all, bills: [], now: NOW }); return a9.quality.balances_period && a9.quality.tie_out.length >= 4 && a9.quality.tie_out.every((x) => x.ok) && !a9.quality.reasons.some((r) => /don't tie/.test(r)); })(), { tied: t.balances.tied, tested: t.balances.tested });
   check('...and opening balances move back to the first synced entry', bal(t, 'Kotak Bank').opening_balance === OPEN['Kotak Bank'] && bal(t, 'Alkem').opening_balance === OPEN['Alkem'], bal(t, 'Kotak Bank'));
 }
 

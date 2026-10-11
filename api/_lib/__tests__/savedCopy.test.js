@@ -35,6 +35,12 @@ const v = (guid, date, company, amt) => ({ tally_guid: guid, date, company_name:
 
   const r = await recoverCurrentFile(U, inst, rows);
   check('this year\'s balances come back from the saved copy, as at its last sync', r && r.ledgers.length === 2 && r.ledgers.find((l) => l.name === 'Kotak Bank').closing_balance === -663287 && r.files.ledgers_from === NEW && r.files.recovered.as_at === '2026-10-08T13:19:00+00:00', r && r.files);
+  {
+    const t2 = tableLedgers.concat([{ name: 'Packing Material', parent: 'Direct Expenses', opening_balance: 0, closing_balance: -939, company_name: OLD }]);
+    const x = await recoverCurrentFile(U, inst, Object.assign({}, rows, { ledgers: t2 }));
+    const h = x.ledgers.find((l) => l.name === 'Packing Material');
+    check('a ledger that exists only in last year\'s file is kept for classifying, without a balance', !!h && h.history_only === true && h.closing_balance === null && h.parent === 'Direct Expenses' && x.ledgers.filter((l) => l.name === 'Kotak Bank').length === 1 && x.ledgers.find((l) => l.name === 'Kotak Bank').closing_balance === -663287, x.ledgers);
+  }
   check('this year\'s open bills come back too', r.bills.length === 1 && r.bills[0].closing_balance === 900 && r.bills[0].company_name === NEW);
   const cur = r.vouchers.filter((x) => x.company_name === NEW);
   check('the five overwritten April vouchers are put back, nothing is doubled', r.files.recovered.vouchers_restored === 5 && cur.length === 40 && new Set(cur.map((x) => x.voucher_number)).size === 40 && cur.filter((x) => x.restored).every((x) => /~saved$/.test(x.tally_guid) && x.date.startsWith('2026-04')), { n: cur.length, back: r.files.recovered.vouchers_restored });
