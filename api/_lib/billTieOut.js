@@ -145,6 +145,49 @@ function rescueMisSigned(ctx) {
  * lists them (ctx.billsAsInTally), not the tied-out ones. Same tolerance as tieReceivables: within ₹1 or 1% ties.
  * Returns { tied, gaps: [{ key, party, billed, ledger, diff (billed − ledger), bills, oldest_days }] } biggest first.
  */
+/**
+ * Every customer and supplier as Margyn shows them, against that party's own ledger balance in Tally
+ * (2026-10-11). The check behind "is each receivable right?": run on every load, counted and listed, so a
+ * difference is seen by Margyn before the owner sees it. `supplierItems` = cashFlowModel.supplierOpenItems(ctx).items
+ * when suppliers are rebuilt from their ledgers, else the payable bills are used.
+ * Returns { customers, suppliers }: each { parties, exact, differ, shown, ledger, top:[{party, shown, ledger, diff}] }.
+ */
+function shownVsLedger(ctx, supplierItems) {
+  const bal = CF.partyBalancesToday(ctx);
+  const side = (pay) => {
+    const shown = new Map();
+    const add = (name, amt) => { const k = keyOf(name); const g = shown.get(k) || { party: name, amt: 0 }; g.amt += amt; shown.set(k, g); };
+    if (pay && Array.isArray(supplierItems)) for (const it of supplierItems) add(it.party, num(it.amount));
+    else for (const b of ctx.bills || []) { if ((b.direction === 'payable') !== pay || b.advance) continue; add(b.party_name, Math.abs(num(b.closing_balance))); }
+    const out = { parties: 0, exact: 0, differ: 0, no_ledger_balance: 0, shown: 0, ledger: 0, top: [] };
+    const seen = new Set();
+    for (const [k, g] of shown) {
+      seen.add(k);
+      if (g.amt < 1) continue;
+      out.parties++; out.shown += g.amt;
+      const p = bal.get(k);
+      if (!p || p.balance == null) { out.no_ledger_balance++; continue; }
+      const owed = Math.max(0, pay ? -p.balance : p.balance);
+      out.ledger += owed;
+      if (Math.abs(owed - g.amt) <= 1) out.exact++; else { out.differ++; out.top.push({ party: g.party, shown: Math.round(g.amt), ledger: Math.round(owed), diff: Math.round(g.amt - owed) }); }
+    }
+    // Owed per the ledger but not shown at all.
+    for (const [k, p] of bal) {
+      if (seen.has(k) || p.balance == null || p.bucket !== (pay ? 'creditor' : 'debtor')) continue;
+      const owed = Math.max(0, pay ? -p.balance : p.balance);
+      if (owed < 1) continue;
+      out.parties++; out.differ++; out.ledger += owed;
+      out.top.push({ party: p.name, shown: 0, ledger: Math.round(owed), diff: -Math.round(owed) });
+    }
+    out.top.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+    out.difference = Math.round(out.top.reduce((t, x) => t + Math.abs(x.diff), 0));
+    out.top = out.top.slice(0, 12);
+    out.shown = Math.round(out.shown); out.ledger = Math.round(out.ledger);
+    return out;
+  };
+  return { customers: side(false), suppliers: side(true) };
+}
+
 function partyGaps(ctx, direction) {
   const pay = direction === 'payable';
   const todayMs = (ctx.today instanceof Date ? ctx.today : new Date(ctx.today)).getTime();
@@ -174,4 +217,4 @@ function partyGaps(ctx, direction) {
   return { tied, gaps };
 }
 
-module.exports = { tieReceivables, partyGaps, rescueMisSigned };
+module.exports = { shownVsLedger, tieReceivables, partyGaps, rescueMisSigned };

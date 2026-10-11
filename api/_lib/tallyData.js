@@ -212,7 +212,7 @@ async function recoverCurrentFile(userId, inst, rows) {
 
 /** Ledgers, bills and vouchers straight from the tables (the slow path). */
 async function readRows(inList) {
-  const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries,narration,company_name';
+  const base = 'voucher_type,voucher_number,tally_guid,date,party_name,amount,is_cancelled,entries,narration,company_name,synced_at';
   // Newer columns arrive with migrations; try the richest select first and fall back column by column.
   const voucherQ = async () => {
     let last;
@@ -240,7 +240,7 @@ async function readRows(inList) {
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
   // v2: rows carry their company file; a copy saved before that is read again from the tables.
-  const snapKey = `v5|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  const snapKey = `v6|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };

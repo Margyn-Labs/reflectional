@@ -168,7 +168,7 @@ function prepare(book, opts) {
   const o = opts || {};
   const now = o.now ? new Date(o.now) : new Date();
   // The books as of today: entries dated later (EMIs entered in advance) wait for their date (tallyAnalytics.asOfToday).
-  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now, book.balance_convention, o.asOfDecision ? { decision: o.asOfDecision } : undefined);
+  const asOf = A.asOfToday(book.ledgers || [], book.vouchers || [], now, book.balance_convention, Object.assign({ priorLedgers: book.priorLedgers || [] }, o.asOfDecision ? { decision: o.asOfDecision } : {}));
   book = Object.assign({}, book, { ledgers: asOf.ledgers, vouchers: asOf.vouchers });
   const ledgers = A.dedupe(book.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
     (a, b) => a.closing_balance != null && b.closing_balance == null);

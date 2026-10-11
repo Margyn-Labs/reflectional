@@ -256,5 +256,51 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   check('cash flow: a real gap in this year is still caught, at its real size', st2.checks.opening_balances.gaps.length === 1 && Math.abs(Math.abs(st2.checks.opening_balances.gaps[0].gap) - 123456) < 1, st2.checks.opening_balances);
 }
 
+/* ---- entries Tally has deleted that Margyn still holds ---- */
+{
+  const NEWCO = 'CARE (2026-27)', OLDCO = 'CARE (2025-26)';
+  const tagged = all.map((v) => Object.assign({}, v, { company_name: v.date >= '20260401' ? NEWCO : OLDCO }));
+  const cur = tallyLedgers('20260401', '20270331').map((l) => Object.assign({}, l, { company_name: NEWCO }));
+  const old = tallyLedgers('20250401', '20260331').map((l) => Object.assign({}, l, { company_name: OLDCO }));
+  // 8 Oct at Care Hygiene: a Payment to a customer was entered, then deleted in Tally and entered as a Receipt.
+  // Tally's balances hold only the Receipt; Margyn's copy still has both.
+  const receipt = Object.assign(V('Receipt', '20261005', 'Alkem', [['Alkem', 23377, true], ['Kotak Bank', -23377]]), { company_name: NEWCO, synced_at: '2026-10-08T08:20:00Z' });
+  const stalePay = Object.assign(V('Payment', '20261005', 'Alkem', [['Alkem', -23377, true], ['Kotak Bank', 23377]]), { company_name: NEWCO, synced_at: '2026-10-08T05:06:00Z' });
+  const curR = cur.map((l) => (l.name === 'Alkem' ? Object.assign({}, l, { closing_balance: l.closing_balance + 23377 }) : l.name === 'Kotak Bank' ? Object.assign({}, l, { closing_balance: l.closing_balance - 23377 }) : l));
+  // Last year: two journals to one supplier (conveyance 20,000, hamali 18,800) deleted in Tally, still held.
+  const j1 = Object.assign(V('Journal', '20250430', null, [['Salary', -20000], ['Supplier A', 20000]]), { company_name: OLDCO });
+  const j2 = Object.assign(V('Journal', '20250613', null, [['Interest on Loan', -18800], ['Supplier A', 18800]]), { company_name: OLDCO });
+  const books = tagged.concat([receipt, stalePay, j1, j2]);
+  const t = A.asOfToday(curR, books, NOW, undefined, { priorLedgers: old });
+  check('deleted in Tally: the stale Payment is set aside, the Receipt stays', t.set_aside.length === 3 && t.set_aside.some((x) => x.type === 'Payment' && x.amount === 23377) && t.vouchers.includes(receipt) && !t.vouchers.includes(stalePay), t.set_aside);
+  check('deleted in Tally: last year\'s two journals on one supplier are set aside together', !t.vouchers.includes(j1) && !t.vouchers.includes(j2) && t.set_aside.filter((x) => x.type === 'Journal').length === 2);
+  check('deleted in Tally: every ledger then matches Tally, bank included', t.balances.tied === t.balances.tested && t.balances.tie.find((x) => x.ledger === 'Kotak Bank').ok, { tied: t.balances.tied, tested: t.balances.tested });
+  const a = A.computeAnalytics({ ledgers: curR, priorLedgers: old, vouchers: books, bills: [], now: NOW });
+  const plain = A.computeAnalytics({ ledgers: cur, priorLedgers: old, vouchers: tagged, bills: [], now: NOW });
+  check('deleted in Tally: last year\'s running costs are Tally\'s again, and the page says what was set aside', a.years[0].opex === plain.years[0].opex && a.quality.set_aside_deleted.length === 3 && a.quality.cash_tie_out.every((x) => x.ok) && a.quality.reasons.some((r) => /3 entries are set aside because Tally's own balances show they were deleted/.test(r)), { opex: [a.years[0].opex, plain.years[0].opex], r: a.quality.reasons.filter((r) => /set aside/.test(r)) });
+  // Not proven: a ledger that is out by an amount no voucher explains. Nothing is touched.
+  const odd = cur.map((l) => (l.name === 'Kotak Bank' ? Object.assign({}, l, { closing_balance: l.closing_balance - 4321 }) : l));
+  const u = A.asOfToday(odd, tagged, NOW, undefined, { priorLedgers: old });
+  check('deleted in Tally: a gap no entry explains sets nothing aside', u.set_aside.length === 0 && u.vouchers.length === tagged.length - 5);
+  // Half proven: one leg matches but the other ledger would not tie afterwards. Nothing is touched.
+  const half = cur.map((l) => (l.name === 'Kotak Bank' ? Object.assign({}, l, { closing_balance: l.closing_balance - 23377 }) : l));
+  const h = A.asOfToday(half, tagged.concat([receipt, stalePay]), NOW, undefined, { priorLedgers: old });
+  check('deleted in Tally: one matching leg is not proof', h.set_aside.length === 0, h.set_aside);
+}
+
+/* ---- each customer and supplier as shown, against their own ledger in Tally ---- */
+{
+  const BT = require('../billTieOut');
+  const ctx = {
+    today: new Date('2026-10-11T00:00:00Z'), rows: [], analytics: { quality: { balance_sign: { effective: 'same' } } },
+    cls: (n) => (/Supplier|Vendor/.test(n) ? 'creditor' : 'debtor'),
+    ledgers: [{ name: 'Alkem', closing_balance: -900 }, { name: 'Lupin', closing_balance: -500 }, { name: 'Cipla', closing_balance: -70 }, { name: 'Supplier A', closing_balance: 400 }, { name: 'Vendor B', closing_balance: 250 }],
+    bills: [{ direction: 'receivable', party_name: 'Alkem', closing_balance: 600 }, { direction: 'receivable', party_name: 'ALKEM', closing_balance: 300 }, { direction: 'receivable', party_name: 'Lupin', closing_balance: 540 }]
+  };
+  const r = BT.shownVsLedger(ctx, [{ party: 'Supplier A', amount: 400 }]);
+  check('party check: customers shown at their ledger balance are counted exact, the others listed with both amounts', r.customers.exact === 1 && r.customers.differ === 2 && r.customers.top[0].party === 'Cipla' && r.customers.top[0].shown === 0 && r.customers.top.some((x) => x.party === 'Lupin' && x.shown === 540 && x.ledger === 500 && x.diff === 40), r.customers);
+  check('party check: suppliers too, including one owed per the ledger but not shown', r.suppliers.exact === 1 && r.suppliers.differ === 1 && r.suppliers.top[0].party === 'Vendor B' && r.suppliers.top[0].ledger === 250, r.suppliers);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
