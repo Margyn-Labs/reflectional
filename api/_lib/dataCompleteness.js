@@ -147,6 +147,25 @@ function tallyCompleteness(book, ctx, opts) {
   const wc = (ctx.analytics || {}).working_capital || {};
   if (wc.suppliers_tracked_billwise === false) checks.push(check('suppliers_billwise', 'Suppliers', 'info', 'Tally doesn’t keep most suppliers’ bills one by one, so what you owe each supplier is worked out from their ledger (purchases and payments).'));
 
+  // Sales invoice numbers must run without gaps: the one check that needs nothing from Tally (tallyAnalytics.invoiceGaps).
+  try {
+    const g = A.invoiceGaps(vouchersRaw, Date.parse(todayKey + 'T00:00:00Z'));
+    if (g) {
+      const n = g.short_months.reduce((t, k) => t + g.months[k].missing, 0);
+      checks.push(check('invoice_numbers', 'Sales invoice numbers', g.short_months.length ? 'warn' : 'ok',
+        g.short_months.length
+          ? `About ${n.toLocaleString('en-IN')} sales invoices are missing in ${g.short_months.join(', ')}: their numbers are skipped (${g.series.filter((x) => x.longest_gap).map((x) => `${x.series}: ${x.longest_gap.n} in a row${x.longest_gap.after ? ' after ' + x.longest_gap.after : ''}`).slice(0, 3).join('; ')}). A full re-read of that company file brings them back.`
+          : `Invoice numbers run without large gaps across ${g.series.length} sales series (${g.missing.toLocaleString('en-IN')} single numbers skipped, usual for invoices deleted in Tally).`,
+        { months: g.months, series: g.series }));
+    }
+  } catch (e) { /* never blocks the check */ }
+  if (book.files && book.files.files && book.files.files.length > 1) {
+    const f = book.files;
+    checks.push(check('company_files', 'Tally company files', f.ledgers_from === f.current ? 'info' : 'warn',
+      `This Tally keeps a company file per year: ${f.files.map((x) => `${x.name} (${x.from} to ${x.to}, ${x.vouchers.toLocaleString('en-IN')} entries)`).join('; ')}. Entries are read from all of them. ` +
+      (f.ledgers_from === f.current ? `Balances and open bills come from ${f.current}.` : `Balances held are from ${f.ledgers_from}, not the current file (${f.current}), so Margyn carries them forward from the entries until Tally sends the current file's again.`),
+      f));
+  }
   const p = diag && diag.vouchers && diag.vouchers.period ? diag.vouchers.period : null;
   if (p && p.from) {
     const days = vouchersRaw.map((v) => v && A.parseDate(v.date)).filter(Boolean).map((d) => d.toISOString().slice(0, 10)).filter((d) => d <= todayKey).sort();

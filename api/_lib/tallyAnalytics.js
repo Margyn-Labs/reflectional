@@ -1111,6 +1111,16 @@ function computeAnalytics(input) {
     (agentOld ? 'The installed Margyn Tally agent reads only the current day from Tally; installing the latest agent sends the full financial year.' : 'The agent is fetching the rest of the year; this clears after the next sync.'));
   if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
   if (implausible) { level = 'low'; reasons.push('Sales look far too small next to costs and receivables, so margin and days-to-pay are hidden. The voucher sync is probably incomplete.'); }
+  let gaps = null;
+  try { gaps = invoiceGaps(allVouchers, todayIstMs(now)); } catch (e) { gaps = null; }
+  if (gaps && gaps.short_months.length) {
+    level = 'low';
+    const n = gaps.short_months.reduce((t, k) => t + gaps.months[k].missing, 0);
+    const worst = gaps.series.filter((x) => x.longest_gap).sort((a, b) => b.longest_gap.n - a.longest_gap.n)[0];
+    reasons.unshift(`About ${n.toLocaleString('en-IN')} sales invoices are missing from ${gaps.short_months.map(monthLabel).join(', ')}: the invoice numbers skip` +
+      (worst ? ` (for example ${worst.longest_gap.n} numbers ${worst.longest_gap.after ? 'after ' + worst.longest_gap.after : 'before ' + worst.longest_gap.before} in “${worst.series}”)` : '') +
+      `. Sales and everything worked out from them are understated for ${gaps.short_months.length > 1 ? 'those months' : 'that month'}.`);
+  }
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
@@ -1131,14 +1141,15 @@ function computeAnalytics(input) {
   if (tieBad.length && agentOld) reasons.push('Vouchers deleted or edited in Tally stay in Margyn until the latest Margyn Tally agent is installed (it removes them automatically), which is the usual reason ledgers stop tying out.');
   if (!itemsAvailable) reasons.push('Stock lines not synced yet, so item-level margin is unavailable (agent update pending).');
   reasons.push('Single source (Tally). Not yet corroborated by bank or GST.');
-  if (vouchers.length && !unclassified.length && !guessed.length && !tieBad.length && !failedKinds.length && !(completeness && completeness.short_months.length) && stock.available && tie.length >= 3 && tieTop.every((t) => t.ok)) level = 'high-for-a-single-source';
-  else if (unclassified.length > 3 || tieBad.length > 2 || !vouchers.length || failedKinds.some((f) => f.kind === 'vouchers')) level = 'low';
+  if (vouchers.length && !(gaps && gaps.short_months.length) && !unclassified.length && !guessed.length && !tieBad.length && !failedKinds.length && !(completeness && completeness.short_months.length) && stock.available && tie.length >= 3 && tieTop.every((t) => t.ok)) level = 'high-for-a-single-source';
+  else if (unclassified.length > 3 || tieBad.length > 2 || !vouchers.length || failedKinds.some((f) => f.kind === 'vouchers') || (gaps && gaps.short_months.length)) level = 'low';
 
   const quality = {
     confidence: level,
     reasons, internal,
     coverage: { from: period.from, to: period.to, vouchers: live.length, cancelled: cancelled.length, months: monthKeys.length },
     tally_completeness: completeness,
+    invoice_numbers: gaps ? { missing: gaps.missing, short_months: gaps.short_months, months: gaps.months, series: gaps.series } : null,
     agent_reading_past_year: readingPastYear ? { from: agentPeriod.from, to: agentPeriod.to } : null,
     unclassified_ledgers: unclassified.slice(0, 20),
     guessed_ledgers: guessed.slice(0, 20),
@@ -1333,6 +1344,56 @@ function stockRoll(vouchers, win, todayMs, tallyOpening, tallyClosing) {
   else out.ok = true;
   return out;
 }
+/**
+ * Do the sales invoice numbers run without gaps? (2026-10-11)
+ * Every sales series is numbered 1, 2, 3... within a financial year, so a run of numbers Margyn doesn't hold is
+ * invoices Margyn doesn't hold. This needs nothing from Tally and would have caught Care Hygiene's April 2026:
+ * 131 of 291 Vasai invoices gone after last year's company file overwrote them, with every screen looking normal.
+ * A few gaps a month are normal (invoices deleted in Tally); a month missing more than 10% is not.
+ * Returns { series:[...], missing, months:{ 'YYYY-MM': { present, missing } }, short_months:[...] } or null.
+ */
+function invoiceGaps(vouchers, todayMs) {
+  const groups = new Map();
+  for (const v of vouchers || []) {
+    if (!v) continue;
+    const base = v.voucher_base || v.voucher_type || '';
+    if (!isSalesType(base)) continue;
+    const dt = parseDate(v.date);
+    if (!dt || (todayMs != null && dt.getTime() > todayMs)) continue;
+    const m = /(\d+)\D*$/.exec(String(v.voucher_number || ''));
+    if (!m) continue;
+    const name = v.voucher_type_name || v.voucher_type || base;
+    const k = name + '|' + dayIso(fyStartMs(dt.getTime()));
+    let g = groups.get(k); if (!g) { g = { series: name, fy_from: dayIso(fyStartMs(dt.getTime())), rows: [] }; groups.set(k, g); }
+    g.rows.push([+m[1], monthKey(dt), String(v.voucher_number)]);
+  }
+  const out = { series: [], missing: 0, months: {}, short_months: [] };
+  const M = (k) => out.months[k] || (out.months[k] = { present: 0, missing: 0 });
+  for (const g of groups.values()) {
+    if (g.rows.length < 30) continue;
+    g.rows.sort((a, b) => a[0] - b[0]);
+    const have = new Map(g.rows.map((r) => [r[0], r]));
+    const min = g.rows[0][0], max = g.rows[g.rows.length - 1][0];
+    // Not a plain running number (year or date inside it, several books sharing a type): nothing can be said.
+    if (have.size < 0.9 * g.rows.length || max - min + 1 > 1.6 * have.size) continue;
+    let missing = 0, prev = g.rows[0], longest = null, run = 0, runFrom = null;
+    const lead = min > 1 && min - 1 <= Math.max(5, 0.1 * have.size) ? min - 1 : 0;   // the series began at 1
+    if (lead) { missing += lead; M(g.rows[0][1]).missing += lead; longest = { from: 1, to: min - 1, n: lead, after: null, before: g.rows[0][2] }; }
+    for (const r of g.rows) M(r[1]).present++;
+    for (let i = min; i <= max; i++) {
+      const r = have.get(i);
+      if (r) { if (run && (!longest || run > longest.n)) longest = { from: runFrom, to: i - 1, n: run, after: prev[2], before: r[2] }; run = 0; prev = r; continue; }
+      if (!run) runFrom = i;
+      run++; missing++; M(prev[1]).missing++;
+    }
+    out.series.push({ series: g.series, fy_from: g.fy_from, present: have.size, first: g.rows[0][2], last: g.rows[g.rows.length - 1][2], missing, longest_gap: longest });
+    out.missing += missing;
+  }
+  if (!out.series.length) return null;
+  out.short_months = Object.keys(out.months).sort().filter((k) => out.months[k].missing >= 10 && out.months[k].missing > 0.1 * (out.months[k].present + out.months[k].missing));
+  return out;
+}
+
 /* Every voucher once (cancelled left out), INCLUDING stock and manufacturing journals: they don't touch the
    accounts but they do move stock. */
 function countedOnceAll(vouchers) {
@@ -1374,7 +1435,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
-  computeAnalytics, asOfToday, balancePeriod, applyTiedReceivables, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  computeAnalytics, asOfToday, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
   isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES

@@ -153,14 +153,19 @@ async function resolveCompany(cfg, log) {
   if (!facts.length) return { company: cfg.company, fact: null, open: [] };
   const want = String(cfg.company || '').trim().toLowerCase();
   const exact = facts.find((f) => f.name.toLowerCase() === want);
-  if (exact) return { company: exact.name, fact: exact, open: facts.map((f) => f.name) };
-
+  // Tally users keep a company file per financial year. Of the open files of this business, the one whose
+  // books begin latest is the current year's and is the one to read, every time. It used to stay with the
+  // configured name whenever that was open: on 9 Oct 2026 Care Hygiene's accountant opened the 2025-26 file
+  // for the audit, the agent moved to it, and would have stayed there with both files open.
   const base = baseCompanyName(cfg.company);
   const same = base ? facts.filter((f) => baseCompanyName(f.name) === base) : [];
-  if (same.length) {
-    same.sort((x, y) => String(y.last_voucher_date || y.books_from || y.name).localeCompare(String(x.last_voucher_date || x.books_from || x.name)));
-    const pick = same[0];
-    log(`"${cfg.company}" is not open in Tally; switching to "${pick.name}" (same business, newer books).`);
+  const age = (f) => String(f.books_from || '') + '|' + f.name;
+  same.sort((x, y) => age(y).localeCompare(age(x)));
+  const pick = same.length ? same[0] : exact;
+  if (pick && exact && pick.name === exact.name) return { company: exact.name, fact: exact, open: facts.map((f) => f.name) };
+  if (pick) {
+    log(exact ? `"${pick.name}" is open too and its books are newer than "${cfg.company}"; reading it.`
+      : `"${cfg.company}" is not open in Tally; switching to "${pick.name}" (same business).`);
     config.save({ company: pick.name });
     return { company: pick.name, fact: pick, open: facts.map((f) => f.name), switchedFrom: cfg.company };
   }
@@ -173,25 +178,20 @@ async function resolveCompany(cfg, log) {
 
 /* ---------------------------- period ---------------------------- */
 /**
- * Which dates to read. Always this financial year, plus last year when the books began before this year.
- *
- * It used to follow Tally's "last voucher date" into the past: if that date fell before this financial year
- * the agent read only that earlier year. Care Hygiene keeps 2025-26 and 2026-27 in one company; on 9 Oct 2026
- * Tally reported 31 Mar 2026 as the last voucher date (its screen was on last year for the audit), so the agent
- * re-read all of 2025-26 and stopped reading 2026-27: new entries no longer reached Margyn. Tally's facts
- * describe what is on its screen, so they must never decide whether this year is read.
- * Only the dates change here. The requests are the same proven ones, sent month by month.
+ * Which dates to read: the financial year of this company FILE. Tally users keep one company file per year,
+ * so a file whose last voucher falls before this financial year is last year's file and its year is read;
+ * otherwise this year, never before the file's books begin.
  */
 function choosePeriod(cfg, fact, today) {
   if (cfg.fromDateExplicit) return { from: compact(cfg.fromDate), to: compact(cfg.toDate), source: 'config' };
   const t = ymd(today);
-  const cur = fyOf(t);
-  const prev = fyOf(`${+cur.from.slice(0, 4) - 1}0401`);
+  const last = fact && compact(fact.last_voucher_date);
+  const anchor = last && last < fyOf(t).from ? last : t;
+  const fy = fyOf(anchor);
+  let from = fy.from;
   const booksFrom = fact && compact(fact.books_from);
-  let from = cur.from;
-  if (booksFrom && booksFrom > cur.from && booksFrom <= cur.to) from = booksFrom;           // books began this year
-  else if (booksFrom && booksFrom < cur.from) from = booksFrom > prev.from ? booksFrom : prev.from;   // began earlier: last year too
-  return { from, to: cur.to, source: fact ? 'tally' : 'default' };
+  if (booksFrom && booksFrom > from && booksFrom <= fy.to) from = booksFrom;
+  return { from, to: fy.to, source: fact ? 'tally' : 'default' };
 }
 
 /* ---------------------------- Tally calls ---------------------------- */
@@ -332,7 +332,25 @@ async function uploadWindow(ctx, rows, w, { final, voucherTypes, dryRun }) {
 /* ---------------------------- main ---------------------------- */
 async function syncVouchers(cfg, { company, fact, dryRun = false, log = () => {}, now = new Date() } = {}) {
   const ctx = makeCtx(cfg, company || cfg.company, log);
-  const state = Object.assign({}, cfg.syncState || {});
+  // Sync progress belongs to one company file. When the open file changes (last year's opened for the audit,
+  // then this year's again) the other file's progress is parked, not thrown away: coming back to a file
+  // picks up from its own change counter instead of re-reading its whole year (13,000 vouchers on 9 Oct).
+  let state = Object.assign({}, cfg.syncState || {});
+  {
+    const was = state.periodKey ? String(state.periodKey).split('|')[0] : null;
+    if (was && was !== ctx.company) {
+      const { byCompany, blockedRequests, provenRequests, inflight, ...mine } = state;
+      const parked = Object.assign({}, byCompany || {}, { [was]: mine });
+      const back = parked[ctx.company] || {};
+      delete parked[ctx.company];
+      state = Object.assign({}, back, { byCompany: parked });
+      log(`Now reading "${ctx.company}"${back.periodKey ? ' (carrying on from where it was left)' : ''}.`);
+      if (!dryRun) {
+        const disk = config.load().syncState || {};
+        config.save({ syncState: Object.assign({}, state, { blockedRequests: disk.blockedRequests || blockedRequests || [], provenRequests: disk.provenRequests || provenRequests || [], inflight: disk.inflight || null }) });
+      }
+    }
+  }
   // Merge with what's on disk: the crash guard writes its notes there between our saves.
   const save = (patch) => { Object.assign(state, patch); if (!dryRun) config.save({ syncState: Object.assign({}, config.load().syncState || {}, state, { blockedRequests: (config.load().syncState || {}).blockedRequests || state.blockedRequests, provenRequests: (config.load().syncState || {}).provenRequests || state.provenRequests, inflight: (config.load().syncState || {}).inflight || null }) }); };
 

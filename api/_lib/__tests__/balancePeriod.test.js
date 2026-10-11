@@ -177,5 +177,23 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   check('stock: a typed stock value that the entries don\'t explain is left as Tally gave it, dated', c.stock.roll && !c.stock.roll.ok && c.stock.roll.why === 'backtest_off_by_more_than_10pct' && c.working_capital.stock_value === r2(marchValue * 1.6), c.stock.roll);
 }
 
+/* ---- the alarm: sales invoice numbers must run without gaps ---- */
+{
+  const inv = [];
+  let n = 0;
+  for (const [y, m] of months) { if (y < 2026 || (y === 2026 && m < 4) || (y === 2026 && m > 9)) continue; for (let i = 0; i < 60; i++) { n++; inv.push({ tally_guid: 'inv' + n, voucher_type: 'VASAI SALES', voucher_base: 'Sales', voucher_number: 'VSI' + n, date: ymd(y, m, 1 + (i % 27)), is_cancelled: false, entries: [] }); } }
+  const whole = A.invoiceGaps(inv, Date.parse('2026-10-11T00:00:00Z'));
+  check('invoice numbers: a complete series raises nothing', whole && whole.missing === 0 && !whole.short_months.length, whole);
+  // Care Hygiene's shape: early April gone (first 16, then runs), a deleted invoice or two in other months.
+  const holed = inv.filter((v) => { const k = +v.voucher_number.slice(3); return !(k <= 16 || (k >= 18 && k <= 43) || k === 130 || k === 250); });
+  const g = A.invoiceGaps(holed, Date.parse('2026-10-11T00:00:00Z'));
+  check('invoice numbers: a month with a run of missing numbers is named, with how many', g.short_months.join() === '2026-04' && g.months['2026-04'].missing === 42 && g.missing === 44 && g.series[0].longest_gap.n === 26, g);
+  check('invoice numbers: a stray deleted invoice in another month is not an alarm', !g.short_months.includes('2026-06') && !g.short_months.includes('2026-08'));
+  const a2 = A.computeAnalytics({ ledgers: tallyLedgers('20250401', '20260331'), vouchers: all.concat(holed.map((v) => Object.assign({}, v, { voucher_type: 'VASAI SALES', voucher_base: 'Sales', party_name: 'Alkem', amount: 1, entries: [{ ledger: 'Alkem', amount: -1, is_party: true }, { ledger: 'GST Sale', amount: 1 }] }))), bills: [], now: NOW });
+  check('invoice numbers: the Margin page says it first and drops to Low', /About 42 sales invoices are missing from Apr 2026/.test(a2.quality.reasons[0]) && a2.quality.confidence === 'low' && a2.quality.invoice_numbers.short_months.join() === '2026-04', a2.quality.reasons.slice(0, 2));
+  const dated = inv.map((v, i) => Object.assign({}, v, { voucher_number: 'CH/26-27/' + v.date.slice(4) + '/' + (i * 7) }));
+  check('invoice numbers: numbering that is not a plain running number is left alone', A.invoiceGaps(dated, Date.parse('2026-10-11T00:00:00Z')) === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -360,7 +360,7 @@ const _analyticsDone = new WeakMap();   // book -> { k, body }
  * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
  * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
  * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
-const ANSWER_VERSION = '2026-10-11-balance-period';
+const ANSWER_VERSION = '2026-10-11-company-files';
 const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 function savedAnalyticsPath(userId, q) {
   return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;
@@ -451,6 +451,10 @@ async function handleAnalytics(req, res) {
   if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind ${srcName}.`);
   for (const n of book.notes || []) out.quality.reasons.unshift(n);
   if (book.source && book.source !== 'tally') out.quality.reasons = out.quality.reasons.map((r) => r.replace(/^Single source \(Tally\)/, `Single source (${srcName})`));
+  if (book.files && book.files.files && book.files.files.length > 1) {
+    out.company_files = book.files;
+    if (book.files.ledgers_from !== book.files.current) out.quality.reasons.unshift(`Your Tally keeps a company file per year. The balances Margyn holds are from ${book.files.ledgers_from}, so they are carried forward from the entries until Tally sends ${book.files.current}'s again.`);
+  }
   if (truncated) { out.quality.confidence = 'low'; out.quality.reasons.unshift('These books hold more entries than Margyn reads in one go, so the newest entries are missing from these figures.'); }
   // What else the books say (kits, branches, commission, customers gone quiet, old debts...): the same list
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
@@ -894,6 +898,45 @@ function num(v) {
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
 }
+/**
+ * Tally users keep one company file per financial year, and next year's file is made by copying this year's.
+ * Both files then share the company GUID and their record counters, so a voucher entered in the old file after
+ * the copy (an audit entry) gets the very GUID of a voucher in the new file. Rows are keyed on
+ * (install_id, tally_guid): on 9 Oct 2026 Care Hygiene's agent read the 2025-26 file and 373 of its rows
+ * replaced April 2026 vouchers of the 2026-27 file, and every ledger balance became last year's.
+ * A GUID this install already holds under ANOTHER company name is stored for this company as "<guid>~<tag>"
+ * (tag = hash of the company name), so each file keeps its own rows. Changes `mapped` in place.
+ */
+const companyTag = (name) => '~' + crypto.createHash('sha1').update(String(name)).digest('hex').slice(0, 8);
+async function companySafeGuids(table, installId, companyName, mapped) {
+  if (!companyName) return 0;
+  const guids = [...new Set(mapped.map((r) => r.tally_guid).filter(Boolean))];
+  const taken = new Set();
+  for (let i = 0; i < guids.length; i += 100) {
+    const list = guids.slice(i, i + 100).map((g) => '"' + String(g).replace(/["\\]/g, '') + '"').join(',');
+    const rows = await selectRows(table, `select=tally_guid&install_id=eq.${installId}&company_name=neq.${encodeURIComponent(companyName)}&tally_guid=in.(${encodeURIComponent(list)})&limit=1000`);
+    for (const r of rows || []) taken.add(r.tally_guid);
+  }
+  if (!taken.size) return 0;
+  const tag = companyTag(companyName);
+  let n = 0;
+  for (const r of mapped) if (taken.has(r.tally_guid)) { r.tally_guid = r.tally_guid + tag; n++; }
+  return n;
+}
+/** Does this install hold rows of a company file other than `companyName`? */
+async function otherCompanyRows(table, installId, companyName) {
+  try { return (await countRows(table, `install_id=eq.${installId}&company_name=neq.${encodeURIComponent(companyName)}`)) > 0; }
+  catch (e) { return false; }
+}
+/** Is another company file on this install further on in time than this one? (latest voucher dated up to today) */
+async function isPastYearFile(installId, companyName) {
+  if (!companyName) return false;
+  const today = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+  const q = (op) => selectRows('tally_vouchers', `select=date&install_id=eq.${installId}&company_name=${op}.${encodeURIComponent(companyName)}&date=lte.${today}&order=date.desc&limit=1`);
+  const [mine, other] = await Promise.all([q('eq'), q('neq')]);
+  const a = mine && mine[0] ? String(mine[0].date) : '', b = other && other[0] ? String(other[0].date) : '';
+  return !!b && b > a;
+}
 function synthGuid(installId, kind, seed) {
   return kind + ':' + crypto.createHash('sha1').update(installId + '|' + seed).digest('hex').slice(0, 24);
 }
@@ -928,6 +971,26 @@ async function handleIngest(req, res) {
   }
 
   if (kind === 'ledgers' && !mapped.some((m) => m.contact)) mapped.forEach((m) => { delete m.contact; });
+
+  // One install, several Tally company files of one business (a file per financial year), told apart only by
+  // name: see companySafeGuids. A lookup that fails must fail the batch, never fall through to an overwrite.
+  if ((kind === 'vouchers' || kind === 'ledgers') && mapped.length) {
+    try { await companySafeGuids(spec.table, inst.id, companyName, mapped); }
+    catch (e) {
+      await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted: 0, status: 'error', error: 'company check: ' + e.message });
+      return json(res, 500, { error: 'ingest_failed', message: 'Could not check which company these rows belong to. The agent will retry.' });
+    }
+  }
+  // Open bills are a picture of NOW. Last year's file still lists bills as they stood when that file was left,
+  // so its list must never be laid over the current file's (Care Hygiene, 9 Oct 2026: both were mixed).
+  if (kind === 'bills') {
+    let past = false;
+    try { past = await isPastYearFile(inst.id, companyName); } catch (e) { past = false; }
+    if (past) {
+      await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted: 0, status: 'ok', error: 'past_year_file: bills not stored' });
+      return json(res, 200, { upserted: 0, received: rawRows.length, skipped: rawRows.length, removed: 0, server_time: now, agent: agentDirective(), note: 'past_year_file' });
+    }
+  }
 
   if (mapped.length === 0) {
     // An empty, verified voucher window still matters: everything we hold in it was deleted in Tally.
@@ -997,7 +1060,8 @@ async function sweepVoucherWindow(inst, body, now) {
   const from = str(body.window.from), to = str(body.window.to);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(to || '') || from > to) return { removed: 0, skipped: 'bad_window' };
   const cutoff = snapshotCutoff({ snapshot_started_at: body.window_started_at }, now);
-  const scope = `install_id=eq.${inst.id}&date=gte.${from}&date=lte.${to}`;
+  const coName = str(body.company_name) || inst.company_name;
+  const scope = `install_id=eq.${inst.id}&date=gte.${from}&date=lte.${to}` + (coName && await otherCompanyRows('tally_vouchers', inst.id, coName) ? `&company_name=eq.${encodeURIComponent(coName)}` : '');
   const stale = `${scope}&synced_at=lt.${encodeURIComponent(cutoff)}`;
   try {
     const [total, toRemove] = await Promise.all([countRows('tally_vouchers', scope), countRows('tally_vouchers', stale)]);
@@ -1115,6 +1179,10 @@ async function sweepStale(kind, inst, mapped, now, partial) {
   if (partial || (kind !== 'bills' && kind !== 'ledgers')) return { removed: 0 };
   const table = kind === 'bills' ? 'tally_bills' : 'tally_ledgers';
   let scope = `install_id=eq.${inst.id}`;
+  // A snapshot replaces the rows of ITS company file only: last year's file must not wipe this year's ledgers.
+  // Only when this install really holds another file's rows; every one-file install sweeps exactly as before.
+  const co = mapped[0] && mapped[0].company_name;
+  if (co && await otherCompanyRows(table, inst.id, co)) scope += `&company_name=eq.${encodeURIComponent(co)}`;
   if (kind === 'bills') {
     const dirs = [...new Set(mapped.map((r) => r.direction))];
     if (dirs.length !== 1) return { removed: 0, skipped: 'mixed_directions' };
