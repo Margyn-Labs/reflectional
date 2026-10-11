@@ -224,5 +224,37 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   } else check('watch: snapshot and comparable are exported for this test', false);
 }
 
+/* ---- two company files: each year by its own file; a year checked against its own opening ---- */
+{
+  const NEWCO = 'CARE (2026-27)', OLDCO = 'CARE (2025-26)';
+  const tagged = all.map((v) => Object.assign({}, v, { company_name: v.date >= '20260401' ? NEWCO : OLDCO }));
+  // This year's file: balances for 1 Apr 2026 to 31 Mar 2027. "Salary" sits under Direct Expenses in it.
+  const cur = tallyLedgers('20260401', '20270331').map((l) => Object.assign({}, l, { company_name: NEWCO }, l.name === 'Salary' ? { parent: 'Direct Expenses', primary_group: 'Direct Expenses' } : {}));
+  // Last year's file: Salary under Indirect Expenses; stock 40.6 L to 57.6 L; the bank closed 5,000 away from where this year opens.
+  const old = tallyLedgers('20250401', '20260331').map((l) => Object.assign({}, l, { company_name: OLDCO }, l.name === 'Kotak Bank' ? { closing_balance: l.closing_balance - 5000 } : {}));
+  const curStock = cur.map((l) => (l.name === 'Stock-in-hand' ? Object.assign({}, l, { opening_balance: -4359322, closing_balance: -7061518 }) : l));
+  const a = A.computeAnalytics({ ledgers: curStock, priorLedgers: old, vouchers: tagged, bills: [], now: NOW, dataAsOf: '2026-10-08T14:04:53Z' });
+  const ly = a.years.find((y) => y.fy === '2025-26'), ty = a.years.find((y) => y.fy === '2026-27');
+  check('each year is classified by its own file: last year\'s salary is a running cost, this year\'s a direct cost', ly.opex >= 1200000 && ty.opex === 6 * 7573 /* only the loan interest is left in running costs */ && a.period.cogs_pre_stock > 0 && a.cost_structure.find((c) => c.ledger === 'Salary').bucket === 'direct_expense', { ly: [ly.cogs_pre_stock, ly.opex], ty: [ty.cogs_pre_stock, ty.opex] });
+  check('last year keeps its own stock movement and margin after stock', ly.stock_change === 1697071 && ly.gross_margin_pct_after_stock != null && ty.stock_change === 7061518 - 4359322, { ly, ty: ty.stock_change });
+  check('this year opening where last year did not close is said, with the margin both ways', a.stock.opening_differs === true && a.stock.last_year_closing === 5759321 && a.period.gross_margin_pct_after_stock_on_last_year_closing != null && a.period.gross_margin_pct_after_stock_on_last_year_closing < a.period.gross_margin_pct_after_stock && a.quality.reasons.some((r) => /Stock opens this year at/.test(r)), { p: a.period.gross_margin_pct_after_stock, alt: a.period.gross_margin_pct_after_stock_on_last_year_closing });
+  check('ledgers whose opening differs from last year\'s closing are listed', a.year_join && a.year_join.differ >= 2 && a.year_join.top.some((x) => x.ledger === 'Kotak Bank' && x.difference === 5000) && a.quality.reasons.some((r) => /doesn't open where last year's closed/.test(r)), a.year_join);
+  check('days to get paid counts 90 days back from where the data ends', (() => { const end = Date.parse('2026-10-08T00:00:00Z'); const billed = tagged.filter((v) => v.voucher_type === 'Sales' && Date.parse(v.date.slice(0, 4) + '-' + v.date.slice(4, 6) + '-' + v.date.slice(6) + 'T00:00:00Z') >= Date.parse('2026-10-08T14:04:53Z') - 90 * 86400000).reduce((s2, v) => s2 + -v.entries[0].amount, 0); return a.working_capital.billed_90d === r2(billed); })(), a.working_capital.billed_90d);
+  check('cash, bank and loan ledgers are checked against their entries too, and all tie here', a.quality.cash_tie_out.length >= 2 && a.quality.cash_tie_out.every((t) => t.ok), a.quality.cash_tie_out);
+  // A bank ledger whose entries don't explain its balance: never "high".
+  const off = curStock.map((l) => (l.name === 'Kotak Bank' ? Object.assign({}, l, { closing_balance: l.closing_balance + 123456 }) : l));
+  const b = A.computeAnalytics({ ledgers: off, priorLedgers: old, vouchers: tagged, bills: [], now: NOW });
+  check('a bank ledger that does not match its entries is named and confidence is not "high"', b.quality.confidence !== 'high-for-a-single-source' && b.quality.reasons.some((r) => /cash, bank or loan ledger\(s\) don't match their entries \(largest: Kotak Bank/.test(r)), { c: b.quality.confidence, r: b.quality.reasons });
+
+  // The cash flow statement's opening check: this year's file against this year's own opening, no false gap.
+  const E = require('../booksEngine'), CF = require('../cashFlowStatement');
+  const ctx = E.prepare({ ledgers: curStock, priorLedgers: old, vouchers: tagged, bills: [], overrides: {} }, { now: NOW });
+  const st = CF.yearStatement(ctx);
+  check('cash flow: a year is checked against its own opening (last year\'s movement is not reported as a gap)', st && st.checks.opening_balances.checked >= 1 && st.checks.opening_balances.gaps.length === 0, st && st.checks.opening_balances);
+  const ctx2 = E.prepare({ ledgers: off, priorLedgers: old, vouchers: tagged, bills: [], overrides: {} }, { now: NOW });
+  const st2 = CF.yearStatement(ctx2);
+  check('cash flow: a real gap in this year is still caught, at its real size', st2.checks.opening_balances.gaps.length === 1 && Math.abs(Math.abs(st2.checks.opening_balances.gaps[0].gap) - 123456) < 1, st2.checks.opening_balances);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

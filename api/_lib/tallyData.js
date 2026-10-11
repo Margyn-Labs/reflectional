@@ -152,12 +152,15 @@ function companyFiles(ledgers, bills, vouchers) {
     o.vouchers++; if (d < o.from) o.from = d; if (d > o.to) o.to = d; if (d <= today && d > o.last) o.last = d;
   }
   const list = [...by.values()].sort((a, b) => (a.last < b.last ? -1 : a.last > b.last ? 1 : 0));
-  if (list.length < 2) return { ledgers, bills, summary: list.length ? { current: list[0].name, files: list, ledgers_from: list[0].name, bills_from: list[0].name } : null };
+  if (list.length < 2) return { ledgers, bills, priorLedgers: [], summary: list.length ? { current: list[0].name, files: list, ledgers_from: list[0].name, bills_from: list[0].name } : null };
   const current = list[list.length - 1].name;
   const mine = (rows) => rows.filter((r) => r && r.company_name === current);
   const L = mine(ledgers), B = mine(bills);
   return {
     ledgers: L.length ? withHistoryLedgers(L, ledgers) : ledgers, bills: B.length ? B : bills,
+    // The older files' own ledgers (their groups and year-end balances): each year's entries are classified by
+    // that year's file, and last year's closing is checked against this year's opening.
+    priorLedgers: L.length ? ledgers.filter((r) => r && r.company_name && r.company_name !== current) : [],
     summary: { current, files: list, ledgers_from: L.length ? current : [...new Set(ledgers.map((r) => r && r.company_name).filter(Boolean))].join(' + ') || null,
       bills_from: B.length ? current : 'all files', bills_set_aside: B.length ? bills.length - B.length : 0 }
   };
@@ -200,6 +203,7 @@ async function recoverCurrentFile(userId, inst, rows) {
   const tag = (r) => Object.assign({}, r, { company_name: f.current });
   const asAt = String(snap.key || '').split('|').pop() || snap.at || null;
   return {
+    priorLedgers: rows.ledgers.filter((r) => r && r.company_name && r.company_name !== f.current),
     ledgers: withHistoryLedgers(snap.ledgers.map(tag), rows.ledgers), bills: Array.isArray(snap.bills) && snap.bills.length ? snap.bills.map(tag) : rows.bills, vouchers,
     files: Object.assign({}, f, { ledgers_from: f.current, bills_from: f.current, bills_set_aside: 0,
       recovered: { as_at: asAt, saved_at: snap.at || null, ledgers: snap.ledgers.length, bills: Array.isArray(snap.bills) ? snap.bills.length : 0, vouchers_restored: back.length, was_ledgers_from: f.ledgers_from } })
@@ -228,7 +232,7 @@ async function readRows(inList) {
     voucherQ()
   ]);
   const files = companyFiles(L.rows, B.rows, V.rows);
-  return { ledgers: files.ledgers, bills: files.bills, vouchers: V.rows, truncated: V.truncated, files: files.summary,
+  return { ledgers: files.ledgers, bills: files.bills, priorLedgers: files.priorLedgers || [], vouchers: V.rows, truncated: V.truncated, files: files.summary,
     // Read caps (5,000 ledgers, 10,000 bills, 60,000 vouchers): the completeness check says when one is hit.
     caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: VOUCHER_CAP, truncated: V.truncated } } };
 }
@@ -236,7 +240,7 @@ async function readRows(inList) {
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
   // v2: rows carry their company file; a copy saved before that is read again from the tables.
-  const snapKey = `v4|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  const snapKey = `v5|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };
@@ -303,7 +307,7 @@ async function loadTallyBook(userId, opts) {
     edition: (inst.chosen.find((i) => i.tally_edition) || {}).tally_edition || null,
     agentVersion: (inst.chosen.find((i) => i.agent_version) || {}).agent_version || null,
     diagnostics: (inst.chosen.find((i) => i.diagnostics) || {}).diagnostics || null,
-    ledgers: snap.ledgers, bills: snap.bills, vouchers: snap.vouchers, truncated: snap.truncated, caps: snap.caps, files: snap.files || null,
+    ledgers: snap.ledgers, bills: snap.bills, vouchers: snap.vouchers, truncated: snap.truncated, caps: snap.caps, files: snap.files || null, priorLedgers: snap.priorLedgers || [],
     overrides: X.overrides, aiPlaced: X.aiPlaced, syncRuns: X.syncRuns, load
   };
   _books.set(bk, { snap, book });

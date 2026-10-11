@@ -177,12 +177,15 @@ function prepare(book, opts) {
   const analytics = o.analytics || A.computeAnalytics({
     ledgers: book.ledgers, vouchers: book.vouchers, bills: book.bills, overrides: book.overrides || {},
     syncRuns: book.syncRuns || [], diagnostics: book.diagnostics || null, edition: book.edition || null, now,
-    balance_convention: book.balance_convention
+    balance_convention: book.balance_convention, priorLedgers: book.priorLedgers || []
   });
   const classes = A.classifyLedgers(ledgers, book.overrides || {}, A.partyRolesFromVouchers(all));
   classes.set(nameKey(A.IMPLIED_SALES), { bucket: 'sales' });
   classes.set(nameKey(A.IMPLIED_PURCHASES), { bucket: 'purchases' });
   const cls = (name) => (classes.get(name) || classes.get(nameKey(name)) || { bucket: 'unknown' }).bucket;
+  // Each year's entries by that year's own Tally file (tallyAnalytics.priorClassifier).
+  const priorCls = A.priorClassifier(book.priorLedgers, book.overrides || {}, A.partyRolesFromVouchers(all));
+  const clsIn = (name, company) => ((company && priorCls(name, company)) || {}).bucket || cls(name);
   const bills = A.dedupe(calibrateBills(book.bills || [], all, { now }).bills,
     (b) => (b ? (b.direction || '') + '|' + nameKey(b.party_name) + '|' + nameKey(b.bill_ref) : null));
 
@@ -208,7 +211,7 @@ function prepare(book, opts) {
     for (const e of imp ? entries.concat([imp]) : entries) {
       if (!e || !e.ledger) continue;
       const a = num(e.amount);
-      let bucket = cls(e.ledger);
+      let bucket = clsIn(e.ledger, v.company_name);
       if (e.is_party && A.PL_BUCKETS.includes(bucket)) bucket = 'balance_sheet';
       r.lines.push({ ledger: e.ledger, bucket, amount: a, party: !!e.is_party });
       switch (bucket) {

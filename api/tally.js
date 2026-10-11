@@ -360,7 +360,7 @@ const _analyticsDone = new WeakMap();   // book -> { k, body }
  * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
  * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
  * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
-const ANSWER_VERSION = '2026-10-11-history-ledgers';
+const ANSWER_VERSION = '2026-10-11-per-file-classes';
 const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 function savedAnalyticsPath(userId, q) {
   return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;
@@ -411,7 +411,8 @@ async function handleAnalytics(req, res) {
   const lastSync = book.lastSync;
 
   const rate = parseFloat(req.query && req.query.credit_rate);
-  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, overrides: ov, syncRuns, diagnostics, balance_convention: book.balance_convention, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  const dataAsOf = (book.files && book.files.recovered && book.files.recovered.as_at) || lastSync || null;
+  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, priorLedgers: book.priorLedgers || [], dataAsOf, overrides: ov, syncRuns, diagnostics, balance_convention: book.balance_convention, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
   let out = run(overrides);
   sw.mark('compute');
 
@@ -448,6 +449,9 @@ async function handleAnalytics(req, res) {
   }
   const staleH = lastSync ? Math.round((Date.now() - Date.parse(lastSync)) / 3600000) : null;
   const srcName = book.source_name || 'Tally';
+  // Figures that are days old are not "high" confidence, however well they tie.
+  const dataH = dataAsOf ? Math.round((Date.now() - Date.parse(dataAsOf)) / 3600000) : staleH;
+  if (dataH != null && dataH > 36 && out.quality.confidence === 'high-for-a-single-source') { out.quality.confidence = 'medium'; out.quality.reasons.unshift(`These figures are as of ${new Date(Date.parse(dataAsOf) + 5.5 * 3600000).toISOString().replace('T', ' ').slice(0, 16)} India time; nothing has arrived from ${srcName} since.`); }
   if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind ${srcName}.`);
   for (const n of book.notes || []) out.quality.reasons.unshift(n);
   if (book.source && book.source !== 'tally') out.quality.reasons = out.quality.reasons.map((r) => r.replace(/^Single source \(Tally\)/, `Single source (${srcName})`));
