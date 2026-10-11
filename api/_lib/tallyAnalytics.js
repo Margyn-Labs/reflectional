@@ -357,6 +357,16 @@ function alignToToday(ledgers, vouchers, now) {
   }
   // Balances that start at the first synced entry with nothing entered after them need nothing done.
   if (bp.from_idx === 0 && !carried && !future.length) return null;
+  // Carrying forward is only as good as the entries it carries. When invoices are known to be missing after
+  // the balance date (invoiceGaps), cash, bank, overdraft and loan balances are NOT carried: they are small
+  // next to the entries that move them, so a few hundred missing vouchers turn them into nonsense (Care
+  // Hygiene, 11 Oct 2026: cash came out at -6.1 L with half of April missing). They stay as Tally last gave
+  // them, dated. Customer and supplier balances are large next to the gap and are still carried.
+  let incomplete = false;
+  if (bp.to < today && carried > 0) {
+    try { const g = invoiceGaps(vouchers, today); incomplete = !!(g && g.short_months.some((k) => k > dayIso(bp.to).slice(0, 7))); } catch (e) { incomplete = false; }
+  }
+  let heldCash = 0;
   const adj = (ledgers || []).map((l) => {
     if (!l || !l.name) return l;
     const k = nameKey(l.name);
@@ -364,7 +374,9 @@ function alignToToday(ledgers, vouchers, now) {
     if (!b && !a && !y) return l;
     const o = Object.assign({}, l, { tally_opening_balance: l.opening_balance, tally_closing_balance: l.closing_balance });
     if (l.opening_balance != null && b) o.opening_balance = r2(num(l.opening_balance) - sg * b);
-    if (l.closing_balance != null && (a || y)) o.closing_balance = r2(num(l.closing_balance) + sg * (a - y));
+    const hold = incomplete && guardLedger(l);
+    if (hold && a) { o.held_at = dayIso(bp.to); heldCash++; }
+    if (l.closing_balance != null && (a || y)) o.closing_balance = r2(num(l.closing_balance) + sg * ((hold ? 0 : a) - y));
     if (y) o.future_entries_backed_out = r2(y);
     return o;
   });
@@ -372,7 +384,7 @@ function alignToToday(ledgers, vouchers, now) {
   return {
     ledgers: adj, vouchers: past, future,
     guard: { decision: rolled ? 'rolled_forward' : 'backed_out', checked: 0, with_future: 0, to_today: 0, unclear: 0, ledgers: [] },
-    balances: { from: dayIso(bp.from), to: dayIso(bp.to), sign: bp.sign, tied: bp.tied, tested: bp.tested, rolled_forward: rolled, carried_vouchers: carried, aligned: true, tie: bp.tie }
+    balances: { from: dayIso(bp.from), to: dayIso(bp.to), sign: bp.sign, tied: bp.tied, tested: bp.tested, rolled_forward: rolled, carried_vouchers: carried, aligned: true, entries_incomplete: incomplete, cash_held: heldCash > 0, tie: bp.tie }
   };
 }
 
@@ -735,7 +747,7 @@ function computeAnalytics(input) {
       cashDerived++;
     } else cashUnresolved++;
   }
-  const cash = cashLedgers.length && !cashUnresolved ? { total: r2(cashTotal), ledgers: cashLedgers.length, derived_from_vouchers: cashDerived,
+  const cash = cashLedgers.length && !cashUnresolved ? { total: r2(cashTotal), as_at: B && B.cash_held ? B.to : null, ledgers: cashLedgers.length, derived_from_vouchers: cashDerived,
     note: cashDerived ? 'Tally returned no closing balance for ' + cashDerived + ' of these ledgers, so their balance is opening plus voucher movement.' : 'Closing balances as returned by Tally. Overdraft accounts excluded.' } : null;
 
   // ----- cash, day by day (2026-10-04) -----
@@ -1126,7 +1138,8 @@ function computeAnalytics(input) {
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
   if (!stock.available) reasons.push('No stock balance: margin is before stock movement.');
   if (B && B.rolled_forward) {
-    reasons.push(`Tally's balances stop at ${longDay(B.to)}, so Margyn carried cash, bank, loans, customers and suppliers forward to today from the ${B.carried_vouchers.toLocaleString('en-IN')} entries made since.`);
+    if (B.cash_held) reasons.push(`Tally's balances stop at ${longDay(B.to)}. Entries since then are incomplete, so cash, bank and loan balances are shown as Tally last gave them (${longDay(B.to)}); customer and supplier balances are carried forward to today.`);
+    else reasons.push(`Tally's balances stop at ${longDay(B.to)}, so Margyn carried cash, bank, loans, customers and suppliers forward to today from the ${B.carried_vouchers.toLocaleString('en-IN')} entries made since.`);
     if (rolledStock) reasons.push(`Stock today (₹${Math.round(stock.value_today).toLocaleString('en-IN')}) is Tally's value at ${longDay(B.to)} plus what was bought, made and sold since, worked out item by item. The same sum for the period before came within ${roll.backtest.error_pct_of_stock}% of Tally's own figure.`);
     else if (stock.available) reasons.push(`Tally's stock value is as at ${longDay(B.to)}, so this year's margin is before stock movement.`);
     if (roll) internal.push(`Stock roll: ${roll.ok ? 'published' : 'held back (' + roll.why + ')'}; backtest ${JSON.stringify(roll.backtest || null)}; journals ${roll.journals_used ? 'used' : 'not used'} (signs ${JSON.stringify(roll.sign_check || null)}); items without cost ${JSON.stringify(roll.items_without_cost || null)}.`);
@@ -1154,7 +1167,7 @@ function computeAnalytics(input) {
     unclassified_ledgers: unclassified.slice(0, 20),
     guessed_ledgers: guessed.slice(0, 20),
     tie_out: tieTop,
-    balances_period: B ? { from: B.from, to: B.to, tied: B.tied, tested: B.tested, rolled_forward: B.rolled_forward, carried_vouchers: B.carried_vouchers } : null,
+    balances_period: B ? { from: B.from, to: B.to, tied: B.tied, tested: B.tested, rolled_forward: B.rolled_forward, carried_vouchers: B.carried_vouchers, entries_incomplete: !!B.entries_incomplete, cash_held: !!B.cash_held } : null,
     balance_sign,
     balance_sheet_balances: { missing: bsMissing, total: bsLedgers.length },
     excluded_non_accounting_vouchers: { count: excludedCount, by_type: excludedTypes },
