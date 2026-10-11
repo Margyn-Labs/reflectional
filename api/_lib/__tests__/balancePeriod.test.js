@@ -195,5 +195,33 @@ const bal = (t, name) => t.ledgers.find((l) => l.name === name);
   check('invoice numbers: numbering that is not a plain running number is left alone', A.invoiceGaps(dated, Date.parse('2026-10-11T00:00:00Z')) === null);
 }
 
+/* ---- entries known to be missing after the balance date: cash is not carried on them ---- */
+{
+  // This year's sales invoices, numbered, with a run gone from April (overwritten by last year's file).
+  let n = 0; const inv = [];
+  for (const [y, m] of months) { if (y < 2026 || (y === 2026 && m < 4) || (y === 2026 && m > 9)) continue; for (let i = 0; i < 40; i++) { n++; if (n >= 5 && n <= 30) continue; inv.push({ tally_guid: 'hv' + n, voucher_type: 'VASAI SALES', voucher_base: 'Sales', voucher_number: 'VSI' + n, date: ymd(y, m, 1 + (i % 27)), party_name: 'Alkem', amount: 1, is_cancelled: false, entries: [{ ledger: 'Alkem', amount: -1, is_party: true }, { ledger: 'GST Sale', amount: 1 }] }); } }
+  const led = tallyLedgers('20250401', '20260331');
+  const t = A.asOfToday(led, all.concat(inv), NOW);
+  const march = (name) => led.find((l) => l.name === name).closing_balance;
+  check('incomplete entries: cash, bank and loans stay as Tally last gave them', t.balances.entries_incomplete && t.balances.cash_held && bal(t, 'Kotak Bank').closing_balance === march('Kotak Bank') && bal(t, 'Kotak Bank').held_at === '2026-03-31' && bal(t, 'Kotak Loan').closing_balance === march('Kotak Loan'), { b: { ...t.balances, tie: undefined }, bank: bal(t, 'Kotak Bank') });
+  check('incomplete entries: customer and supplier balances are still carried', bal(t, 'Supplier A').closing_balance === truth('Supplier A') && bal(t, 'Alkem').closing_balance !== march('Alkem'));
+  check('incomplete entries: later-dated EMIs are still not taken off a balance that never had them', t.future.length === 5 && bal(t, 'Kotak Loan').closing_balance === march('Kotak Loan'));
+  const a3 = A.computeAnalytics({ ledgers: led, vouchers: all.concat(inv), bills: [], now: NOW });
+  check('incomplete entries: the page says cash is as at the balance date, and why', a3.cash.as_at === '2026-03-31' && a3.cash.total === -march('Kotak Bank') && a3.quality.reasons.some((r) => /Entries since then are incomplete, so cash, bank and loan balances are shown as Tally last gave them/.test(r)) && a3.quality.balances_period.cash_held === true, { cash: a3.cash, r: a3.quality.reasons });
+  // The earlier block (complete entries) still carries cash to the rupee: covered above ("Kotak Bank: today's balance, to the rupee").
+}
+
+/* ---- the WhatsApp update never reports a change in how figures are reached as money moving ---- */
+{
+  const W = require('../watchBrief');
+  if (W.snapshot && W.comparable) {
+    const mk = (decision, files) => ({ asOfGuard: { decision }, book: { files }, bills: [], rows: [], ledgers: [], analytics: {}, now: new Date(NOW), today: new Date('2026-10-11T00:00:00Z'), cls: () => 'unknown', lastSync: null });
+    let s1 = null, s2 = null, s3 = null;
+    try { s1 = W.snapshot(mk('backed_out', null), { opening: 500 }, NOW); s2 = W.snapshot(mk('rolled_forward', { ledgers_from: 'A (2025-26)', bills_from: 'A (2026-27)' }), { opening: 500 }, NOW); s3 = W.snapshot(mk('backed_out', null), { opening: 700 }, NOW); } catch (e) { s1 = { err: e.message }; }
+    check('watch: balances worked forward are not reported as bank and cash', s2 && s2.cash === null && s2.borrowed === null, s2 && { cash: s2.cash, basis: s2.basis, err: s1 && s1.err });
+    check('watch: a snapshot reached another way is not compared with', s1 && s2 && W.comparable(s1, s2) === null && W.comparable(s1, s3) === s1 && W.comparable({ v: 1, cash: 5 }, s2) === null);
+  } else check('watch: snapshot and comparable are exported for this test', false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

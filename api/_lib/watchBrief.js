@@ -87,14 +87,25 @@ function owedByParty(ctx) {
  */
 function snapshot(ctx, fc, now) {
   let cash = null, borrowed = null;
-  try { const cd = E.cashAndDebt(ctx); cash = cd.raw ? Math.round(cd.raw.cash) : null; borrowed = cd.raw ? Math.round(cd.raw.borrowed) : null; } catch (e) { /* leave null */ }
-  if (cash == null && fc) cash = fc.opening;
+  // Bank, cash and borrowing are only reported when they are Tally's own figures for today. When Tally's
+  // balances stop at an earlier date (last year's company file was the one read) Margyn works them forward or
+  // holds them, and an update must never tell an owner "cash fell" because the way of reading changed.
+  const decision = ctx.asOfGuard && ctx.asOfGuard.decision;
+  const current = decision !== 'rolled_forward';
+  if (current) {
+    try { const cd = E.cashAndDebt(ctx); cash = cd.raw ? Math.round(cd.raw.cash) : null; borrowed = cd.raw ? Math.round(cd.raw.borrowed) : null; } catch (e) { /* leave null */ }
+    if (cash == null && fc) cash = fc.opening;
+  }
+  // How these figures were reached. Two snapshots are compared ("moved since this morning") only when they
+  // were reached the same way; otherwise a correction would be reported as money moving.
+  const f = (ctx.book && ctx.book.files) || {};
+  const basis = ['b2', decision || '', f.ledgers_from || '', f.bills_from || ''].join('|');
   const owed = owedByParty(ctx);
   const pay = E.billRows(ctx, 'payable');
   const parties = {};
   for (const [k, g] of [...owed.entries()].sort((a, b) => b[1].owed - a[1].owed).slice(0, 80)) parties[k] = [g.name, Math.round(g.owed), Math.round(g.late30)];
   return {
-    v: 1, at: new Date(now || Date.now()).toISOString(), day: istDay(now), last_sync: ctx.lastSync || null,
+    v: 1, basis, at: new Date(now || Date.now()).toISOString(), day: istDay(now), last_sync: ctx.lastSync || null,
     cash, borrowed,
     recv_total: Math.round([...owed.values()].reduce((s, g) => s + g.owed, 0)),
     recv_late30: Math.round([...owed.values()].reduce((s, g) => s + g.late30, 0)),
@@ -385,7 +396,11 @@ function fit(sections, foot) {
 /**
  * MORNING. prev: yesterday's morning snapshot (or null). points: the mixed findings. insight: one deep insight or null.
  */
+/* An earlier snapshot is compared with this one only when both were reached the same way (snapshot.basis). */
+const comparable = (before, snap) => (before && snap && before.basis === snap.basis ? before : null);
+
 function morning(ctx, fc, snap, prev, points, insight, o) {
+  prev = comparable(prev, snap);
   const opt = o || {};
   const head = `${previewTag(opt)}Good morning${greetingName(opt.firstName)}. ${asOfLine(ctx)}`;
 
@@ -499,10 +514,12 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   const opt = o || {};
   const t = threshold(ctx);
   const today = snap.day;
+  // What was already said today is remembered whatever the basis; only comparisons need like for like.
+  const said = new Set((last && last.day === today && last.said) || []);
+  last = comparable(last, snap); morningSnap = comparable(morningSnap, snap);
   const ms = morningSnap && morningSnap.day === today ? morningSnap : null;
   const since = last && last.day === today ? last : ms;
   const fromMorning = !!(since && ms && since.at === ms.at);
-  const said = new Set((last && last.day === today && last.said) || []);
   const fresh = [];
   const say = (key, line) => { if (said.has(key)) return false; said.add(key); fresh.push(key); return line; };
   const good = [], bad = [], still = [];
@@ -648,6 +665,7 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
   const opt = o || {};
   const head = `${previewTag(opt)}Evening wrap${greetingName(opt.firstName)}. ${asOfLine(ctx)}`;
   const today = snap.day;
+  morningSnap = comparable(morningSnap, snap);
   const m = movement(ctx, [today]);
   const day = ['*Today*'].concat([inLine(m), outLine(m), salesLine(m)].filter(Boolean));
   if (day.length === 1) day.push(`Nothing entered in ${ctx.source_name || 'Tally'} for today yet.`);
@@ -721,6 +739,6 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
 }
 
 module.exports = {
-  snapshot, movement, deepInsights, mix, morning, pulse, evening, usualDay, weekReview, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
+  snapshot, comparable, movement, deepInsights, mix, morning, pulse, evening, usualDay, weekReview, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
   istDay, istStamp, RECEIVABLE_KINDS, INSIGHT_KINDS, FOLLOW_UP_KINDS, MAX_POINTS
 };
