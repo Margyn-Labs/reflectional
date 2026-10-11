@@ -343,11 +343,91 @@ function findBalancePeriod(ledgers, vouchers) {
     return { ledger: c.l.name, vouchers_movement: r2(Math.abs(mv)), tally_movement: r2(Math.abs(c.delta)), ok: fits(c.delta, sg * mv) };
   });
   const y = (i) => Math.floor((lo + i) / 12), m = (i) => (lo + i) % 12;
+  const fromMs = Date.UTC(y(best.s), m(best.s), 1), toMs = Date.UTC(y(best.e), m(best.e) + 1, 0);
+  // Entries Tally's balances prove deleted (deletedInTally): set aside, and the ledgers they touched now tie.
+  let deleted = [];
+  try {
+    const led = new Map(cand.map((c) => [nameKey(c.l.name), c.delta]));
+    const inWin = rows.filter(([, dt]) => dt.getTime() >= fromMs && dt.getTime() <= toMs);
+    deleted = deletedInTally(led, inWin, sg);
+    if (deleted.length) {
+      const back = new Map();
+      for (const v of deleted) for (const e of Array.isArray(v.entries) ? v.entries : []) if (e && e.ledger) back.set(nameKey(e.ledger), (back.get(nameKey(e.ledger)) || 0) + num(e.amount));
+      for (const t of tie) { const k = nameKey(t.ledger); if (!back.has(k)) continue; const c = cand.find((x) => nameKey(x.l.name) === k); const mv = c.pre[best.e + 1] - c.pre[best.s] - back.get(k); t.vouchers_movement = r2(Math.abs(mv)); t.ok = fits(c.delta, sg * mv); }
+    }
+  } catch (e) { deleted = []; }
   return {
-    from: Date.UTC(y(best.s), m(best.s), 1), to: Date.UTC(y(best.e), m(best.e) + 1, 0),
+    from: fromMs, to: toMs,
     from_idx: best.s, covers_all: best.s === 0 && best.e === n - 1,
-    sign: best.sign, tied: best.score, tested: cand.length, tie
+    sign: best.sign, tied: tie.filter((t) => t.ok).length, tested: cand.length, tie, deleted
   };
+}
+
+/**
+ * Entries Tally has deleted that Margyn still holds (2026-10-11).
+ *
+ * The agent hears of a deleted voucher only on a full read (at most once in 20 hours); until then Margyn's copy
+ * keeps it. Tally's own balances already leave it out, so the ledgers it touched stop matching their entries
+ * by exactly its amounts. Care Hygiene: a Payment of 23,377 to AMI SURGICAL was replaced by a Receipt on
+ * 8 Oct and the deleted Payment left the Kotak ledger 23,377 out; last year two journals (20,000 and 18,800)
+ * left running costs 38,800 over Tally.
+ *
+ * A voucher is set aside only when Tally's balances prove it: one of its ledgers is out by exactly its line,
+ * its other ledgers are out the same way by at least their lines, and after setting aside everything found
+ * EVERY ledger those vouchers touched matches Tally to the rupee. If that last test fails, nothing is set aside.
+ * `led`: nameKey -> closing less opening; `rows`: [voucher, date] of that company file within the period.
+ */
+function deletedInTally(led, rows, sg) {
+  const mv = new Map(), on = new Map();   // ledger -> movement; ledger -> voucher indices
+  const lines = rows.map(([v]) => { const m = new Map(); for (const e of Array.isArray(v.entries) ? v.entries : []) { if (!e || !e.ledger) continue; const k = nameKey(e.ledger); m.set(k, (m.get(k) || 0) + num(e.amount)); } return m; });
+  lines.forEach((m, i) => { for (const [k, a] of m) { mv.set(k, (mv.get(k) || 0) + a); if (led.has(k)) { if (!on.has(k)) on.set(k, []); on.get(k).push(i); } } });
+  const gap = new Map();
+  for (const [k, delta] of led) { const g = delta - sg * (mv.get(k) || 0); if (Math.abs(g) > 1) gap.set(k, g); }
+  if (!gap.size || gap.size > 60) return [];
+  const removed = [], gone = new Set(), touched = new Set();
+  for (let round = 0; round < 12; round++) {
+    let pick = -1;
+    for (const [k, g] of gap) {
+      for (const i of on.get(k) || []) {
+        if (gone.has(i)) continue;
+        const m = lines[i];
+        if (Math.abs(g + sg * m.get(k)) > 1) continue;                       // this ledger is out by exactly this line
+        let fits = true, legs = 0;
+        for (const [j, a] of m) {
+          if (!led.has(j)) continue;                                         // Tally sent no balance for it: can't be tested
+          legs++;
+          const gj = gap.get(j) || 0;
+          if (j !== k && !(Math.sign(gj) === Math.sign(-sg * a) && Math.abs(gj) >= Math.abs(a) - 1)) { fits = false; break; }
+        }
+        if (fits && legs >= 2 && (pick < 0 || String(rows[i][0].synced_at || rows[i][0].date) < String(rows[pick][0].synced_at || rows[pick][0].date))) pick = i;
+      }
+      if (pick >= 0) break;
+    }
+    if (pick < 0) break;
+    gone.add(pick); removed.push(rows[pick][0]);
+    for (const [j, a] of lines[pick]) { if (!led.has(j)) continue; touched.add(j); const g = (gap.get(j) || 0) + sg * a; if (Math.abs(g) > 1) gap.set(j, g); else gap.delete(j); }
+  }
+  for (const j of touched) if (gap.has(j)) return [];                          // not proven: leave everything as it is
+  return removed;
+}
+const asSetAside = (v, file) => ({ type: v.voucher_type || null, number: v.voucher_number || null, date: v.date ? String(v.date).slice(0, 10) : null, party: v.party_name || null, amount: r2(Math.abs(num(v.amount))), file: file || v.company_name || null });
+/* The same for an older year's file: its own ledgers against its own entries over its whole year. */
+const _priorGone = new WeakMap();   // priorLedgers array -> { vouchers, out }
+function deletedInPriorFiles(priorLedgers, vouchers, sign) {
+  if (!Array.isArray(priorLedgers) || !priorLedgers.length) return [];
+  const hit = _priorGone.get(priorLedgers);
+  if (hit && hit.vouchers === vouchers) return hit.out;
+  const out = [];
+  const byCo = new Map();
+  for (const l of priorLedgers) { if (!l || !l.name || !l.company_name || l.opening_balance == null || l.closing_balance == null) continue; if (!byCo.has(l.company_name)) byCo.set(l.company_name, new Map()); byCo.get(l.company_name).set(nameKey(l.name), num(l.closing_balance) - num(l.opening_balance)); }
+  const all = countedOnce(vouchers);
+  for (const [co, led] of byCo) {
+    const rows = all.filter(([v]) => v.company_name === co);
+    if (!rows.length) continue;
+    for (const v of deletedInTally(led, rows, sign === 'opposite' ? -1 : 1)) out.push(v);
+  }
+  _priorGone.set(priorLedgers, { vouchers, out });
+  return out;
 }
 
 /**
@@ -356,8 +436,8 @@ function findBalancePeriod(ledgers, vouchers) {
  * runs past it), using the synced entries, so every reader's "opening plus the entries is the closing" holds
  * again. Returns null when the period is unknown or already fits (the reading below, with its guard, is kept).
  */
-function alignToToday(ledgers, vouchers, now) {
-  const bp = balancePeriod(ledgers, vouchers);
+function alignToToday(ledgers, vouchers, now, known) {
+  const bp = known !== undefined ? known : balancePeriod(ledgers, vouchers);
   if (!bp) return null;
   const today = todayIstMs(now);
   if (bp.from_idx === 0 && bp.to >= today) return null;
@@ -436,8 +516,14 @@ function alignToToday(ledgers, vouchers, now) {
  * today from the entries instead and `balances` says which period Tally used.
  */
 function asOfToday(ledgers, vouchers, now, convention, opts) {
-  const aligned = alignToToday(ledgers, vouchers, now);
-  if (aligned) return aligned;
+  // Entries Tally's own balances prove deleted are set aside first, for this year's file and older ones.
+  const bp0 = balancePeriod(ledgers, vouchers);
+  const gone = [].concat((bp0 && bp0.deleted) || [], deletedInPriorFiles(opts && opts.priorLedgers, vouchers, (bp0 && bp0.sign) || (convention === 'opposite' ? 'opposite' : 'same')));
+  const setAside = gone.map((v) => asSetAside(v));
+  if (gone.length) { const drop = new Set(gone); vouchers = (vouchers || []).filter((v) => !drop.has(v)); }
+  const done = (r) => Object.assign(r, { set_aside: setAside });
+  const aligned = alignToToday(ledgers, vouchers, now, bp0);
+  if (aligned) return done(aligned);
   const dir = convention === 'opposite' ? 1 : -1;
   const today = todayIstMs(now);
   const past = [], future = [];
@@ -445,7 +531,7 @@ function asOfToday(ledgers, vouchers, now, convention, opts) {
     const d = v && parseDate(v.date);
     if (d && d.getTime() > today) future.push(v); else past.push(v);
   }
-  if (!future.length) return { ledgers: ledgers || [], vouchers: vouchers || [], future, guard: { decision: 'not_needed', checked: 0, ledgers: [] } };
+  if (!future.length) return done({ ledgers: ledgers || [], vouchers: vouchers || [], future, guard: { decision: 'not_needed', checked: 0, ledgers: [] } });
   const move = new Map();
   for (const v of future) {
     if (v.is_cancelled === true) continue;
@@ -458,12 +544,12 @@ function asOfToday(ledgers, vouchers, now, convention, opts) {
   const guard = tieOutGuard(ledgers, past, move, convention);
   const forced = opts && (opts.decision === 'kept' || opts.decision === 'backed_out') ? opts.decision : null;
   if (forced) { guard.decision = forced; guard.forced = true; }
-  if (guard.decision === 'kept') return { ledgers: ledgers || [], vouchers: past, future, guard };
+  if (guard.decision === 'kept') return done({ ledgers: ledgers || [], vouchers: past, future, guard });
   const adj = (ledgers || []).map((l) => {
     const m = l && l.closing_balance != null ? move.get(nameKey(l.name)) : null;
     return m ? Object.assign({}, l, { closing_balance: Math.round((num(l.closing_balance) + dir * m) * 100) / 100, future_entries_backed_out: Math.round(m * 100) / 100 }) : l;
   });
-  return { ledgers: adj, vouchers: past, future, guard };
+  return done({ ledgers: adj, vouchers: past, future, guard });
 }
 
 /* Cash, bank, overdraft and loan ledgers: the ones whose balances the later entries (EMIs) move. */
@@ -513,7 +599,7 @@ function tieOutGuard(ledgers, past, futureMove, convention) {
 
 function computeAnalytics(input) {
   const hint = input.balance_convention === 'same' || input.balance_convention === 'opposite' ? input.balance_convention : null;
-  const today = asOfToday(input.ledgers, input.vouchers, input.now, hint);
+  const today = asOfToday(input.ledgers, input.vouchers, input.now, hint, { priorLedgers: input.priorLedgers });
   input = Object.assign({}, input, { ledgers: today.ledgers, vouchers: today.vouchers });
   const B = today.balances || null;   // the period Tally's balances covered, when it had to be worked out
   const ledgers = dedupe(input.ledgers || [], (l) => (l && l.name ? nameKey(l.name) : null),
@@ -1221,6 +1307,8 @@ function computeAnalytics(input) {
   if (cashTieBad.length) reasons.push(`${cashTieBad.length} cash, bank or loan ledger(s) don't match their entries (largest: ${cashTieBad[0].ledger}, entries ₹${Math.round(cashTieBad[0].vouchers_movement).toLocaleString('en-IN')} against Tally's ₹${Math.round(cashTieBad[0].tally_movement).toLocaleString('en-IN')}).`);
   if (year_join && year_join.differ) reasons.push(`This year's Tally file doesn't open where last year's closed for ${year_join.differ} of ${year_join.checked} ledgers (₹${Math.round(year_join.total).toLocaleString('en-IN')} in all; largest ${year_join.top[0].ledger}). That is usual until last year's books are finalised and the opening balances are updated.`);
   if (stock.opening_differs) reasons.push(`Stock opens this year at ₹${Math.round(stock.opening).toLocaleString('en-IN')} but closed last year at ₹${Math.round(stock.last_year_closing).toLocaleString('en-IN')}. Gross margin after stock is ${p1(period.gross_margin_pct_after_stock)}% on this year's opening figure and ${p1(period.gross_margin_pct_after_stock_on_last_year_closing)}% on last year's closing figure.`);
+  const setAside = today.set_aside || [];
+  if (setAside.length) reasons.push(`${setAside.length} entr${setAside.length === 1 ? 'y is' : 'ies are'} set aside because Tally's own balances show ${setAside.length === 1 ? 'it was' : 'they were'} deleted after Margyn read ${setAside.length === 1 ? 'it' : 'them'} (${setAside.slice(0, 3).map((x) => `${x.type || 'entry'} ${x.number || ''} of ${x.date ? longDay(x.date) : '?'}, ₹${Math.round(x.amount).toLocaleString('en-IN')}`).join('; ')}${setAside.length > 3 ? '; …' : ''}).`);
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
@@ -1252,6 +1340,7 @@ function computeAnalytics(input) {
     reasons, internal,
     coverage: { from: period.from, to: period.to, vouchers: live.length, cancelled: cancelled.length, months: monthKeys.length },
     tally_completeness: completeness,
+    set_aside_deleted: setAside,
     invoice_numbers: gaps ? { missing: gaps.missing, short_months: gaps.short_months, months: gaps.months, series: gaps.series } : null,
     agent_reading_past_year: readingPastYear ? { from: agentPeriod.from, to: agentPeriod.to } : null,
     unclassified_ledgers: unclassified.slice(0, 20),
@@ -1539,7 +1628,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
-  computeAnalytics, asOfToday, priorClassifier, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  computeAnalytics, asOfToday, deletedInTally, priorClassifier, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
   isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES

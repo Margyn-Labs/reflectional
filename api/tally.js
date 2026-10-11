@@ -43,7 +43,7 @@ const {
   selectRows
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
-const { computeAnalytics, asOfToday, applyTiedReceivables, PL_BUCKETS } = require('./_lib/tallyAnalytics');
+const { computeAnalytics, asOfToday, applyTiedReceivables, PL_BUCKETS, nameKey: taNameKey } = require('./_lib/tallyAnalytics');
 const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 const { archiveRaw, pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
@@ -236,7 +236,7 @@ async function handleSummary(req, res) {
     let aligned = false;
     if (book && futureRows) {
       try {
-        const t = asOfToday(book.ledgers, book.vouchers, Date.now());
+        const t = asOfToday(book.ledgers, book.vouchers, Date.now(), undefined, { priorLedgers: book.priorLedgers || [] });
         if (t.balances) { ledgers = t.ledgers.slice(0, 10000); vouchers = vouchers.filter((v) => !(ymd(v.date) > todayYmd)); aligned = true; }
       } catch (e) { /* the usual reading below */ }
     }
@@ -270,6 +270,10 @@ async function handleSummary(req, res) {
 
   let receivableTotal = 0, payableTotal = 0, overdueTotal = 0, recvOver90 = 0, payDue30 = 0;
   // A customer's on-account money shows in Tally as a bill on the vendor side; it isn't owed to anyone.
+  // Each bill once (same rule as tallyAnalytics.computeAnalytics): the same bill under two spellings of a party's
+  // name made this total 2.1 L higher than the Margin page's for the same books (found 11 Oct 2026).
+  const billSeen = new Set();
+  bills = bills.filter((b) => { if (!b) return false; const k = (b.direction || '') + '|' + taNameKey(b.party_name) + '|' + taNameKey(b.bill_ref); if (billSeen.has(k)) return false; billSeen.add(k); return true; });
   const billItems = bills.filter((b) => !b.advance).map((b) => {
     const bal = Math.abs(Number(b.closing_balance) || 0);
     if (b.direction === 'payable') payableTotal += bal; else receivableTotal += bal;
@@ -365,7 +369,7 @@ const _analyticsDone = new WeakMap();   // book -> { k, body }
  * (tallyData.bookKey), the promises to pay the forecast uses, the credit rate and the India date. Same key: it
  * is served as is (~1 s instead of ~15 s of sums). The books moved on since (a new sync, a placement): the last
  * answer is served at once marked `stale`, and the page asks again with fresh=1 for the new one. Tally only. */
-const ANSWER_VERSION = '2026-10-11-as-at';
+const ANSWER_VERSION = '2026-10-11-set-aside';
 const istDay = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 function savedAnalyticsPath(userId, q) {
   return `analytics/${userId}/${crypto.createHash('sha1').update(String(q.company || '') + '|' + String(q.credit_rate || '')).digest('hex')}.json.gz`;
@@ -498,6 +502,17 @@ async function handleAnalytics(req, res) {
     try { applyTiedReceivables(out, recvB); } catch (e) { console.error('[tally] tied receivables failed:', e.message); }
     const t = ctxB.billTie;
     out.quality.reasons.push(`What customers owe follows their ledger balances: ${t.trimmed.parties ? `₹${t.trimmed.amount.toLocaleString('en-IN')} of bills for ${t.trimmed.parties} customers is already paid by their ledgers (not knocked off in Tally)` : ''}${t.trimmed.parties && t.added.parties ? '; ' : ''}${t.added.parties ? `₹${t.added.amount.toLocaleString('en-IN')} owed by ${t.added.parties} customers isn't split into bills in Tally, so it is taken from their entries` : ''}.`);
+  }
+  // Each customer and supplier as shown, against that party's own ledger in Tally (billTieOut.shownVsLedger).
+  if (ctxB) {
+    try {
+      const items = wc.payables_basis === 'supplier_ledgers' ? cashFlow.supplierOpenItems(ctxB).items : null;
+      const pc = require('./_lib/billTieOut').shownVsLedger(ctxB, items);
+      out.quality.party_check = pc;
+      for (const [label, x] of [['customer', pc.customers], ['supplier', pc.suppliers]]) {
+        if (x.differ) out.quality.reasons.push(`${x.differ} of ${x.parties} ${label}s are shown at a different amount from their ledger in Tally (₹${x.difference.toLocaleString('en-IN')} in all; largest ${x.top[0].party}: shown ₹${x.top[0].shown.toLocaleString('en-IN')}, ledger ₹${x.top[0].ledger.toLocaleString('en-IN')}).`);
+      }
+    } catch (e) { console.error('[tally] party check failed:', e.message); }
   }
   // After the receivables tie, so "customers take N days to pay" quotes the same figure as the page.
   try { extra = buildInsights(book, out); } catch (e) { console.error('[tally] insights failed:', e.message); }
