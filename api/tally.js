@@ -476,6 +476,8 @@ async function handleAnalytics(req, res) {
     if (book.files.ledgers_from !== book.files.current) out.quality.reasons.unshift(`Your Tally keeps a company file per year. The balances Margyn holds are from ${book.files.ledgers_from}, so they are carried forward from the entries until Tally sends ${book.files.current}'s again.`);
   }
   if (truncated) { out.quality.confidence = 'low'; out.quality.reasons.unshift('These books hold more entries than Margyn reads in one go, so the newest entries are missing from these figures.'); }
+  const cutShort = ['ledgers', 'bills'].filter((k) => book.caps && book.caps[k] && book.caps[k].truncated);
+  if (cutShort.length) { out.quality.confidence = 'low'; out.quality.reasons.unshift(`These books hold more ${cutShort.join(' and ')} than Margyn reads in one go, so some balances are missing from these figures.`); }
   // What else the books say (kits, branches, commission, customers gone quiet, old debts...): the same list
   // Margyn answers "what should I know" with and Margyn Watch sends on WhatsApp.
   let extra = {};
