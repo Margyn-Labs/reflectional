@@ -85,6 +85,17 @@ const call = async (method, query, body) => {
   r = await call('GET', { action: 'analytics' });
   check('items flow through once the column exists', r.payload.items_available === true && r.payload.items.length === 1, r.payload.items);
 
+  // Margyn's own guess (set_by null) never beats the group Tally gives; a person's placement does.
+  DB.tally_ledger_classes.push({ user_id: U, company_name: 'Acme Ltd', ledger_name: 'Purchases', bucket: 'opex', set_by: null });
+  DB.tally_installs.forEach((i) => { i.last_sync_at = new Date(Date.now() + 2000).toISOString(); });
+  r = await call('GET', { action: 'analytics' });
+  check('a guess does not override Tally\'s own group', r.payload.pnl[0].gross_margin_pct_pre_stock === 60 && r.payload.pnl[0].opex === 10, r.payload.pnl[0]);
+  check('and is not reported as placed by Margyn', !(r.payload.quality.ai_classified || []).some((x) => x.ledger === 'Purchases'), r.payload.quality.ai_classified);
+  DB.tally_ledger_classes[DB.tally_ledger_classes.length - 1].set_by = U;
+  DB.tally_installs.forEach((i) => { i.last_sync_at = new Date(Date.now() + 3000).toISOString(); });
+  r = await call('GET', { action: 'analytics' });
+  check('a person\'s placement still overrides the group', r.payload.pnl[0].opex === 410, r.payload.pnl[0]);
+
   DB.tally_installs = [];
   r = await call('GET', { action: 'analytics' });
   check('not connected is a clean 200', r.status === 200 && r.payload.connected === false);
