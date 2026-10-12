@@ -27,15 +27,15 @@
       what: 'A 0 to 100 reading of financial health, made of six vitals. Not a credit score.',
       formula: 'Pulse Score = round( 20% × Cash Position + 15% × Receivables Aging + 15% × Payables Due + 15% × GST/ITC Leakage + 20% × Net Margin + 15% × Working Capital Runway ), each vital scored 0 to 100.',
       inputs: ['the six vital scores (ask about any one for its own formula)'],
-      notes: ['Pure arithmetic in the browser (computePulseScore). The AI writes the briefing, it never sets the score.', 'By default 70 and above is Healthy and below 40 is at risk; the cut-offs can be changed in Settings.', SRC],
+      notes: ['Pure arithmetic in the browser (computePulseScore). The AI writes the briefing, it never sets the score.', 'A vital nothing measures is left out and the others share its weight in proportion (vitalWeight): GST input credit at risk, when the reading comes from connected sources and none of them reports it.', 'By default 70 and above is Healthy and below 40 is at risk; the cut-offs can be changed in Settings.', SRC],
       code: '15-scoring.js computePulseScore, VITAL_WEIGHTS', page: 'scores'
     },
     cash_vital: {
       label: 'Cash Position (vital)', aliases: ['cash position score', 'cash vital', 'months of cash'],
-      what: 'How many months of spending your cash covers.',
-      formula: 'Months = cash ÷ monthly spend. Score = 100 at 6 months or more, 0 at zero or less, and in between (months ÷ 6) × 100.',
+      what: 'How many months of running costs the money you can draw on today covers.',
+      formula: 'Months = (cash + undrawn overdraft) ÷ monthly running costs. Score = 100 at 6 months or more, 0 at zero or less, and in between (months ÷ 6) × 100.',
       inputs: ['cash', 'burn'], weight: 'Cash Position',
-      notes: ['If monthly spend is zero or unknown, months is shown as 0.'],
+      notes: ['‘Monthly running costs’ are rent, salaries, interest and the like, averaged over up to six closed months, when the books split them from cost of goods (Tally, Zoho Books); goods you buy come back as sales, so they are not counted. Without that split it is total monthly spend, as before.', 'Undrawn overdraft counts only when you have entered the limit on the Cash page: limit less what is drawn today. Until then it is 0, so an overdraft-run business scores low here.', 'If monthly spend is zero or unknown, months is shown as 0.'],
       code: '15-scoring.js scoreCash', page: 'cash'
     },
     receivables_vital: {
@@ -47,15 +47,16 @@
     },
     payables_vital: {
       label: 'Payables Due (vital)', aliases: ['payables score', 'payables due score'],
-      what: 'Bills due in the next 30 days against the cash you have.',
-      formula: 'Ratio = payables due in 30 days ÷ cash. Score = 100 − (ratio ÷ 50%) × 100, kept between 0 and 100. Bills worth half your cash or more scores 0. With no cash and bills due, the score is 0.',
+      what: 'Bills due in the next 30 days against the money you will have in them.',
+      formula: 'Cover = (cash + undrawn overdraft + collections in a month) ÷ payables due in 30 days. Collections in a month = what customers owe that is not over 90 days late, capped at one month of sales. Score = 100 at cover of 1.5 or more, 0 at 0.5 or less, in between (cover − 0.5) × 100. Nothing due scores 100.',
+      notes: ['Readings saved before 12 Oct 2026 used payables ÷ cash alone (half your cash or more scored 0), which scored any business that pays its bills from collections at 0.'],
       inputs: ['paySoon', 'cash'], weight: 'Payables Due (30d)',
       code: '15-scoring.js scorePayables', page: 'payables'
     },
     gst_vital: {
       label: 'GST/ITC Leakage (vital)', aliases: ['gst score', 'itc leakage', 'gst leakage'],
       what: 'Input tax credit you claimed that your vendors have not confirmed (not in GSTR-2B), against the GST you owe.',
-      formula: 'Ratio = ITC at risk ÷ GST payable. Score = 100 − (ratio ÷ 15%) × 100, kept between 0 and 100. Leakage of 15% of GST payable or more scores 0.',
+      formula: 'Ratio = ITC at risk ÷ GST payable. Score = 100 − (ratio ÷ 15%) × 100, kept between 0 and 100. Leakage of 15% of GST payable or more scores 0. Not scored at all when no connected source reports ITC at risk and no figure was entered: it needs GSTR-2B matching.',
       inputs: ['gstLeak', 'gstPayable'], weight: 'GST/ITC Leakage',
       notes: ['Leakage comes from Zoho Books\' GSTR-2B match today. Until the GST portal connection is live, GST payable is Tally\'s estimate or what you typed in.'],
       code: '15-scoring.js scoreGst', page: 'gst'
@@ -63,18 +64,18 @@
     margin_vital: {
       label: 'Net Margin (vital)', aliases: ['margin score', 'net margin vital'],
       what: 'Net profit as a share of revenue, per month.',
-      formula: 'Margin % = net profit ÷ revenue × 100. Score = 100 at 15% or more; between 0% and 15% it is (margin ÷ 15) × 100; at a loss it is 50 + margin %, kept at 0 or more (so −10% scores 40).',
+      formula: 'Margin % = net profit ÷ revenue × 100. Full-score margin = 15%, or 30% of your gross margin when that is lower (a 21% gross margin makes it 6.3%). Score = 100 at the full-score margin or more; between 0% and it, (margin ÷ full-score margin) × 100; at a loss it is 50 + margin %, kept at 0 or more (so −10% scores 40).',
       inputs: ['netProfit', 'revenue'], weight: 'Net Margin',
-      notes: ['Known quirk: just above zero scores lower than just below zero (+1% scores about 7, −1% scores 49). That is how the score is built today; flag it if they ask why.'],
+      notes: ['The gross margin is known when the books split cost of goods from running costs (Tally, Zoho Books). Without it the full-score margin is 15%.', 'Known quirk: just above zero scores lower than just below zero (+1% scores about 7, −1% scores 49). That is how the score is built today; flag it if they ask why.'],
       code: '15-scoring.js scoreMargin', page: 'margin'
     },
     runway: {
       label: 'Working Capital Runway', aliases: ['runway', 'working capital runway', 'how long will cash last', 'months of runway'],
-      what: 'How many months your working capital covers your monthly spend. Shown on Cash as "Runway" and is the sixth vital.',
-      formula: 'Runway (months) = (cash + money customers owe − bills due in 30 days) ÷ monthly spend. Score = 100 at 6 months or more, 0 at zero or less, else (months ÷ 6) × 100.',
+      what: 'How many months of running costs your working capital covers. Shown on Home and Cash as "Working-capital runway" and is the sixth vital.',
+      formula: 'Runway (months) = (cash + money customers owe − bills due in 30 days − overdraft drawn) ÷ monthly running costs. Score = 100 at 6 months or more, 0 at zero or less, else (months ÷ 6) × 100.',
       inputs: ['cash', 'recvTotal', 'paySoon', 'burn'], weight: 'Working Capital Runway',
-      notes: ['It counts all receivables as if collected, so slow payers make it look better than it feels. The 13-week forecast is the week-by-week view.', 'Gross runway (cash ÷ spend) and net runway (cash ÷ (spend − revenue)) are on Reports.'],
-      code: '15-scoring.js scoreRunway; 19d-cash.js Runway tile', page: 'cash'
+      notes: ['‘Monthly running costs’ are rent, salaries, interest and the like, averaged over up to six closed months, when the books split them from cost of goods (Tally, Zoho Books); goods you buy come back as sales, so they are not counted. Without that split it is total monthly spend, as before.', 'It counts all receivables as if collected, so slow payers make it look better than it feels. The 13-week forecast is the week-by-week view.', 'Gross runway (cash ÷ spend) and net runway (cash ÷ (spend − revenue)) are on Reports.'],
+      code: '15-scoring.js scoreRunway, spendBasis; 19d-cash.js Working-capital runway tile', page: 'cash'
     },
     cash: {
       label: 'Cash position', aliases: ['cash', 'bank balance', 'cash balance', 'how much cash'],

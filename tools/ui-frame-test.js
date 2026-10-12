@@ -45,7 +45,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
   ok((await p.$$('#view-cash .mg-tile')).length === 4, 'Cash has 4 tiles');
   const cashTiles = await p.$$eval('#view-cash .mg-tile-l', x => x.map(e => e.textContent));
-  ok(cashTiles.join('|') === 'Cash (reconciled)|In transit|Runway|Lowest point in 13 weeks', 'Cash tiles: ' + cashTiles.join(' | '));
+  ok(cashTiles.join('|') === 'Cash (reconciled)|In transit|Working-capital runway|Lowest point in 13 weeks', 'Cash tiles: ' + cashTiles.join(' | '));
   ok(/₹[\d.]+ (Cr|L)/.test(await p.textContent('#view-cash .mg-tile:nth-child(2) .mg-tile-v')), 'In transit has a figure: ' + await p.textContent('#view-cash .mg-tile:nth-child(2) .mg-tile-v'));
   const tallyAccts = await p.$$eval('#mgCashWhere tr[data-cash-acct="tally"] td:nth-child(2)', x => x.map(e => e.textContent));
   ok(tallyAccts.length === 3 && /HDFC Bank CA 0021/.test(tallyAccts.join('|')) && !/OD/.test(tallyAccts.join('|')), 'Tally bank and cash ledgers listed one by one, OD excluded: ' + tallyAccts.join(' | '));

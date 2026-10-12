@@ -712,7 +712,7 @@ function renderPulseBreakdown(){
   const vitals = latest.vitals || ZERO_VITALS;
   let weightedTotal = 0;
   const rows = vitals.map(v => {
-    const w = VITAL_WEIGHTS[v.label] || 0;
+    const w = vitalWeight(v.label, vitals);
     const score = Math.max(0, Math.min(100, v.score || 0));
     const contrib = score * w;
     weightedTotal += contrib;
@@ -725,7 +725,7 @@ function renderPulseBreakdown(){
   }).join('');
   host.innerHTML =
     '<div class="pb-eyebrow">How this number is calculated</div>' +
-    '<div class="pb-intro">Your Pulse Score is a fixed weighted average of the six vitals below — computed directly from your numbers, not estimated or predicted.</div>' +
+    '<div class="pb-intro">Your Pulse Score is a fixed weighted average of the vitals below — computed directly from your numbers, not estimated or predicted.</div>' +
     '<div class="pb-row pb-head"><span>Vital</span><span>Score × weight</span><span>Points</span></div>' +
     rows +
     '<div class="pb-row pb-total"><div class="pb-label">Weighted total</div><span class="pb-calc"></span><span class="pb-points">' + weightedTotal.toFixed(1) + '</span></div>' +

@@ -111,9 +111,10 @@ function balanceSign(ctx) {
 function partyBalancesToday(ctx) {
   const debitPos = balanceSign(ctx);
   const move = new Map();
-  // Every entry held, older years' files included: for a ledger Tally sends with a blank balance the stored
-  // opening is a placeholder 0, and only the whole history adds up to what Tally shows. (Limiting this to the
-  // current balance period, 12 Oct 2026 PR #117, put Care Hygiene's receivables ₹1.08 Cr over Tally's; reverted.)
+  // Every entry held, older years' files included. Do not limit this to the current balance period: for a
+  // ledger Tally sends with a blank balance, the opening held here and the whole history of entries add up to
+  // what Tally shows (nothing owed); with this year's entries alone, 11 Care Hygiene customers who cleared their
+  // balance last year came back as owing ₹1.08 Cr (12 Oct 2026, PR #117, reverted in #119).
   for (const r of ctx.rows) for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); }
   const out = new Map();   // key -> { name, bucket, balance, opening }
   for (const l of ctx.ledgers || []) {

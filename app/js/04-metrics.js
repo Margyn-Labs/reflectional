@@ -8,6 +8,15 @@ const METRIC_GROUPS = ['Profitability', 'Liquidity', 'Working capital', 'Collect
 const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
 const div = (a, b) => (num(b) === 0 ? null : num(a) / num(b));
 const pd = s => (s && s.payments_data) ? s.payments_data : null;
+/* Days to get paid as Margin works it out (what customers owe ÷ the last 90 days' billing per day), for the
+   latest reading only: older readings keep the reading's own arithmetic, since Margin's figure is today's. */
+function marginDso(s){
+  try {
+    if(typeof snapshots === 'undefined' || !snapshots.length || s !== snapshots[0]) return null;
+    const d = typeof mgMar !== 'undefined' && mgMar && mgMar.working_capital ? Number(mgMar.working_capital.dso_days) : NaN;
+    return isFinite(d) && d > 0 ? d : null;
+  } catch(e){ return null; }
+}
 const METRICS = {
   /* Profitability */
   revenue:       { label:'Revenue',              group:'Profitability', unit:'inr',   better:'up',   why:'Top line on this snapshot.',                    calc:s => num(s.revenue) },
@@ -25,7 +34,7 @@ const METRICS = {
   quickRatio:    { label:'Quick ratio',          group:'Liquidity', unit:'ratio',  better:'up',   why:'Cash and receivables against payables due.',    calc:s => div(num(s.cash) + num(s.recv_total), s.pay_soon) },
   cashCover:     { label:'Cash cover of payables', group:'Liquidity', unit:'ratio', better:'up',  why:'How many times over your cash clears what is due.', calc:s => div(s.cash, s.pay_soon) },
   /* Working capital cycle */
-  dso:           { label:'Days sales outstanding', group:'Working capital', unit:'days', better:'down', why:'Receivables against an average month of revenue. Margin shows days to get paid on the last 90 days of sales, so the two can differ.', calc:s => { const r = div(s.recv_total, s.revenue); return r === null ? null : r * 30; } },
+  dso:           { label:'Days sales outstanding', group:'Working capital', unit:'days', better:'down', why:'How long your money sits with customers: what they owe against the last 90 days of sales, the same figure as Margin. Earlier readings use that reading’s receivables against a month of revenue.', calc:s => { const d = marginDso(s); if(d !== null) return d; const r = div(s.recv_total, s.revenue); return r === null ? null : r * 30; } },
   dpo:           { label:'Days payable outstanding', group:'Working capital', unit:'days', better:'up', why:'Payables due in 30 days against an average month of spend.',   calc:s => { const r = div(s.pay_soon, s.burn); return r === null ? null : r * 30; } },
   ccc:           { label:'Cash conversion cycle', group:'Working capital', unit:'days', better:'down', why:'Days between paying out and getting paid.', calc:s => { const a = div(s.recv_total, s.revenue), b = div(s.pay_soon, s.burn); return (a === null || b === null) ? null : (a - b) * 30; } },
   /* Collections */
@@ -244,7 +253,7 @@ function renderVitalsAccordion(vitals, hasData){
     const accent = VITAL_ACCENTS[v.label] || '#5C6B7A';
     const score = Math.max(0, Math.min(100, v.score || 0));
     const band = vitalBand(score);
-    const w = VITAL_WEIGHTS[v.label] || 0;
+    const w = vitalWeight(v.label, vitals);
     const pts = score * w;
     const series = vitalScoreSeries(v.label).slice(-24);
     let spark;
@@ -272,7 +281,8 @@ function renderVitalsAccordion(vitals, hasData){
         '<div class="sv-acc-explain">' + (VITAL_EXPLAIN[v.label] || '') + '</div>' + actions +
       '</div>' +
     '</div>';
-  }).join('');
+   }).join('') + (vitals.some(v => v.label === 'GST/ITC Leakage') ? '' :
+     '<div class="rd-note" style="padding:10px 4px">GST input credit at risk isn’t measured yet: it needs your purchases matched against GSTR-2B, which no connected source supplies. It is left out of the score and the other five vitals share its weight.</div>');
   host.querySelectorAll('.sv-acc-head').forEach(head => {
     head.addEventListener('click', () => openVitalAccordionRow(head.closest('.sv-acc-row')));
   });
@@ -301,7 +311,7 @@ function renderScoreContribution(vitals, hasData){
   }
   let earned = 0, possible = 0;
   const rows = vitals.map(v => {
-    const w = VITAL_WEIGHTS[v.label] || 0;
+    const w = vitalWeight(v.label, vitals);
     const score = Math.max(0, Math.min(100, v.score || 0));
     const pts = score * w;
     const max = 100 * w;
@@ -328,7 +338,7 @@ function renderScoreContribution(vitals, hasData){
    improving and which are sliding, rather than one bar chart of today. */
 function renderVitalsBarChart(vitals, hasData){
   const host = document.getElementById('vitalsBarChart'); if(!host) return;
-  if(!hasData){ host.innerHTML = '<div class="ledger-empty">Add a snapshot to compare your six vitals over time.</div>'; return; }
+  if(!hasData){ host.innerHTML = '<div class="ledger-empty">Add a snapshot to compare your vitals over time.</div>'; return; }
   host.innerHTML = vitals.map(v => {
     const accent = VITAL_ACCENTS[v.label] || '#5C6B7A';
     const series = vitalScoreSeries(v.label).slice(-24);

@@ -59,7 +59,7 @@ const F = require('../../../app/js/margyn-formulas.js');
   // wired everywhere
   const books = require('../booksTools');
   const r = await books.exec('how_its_calculated', { figure: 'runway' }, 'nobody', ['view_cash']);
-  check('WhatsApp/chat tool answers with no Tally and for any team member', r.figure === 'runway' && /÷ monthly spend/.test(r.formula), r);
+  check('WhatsApp/chat tool answers with no Tally and for any team member', r.figure === 'runway' && /÷ monthly running costs/.test(r.formula), r);
   check('voice gets explain, not the formula-only tool', !books.realtimeDefs().some(t => t.name === 'how_its_calculated'));
   const api = read('api/ask-margyn.js');
   check('explain, how_margyn_works and press are panel tools', /'explain', 'how_margyn_works', 'press'\]/.test(api) && ['explain', 'how_margyn_works', 'press'].every(n => api.includes("name: '" + n + "'")));
