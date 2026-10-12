@@ -188,7 +188,7 @@ function mgPackDoc(k){
     plRow('Total spend', plS.burn, plP && plP.burn, false, true),
     plRow('Net profit', plS.net_profit, plP && plP.net_profit, true, true),
     '<tr><td>Net margin</td><td class="r">' + (margin != null ? margin.toFixed(1) + '%' : '—') + '</td><td class="r">' + (marginP != null ? marginP.toFixed(1) + '%' : '—') + '</td><td class="r">' + (plCmp && margin != null && marginP != null ? (margin - marginP >= 0 ? '+' : '−') + Math.abs(margin - marginP).toFixed(1) + ' pts' : '—') + '</td><td class="r"></td></tr>'
-  ], 'pkPl') + '<div class="pk-note">' + (tk || tp ? 'Revenue, spend and profit are each month’s own figures from Tally’s books (sales before GST; spend is purchases, direct costs and running costs, before stock movement).' + (tk && tk.pl_in_progress ? ' ' + escapeHtml(month) + ' is still in progress.' : '') + (costsNote ? ' ' + escapeHtml(costsNote) : '') : 'Monthly revenue and spend as recorded in each month’s closing reading.') + ' Net profit = revenue − spend.</div>';
+  ], 'pkPl') + '<div class="pk-note">' + (tk || tp ? 'Revenue, spend and profit are each month’s own figures from Tally’s books (sales before GST; spend is purchases, direct costs and running costs, before stock movement).' + (tk && tk.pl_in_progress ? ' ' + escapeHtml(month) + ' is still in progress.' : '') + (costsNote ? ' ' + escapeHtml(costsNote) : '') : 'Monthly revenue and spend as recorded in each month’s closing reading.') + ' Net profit = revenue − spend, plus any other income.</div>';
 
   // 3. cash
   const srcs = mgCashSources(), reconNow = (snapshots[0] && Number(snapshots[0].cash)) || 0;

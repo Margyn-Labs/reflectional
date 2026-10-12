@@ -142,8 +142,8 @@ function mgRenderCashFlow(){
     (gap < 0 ? 'The ' + fmtINR(-gap, 'tile') + ' difference is mostly money still owed to you, stock and taxes; switch to the Accountant view to see each.' : 'Cash ran ' + fmtINR(gap, 'tile') + ' ahead of profit: customers paid down older balances or you paid suppliers later; the Accountant view shows which.')) + '</div>' : '';
   const notes = (d.notes || []).map(n => '<li>' + escapeHtml(n) + '</li>').join('');
   const uns = (d.unsorted || []).length ? '<div class="mg-panel"><div class="mg-panel-h"><h2>Not yet sorted</h2><span class="mg-aside">Ledgers Margyn can’t place in the statement yet</span></div>' +
-    '<div class="mg-gridwrap"><table class="mg-grid"><thead><tr><th>Ledger</th><th class="r">Entries</th><th class="r">Cash effect (₹)</th></tr></thead><tbody>' +
-    d.unsorted.map(u => '<tr><td>' + escapeHtml(u.ledger) + '</td><td class="r">' + u.entries + '</td><td class="r">' + mgCfSigned(u.amount) + '</td></tr>').join('') + '</tbody></table></div>' +
+    '<div class="mg-gridwrap"><table class="mg-grid"><thead><tr><th>Ledger</th><th class="r">Entries</th><th class="r">All entries (₹)</th><th class="r">Of which moved cash (₹)</th></tr></thead><tbody>' +
+    d.unsorted.map(u => '<tr><td>' + escapeHtml(u.ledger) + '</td><td class="r">' + u.entries + '</td><td class="r">' + mgCfSigned(u.amount) + '</td><td class="r">' + (u.cash == null ? '—' : mgCfSigned(u.cash)) + '</td></tr>').join('') + '</tbody></table></div>' +
     '<div class="mg-foot-note">Put these under a proper group in ' + escapeHtml(mgBooksName()) + ' (a loan, an asset, an expense) and they move to the right line on the next sync.</div></div>' : '';
   host.__csv = mgCfCsv(d);
   host.innerHTML = head + tiles +

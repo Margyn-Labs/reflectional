@@ -454,7 +454,7 @@ async function handleAnalytics(req, res) {
   }
   if (aiPlaced.size) {
     out.quality.ai_classified = [...aiPlaced].slice(0, 30).map((l) => ({ ledger: l, bucket: overrides[l] }));
-    out.quality.reasons.unshift(`Margyn placed ${aiPlaced.size} ledger(s) in the profit and loss for you (e.g. ${[...aiPlaced].slice(0, 3).join(', ')}). Change any of them under “Margyn needs your help”.`);
+    out.quality.reasons.unshift(`Margyn placed ${aiPlaced.size} ledger(s) for you where Tally's group didn't say what they are (e.g. ${[...aiPlaced].slice(0, 3).join(', ')}). Change any of them under “Margyn needs your help”.`);
   }
   const staleH = lastSync ? Math.round((Date.now() - Date.parse(lastSync)) / 3600000) : null;
   const srcName = book.source_name || 'Tally';
@@ -504,6 +504,15 @@ async function handleAnalytics(req, res) {
     try { applyTiedReceivables(out, recvB); } catch (e) { console.error('[tally] tied receivables failed:', e.message); }
     const t = ctxB.billTie;
     out.quality.reasons.push(`What customers owe follows their ledger balances: ${t.trimmed.parties ? `₹${t.trimmed.amount.toLocaleString('en-IN')} of bills for ${t.trimmed.parties} customers is already paid by their ledgers (not knocked off in Tally)` : ''}${t.trimmed.parties && t.added.parties ? '; ' : ''}${t.added.parties ? `₹${t.added.amount.toLocaleString('en-IN')} owed by ${t.added.parties} customers isn't split into bills in Tally, so it is taken from their entries` : ''}.`);
+  }
+  // Money customers have paid ahead: the customer ledgers that stand in credit today (Tally's own balances),
+  // not the few bills Tally happens to mark as advances.
+  if (ctxB) {
+    try {
+      let adv = 0, known = 0;
+      for (const p of cashFlow.partyBalancesToday(ctxB).values()) { if (p.bucket !== 'debtor' || p.balance == null) continue; known++; if (p.balance < -0.5) adv += -p.balance; }
+      if (known) Object.assign(wc, { customer_advances_billwise: wc.customer_advances, customer_advances: Math.round(adv * 100) / 100 });
+    } catch (e) { console.error('[tally] customer advances failed:', e.message); }
   }
   // Each customer and supplier as shown, against that party's own ledger in Tally (billTieOut.shownVsLedger).
   if (ctxB) {

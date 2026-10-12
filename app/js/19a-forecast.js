@@ -240,7 +240,7 @@ function mgForecastHowPanel(f){
   const track = tbl('mgFcTrack', [['Forecast made on'], ['Customers, expected (₹)', 1], ['Customers, paid (₹)', 1], ['Cash, 4 weeks on: off by (₹)', 1]],
     (sc.checks || []).map(c => [escapeHtml(mgFcDay(c.as_of)), mgNum(c.predicted_customer_in), mgNum(c.actual_customer_in), mgNum(c.cash_error)]));
   const graded = (v.accuracy || []).filter(a => a.horizon_days === 28);
-  const cust = tbl('mgFcCust', [['Customer'], ['Owes (₹)', 1], ['Expected in 13 weeks (₹)', 1], ['Usually pays in']],
+  const cust = tbl('mgFcCust', [['Customer'], ['Owed at start of today (₹)', 1], ['Expected in 13 weeks (₹)', 1], ['Usually pays in']],
     (dr.customers || []).map(c => [escapeHtml(c.party), mgNum(c.open), mgNum(c.expected_13w), escapeHtml((c.habit_days != null ? c.habit_days + ' days' : '—') + (c.own_history ? '' : ' (everyone’s pattern)'))]));
   const rec = tbl('mgFcRec', [['Paid every month'], ['About (₹)', 1], ['Around day']], (dr.recurring || []).map(r => [escapeHtml(r.ledger), mgNum(r.amount), String(r.day_of_month)]));
   const ahead = tbl('mgFcAhead', [['Entered for'], ['Amount (₹)', 1], ['Account']], (dr.known_ahead || []).map(k => [escapeHtml(mgFcDay(k.date)), mgNum(Math.abs(k.amount)), escapeHtml(k.ledger || '')]));
@@ -292,7 +292,7 @@ function mgPositionHistoryPanel(){
   return '<div class="mg-panel" id="mgFcHist"><div class="mg-panel-h"><h2>Week by week this year</h2><span class="mg-aside">End of each week, from your books</span></div>' +
     '<div class="mg-panel-b"><div class="mg-histgrid">' +
     mgHistMini('Cash', h, 'cash', tile, 'Bank and cash, not counting the overdraft.') +
-    mgHistMini('Customers owe you', h, 'receivables', tile, '') +
+    mgHistMini('Customers owe you', h, 'receivables', tile, 'Net of money customers have paid ahead.') +
     mgHistMini('You owe suppliers', h, 'payables', tile, 'Net of money paid ahead to suppliers.') +
     mgHistMini('Days to collect', h, 'days_to_collect', n => Math.round(n) + ' days', 'What customers owe ÷ the last 90 days’ sales per day.') +
     '</div></div></div>';

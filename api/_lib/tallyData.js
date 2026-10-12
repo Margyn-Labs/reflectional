@@ -235,6 +235,18 @@ async function readRows(inList) {
     pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, BILL_CAP),
     voucherQ()
   ]);
+  // Tally sends a line break typed inside a name as the literal text "&#13;&#10;" (Care Hygiene: "WEST COAST
+  // HOSPITALS AND DIAGNOSTIC CENTRES&#13;&#10;"). It showed on screen and could keep a party's bills, ledger and
+  // entries from meeting. Cleaned once here, the same way everywhere a name appears.
+  const ENT = /&#(?:1[03]|x0?[ad]);/gi;
+  const clean = (s) => (typeof s === 'string' && s.indexOf('&#') >= 0 ? s.replace(ENT, ' ').replace(/\s+/g, ' ').trim() : s);
+  for (const l of L.rows) { if (l) { l.name = clean(l.name); l.parent = clean(l.parent); } }
+  for (const b of B.rows) { if (b) b.party_name = clean(b.party_name); }
+  for (const v of V.rows) {
+    if (!v) continue;
+    v.party_name = clean(v.party_name);
+    if (Array.isArray(v.entries)) for (const e of v.entries) if (e && typeof e.ledger === 'string' && e.ledger.indexOf('&#') >= 0) e.ledger = clean(e.ledger);
+  }
   const files = companyFiles(L.rows, B.rows, V.rows);
   return { ledgers: files.ledgers, bills: files.bills, priorLedgers: files.priorLedgers || [], vouchers: V.rows, truncated: V.truncated, files: files.summary,
     // Read caps (30,000 ledgers, 30,000 bills, 60,000 vouchers): the completeness check says when one is hit.
@@ -244,7 +256,7 @@ async function readRows(inList) {
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
   // v2: rows carry their company file; a copy saved before that is read again from the tables.
-  const snapKey = `v7|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  const snapKey = `v8|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };
@@ -311,10 +323,19 @@ async function loadTallyBook(userId, opts) {
   // own placement always stands.
   if (X.aiPlaced.size) {
     const { bucketFromParent, nameKey } = require('./tallyAnalytics');
-    const grouped = new Set();
-    for (const l of snap.ledgers || []) if (l && l.name && (bucketFromParent(l.parent) || bucketFromParent(l.primary_group))) grouped.add(nameKey(l.name));
+    const grouped = new Set(), held = new Set();
+    for (const l of snap.ledgers || []) {
+      if (!l || !l.name) continue;
+      held.add(nameKey(l.name));
+      if (bucketFromParent(l.parent) || bucketFromParent(l.primary_group)) grouped.add(nameKey(l.name));
+    }
+    for (const l of snap.priorLedgers || []) if (l && l.name) held.add(nameKey(l.name));
     const overrides = Object.assign({}, X.overrides), aiPlaced = new Set(X.aiPlaced);
-    for (const n of X.aiPlaced) if (grouped.has(nameKey(n))) { delete overrides[n]; aiPlaced.delete(n); }
+    for (const n of X.aiPlaced) {
+      if (grouped.has(nameKey(n))) { delete overrides[n]; aiPlaced.delete(n); }
+      // A ledger that is no longer in the books (renamed or deleted in Tally) isn't "placed by Margyn" any more.
+      else if (held.size && !held.has(nameKey(n))) aiPlaced.delete(n);
+    }
     X.overrides = overrides; X.aiPlaced = aiPlaced;
   }
   const book = {

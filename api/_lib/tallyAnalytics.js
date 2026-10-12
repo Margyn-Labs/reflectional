@@ -1376,7 +1376,8 @@ function computeAnalytics(input) {
   if (leaks.returns.pct_of_gross_sales > 2) headlines.push(`Returns and credit notes are ${p1(leaks.returns.pct_of_gross_sales)}% of gross sales.`);
   if (dso != null) headlines.push(`Customers take about ${Math.round(dso)} days to pay on the last 90 days of sales. Carrying ₹${Math.round(recv).toLocaleString('en-IN')} owed to you at ${Math.round(creditRate * 100)}% costs about ₹${Math.round(annualCarry).toLocaleString('en-IN')} a year.`);
   if (margin_bridge) headlines.push(`Item margin moved ₹${Math.round(margin_bridge.margin_to - margin_bridge.margin_from).toLocaleString('en-IN')} from ${monthLabel(margin_bridge.from_month)} to ${monthLabel(margin_bridge.to_month)}: selling price ${Math.round(margin_bridge.price_effect).toLocaleString('en-IN')}, purchase cost ${Math.round(margin_bridge.cost_effect).toLocaleString('en-IN')}, volume and mix ${Math.round(margin_bridge.volume_mix_effect).toLocaleString('en-IN')}.`);
-  if (leaks.items_sold_below_cost.length) headlines.push(`${leaks.items_sold_below_cost.length} item(s) sold below their average purchase cost.`);
+  // Items sold below cost are reported once, with the loss, in "what else your books say" (booksEngine insights):
+  // this list is capped at 15 and counted likely unit mix-ups, so the two counts disagreed (15 vs 13).
 
   return {
     provenance: 'signal',

@@ -11,7 +11,7 @@ const pd = s => (s && s.payments_data) ? s.payments_data : null;
 const METRICS = {
   /* Profitability */
   revenue:       { label:'Revenue',              group:'Profitability', unit:'inr',   better:'up',   why:'Top line on this snapshot.',                    calc:s => num(s.revenue) },
-  netProfit:     { label:'Net profit',           group:'Profitability', unit:'inr',   better:'up',   why:'What is left after everything.',                calc:s => num(s.net_profit) },
+  netProfit:     { label:'Net profit',           group:'Profitability', unit:'inr',   better:'up',   why:'What is left after everything, in an average month.',                calc:s => num(s.net_profit) },
   netMargin:     { label:'Net margin',           group:'Profitability', unit:'pct',   better:'up',   why:'Net profit as a share of revenue.',             calc:s => { const r = div(s.net_profit, s.revenue); return r === null ? null : r * 100; } },
   totalSpend:    { label:'Total spend',          group:'Profitability', unit:'inr',   better:'down', why:'Everything going out this period.',             calc:s => num(s.burn) },
   opexRatio:     { label:'Spend to revenue',     group:'Profitability', unit:'pct',   better:'down', why:'How much of every rupee earned goes back out.', calc:s => { const r = div(s.burn, s.revenue); return r === null ? null : r * 100; } },
@@ -19,14 +19,14 @@ const METRICS = {
   /* Liquidity */
   cash:          { label:'Cash position',        group:'Liquidity', unit:'inr',    better:'up',   why:'What you can actually spend today.',            calc:s => num(s.cash) },
   netBurn:       { label:'Net burn',             group:'Liquidity', unit:'inr',    better:'down', why:'Spend less revenue. Negative means you are funding yourself.', calc:s => num(s.burn) - num(s.revenue) },
-  grossRunway:   { label:'Gross runway',         group:'Liquidity', unit:'months', better:'up',   why:'Cash divided by total spend, ignoring revenue.', calc:s => div(s.cash, s.burn) },
+  grossRunway:   { label:'Gross runway',         group:'Liquidity', unit:'months', better:'up',   why:'Cash alone divided by a month of spend, ignoring revenue and receivables. Home shows working-capital runway, which counts receivables.', calc:s => div(s.cash, s.burn) },
   netRunway:     { label:'Net runway',           group:'Liquidity', unit:'months', better:'up',   why:'Cash divided by net burn. Blank while you are profitable.', calc:s => { const nb = num(s.burn) - num(s.revenue); return nb <= 0 ? null : div(s.cash, nb); } },
   workingCapital:{ label:'Working capital',      group:'Liquidity', unit:'inr',    better:'up',   why:'Cash plus receivables, less payables due.',     calc:s => num(s.cash) + num(s.recv_total) - num(s.pay_soon) },
   quickRatio:    { label:'Quick ratio',          group:'Liquidity', unit:'ratio',  better:'up',   why:'Cash and receivables against payables due.',    calc:s => div(num(s.cash) + num(s.recv_total), s.pay_soon) },
   cashCover:     { label:'Cash cover of payables', group:'Liquidity', unit:'ratio', better:'up',  why:'How many times over your cash clears what is due.', calc:s => div(s.cash, s.pay_soon) },
   /* Working capital cycle */
-  dso:           { label:'Days sales outstanding', group:'Working capital', unit:'days', better:'down', why:'How long your money sits with customers.', calc:s => { const r = div(s.recv_total, s.revenue); return r === null ? null : r * 30; } },
-  dpo:           { label:'Days payable outstanding', group:'Working capital', unit:'days', better:'up', why:'How long you hold onto vendor money.',   calc:s => { const r = div(s.pay_soon, s.burn); return r === null ? null : r * 30; } },
+  dso:           { label:'Days sales outstanding', group:'Working capital', unit:'days', better:'down', why:'Receivables against an average month of revenue. Margin shows days to get paid on the last 90 days of sales, so the two can differ.', calc:s => { const r = div(s.recv_total, s.revenue); return r === null ? null : r * 30; } },
+  dpo:           { label:'Days payable outstanding', group:'Working capital', unit:'days', better:'up', why:'Payables due in 30 days against an average month of spend.',   calc:s => { const r = div(s.pay_soon, s.burn); return r === null ? null : r * 30; } },
   ccc:           { label:'Cash conversion cycle', group:'Working capital', unit:'days', better:'down', why:'Days between paying out and getting paid.', calc:s => { const a = div(s.recv_total, s.revenue), b = div(s.pay_soon, s.burn); return (a === null || b === null) ? null : (a - b) * 30; } },
   /* Collections */
   receivables:   { label:'Receivables',          group:'Collections', unit:'inr', better:'down', why:'Everything customers still owe you.',           calc:s => num(s.recv_total) },
