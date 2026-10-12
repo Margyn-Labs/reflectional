@@ -7,7 +7,7 @@
  * was missing from Receivables), while S.S.D Surgical showed ₹9.79 L of bills against a ledger of ₹12 (paid
  * bills never knocked off, which Margyn would have chased). The ledger balance is Tally's own figure for
  * what the customer owes; the bills only split it up. So, per customer:
- *   - bills and ledger agree (within ₹1 or 1%): the bills, untouched;
+ *   - bills and ledger agree (within ₹1): the bills, untouched;
  *   - more billed than owed: payments settle the oldest bills first, so the oldest are set aside until the
  *     bills add up to the ledger (the last one kept may be partly paid);
  *   - more owed than billed: the difference is added from the customer's own entries, oldest-first matching
@@ -56,7 +56,9 @@ function tieReceivables(ctx) {
     const owed = Math.max(0, p.balance);
     const list = byParty.get(k) || [];
     const billed = list.reduce((a, b) => a + Math.abs(num(b.closing_balance)), 0);
-    if (Math.abs(billed - owed) <= Math.max(1, 0.01 * Math.max(owed, billed))) { if (owed >= 1) summary.tied++; continue; }
+    // Within ₹1: the bills as they are. (Until 12 Oct 2026 anything within 1% was left alone, which showed four
+    // Care Hygiene customers ₹1,414 above their ledgers; the ledger is what they owe.)
+    if (Math.abs(billed - owed) <= 1) { if (owed >= 1) summary.tied++; continue; }
     if (billed > owed) {
       // Newest bills first: keep them until the ledger amount is covered; older ones were paid.
       const sorted = list.slice().sort((a, b) => (dayMs(b.bill_date) || 0) - (dayMs(a.bill_date) || 0));

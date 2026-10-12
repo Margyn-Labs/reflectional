@@ -187,7 +187,8 @@ function checkNames(ctx, debits, found) {
 function checkCash(ctx, found) {
   const debitPos = debitPosOf(ctx);
   const move = new Map();
-  for (const r of ctx.rows || []) for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + num(l.amount)); }
+  const bpFrom = ((((ctx.analytics || {}).quality || {}).balances_period) || {}).from || null;   // entries before it are inside the opening balance
+  for (const r of ctx.rows || []) { if (bpFrom && r.day < bpFrom) continue; for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + num(l.amount)); } }
   for (const l of ctx.ledgers || []) {
     if (ctx.cls(l.name) !== 'cash') continue;
     let bal = null;

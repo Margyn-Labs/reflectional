@@ -214,14 +214,19 @@ function statement(ctx, columns, opts) {
     for (const l of r.lines) {
       if (eqKeys.has(nk(l.ledger))) { eqSum += l.amount; continue; }
       const key = lineKey(S, ctx, l, loanKind);
-      parts.push([key, l.amount]);
+      parts.push([key, l.amount, l.ledger]);
       other += l.amount;
-      if ((key === 'unsorted' || key === 'suspense') && Math.abs(l.amount) >= 1) {
-        const u = unsortedLedgers.get(l.ledger) || { ledger: l.ledger, amount: 0, entries: 0 };
-        u.amount += l.amount; u.entries++; unsortedLedgers.set(l.ledger, u);
-      }
     }
     const touchesCash = Math.abs(eqSum) >= 0.5;
+    // Ledgers the statement can't place: `amount` is every entry on them, `cash` only the entries that moved
+    // cash (the figure on the owner's "Suspense entries" / "Not yet sorted" lines).
+    for (const [key, amt, ledger] of parts) {
+      if ((key !== 'unsorted' && key !== 'suspense') || Math.abs(amt) < 1) continue;
+      const u = unsortedLedgers.get(ledger) || { ledger, amount: 0, cash: 0, entries: 0, cash_entries: 0 };
+      u.amount += amt; u.entries++;
+      if (touchesCash) { u.cash += amt; u.cash_entries++; }
+      unsortedLedgers.set(ledger, u);
+    }
     const imbalance = eqSum + other;
     for (const i of idx) {
       const a = acc[i];
@@ -300,7 +305,7 @@ function statement(ctx, columns, opts) {
       opening_balances: { checked, gaps },
       views_differ_by: tot ? r0(tot.accountant_net - tot.owner_net) : 0
     },
-    unsorted: [...unsortedLedgers.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, 8).map((u) => ({ ledger: u.ledger, amount: r0(u.amount), entries: u.entries })),
+    unsorted: [...unsortedLedgers.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)).slice(0, 8).map((u) => ({ ledger: u.ledger, amount: r0(u.amount), entries: u.entries, cash: r0(u.cash), cash_entries: u.cash_entries })),
     notes
   };
 }

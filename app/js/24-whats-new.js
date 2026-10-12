@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-12-exact-to-tally', date:'12 Oct 2026', title:'Every customer and supplier matches their Tally ledger',
+    items:[
+      { t:'Receivables match each customer’s ledger to the rupee', what:'A customer whose open bills were within 1% of their ledger used to be shown at the bills’ total. They now follow the ledger exactly, like everyone else.',
+        how:'Open <b>Receivables</b>. The total equals what Tally shows your customers owe.', act:'receivables' },
+      { t:'Payables only list suppliers you owe today', what:'A party that was a supplier in last year’s Tally file but is not one this year is no longer shown as owed.',
+        how:'Open <b>Payables</b>.', act:'payables' },
+      { t:'Clearer labels', what:'<b>Runway</b> on Home is now called <b>Working-capital runway</b>, the yearly Net profit column says it is after stock, and the forecast’s customer table says its “owed” figure is from the start of today. Names with a stray line break from Tally now show cleanly.',
+        how:'Nothing to do.' },
+      { t:'Cash flow: ledgers not yet sorted', what:'The table now shows two figures for each such ledger: all its entries, and the part that actually moved cash (the figure in the statement).',
+        how:'Open <b>Cash flow</b> → <b>Not yet sorted</b>.', act:'cashflow' }
+    ]
+  },
+  {
     id:'2026-10-11-this-year', date:'11 Oct 2026', title:'This year’s figures, and balances that are always today’s',
     items:[
       { t:'Margin shows this financial year', what:'If your Tally company holds more than one year, Margin used to add the years together. The figures at the top are now for this financial year (April to today), and a new <b>Year by year</b> table shows each year on its own.',

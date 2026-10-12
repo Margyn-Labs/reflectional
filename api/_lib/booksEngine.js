@@ -854,7 +854,8 @@ function cashAndDebt(ctx) {
   const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
   const debitPos = (b) => (eff === 'same' ? -num(b) : num(b));
   const move = new Map();
-  for (const r of ctx.rows) for (const l of r.lines) { const k = nameKey(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); }
+  const bpFrom = ((an.quality || {}).balances_period || {}).from || null;   // entries before it are inside the opening balance
+  for (const r of ctx.rows) { if (bpFrom && r.day < bpFrom) continue; for (const l of r.lines) { const k = nameKey(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); } }
   const balanceOf = (l) => {
     if (l.closing_balance != null) return { v: debitPos(l.closing_balance), how: 'Tally' };
     if (l.opening_balance != null) return { v: debitPos(l.opening_balance) - (move.get(nameKey(l.name)) || 0), how: 'opening + entries' };

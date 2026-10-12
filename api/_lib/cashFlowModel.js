@@ -90,9 +90,15 @@ function futureEvents(ctx) {
     }
     if (Math.abs(move) < 0.5) continue;
     const top = others.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0];
-    out.push({ ms, day: dayKey(ms), amount: move, category: (top && CATEGORY_OF[top.bucket]) || 'other', ledger: top ? top.ledger : null, party: v.party_name || null, narration: v.narration || null });
+    out.push({ ms, day: dayKey(ms), amount: move, category: (top && CATEGORY_OF[top.bucket]) || 'other', ledger: top ? others.filter((x) => Math.abs(x.amount) >= 1).slice(0, 2).map((x) => x.ledger).join(' + ') || top.ledger : null, party: v.party_name || null, narration: v.narration || null });
   }
   return out.sort((a, b) => a.ms - b.ms);
+}
+
+/** The day Tally's opening balances are for (start of its balance period), or null when it isn't known. */
+function sinceOpening(ctx) {
+  const bp = (((ctx || {}).analytics || {}).quality || {}).balances_period;
+  return bp && /^\d{4}-\d{2}-\d{2}$/.test(String(bp.from || '')) ? bp.from : null;
 }
 
 function balanceSign(ctx) {
@@ -105,7 +111,10 @@ function balanceSign(ctx) {
 function partyBalancesToday(ctx) {
   const debitPos = balanceSign(ctx);
   const move = new Map();
-  for (const r of ctx.rows) for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); }
+  // Opening balance + entries only works from the day the opening balance is for: Tally's balance period
+  // (this year's file). Entries of an older year's file are already inside the opening balance.
+  const since = sinceOpening(ctx);
+  for (const r of ctx.rows) { if (since && r.day < since) continue; for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); } }
   const out = new Map();   // key -> { name, bucket, balance, opening }
   for (const l of ctx.ledgers || []) {
     const b = ctx.cls(l.name);
@@ -230,7 +239,14 @@ function supplierOpenItems(ctx) {
   const fyStart = Date.UTC(today.getUTCMonth() >= 3 ? today.getUTCFullYear() : today.getUTCFullYear() - 1, 3, 1);
   const items = [];
   let total = 0, advances = 0;
+  // Owed today means a supplier with a balance in the books as they stand now. A party that was a supplier in
+  // last year's Tally file and isn't one in this year's (Care Hygiene, 12 Oct 2026: three phone-bill ledgers now
+  // kept as expenses, one supplier dropped; ₹9,171 in all) still has last year's bills in the entries, and
+  // nothing in today's books says they are owed. Only applied when Tally gives supplier balances at all.
+  const live = new Set();
+  for (const l of ctx.ledgers || []) if (l && l.name && l.closing_balance != null && !l.history_only && ctx.cls(l.name) === 'creditor') live.add(keyOf(l.name));
   for (const p of sup.parties.values()) {
+    if (live.size && !live.has(keyOf(p.name))) continue;
     advances += p.advance;
     if (!p.open.length) continue;
     const h = habitOf(p, sup.pool);
@@ -612,7 +628,9 @@ function forecast(ctx, o) {
     customer_in_weeks: weeks.map((w, i) => r0(custIn.slice(i * 7, i * 7 + 7).reduce((t, x) => t + x, 0))),
     drivers: {
       customers: [...customerRows.values()].sort((a, b) => b.expected_13w - a.expected_13w).slice(0, 12)
-        .map((c) => ({ party: c.party, open: r0(c.open), expected_13w: r0(c.expected_13w), habit_days: c.habit_days, own_history: c.own_history })),
+        // The learned scale on collections (collectionFactor) can lift the expected money a little above the
+        // invoices themselves; a customer can't be shown paying more than they owe.
+        .map((c) => ({ party: c.party, open: r0(c.open), expected_13w: r0(Math.min(c.open, c.expected_13w)), habit_days: c.habit_days, own_history: c.own_history })),
       doubtful: { amount: r0(doubtful.amount), parties: [...doubtful.parties.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([party, amt]) => ({ party, amount: r0(amt) })) },
       recurring: recurring.slice(0, 12),
       known_ahead: known.slice(0, 12).map((e) => ({ date: e.day, amount: r0(e.amount), ledger: e.ledger, party: e.party })),
@@ -779,4 +797,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, supplierOpenItems, partyBalancesToday, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, accuracyFromRuns, supplierOpenItems, partyBalancesToday, sinceOpening, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
