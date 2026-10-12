@@ -95,6 +95,12 @@ function futureEvents(ctx) {
   return out.sort((a, b) => a.ms - b.ms);
 }
 
+/** The day Tally's opening balances are for (start of its balance period), or null when it isn't known. */
+function sinceOpening(ctx) {
+  const bp = (((ctx || {}).analytics || {}).quality || {}).balances_period;
+  return bp && /^\d{4}-\d{2}-\d{2}$/.test(String(bp.from || '')) ? bp.from : null;
+}
+
 function balanceSign(ctx) {
   const bs = ((ctx.analytics || {}).quality || {}).balance_sign || {};
   const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
@@ -105,7 +111,10 @@ function balanceSign(ctx) {
 function partyBalancesToday(ctx) {
   const debitPos = balanceSign(ctx);
   const move = new Map();
-  for (const r of ctx.rows) for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); }
+  // Opening balance + entries only works from the day the opening balance is for: Tally's balance period
+  // (this year's file). Entries of an older year's file are already inside the opening balance.
+  const since = sinceOpening(ctx);
+  for (const r of ctx.rows) { if (since && r.day < since) continue; for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); } }
   const out = new Map();   // key -> { name, bucket, balance, opening }
   for (const l of ctx.ledgers || []) {
     const b = ctx.cls(l.name);
@@ -788,4 +797,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, supplierOpenItems, partyBalancesToday, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, accuracyFromRuns, supplierOpenItems, partyBalancesToday, sinceOpening, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
