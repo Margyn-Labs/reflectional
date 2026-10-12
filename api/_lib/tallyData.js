@@ -305,6 +305,18 @@ async function loadTallyBook(userId, opts) {
   if (same && same.snap === S.snap) { same.book.load = load; return same.book; }
 
   const snap = S.snap;
+  // Tally's own group beats Margyn's guess. A ledger Margyn placed while its group was not in hand (12 Oct 2026:
+  // the ledger read was cut short, so 13 of Care Hygiene's ledgers were guessed, "TRANSPORT CHARGES" into cost of
+  // goods against Tally's Indirect Expenses) goes back to Tally's group the moment the group is read. A person's
+  // own placement always stands.
+  if (X.aiPlaced.size) {
+    const { bucketFromParent, nameKey } = require('./tallyAnalytics');
+    const grouped = new Set();
+    for (const l of snap.ledgers || []) if (l && l.name && (bucketFromParent(l.parent) || bucketFromParent(l.primary_group))) grouped.add(nameKey(l.name));
+    const overrides = Object.assign({}, X.overrides), aiPlaced = new Set(X.aiPlaced);
+    for (const n of X.aiPlaced) if (grouped.has(nameKey(n))) { delete overrides[n]; aiPlaced.delete(n); }
+    X.overrides = overrides; X.aiPlaced = aiPlaced;
+  }
   const book = {
     connected: true,
     company: inst.company, companies: inst.companies, chosen: inst.chosen, lastSync: inst.lastSync,
