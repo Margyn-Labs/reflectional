@@ -111,10 +111,10 @@ function balanceSign(ctx) {
 function partyBalancesToday(ctx) {
   const debitPos = balanceSign(ctx);
   const move = new Map();
-  // Opening balance + entries only works from the day the opening balance is for: Tally's balance period
-  // (this year's file). Entries of an older year's file are already inside the opening balance.
-  const since = sinceOpening(ctx);
-  for (const r of ctx.rows) { if (since && r.day < since) continue; for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); } }
+  // Every entry held, older years' files included: for a ledger Tally sends with a blank balance the stored
+  // opening is a placeholder 0, and only the whole history adds up to what Tally shows. (Limiting this to the
+  // current balance period, 12 Oct 2026 PR #117, put Care Hygiene's receivables ₹1.08 Cr over Tally's; reverted.)
+  for (const r of ctx.rows) for (const l of r.lines) { const k = keyOf(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); }
   const out = new Map();   // key -> { name, bucket, balance, opening }
   for (const l of ctx.ledgers || []) {
     const b = ctx.cls(l.name);
