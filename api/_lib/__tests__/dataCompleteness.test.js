@@ -58,5 +58,21 @@ check('overall status is warn', out.status === 'warn');
 const quiet = tallyCompleteness(Object.assign({}, book, { diagnostics: null }), E.prepare(book, { now: NOW }), { now: NOW });
 check('no agent report: says so instead of guessing', quiet.checks.find((c) => c.key === 'agent_report').status === 'warn');
 
+// Two Tally company files (one per year): a customer who cleared last year's balance has a blank balance this
+// year and no entry this year. Last year's entries must not make the check say it "should have a balance".
+const tag = (rows, co) => rows.map((r) => Object.assign({}, r, { company_name: co }));
+const lastYear = tag([
+  v('Receipt', '2025-06-10', 'Gamma', [{ ledger: 'Gamma', amount: 900000, is_party: true }, { ledger: 'Bank', amount: -900000 }])
+], 'Co (2025-26)');
+const twoFiles = Object.assign({}, book, {
+  vouchers: lastYear.concat(tag(book.vouchers, 'Co (2026-27)')),
+  ledgers: tag(book.ledgers, 'Co (2026-27)').concat([
+    { name: 'Gamma', parent: 'Sundry Debtors', opening_balance: 0, closing_balance: null, company_name: 'Co (2026-27)' },
+    { name: 'Old Only', parent: 'Indirect Expenses', opening_balance: null, closing_balance: null, history_only: true, company_name: 'Co (2025-26)' }]),
+  files: { current: 'Co (2026-27)', files: [{ name: 'Co (2025-26)', from: '2025-04-01', to: '2026-03-31', vouchers: 1 }, { name: 'Co (2026-27)', from: '2026-04-01', to: '2026-10-10', vouchers: 8 }], ledgers_from: 'Co (2026-27)', bills_from: 'Co (2026-27)' }
+});
+const two = tallyCompleteness(twoFiles, E.prepare(twoFiles, { now: NOW }), { now: NOW }).checks.find((c) => c.key === 'ledger_balances');
+check('two year files: last year’s entries and history-only ledgers don’t raise “should have a balance”', /^1 of 3/.test(two.detail), two.detail);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

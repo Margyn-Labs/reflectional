@@ -122,7 +122,9 @@ function tallyCompleteness(book, ctx, opts) {
   // entries it flagged 51 Care Hygiene ledgers (₹3.47 Cr) on 12 Oct 2026; none had a single entry this year
   // (checked on the rows: last year's depreciation, bonus, customers who cleared their balance last year).
   // This is ONLY for this check: the balances Margyn shows (cashFlowModel.partyBalancesToday) use every year.
-  const bpFrom = (((ctx.analytics || {}).quality || {}).balances_period || {}).from || null;
+  // The period start: where the current year's Tally file begins (book.files), else the balance period analytics found.
+  const curFile = book.files && Array.isArray(book.files.files) && book.files.files.length > 1 ? book.files.files.find((f) => f && f.name === book.files.current) : null;
+  const bpFrom = (curFile && /^\d{4}-\d{2}-\d{2}$/.test(String(curFile.from || '')) ? curFile.from : null) || (((ctx.analytics || {}).quality || {}).balances_period || {}).from || null;
   for (const r of ctx.rows || []) { if (bpFrom && r.day < bpFrom) continue; for (const l of r.lines) { const k = A.nameKey(l.ledger); moveBy.set(k, (moveBy.get(k) || 0) + l.amount); } }
   let blank = 0, blankMoved = 0, blankMovedAmt = 0;
   for (const l of ledgersRaw) {
