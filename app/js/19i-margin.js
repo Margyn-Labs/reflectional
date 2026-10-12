@@ -84,7 +84,8 @@ function mgApplyCashHistory(list){
     // or Runway and Pulse keep the wrong cash's verdict (Care Hygiene's Pulse read 44 → 36 from it).
     if(Array.isArray(s.vitals) && typeof scoreCash === 'function' && typeof computePulseScore === 'function'){
       const burn = Number(s.burn) || 0, recv = Number(s.recv_total) || 0, pay = Number(s.pay_soon) || 0;
-      const redo = { 'Cash Position':scoreCash(v, burn), 'Payables Due (30d)':scorePayables(pay, v), 'Working Capital Runway':scoreRunway(v, recv, pay, burn) };
+      const bx = typeof vitalBasisOf === 'function' ? vitalBasisOf(s) : undefined;   // the basis this reading was scored on
+      const redo = { 'Cash Position':scoreCash(v, burn, bx), 'Payables Due (30d)':scorePayables(pay, v, bx), 'Working Capital Runway':scoreRunway(v, recv, pay, burn, bx) };
       if(s._vitals_saved === undefined){ s._vitals_saved = s.vitals; s._pulse_saved = s.pulse_score; }
       s.vitals = s.vitals.map(x => redo[x.label] ? Object.assign({}, x, { value:redo[x.label].value, score:redo[x.label].score }) : x);
       if(s.vitals.length >= 5) s.pulse_score = computePulseScore(s.vitals);

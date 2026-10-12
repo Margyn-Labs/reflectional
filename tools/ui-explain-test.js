@@ -27,7 +27,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   // 2. explain: formula + live inputs + the worked sum, matching the page
   const rw = await run('explain', { figure:'how is my runway calculated' });
   const stored = await p.evaluate(() => mgVital(snapshots[0], 'Working Capital Runway'));
-  ok(rw.found && rw.figure === 'runway' && /÷ monthly spend/.test(rw.formula), 'runway: formula');
+  ok(rw.found && rw.figure === 'runway' && /÷ monthly running costs/.test(rw.formula), 'runway: formula');
   ok(rw.inputs && rw.inputs.length === 4 && rw.inputs.every(i => i.value && i.from), 'runway: four inputs, each with amount and source: ' + JSON.stringify(rw.inputs[0]));
   ok(rw.worked && rw.worked.includes(String(stored.value).replace(/^-\s*0\.0 months$/, 'below zero')) || (rw.worked && /score \d+/.test(rw.worked)), 'runway: worked sum ends in the same value as the page (' + stored.value + '): ' + rw.worked);
   ok(/15% of the Pulse Score/.test(rw.in_pulse_score || ''), 'runway: its weight in the Pulse Score');

@@ -489,10 +489,10 @@ function renderScores(){
 }
 function splitValue(raw){ const i = String(raw).indexOf(' over '); return i === -1 ? { main:String(raw), suffix:'' } : { main:String(raw).slice(0,i), suffix:String(raw).slice(i+1) }; }
 const VITAL_EXPLAIN = {
-  'Cash Position': 'How many months your current cash balance covers at your current monthly burn, mapped against a 3–6 month healthy range.',
+  'Cash Position': 'How many months of running costs (rent, salaries, interest; not the goods you buy to sell) the money you can draw on today covers: bank and cash, plus undrawn overdraft once you’ve entered its limit on Cash. Six months scores 100.',
   'Receivables Aging': 'Share of outstanding receivables that are overdue by more than 90 days: the money you’re least likely to collect without a push.',
-  'Payables Due (30d)': 'How much of your cash is already spoken for by bills due in the next 30 days.',
+  'Payables Due (30d)': 'Bills due in the next 30 days against the money you’ll have in them: cash, undrawn overdraft and about a month of collections from customers. Covering them one and a half times over scores 100.',
   'GST/ITC Leakage': 'Input tax credit sitting unclaimed, as a share of your monthly GST payable: cash you’re entitled to but haven’t reconciled yet.',
-  'Net Margin': 'Net profit as a share of revenue, benchmarked against your industry.',
-  'Working Capital Runway': 'Months of operating expenses covered by cash plus receivables, minus payables due.'
+  'Net Margin': 'Net profit as a share of revenue. A full score is 15%, or 30% of your gross margin when your gross margin can’t carry 15%.',
+  'Working Capital Runway': 'Months of running costs covered by cash plus receivables, less bills due in 30 days and overdraft drawn.'
 };

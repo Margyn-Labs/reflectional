@@ -1,9 +1,24 @@
 /* ============================================================
    SCORING ENGINE — deterministic, hardcoded. AI narrates, never calculates.
    ============================================================ */
-const BENCH = { runwayMin:3, runwayMax:6, recvBad:0.3, paySafe:0.5, gstBad:0.15, marginGood:15, marginOk:5 };
-function scoreCash(cash, burn){
-  const months = burn > 0 ? cash / burn : 0;
+const BENCH = { runwayMin:3, runwayMax:6, recvBad:0.3, paySafe:0.5, gstBad:0.15, marginGood:15, marginOk:5, payCoverFull:1.5, payCoverNone:0.5, keepOfGross:0.3 };
+/* ---- What the vitals measure against (2026-10-12) ----
+   The first version measured everything against total monthly spend and the bank balance alone. That fits a
+   business whose spend is all running cost. It misreads one that buys and sells goods: purchases come back as
+   sales within weeks, so "6 months of total spend sitting in the bank" is not a meaningful target (₹14 Cr for
+   Care Hygiene, a profitable distributor that scored 24). The optional `x` on each function carries what the
+   books say about the shape of the business; without it every formula is exactly what it was.
+     x.runningCosts  monthly running costs (rent, salaries, interest...), not cost of goods
+     x.grossProfit   monthly gross profit (sales less cost of goods)
+     x.odHeadroom    overdraft limit the owner entered, less what is drawn today
+     x.odDrawn       overdraft drawn today (short-term borrowing, taken off working capital)
+     x.recvTotal, x.recv90, x.revenue   the reading's own figures, for the payables cover */
+function spendBasis(burn, x){ const rc = Number(x && x.runningCosts); return rc > 0 ? rc : burn; }
+function scoreCash(cash, burn, x){
+  // Months of running costs covered by money you can draw on today: the bank and cash, plus any undrawn
+  // overdraft when the limit is known.
+  const spend = spendBasis(burn, x), od = Math.max(0, Number(x && x.odHeadroom) || 0);
+  const months = spend > 0 ? (cash + od) / spend : 0;
   let score;
   if(months >= BENCH.runwayMax) score = 100;
   else if(months <= 0) score = 0;
@@ -15,7 +30,20 @@ function scoreReceivables(recvTotal, recv90){
   const score = clamp(100 - (ratio / BENCH.recvBad) * 100);
   return { value: inr(recv90) + ' over 90d', score };
 }
-function scorePayables(paySoon, cash){
+function payablesCover(paySoon, cash, x){
+  // Money on hand in the next 30 days against bills due in them: the bank and cash, undrawn overdraft, and
+  // collections, taken as what customers owe that isn't over 90 days late, capped at one month of sales.
+  const fresh = Math.max(0, (Number(x.recvTotal) || 0) - (Number(x.recv90) || 0));
+  const collect = Math.min(fresh, Math.max(0, Number(x.revenue) || 0));
+  const avail = Math.max(0, cash) + Math.max(0, Number(x.odHeadroom) || 0) + collect;
+  return { avail, collect, cover: paySoon > 0 ? avail / paySoon : null };
+}
+function scorePayables(paySoon, cash, x){
+  if(x && x.recvTotal != null){
+    const c = payablesCover(paySoon, cash, x);
+    const score = c.cover === null ? 100 : clamp(((c.cover - BENCH.payCoverNone) / (BENCH.payCoverFull - BENCH.payCoverNone)) * 100);
+    return { value: inr(paySoon), score };
+  }
   const ratio = cash > 0 ? paySoon / cash : (paySoon > 0 ? 1 : 0);
   const score = clamp(100 - (ratio / BENCH.paySafe) * 100);
   return { value: inr(paySoon), score };
@@ -25,38 +53,87 @@ function scoreGst(gstLeak, gstPayable){
   const score = clamp(100 - (ratio / BENCH.gstBad) * 100);
   return { value: inr(gstLeak), score };
 }
-function scoreMargin(netProfit, revenue){
+/* The net margin that scores 100: 15%, or 30% of the gross margin when the gross margin can't carry 15%
+   (a distributor on a 21% gross margin is doing well at 6% net; nobody in that trade nets 15%). */
+function marginTarget(revenue, x){
+  const gp = Number(x && x.grossProfit);
+  if(!(gp > 0) || !(revenue > 0)) return BENCH.marginGood;
+  return Math.max(1, Math.min(BENCH.marginGood, (gp / revenue) * 100 * BENCH.keepOfGross));
+}
+function scoreMargin(netProfit, revenue, x){
   const pct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+  const good = marginTarget(revenue, x);
   let score;
-  if(pct >= BENCH.marginGood) score = 100;
+  if(pct >= good) score = 100;
   else if(pct <= 0) score = clamp(50 + pct);
-  else score = clamp((pct / BENCH.marginGood) * 100);
+  else score = clamp((pct / good) * 100);
   return { value: pct.toFixed(1) + '%', score };
 }
-function scoreRunway(cash, recvTotal, paySoon, burn){
-  const wc = cash + recvTotal - paySoon;
-  const months = burn > 0 ? wc / burn : 0;
+function scoreRunway(cash, recvTotal, paySoon, burn, x){
+  // Working capital (cash + owed to you − bills due in 30 days − overdraft drawn) in months of running costs.
+  const spend = spendBasis(burn, x);
+  const wc = cash + recvTotal - paySoon - Math.max(0, Number(x && x.odDrawn) || 0);
+  const months = spend > 0 ? wc / spend : 0;
   let score;
   if(months >= BENCH.runwayMax) score = 100;
   else if(months <= 0) score = 0;
   else score = clamp((months / BENCH.runwayMax) * 100);
   return { value: months.toFixed(1) + ' months', score };
 }
-function computeVitals({ cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon }){
-  const cashV = scoreCash(cash, burn);
+function computeVitals({ cash, revenue, netProfit, burn, gstLeak, gstPayable, recvTotal, recv90, paySoon, scoringBasis }){
+  // `basis` is saved on the reading's vitals so the same reading can be re-scored and explained later.
+  const basis = Object.assign({ v:2 }, scoringBasis || {});
+  const x = Object.assign({ recvTotal, recv90, revenue }, basis);
+  const cashV = scoreCash(cash, burn, x);
   const recvV = scoreReceivables(recvTotal, recv90);
-  const payV = scorePayables(paySoon, cash);
+  const payV = scorePayables(paySoon, cash, x);
   const gstV = scoreGst(gstLeak, gstPayable);
-  const marginV = scoreMargin(netProfit, revenue);
-  const runwayV = scoreRunway(cash, recvTotal, paySoon, burn);
+  const marginV = scoreMargin(netProfit, revenue, x);
+  const runwayV = scoreRunway(cash, recvTotal, paySoon, burn, x);
   return [
-    { label:'Cash Position', value: cashV.value, score: cashV.score },
+    { label:'Cash Position', value: cashV.value, score: cashV.score, basis },
     { label:'Receivables Aging', value: recvV.value, score: recvV.score },
     { label:'Payables Due (30d)', value: payV.value, score: payV.score },
     { label:'GST/ITC Leakage', value: gstV.value, score: gstV.score },
     { label:'Net Margin', value: marginV.value, score: marginV.score },
     { label:'Working Capital Runway', value: runwayV.value, score: runwayV.score }
   ];
+}
+/* The basis a saved reading was scored on, with the reading's own figures the payables cover needs.
+   Undefined for readings saved before 2026-10-12: they keep the formulas they were scored with. */
+function vitalBasisOf(s){
+  const v = s && Array.isArray(s.vitals) ? s.vitals.find(z => z && z.basis && z.basis.v >= 2) : null;
+  return v ? Object.assign({ recvTotal:Number(s.recv_total) || 0, recv90:Number(s.recv_90) || 0, revenue:Number(s.revenue) || 0 }, v.basis) : undefined;
+}
+/* What the connected books say about the shape of the business, for the reading being saved now. */
+function scoringBasisLive(){
+  const out = {};
+  const put = (k, v) => { const n = Number(v); if(isFinite(n) && n > 0) out[k] = Math.round(n); };
+  const mar = typeof mgMar !== 'undefined' && mgMar && !(typeof mgMarCompany !== 'undefined' && mgMarCompany) ? mgMar : null;
+  const pnl = ((mar && mar.pnl) || []).filter(r => !r.provisional && !r.partial_start && Number(r.net_sales) > 0).slice(-6);
+  if(pnl.length){
+    // The same months revenue, spend and profit are averaged over (tallyInputCandidates).
+    const whole = pnl.filter(r => !r.costs_incomplete), use = whole.length ? whole : pnl;
+    const avg = f => use.reduce((t, r) => t + (Number(f(r)) || 0), 0) / use.length;
+    put('runningCosts', avg(r => r.opex));
+    put('grossProfit', avg(r => r.gross_profit_pre_stock != null ? r.gross_profit_pre_stock : (Number(r.net_sales) || 0) - (Number(r.cogs_pre_stock) || 0)));
+    const od = (((mar.borrowing || {}).accounts) || []).filter(a => a && a.kind === 'overdraft');
+    put('odDrawn', od.reduce((t, a) => t + Math.max(0, Number(a.owed_today) || 0), 0));
+    const limits = typeof mgBorrowLimits === 'function' ? mgBorrowLimits() : {};
+    put('odHeadroom', od.reduce((t, a) => { const lim = Number(limits[a.name]); return t + (lim > 0 ? Math.max(0, lim - Math.max(0, Number(a.owed_today) || 0)) : 0); }, 0));
+  } else if(typeof zohoConnected !== 'undefined' && zohoConnected && typeof zohoVitals !== 'undefined' && zohoVitals && zohoVitals.net_margin){
+    const m = zohoVitals.net_margin;
+    put('runningCosts', m.opex);
+    if(isFinite(Number(m.income)) && isFinite(Number(m.cogs))) put('grossProfit', Number(m.income) - Number(m.cogs));
+  }
+  return out;
+}
+function basisDiffers(a, b){
+  if(!b) return true;
+  return ['runningCosts', 'grossProfit', 'odHeadroom', 'odDrawn'].some(k => {
+    const p = Number(b[k]) || 0, n = Number(a[k]) || 0, scale = Math.max(Math.abs(p), Math.abs(n), 1);
+    return Math.abs(n - p) > scale * 0.005;
+  });
 }
 const VITAL_WEIGHTS = { 'Cash Position':0.20, 'Receivables Aging':0.15, 'Payables Due (30d)':0.15, 'GST/ITC Leakage':0.15, 'Net Margin':0.20, 'Working Capital Runway':0.15 };
 /* A vital's weight among the vitals actually measured. With all six present this is VITAL_WEIGHTS as written.
@@ -492,7 +569,14 @@ async function resolveAndSaveSnapshot(){
     }
     SNAPSHOT_INPUT_FIELDS.forEach(f => { if(inputs[f] === undefined || !isFinite(inputs[f])) inputs[f] = 0; });
     latest = { burn: inputs.burn };
-  } else if(!inputsMateriallyDiffer(inputs, latest)) return false;
+  }
+  // What the score is measured against: today's books, or the last reading's when the books didn't load this
+  // time (so a failed load never writes a reading on a thinner basis).
+  const liveBasis = scoringBasisLive(), prevBasis = latest && latest.vitals ? vitalBasisOf(latest) : undefined;
+  const useBasis = Object.keys(liveBasis).length || !prevBasis ? liveBasis
+    : ['runningCosts', 'grossProfit', 'odHeadroom', 'odDrawn'].reduce((o, k) => { if(prevBasis[k] != null) o[k] = prevBasis[k]; return o; }, {});
+  if(snapshots[0] && latest === snapshots[0] && !inputsMateriallyDiffer(inputs, latest) && !basisDiffers(useBasis, prevBasis)) return false;
+  inputs.scoringBasis = useBasis;
 
   // Burn drives three divisions in computeVitals; never let a connector hand
   // it a zero and turn runway into 0 months.

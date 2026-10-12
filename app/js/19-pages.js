@@ -319,7 +319,7 @@ function mgRenderHome(){
   const rNow = runway ? parseFloat(runway.value) : null, rPrev = runwayP ? parseFloat(runwayP.value) : null;
   const tiles = !s ? '' : '<div class="mg-tiles">' +
     mgTile({ need:'view_cash', label:'Cash', value:fmtINR(s.cash, 'tile'), full:fmtINR(s.cash), delta:p ? mgPct(Number(s.cash), Number(p.cash)) : null, goodUp:true, src:srcLine, go:'cash' }) +
-    mgTile({ need:'view_cash', label:'Working-capital runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less payables due, over monthly spend',
+    mgTile({ need:'view_cash', label:'Working-capital runway', value:rNow != null ? rNow.toFixed(1) + ' months' : 'n/a', full:'Cash plus receivables, less bills due in 30 days and overdraft drawn, in months of running costs',
       delta:(rNow != null && rPrev != null) ? rNow - rPrev : null, deltaText:(rNow != null && rPrev != null) ? Math.abs(rNow - rPrev).toFixed(1) + ' months' : '', goodUp:true, src:srcLine, go:'pulse' }) +
     mgTile({ need:'view_receivables', label:'Receivables overdue', value:fmtINR(overdue, 'tile'), full:fmtINR(overdue), delta:null, note:nOver + ' customer' + (nOver === 1 ? '' : 's') + ' overdue', goodUp:false, src:srcLine, go:'receivables' }) +
     mgTile({ need:'view_payables', label:'Payables due in 7 days', value:fmtINR(due7, 'tile'), full:fmtINR(due7) + ' due in the next 7 days' + (payLateAmt > 0 ? '; ' + fmtINR(payLateAmt) + ' already overdue on top' : ''), delta:null, note:payNote, goodUp:false, src:srcLine, go:'payables' }) +
