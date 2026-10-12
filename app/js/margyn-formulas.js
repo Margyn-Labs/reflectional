@@ -27,7 +27,7 @@
       what: 'A 0 to 100 reading of financial health, made of six vitals. Not a credit score.',
       formula: 'Pulse Score = round( 20% × Cash Position + 15% × Receivables Aging + 15% × Payables Due + 15% × GST/ITC Leakage + 20% × Net Margin + 15% × Working Capital Runway ), each vital scored 0 to 100.',
       inputs: ['the six vital scores (ask about any one for its own formula)'],
-      notes: ['Pure arithmetic in the browser (computePulseScore). The AI writes the briefing, it never sets the score.', 'By default 70 and above is Healthy and below 40 is at risk; the cut-offs can be changed in Settings.', SRC],
+      notes: ['Pure arithmetic in the browser (computePulseScore). The AI writes the briefing, it never sets the score.', 'A vital nothing measures is left out and the others share its weight in proportion (vitalWeight): GST input credit at risk, when the reading comes from connected sources and none of them reports it.', 'By default 70 and above is Healthy and below 40 is at risk; the cut-offs can be changed in Settings.', SRC],
       code: '15-scoring.js computePulseScore, VITAL_WEIGHTS', page: 'scores'
     },
     cash_vital: {
@@ -55,7 +55,7 @@
     gst_vital: {
       label: 'GST/ITC Leakage (vital)', aliases: ['gst score', 'itc leakage', 'gst leakage'],
       what: 'Input tax credit you claimed that your vendors have not confirmed (not in GSTR-2B), against the GST you owe.',
-      formula: 'Ratio = ITC at risk ÷ GST payable. Score = 100 − (ratio ÷ 15%) × 100, kept between 0 and 100. Leakage of 15% of GST payable or more scores 0.',
+      formula: 'Ratio = ITC at risk ÷ GST payable. Score = 100 − (ratio ÷ 15%) × 100, kept between 0 and 100. Leakage of 15% of GST payable or more scores 0. Not scored at all when no connected source reports ITC at risk and no figure was entered: it needs GSTR-2B matching.',
       inputs: ['gstLeak', 'gstPayable'], weight: 'GST/ITC Leakage',
       notes: ['Leakage comes from Zoho Books\' GSTR-2B match today. Until the GST portal connection is live, GST payable is Tally\'s estimate or what you typed in.'],
       code: '15-scoring.js scoreGst', page: 'gst'

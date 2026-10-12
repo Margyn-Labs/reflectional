@@ -332,7 +332,7 @@ function mgRenderHome(){
   if(s){
     const band = scoreBand(s.pulse_score);
     const d = p ? s.pulse_score - p.pulse_score : null;
-    const drivers = (s.vitals || []).map(v => ({ label:mgVitalName(v.label), pts:(Number(v.score) - 50) * (VITAL_WEIGHTS[v.label] || 0) }))
+    const drivers = (s.vitals || []).map(v => ({ label:mgVitalName(v.label), pts:(Number(v.score) - 50) * vitalWeight(v.label, s.vitals) }))
       .sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts)).slice(0, 3);
     pulse = '<div class="mg-pulse"><div class="mg-pulse-n">' + escapeHtml(String(s.pulse_score)) + '</div><div>' +
       '<span class="mg-band ' + band.cls + '">' + escapeHtml(band.label) + '</span>' +

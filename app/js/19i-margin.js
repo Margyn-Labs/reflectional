@@ -87,7 +87,7 @@ function mgApplyCashHistory(list){
       const redo = { 'Cash Position':scoreCash(v, burn), 'Payables Due (30d)':scorePayables(pay, v), 'Working Capital Runway':scoreRunway(v, recv, pay, burn) };
       if(s._vitals_saved === undefined){ s._vitals_saved = s.vitals; s._pulse_saved = s.pulse_score; }
       s.vitals = s.vitals.map(x => redo[x.label] ? Object.assign({}, x, { value:redo[x.label].value, score:redo[x.label].score }) : x);
-      if(s.vitals.length === 6) s.pulse_score = computePulseScore(s.vitals);
+      if(s.vitals.length >= 5) s.pulse_score = computePulseScore(s.vitals);
     }
   });
   return changed;

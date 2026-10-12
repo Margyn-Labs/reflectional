@@ -263,7 +263,7 @@ function mgPackDoc(k){
       : '<div class="pk-note">Vendor-level GSTR-2B matching needs Zoho Books connected.</div>');
 
   // 7. Pulse
-  const vit = (s.vitals || []).map(v => ({ label:mgVitalName(v.label), value:v.value, score:Number(v.score), pts:(Number(v.score) - 50) * (VITAL_WEIGHTS[v.label] || 0) }));
+  const vit = (s.vitals || []).map(v => ({ label:mgVitalName(v.label), value:v.value, score:Number(v.score), pts:(Number(v.score) - 50) * vitalWeight(v.label, s.vitals) }));
   const pulseHtml = '<div class="pk-tiles" style="grid-template-columns:repeat(3,minmax(0,1fr))">' +
       tile('Pulse Score', s.pulse_score != null ? String(s.pulse_score) : 'n/a', band ? escapeHtml(band.label) : '') +
       tile('Change on prior month', p && p.pulse_score != null && s.pulse_score != null ? ((s.pulse_score - p.pulse_score > 0 ? '+' : '') + (s.pulse_score - p.pulse_score) + ' pts') : 'n/a', '') +

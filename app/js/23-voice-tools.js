@@ -780,7 +780,7 @@ const VX_TOOLS = {
       switch(key){
         case 'pulse_score': {
           const vit = Array.isArray(s.vitals) ? s.vitals : [];
-          out.worked = vit.map(x => x.label + ': score ' + Math.round(x.score) + ' × ' + Math.round((VITAL_WEIGHTS[x.label] || 0) * 100) + '% = ' + (Math.round(x.score * (VITAL_WEIGHTS[x.label] || 0) * 10) / 10) + ' points');
+          out.worked = vit.map(x => x.label + ': score ' + Math.round(x.score) + ' × ' + Math.round(vitalWeight(x.label, vit) * 100) + '% = ' + (Math.round(x.score * vitalWeight(x.label, vit) * 10) / 10) + ' points');
           out.result = 'Total ' + s.pulse_score + ' out of 100 (' + scoreBand(s.pulse_score).label + ')';
           const low = vit.slice().sort((a, b) => a.score - b.score)[0];
           if(low) out.biggest_drag = low.label + ' at ' + Math.round(low.score) + ' (' + vxVitalValue(low.value) + ')';

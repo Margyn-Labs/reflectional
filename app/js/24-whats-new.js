@@ -24,6 +24,10 @@ const MG_RELEASES = [
         how:'Open <b>Payables</b>.', act:'payables' },
       { t:'Clearer labels', what:'<b>Runway</b> on Home is now called <b>Working-capital runway</b>, the yearly Net profit column says it is after stock, and the forecast’s customer table says its “owed” figure is from the start of today. Names with a stray line break from Tally now show cleanly.',
         how:'Nothing to do.' },
+      { t:'Pulse Score no longer counts GST it can’t measure', what:'GST input credit at risk needs your purchases matched against GSTR-2B. Until a source supplies that, Margyn used to score it 100 out of 100, which lifted the Pulse Score. That vital is now left out and the other five share its weight, so the score can drop on your next reading without anything in your business changing.',
+        how:'Open <b>Pulse Score</b>. A note under the vitals says when GST isn’t measured.', act:'scores' },
+      { t:'Days to collect is one figure everywhere', what:'Pulse Score’s days sales outstanding now uses the same figure as Margin’s days to get paid (the last 90 days of sales).',
+        how:'Open <b>Pulse Score</b> → <b>Days sales outstanding</b>.', act:'scores' },
       { t:'Cash flow: ledgers not yet sorted', what:'The table now shows two figures for each such ledger: all its entries, and the part that actually moved cash (the figure in the statement).',
         how:'Open <b>Cash flow</b> → <b>Not yet sorted</b>.', act:'cashflow' }
     ]

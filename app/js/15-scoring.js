@@ -59,9 +59,27 @@ function computeVitals({ cash, revenue, netProfit, burn, gstLeak, gstPayable, re
   ];
 }
 const VITAL_WEIGHTS = { 'Cash Position':0.20, 'Receivables Aging':0.15, 'Payables Due (30d)':0.15, 'GST/ITC Leakage':0.15, 'Net Margin':0.20, 'Working Capital Runway':0.15 };
-function computePulseScore(vitals){
-  return Math.round(vitals.reduce((s,v) => s + (v.score * (VITAL_WEIGHTS[v.label] || 0)), 0));
+/* A vital's weight among the vitals actually measured. With all six present this is VITAL_WEIGHTS as written.
+   When one is left out because nothing measures it (GST input credit with no GST data: see gstNotMeasured),
+   the others share its weight in proportion, so an unmeasured vital neither helps nor hurts the score. */
+function vitalWeight(label, vitals){
+  const w = VITAL_WEIGHTS[label] || 0;
+  const tot = (Array.isArray(vitals) ? vitals : []).reduce((s, v) => s + (VITAL_WEIGHTS[v.label] || 0), 0);
+  return tot > 0 && tot < 0.999 ? w / tot : w;
 }
+function computePulseScore(vitals){
+  return Math.round(vitals.reduce((s,v) => s + (v.score * vitalWeight(v.label, vitals)), 0));
+}
+/* GST input credit at risk needs GSTR-2B matching, which only a connected source supplies. On a reading built
+   from connected sources where none of them reports it and nobody typed a figure, the old score was 100 of 100
+   for "no leakage" (Care Hygiene, 12 Oct 2026: +15 points of a 35 Pulse from data Margyn doesn't have).
+   Hand-entered readings are left as they are: the person typed that figure. */
+function gstNotMeasured(inputs, provenance){
+  if(!provenance) return false;
+  const p = provenance.gst_leak || provenance.gstLeak;
+  return !(Number(inputs && inputs.gstLeak) > 0) && (!p || !p.tier || p.tier === 'self');
+}
+const GST_VITAL = 'GST/ITC Leakage';
 
 /* ============================================================
    SOURCE RESOLUTION — which number actually feeds the Pulse Score.
@@ -402,18 +420,23 @@ function vitalTier(label, provenance){
 /* Snapshot confidence: the vital weights applied to each vital's tier, so a
    single-source Cash Position costs more confidence than a single-source GST
    figure — which matches what the weights already say about the score. */
+function measuredVitalLabels(provenance){
+  const skip = provenance && provenance.gst_leak && provenance.gst_leak.unmeasured;
+  return Object.keys(VITAL_WEIGHTS).filter(l => !(skip && l === GST_VITAL));
+}
 function snapshotConfidence(provenance){
   if(!provenance) return TIER_CONFIDENCE.self;
+  const labels = measuredVitalLabels(provenance), list = labels.map(label => ({ label }));
   let total = 0;
-  Object.keys(VITAL_WEIGHTS).forEach(label => {
-    total += (VITAL_WEIGHTS[label] || 0) * TIER_CONFIDENCE[vitalTier(label, provenance)];
+  labels.forEach(label => {
+    total += vitalWeight(label, list) * TIER_CONFIDENCE[vitalTier(label, provenance)];
   });
   return Math.round(total * 100) / 100;
 }
 
 /* Human summary for the confidence line under the score. */
 function confidenceSummary(provenance){
-  const labels = Object.keys(VITAL_WEIGHTS);
+  const labels = measuredVitalLabels(provenance);
   if(!provenance){
     return { pct: 50, text: 'All six vitals are self-reported. Connect a source to raise this.', tier:'self' };
   }
@@ -425,7 +448,8 @@ function confidenceSummary(provenance){
   if(counts.connector) parts.push(counts.connector + ' from one connected source');
   if(counts.self) parts.push(counts.self + ' self-reported');
   const tier = counts.self === labels.length ? 'self' : (counts.verified ? 'verified' : 'connector');
-  return { pct, tier, text: 'Of six vitals: ' + parts.join(', ') + '.' };
+  return { pct, tier, text: 'Of ' + (labels.length === 6 ? 'six' : labels.length) + ' vitals: ' + parts.join(', ') + '.' +
+    (labels.length < 6 ? ' GST input credit isn’t measured yet, so it isn’t in the score.' : '') };
 }
 
 /* ---------- write a resolved snapshot when the picture actually changes ---------- */
@@ -479,6 +503,7 @@ async function resolveAndSaveSnapshot(){
     settlementRows: latest.settlement_rows, settlementDailyTrend: latest.settlement_daily_trend
   } : {};
 
+  if(gstNotMeasured(inputs, provenance)) provenance.gst_leak = Object.assign({ tier:'self' }, provenance.gst_leak || {}, { unmeasured:true });
   try {
     await saveSnapshot(Object.assign({}, inputs, carryPayments, {
       source: 'resolved', provenance, conflicts, confidence: snapshotConfidence(provenance)
@@ -496,7 +521,8 @@ async function resolveAndSaveSnapshot(){
   }
 }
 async function saveSnapshot(inputs){
-  const vitals = computeVitals(inputs);
+  const unmeasuredGst = !!(inputs.provenance && inputs.provenance.gst_leak && inputs.provenance.gst_leak.unmeasured);
+  const vitals = computeVitals(inputs).filter(v => !(unmeasuredGst && v.label === GST_VITAL));
   const pulseScore = computePulseScore(vitals);
   const row = {
     user_id: currentUser.id, cash: inputs.cash, revenue: inputs.revenue, net_profit: inputs.netProfit,
