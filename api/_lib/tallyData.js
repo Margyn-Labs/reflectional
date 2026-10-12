@@ -114,6 +114,10 @@ async function installsFor(userId, wantCompany) {
 // Rows are read oldest first, so a cap cuts off the NEWEST entries. Care Hygiene (two years in one Tally company)
 // stood at 19,450 of the old 20,000 on 11 Oct 2026; 60,000 is about five years of a company that size.
 const VOUCHER_CAP = 60000;
+// Ledgers are read in name order across every company file on the install, so a cap cuts off the END OF THE
+// ALPHABET. Care Hygiene (two files: 2,882 + 3,017 ledgers) passed the old 5,000 on 12 Oct 2026 and lost every
+// ledger from "S" on: Stock-in-hand, transport costs, 29 customers' balances.
+const LEDGER_CAP = 30000, BILL_CAP = 30000;
 
 /**
  * A business that keeps one Tally company file per financial year has several files on one install. Entries
@@ -223,24 +227,24 @@ async function readRows(inList) {
     throw last;
   };
   const ledgerQ = async () => {
-    try { return await pagedAll('tally_ledgers', `select=name,parent,primary_group,opening_balance,closing_balance,company_name&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
-    catch (e) { return await pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance,company_name&install_id=in.${inList}&order=name.asc,tally_guid.asc`, 5000); }
+    try { return await pagedAll('tally_ledgers', `select=name,parent,primary_group,opening_balance,closing_balance,company_name&install_id=in.${inList}&order=name.asc,tally_guid.asc`, LEDGER_CAP); }
+    catch (e) { return await pagedAll('tally_ledgers', `select=name,parent,opening_balance,closing_balance,company_name&install_id=in.${inList}&order=name.asc,tally_guid.asc`, LEDGER_CAP); }
   };
   const [L, B, V] = await Promise.all([
     ledgerQ(),
-    pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, 10000),
+    pagedAll('tally_bills', `select=direction,party_name,bill_ref,bill_date,due_date,closing_balance,overdue_days,company_name&install_id=in.${inList}&order=party_name.asc,bill_ref.asc`, BILL_CAP),
     voucherQ()
   ]);
   const files = companyFiles(L.rows, B.rows, V.rows);
   return { ledgers: files.ledgers, bills: files.bills, priorLedgers: files.priorLedgers || [], vouchers: V.rows, truncated: V.truncated, files: files.summary,
-    // Read caps (5,000 ledgers, 10,000 bills, 60,000 vouchers): the completeness check says when one is hit.
-    caps: { ledgers: { cap: 5000, truncated: L.truncated }, bills: { cap: 10000, truncated: B.truncated }, vouchers: { cap: VOUCHER_CAP, truncated: V.truncated } } };
+    // Read caps (30,000 ledgers, 30,000 bills, 60,000 vouchers): the completeness check says when one is hit.
+    caps: { ledgers: { cap: LEDGER_CAP, truncated: L.truncated }, bills: { cap: BILL_CAP, truncated: B.truncated }, vouchers: { cap: VOUCHER_CAP, truncated: V.truncated } } };
 }
 
 /** The synced rows for these installs as of their last sync: this instance's copy, else the saved file, else the tables. */
 async function snapshotFor(userId, inst, fresh) {
   // v2: rows carry their company file; a copy saved before that is read again from the tables.
-  const snapKey = `v6|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
+  const snapKey = `v7|${inst.company || ''}|${inst.chosen.map((i) => i.id).sort().join(',')}|${inst.lastSync || ''}`;
   const mk = userId + '|' + snapKey;
   const hit = _cache.get(mk);
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return { snap: hit.snap, key: snapKey, from: 'memory' };
