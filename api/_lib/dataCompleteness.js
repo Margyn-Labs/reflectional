@@ -117,14 +117,10 @@ function tallyCompleteness(book, ctx, opts) {
   const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
   const debitPos = (b) => (eff === 'same' ? -num(b) : num(b));
   const moveBy = new Map();
-  // Only this balance period's entries: an older year's entries are already inside the opening balance, and a
-  // ledger kept only for last year's history (history_only) has no balance by design. Counting both gave Care
-  // Hygiene "51 ledgers should have a balance (₹3.47 Cr)" on 12 Oct 2026, a false alarm.
-  const bpFrom = (((ctx.analytics || {}).quality || {}).balances_period || {}).from || null;
-  for (const r of ctx.rows || []) { if (bpFrom && r.day < bpFrom) continue; for (const l of r.lines) { const k = A.nameKey(l.ledger); moveBy.set(k, (moveBy.get(k) || 0) + l.amount); } }
+  for (const r of ctx.rows || []) for (const l of r.lines) { const k = A.nameKey(l.ledger); moveBy.set(k, (moveBy.get(k) || 0) + l.amount); }
   let blank = 0, blankMoved = 0, blankMovedAmt = 0;
   for (const l of ledgersRaw) {
-    if (l.closing_balance != null || l.history_only) continue;
+    if (l.closing_balance != null) continue;
     blank++;
     const expect = debitPos(l.opening_balance || 0) - (moveBy.get(A.nameKey(l.name)) || 0);
     if (Math.abs(expect) >= 1) { blankMoved++; blankMovedAmt += Math.abs(expect); }
