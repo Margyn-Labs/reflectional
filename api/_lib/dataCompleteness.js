@@ -117,10 +117,16 @@ function tallyCompleteness(book, ctx, opts) {
   const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
   const debitPos = (b) => (eff === 'same' ? -num(b) : num(b));
   const moveBy = new Map();
-  for (const r of ctx.rows || []) for (const l of r.lines) { const k = A.nameKey(l.ledger); moveBy.set(k, (moveBy.get(k) || 0) + l.amount); }
+  // This check reads the ledgers as stored (a blank balance has opening 0), so only this balance period's entries
+  // belong in it, and a ledger kept only for an older year's history has no balance by design. With every year's
+  // entries it flagged 51 Care Hygiene ledgers (₹3.47 Cr) on 12 Oct 2026; none had a single entry this year
+  // (checked on the rows: last year's depreciation, bonus, customers who cleared their balance last year).
+  // This is ONLY for this check: the balances Margyn shows (cashFlowModel.partyBalancesToday) use every year.
+  const bpFrom = (((ctx.analytics || {}).quality || {}).balances_period || {}).from || null;
+  for (const r of ctx.rows || []) { if (bpFrom && r.day < bpFrom) continue; for (const l of r.lines) { const k = A.nameKey(l.ledger); moveBy.set(k, (moveBy.get(k) || 0) + l.amount); } }
   let blank = 0, blankMoved = 0, blankMovedAmt = 0;
   for (const l of ledgersRaw) {
-    if (l.closing_balance != null) continue;
+    if (l.closing_balance != null || l.history_only) continue;
     blank++;
     const expect = debitPos(l.opening_balance || 0) - (moveBy.get(A.nameKey(l.name)) || 0);
     if (Math.abs(expect) >= 1) { blankMoved++; blankMovedAmt += Math.abs(expect); }
