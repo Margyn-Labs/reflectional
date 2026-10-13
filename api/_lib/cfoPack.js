@@ -121,7 +121,7 @@ function buildEmail({ company, period, snap, prev, link, recipientName }) {
     '<!doctype html><html><body style="margin:0;background:#FAFAF8;font-family:Manrope,Segoe UI,Arial,sans-serif;color:#14181F">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FAFAF8;padding:24px 12px"><tr><td align="center">' +
     '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border:1px solid #E4E1DA;border-radius:8px">' +
-    '<tr><td style="padding:24px 24px 8px"><div style="font-weight:800;color:#0E8F5C;font-size:16px">margyn</div>' +
+    '<tr><td style="padding:24px 24px 8px"><div style="font-weight:800;color:#0E8F5C;font-size:16px">Margyn</div>' +
       '<div style="font-size:22px;font-weight:800;margin-top:14px">' + esc(label) + ' CFO pack</div>' +
       '<div style="font-size:13px;color:#5B6472;margin-top:4px">' + (recipientName ? 'Hi ' + esc(recipientName) + ', here' : 'Here') + ' is the monthly summary for ' + esc(company) + '.</div>' +
       "<div style=\"font-size:12px;color:#8B93A0;margin-top:10px;font-family:'IBM Plex Mono',Menlo,monospace\">" + scope + '</div></td></tr>' +

@@ -285,7 +285,7 @@ function mgPackDoc(k){
       (latestMonth ? '' : ' Live sections show today’s position, not ' + escapeHtml(month) + '’s.') + ' Where sources disagree, the most trusted source is used (Zoho Books, then Tally, then Odoo, then entries made by hand) and the difference is shown.</div>';
 
   const body =
-    '<tbody class="pk-sec pk-cover"><tr><td><div class="pk-cover-brand">margyn</div><h1>' + escapeHtml(month) + ' CFO pack</h1>' +
+    '<tbody class="pk-sec pk-cover"><tr><td><div class="pk-cover-brand">Margyn</div><h1>' + escapeHtml(month) + ' CFO pack</h1>' +
       '<div class="pk-cover-sub">' + escapeHtml(org) + '</div>' +
       '<div class="pk-meta"><div><span>Organisation</span>' + escapeHtml(mgOrgShort()) + '</div><div><span>Sources</span>Reconciled</div><div><span>Month figures</span>' + escapeHtml(fmtDay(s.created_at)) + '</div><div><span>Generated</span>' + escapeHtml(gen) + '</div></div></td></tr></tbody>' +
     sec('headline', 'Headline figures', monthScope, headline) +
