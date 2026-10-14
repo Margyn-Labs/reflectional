@@ -24,13 +24,15 @@ function mgCfMonthShort(c){ return c.key === 'total' ? c.label : c.label.slice(0
 function mgCfSigned(n){ const v = Math.round(Number(n) || 0); return v === 0 ? '—' : (v < 0 ? '−' : '') + fmtINR(Math.abs(v)).replace('₹', ''); }
 
 /* Opening → operating → investing → financing → closing, for one column. */
-function mgCfBridge(col){
+/* A chart is drawn wider when its page is wide, so its labels stay the size of the page's text. */
+function mgCfWide(id){ const h = document.getElementById(id); return !!(h && h.clientWidth >= 900); }
+function mgCfBridge(col, wide){
   const secs = col.owner.map(s => ({ label:s.label, v:s.total }));
   const steps = [{ label:'Cash at the start', v:col.opening, base:true }].concat(secs).concat([{ label:'Cash at the end', v:col.closing, base:true }]);
   let run = 0;
   const bars = steps.map(s => { const from = s.base ? 0 : run, to = s.base ? s.v : run + s.v; if(!s.base) run = to; else run = s.v; return Object.assign({ from, to }, s); });
   const lo = Math.min(0, ...bars.map(b => Math.min(b.from, b.to))), hi = Math.max(0, ...bars.map(b => Math.max(b.from, b.to))) || 1;
-  const W = 640, H = 210, padT = 22, padB = 40, padL = 8, padR = 8, n = bars.length, slot = (W - padL - padR) / n, bw = Math.min(70, slot * 0.6);
+  const W = wide ? 1100 : 640, H = 210, padT = 22, padB = 40, padL = 8, padR = 8, n = bars.length, slot = (W - padL - padR) / n, bw = Math.min(wide ? 96 : 70, slot * 0.6);
   const y = v => padT + (hi - v) / (hi - lo || 1) * (H - padT - padB);
   let out = '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="#D2CEC5"/>';
   bars.forEach((b, i) => {
@@ -148,7 +150,7 @@ function mgRenderCashFlow(){
   host.__csv = mgCfCsv(d);
   host.innerHTML = head + tiles +
     '<div class="mg-panel"><div class="mg-panel-h"><h2>From the start of the year to today</h2><span class="mg-aside">' + escapeHtml(mgFcDay(t.from) + ' to ' + mgFcDay(t.to)) + '</span></div>' +
-      why + '<div class="mg-panel-b">' + mgCfBridge(t) + '</div></div>' +
+      why + '<div class="mg-panel-b">' + mgCfBridge(t, mgCfWide('view-cashflow')) + '</div></div>' +
     '<div class="mg-panel"><div class="mg-panel-h"><h2>' + (mgCfView === 'accountant' ? 'Cash flow statement (indirect method)' : 'Where the cash came from and went') + '</h2><span class="mg-aside">' +
       (mgCfView === 'accountant' ? 'Net profit adjusted for what isn’t cash, as in AS-3 / Ind AS 7' : 'Every entry that moved cash, by what it was for') + '</span></div>' +
       mgCfTable(d) + '<div class="mg-foot-note">Money in is positive, money out is negative. ' + (d.overdraft_as_cash ? 'Cash includes the overdraft (' + escapeHtml(d.overdraft_ledgers.join(', ')) + ') as negative cash.' : '') + '</div></div>' +
@@ -172,7 +174,8 @@ function mgBorrowLine(a){
 function mgOwedChart(a, limit){
   const pts = a.series.owed;
   if(!pts || pts.length < 2) return '';
-  const W = 640, H = 150, padL = 8, padR = 8, padT = 14, padB = 20;
+  const wide = mgCfWide('view-cash') || mgCfWide('view-cashflow');
+  const W = wide ? 1100 : 640, H = wide ? 170 : 150, padL = 8, padR = 8, padT = 14, padB = 20;
   const hi = Math.max(1, limit || 0, ...pts) * 1.05, lo = Math.min(0, ...pts);
   const x = i => padL + i * (W - padL - padR) / (pts.length - 1);
   const y = v => padT + (hi - v) / (hi - lo || 1) * (H - padT - padB);

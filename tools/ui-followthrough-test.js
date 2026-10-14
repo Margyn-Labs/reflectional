@@ -32,6 +32,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   });
   await p.waitForTimeout(3000);
 
+  // Margyn is closed by default; open it from the strip.
+  await p.click('#mgrLaunch'); await p.waitForTimeout(300);
+
   // 1. two messages back to back: the second is queued, then answered, in order
   await p.fill('#mgrInput', 'First question'); await p.press('#mgrInput', 'Enter');
   await p.waitForTimeout(300);

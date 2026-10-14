@@ -1,9 +1,10 @@
 /* ============================================================
    LIVE WORK: what Margyn is doing right now, on Home.
 
-   Home's "What I'm working on" panel (25-margyn.js mgrWorkingOn) keeps its
-   rows; on top of them it now shows work that is running this second, and
-   under them what was just done, with the time. Margyn's panel header says
+   Home's "What I'm working on" panel is one tile per job (what is running
+   this second, what needs the owner, what each job last did), the day's
+   WhatsApp updates on a line, each source's last sync, and what was just
+   done, with the time. Margyn's panel header says
    what is running too, on every page.
 
    Everything shown actually happened or is happening:
@@ -159,24 +160,97 @@ function lwDoneRows(){
   return '<div class="lw-done"><div class="lw-done-h">Just done</div>' + done.map(a =>
     '<div class="lw-done-r' + (a.state === 'error' ? ' bad' : '') + '"><span>' + escapeHtml(a.text) + '</span><small>' + escapeHtml(lwSince(a.end || a.at)) + '</small></div>').join('') + '</div>';
 }
-const lwBaseWorkingOn = mgrWorkingOn;
-mgrWorkingOn = function(){
-  return '<div id="lwWorking">' + lwNowRows() + lwBaseWorkingOn.apply(this, arguments) + lwDoneRows() + '</div>';
-};
-// The panel's "live" label says how many are running, from the first render.
+/* One tile per job. Every line is real: something running this second, something
+   waiting on the owner, the last thing that job did (with the time), or that it
+   is off. Nothing here is simulated. */
+const LW_TILES = ['payments', 'books', 'close', 'gst', 'forecast', 'documents', 'watch', 'collections'];
+function lwJobState(k){
+  const run = lwRunning().find(a => a.job === k);
+  if(run) return { cls:'run lw-now', st:'Running', text:run.text };
+  const d = (typeof agentDeployments !== 'undefined' && agentDeployments) || {};
+  const n = (x, one, many) => x + ' ' + (x === 1 ? one : many);
+  let acts = []; try { acts = (agentActions && agentActions.actions) || []; } catch(e){}
+  try {
+    if(k === 'payments'){ const q = ((reconSummary && reconSummary.connected && reconSummary.review_queue) || []).length; if(q) return { cls:'need', st:'Needs you', text:n(q, 'payment', 'payments') + ' to check', ask:'Walk me through the reconciliation items waiting on me.' }; }
+    if(k === 'close'){ const q = acts.filter(a => a.kind !== 'itc_risk').length; if(q) return { cls:'need', st:'Needs you', text:n(q, 'proposal', 'proposals') + ' waiting on your OK', ask:'What needs my OK?' }; }
+    if(k === 'gst'){ const q = acts.filter(a => a.kind === 'itc_risk').length; if(q) return { cls:'need', st:'Needs you', text:n(q, 'vendor', 'vendors') + ' flagged for input credit at risk', ask:'Which vendors put my input credit at risk?' }; }
+    if(k === 'documents'){ const q = (pendingSuggestions || []).length; if(q) return { cls:'need', st:'Needs you', text:n(q, 'forwarded document', 'forwarded documents') + ' read, waiting for your OK', ask:'What documents are waiting for my approval?' }; }
+    if(k === 'books'){ const bad = ['zoho', 'tally', 'odoo'].find(x => { const h = mgSourceHealth(x); return h.on && h.warn; });
+      if(bad) return { cls:'need', st:'Needs you', text:MG_SRC_LABEL[bad] + ': ' + mgSourceHealth(bad).text, ask:'Is my ' + MG_SRC_LABEL[bad] + ' connector working?' }; }
+    if(k === 'watch'){
+      const w = typeof mgWatchChannel === 'function' ? mgWatchChannel() : null, bells = typeof mgBellsLive === 'function' ? mgBellsLive() : null;
+      // Until Channel health has loaded (a few seconds after opening) nothing is known: say so, never "Off".
+      if(typeof mgChan !== 'undefined' && !mgChan && !(typeof mgChanErr !== 'undefined' && mgChanErr)) return { cls:'done idle', st:'Checking', text:'Checking what reached your WhatsApp' };
+      if(w && w.status === 'failing') return { cls:'need', st:'Needs you', text:w.detail, ask:'What have you sent me on WhatsApp?' };
+      const bellDown = !!(d.whatsapp_bell && d.whatsapp_bell.status === 'active' && bells === false);
+      // Updates that are going out lead; a Bell that isn't live is said after them, not instead of them.
+      if(w && w.headline !== 'Off') return { cls:'done', st:w.status === 'working' ? 'Delivering' : 'On', text:w.detail + (bellDown ? ' Opening and Closing Bell aren’t live yet.' : ''), ask:'What have you sent me on WhatsApp?' };
+      if(bellDown) return { cls:'need', st:'Not live', text:'Opening and Closing Bell: WhatsApp hasn’t approved the message, so nothing goes out' };
+      if(d.whatsapp_bell && d.whatsapp_bell.status === 'active' && bells === true) return { cls:'done', st:'Scheduled', text:'Opening and Closing Bell: your morning and evening briefing on WhatsApp' };
+      if(!w || w.headline === 'Off') return { cls:'off', st:'Off', text:'Updates on WhatsApp are off. Turn on in Automations' };
+    }
+    if(k === 'collections'){
+      const stt = (d.chase_agent && d.chase_agent.status) || 'not_deployed';
+      const ct = (chaseTargets || []).filter(t => ['active', 'paused_promise', 'disputed', 'escalated_human'].includes(t.state));
+      if(ct.length){ const next = ct.map(t => t.next_chase_at).filter(Boolean).sort()[0];
+        return { cls:stt === 'paused' ? 'off' : 'done', st:stt === 'paused' ? 'Paused' : 'On it', text:'Chasing ' + n(ct.length, 'customer', 'customers') + ' · ' + fmtINR(ct.reduce((a, t) => a + (Number(t.amount) || 0), 0), 'tile') + ' outstanding' + (next ? ' · next reminder ' + fmtDay(next) : ''), ask:'Who am I chasing and how is it going?' }; }
+      if(stt !== 'active') return { cls:'off', st:stt === 'paused' ? 'Paused' : 'Off', text:'Payment reminders are ' + (stt === 'paused' ? 'paused' : 'off') + '. Turn on in Automations' };
+    }
+  } catch(e){}
+  const last = lwAct.find(a => a.job === k && a.state !== 'running');
+  if(last) return { cls:'done' + (last.state === 'error' ? ' bad' : ''), st:lwSince(last.end || last.at), text:last.text };
+  let idle = { payments:'Nothing to match right now', close:'Nothing proposed right now', gst:'Nothing flagged', forecast:'Up to date', documents:'Nothing forwarded today', collections:'No one to chase right now', watch:'Nothing sent yet today' }[k];
+  if(k === 'books'){ try { const on = ['zoho', 'tally', 'odoo'].filter(x => mgSourceHealth(x).on); idle = on.length ? on.map(x => MG_SRC_LABEL[x] + ' ' + mgSourceHealth(x).text).join(' · ') : 'No accounting source connected yet'; } catch(e){ idle = 'In sync'; } }
+  return { cls:'done idle', st:'Idle', text:idle };
+}
+function lwJobTiles(){
+  return '<div class="mgh-jobs">' + LW_TILES.filter(lwJobAllowed).map(k => { const j = lwJobState(k), pg = LW_JOBS[k].page;
+    return '<button type="button" class="mgd-task mgh-job ' + j.cls + '"' + (j.ask ? ' data-mgr-ask="' + escapeHtml(j.ask) + '"' : j.cls === 'off' ? ' data-go-page="agents"' : pg ? ' data-go-page="' + ((MG_PAGES[pg] || {}).slug || pg) + '"' : '') + '>' +
+      '<b>' + escapeHtml(LW_JOBS[k].name) + '<em class="mgd-st' + (j.cls.indexOf('run') === 0 ? ' lw-st' : '') + '">' + escapeHtml(j.st) + '</em></b><span>' + escapeHtml(j.text) + '</span><u><i></i></u></button>'; }).join('') + '</div>';
+}
+/* The day's WhatsApp updates on a line, when they are on (times from Margyn Watch's own schedule). */
+function lwDay(){
+  let w = null; try { w = typeof mgWatchChannel === 'function' ? mgWatchChannel() : null; } catch(e){}
+  if(!w || w.headline === 'Off') return '';
+  const pts = [[7.5, '7:30 am', 'Morning update'], [10.5, '10:30', 'Update'], [12.5, '12:30', 'Update'], [15, '3:00 pm', 'Update'], [17, '5:00 pm', 'Update'], [19, '7:00 pm', 'Evening wrap']];
+  let h = 12; try { const t = new Date().toLocaleTimeString('en-GB', { timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', hour12:false }).split(':'); h = Number(t[0]) + Number(t[1]) / 60; } catch(e){}
+  const pos = x => Math.max(0, Math.min(100, (x - 7.5) / 11.5 * 100));
+  const now = h >= 7.5 && h <= 19 ? pos(h) : null, fill = h < 7.5 ? 0 : h > 19 ? 100 : pos(h);
+  return '<div class="mgh-day" title="Updates go out on WhatsApp at these times; the short ones only when something moved"><div class="mgh-day-ln"><i style="width:' + fill.toFixed(1) + '%"></i></div>' +
+    pts.map(p => '<span class="mgh-day-pt' + (h >= p[0] ? ' ok' : '') + '" style="left:' + pos(p[0]).toFixed(1) + '%"></span>').join('') + (now != null ? '<span class="mgh-day-pt now" style="left:' + now.toFixed(1) + '%"></span>' : '') +
+    '<div class="mgh-day-lb">' + pts.map(p => '<span style="left:' + pos(p[0]).toFixed(1) + '%"><b>' + p[1] + '</b>' + p[2] + '</span>').join('') + '</div></div>';
+}
+/* Each connected source and when it last synced. */
+function lwSrcChips(){
+  let out = '';
+  try { ['zoho', 'tally', 'odoo', 'razorpay', 'cashfree', 'shopify'].forEach(k => { const h = mgSourceHealth(k); if(!h.on) return;
+    out += '<button type="button" class="mgh-tag' + (h.warn ? ' hot' : '') + '"' + (h.warn ? ' data-mgr-ask="Is my ' + escapeHtml(MG_SRC_LABEL[k]) + ' connector working?"' : ' data-go-page="sources"') + '><i></i>' + escapeHtml(MG_SRC_LABEL[k] + ' · ' + h.text) + '</button>'; }); } catch(e){}
+  return out ? '<div class="mgh-srcs">' + out + '</div>' : '';
+}
+function lwNeedCount(){ return LW_TILES.filter(lwJobAllowed).filter(k => lwJobState(k).cls === 'need').length; }
+function lwAside(){ const n = lwRunning().length, k = lwNeedCount(); return [n ? n + ' running now' : '', k ? k + (k === 1 ? ' needs you' : ' need you') : ''].filter(Boolean).join(' · ') || 'live'; }
+function lwWorkHtml(){
+  // No connected source, nothing running and nothing done yet: say so plainly.
+  const none = !lwAct.length && !lwSrcChips();
+  return (none ? '<div class="mg-empty">Nothing running yet. Connect a source or switch on payment reminders and I’ll get to work.</div>' : '') + lwJobTiles() + lwDay() + lwSrcChips() + lwDoneRows();
+}
+mgrWorkingOn = function(){ return '<div id="lwWorking">' + lwWorkHtml() + '</div>'; };
+// The panel's "live" label says how many are running and how many need the owner, from the first render.
 if(typeof mgrDeskTop === 'function'){
   const baseTop = mgrDeskTop;
   mgrDeskTop = function(){
-    const n = lwRunning().length, html = baseTop.apply(this, arguments);
-    return n ? html.replace('<h2>What I’m working on</h2><span class="mg-aside">live</span>', '<h2>What I’m working on</h2><span class="mg-aside lw-live">' + n + ' running now</span>') : html;
+    const a = lwAside(), html = baseTop.apply(this, arguments);
+    return a !== 'live' ? html.replace('<h2>What I’m working on</h2><span class="mg-aside">live</span>', '<h2>What I’m working on</h2><span class="mg-aside' + (lwRunning().length ? ' lw-live' : '') + '">' + a + '</span>') : html;
   };
 }
 function lwPaintHome(){
   const el = document.getElementById('lwWorking'); if(!el) return;
-  el.innerHTML = lwNowRows() + lwBaseWorkingOn() + lwDoneRows();
+  el.innerHTML = lwWorkHtml();
   const aside = el.closest('.mg-panel') && el.closest('.mg-panel').querySelector('.mg-panel-h .mg-aside');
-  if(aside){ const n = lwRunning().length; aside.classList.toggle('lw-live', n > 0); aside.textContent = n ? n + ' running now' : 'live'; }
+  if(aside){ aside.classList.toggle('lw-live', lwRunning().length > 0); aside.textContent = lwAside(); }
 }
+// "All activity" opens the day's log (the live pill's pop-up in the top bar).
+document.addEventListener('click', e => { if(e.target.closest('[data-lw-all]')) setTimeout(() => { const c = document.getElementById('topSync'); if(c) c.click(); }, 0); });
 
 /* ---------- Margyn's panel header: what is running, on every page ---------- */
 function lwPaintPanel(){

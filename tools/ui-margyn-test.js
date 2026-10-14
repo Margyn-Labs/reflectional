@@ -43,7 +43,11 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.waitForTimeout(4500);
 
   // 1. panel open on a wide screen, greeting by name, away facts, what needs you
-  ok(await p.isVisible('#mgRail'), 'Margyn panel is open on a wide screen');
+  // Margyn is closed by default: a strip beside the page. The strip opens it over the page.
+  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#mgrStrip') && await p.isVisible('#mgrLaunch'), 'Margyn is a strip by default, panel closed');
+  ok((await p.textContent('#mgrStripBadge')).trim() === (await p.textContent('#agentsBadge')).trim() && await p.isVisible('#mgrStripBadge'), 'the strip carries the Inbox count');
+  await p.click('#mgrLaunch'); await p.waitForTimeout(300);
+  ok(await p.isVisible('#mgRail') && await p.evaluate(() => getComputedStyle(document.getElementById('mgRail')).position === 'fixed'), 'the strip opens Margyn over the page');
   const greet = await p.textContent('#vxFeed .mgr-msg.greet');
   ok(/Hey Aditi, welcome back\./.test(greet), 'greets the owner by first name (from People): ' + greet.slice(0, 40));
   ok(/Since you were last here \(2 days ago\)/.test(greet), 'says what happened since the last visit');
@@ -84,6 +88,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   if(SHOTS) await p.screenshot({ path:SHOTS + '/2-typed-with-tools.png' });
 
   // 4. one Margyn: Conversations page is the archive, no Agents tab; Automations renamed
+  await p.click('#mgrClose'); await p.waitForTimeout(200);   // Margyn was open over the page; put it away to use the page
   await p.click('.pagenav button[data-view="history"]'); await p.waitForTimeout(500);
   ok(!(await p.$('#askTabs [data-tab="agents"]')), 'no Agents tab on Conversations');
   ok(/Conversations/.test(await p.textContent('.pagenav button[data-view="history"]')), 'nav says Conversations');
@@ -185,14 +190,17 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(!/안녕/.test(noiseTxt), 'Korean noise is not shown as something they said');
   ok((noiseTxt.match(/What does our cash health look like\?/g) || []).length === 1, 'a doubled line is shown once');
   // scroll: the page, by direction and to a section
-  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
+  await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(500);   // a long page (Cash is split into tabs now)
   let sc = await p.evaluate(() => VX_TOOLS.scroll({ direction:'down' }));
   await p.waitForTimeout(600);
   ok(sc.ok && await p.evaluate(() => document.querySelector('.app-body .wrap').scrollTop > 100), 'scroll down moves the page: ' + sc.now);
   sc = await p.evaluate(() => VX_TOOLS.scroll({ direction:'top' })); await p.waitForTimeout(600);
   ok(await p.evaluate(() => document.querySelector('.app-body .wrap').scrollTop < 5), 'scroll top goes back up');
+  // a section on another tab: Margyn opens the tab, then scrolls to it
+  await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(500);
   sc = await p.evaluate(() => VX_TOOLS.scroll({ to:'forecast' })); await p.waitForTimeout(600);
   ok(sc.ok && /forecast/i.test(sc.scrolled_to), 'scroll to a section by name: ' + sc.scrolled_to);
+  ok(await p.evaluate(() => mgTab.cash === 'forecast' && !!document.querySelector('#view-cash .mg-tabs [data-mg-tab="forecast"].on') && location.hash === '#/cash?tab=forecast'), 'it opened the Forecast tab to get there, and the address says so');
   sc = await p.evaluate(() => VX_TOOLS.scroll({ to:'zzz-nothing' }));
   ok(!sc.ok && /Headings here/.test(sc.note), 'an unknown section says what is on the page');
   await p.click('.pagenav button[data-view="home"]'); await p.waitForTimeout(300);

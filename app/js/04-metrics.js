@@ -267,7 +267,7 @@ function renderVitalsAccordion(vitals, hasData){
     const actions = itemized[v.label]
       ? '<div class="sv-acc-actions"><button class="btn-ghost sv-acc-open" data-label="' + escapeHtml(v.label) + '" type="button">Open itemized ledger &rarr;</button></div>'
       : '';
-    return '<div class="sv-acc-row" style="--v-accent:' + accent + ';">' +
+    return '<div class="sv-acc-row" style="--v-accent:' + accent + '; --sv-pct:' + Math.max(0, Math.min(100, Math.round(score))) + '%;">' +
       '<div class="sv-acc-head" data-label="' + escapeHtml(v.label) + '">' +
         '<span class="sv-acc-accent"></span>' +
         '<span class="sv-acc-name"><span class="sv-acc-label">' + escapeHtml(v.label) + '</span><span class="sv-acc-band ' + band.cls + '">' + band.label + '</span>' + vitalSourceTag(v.label) + '</span>' +

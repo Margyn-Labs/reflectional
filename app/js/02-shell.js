@@ -100,6 +100,8 @@ function mgSearch(q){
       }, who.toLowerCase())));
     } catch(e){}
   }
+  // Tabs inside pages (32-tabs.js): "settlements", "ledger balances", "scoring" jump straight there.
+  if(nq){ try { if(typeof mgTabList === 'function') mgTabList().forEach(t => push({ sec:'Pages', kind:'tab', label:t.pageLabel + ' · ' + t.label, hint:'Go', icon:railIcon[t.icon] || '', run:() => { mgGo(t.page); if(t.key) mgSetTab(t.page, t.key); } }, t.words)); } catch(e){} }
   Object.keys(MG_NAV_ACTIONS).forEach(id => { const a = MG_NAV_ACTIONS[id]; push({ sec:'Actions', kind:'action', label:a.label, hint:'Run', icon:a.icon, run:a.run }, a.words); });
   const SEC = { Pages:0, Sources:1, Customers:2, Vendors:3, Actions:4 };
   return nq ? out.sort((a, b) => b.score - a.score || SEC[a.sec] - SEC[b.sec]) : out;

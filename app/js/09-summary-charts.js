@@ -99,7 +99,7 @@ function _rdBuildConfig(spec){
   const ink2 = _cssVar('--text-2', '#767E8B');
   const hair = _cssVar('--border-1', '#E4E1DA');
   const fontF = 'Manrope, system-ui, sans-serif';
-  const monoF = 'IBM Plex Mono, monospace';
+  const monoF = 'Manrope, system-ui, sans-serif';   // figures sit in the main typeface (redesign 2026-10)
   const anyBar = series.some(s => (s.type || spec.type) === 'bar' || spec.type === 'bar' || spec.type === 'combo');
   const datasets = series.map((s, i) => {
     let stype = s.type || (spec.type === 'combo' ? (i === 0 ? 'bar' : 'line') : spec.type);

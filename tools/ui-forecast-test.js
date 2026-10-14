@@ -42,7 +42,7 @@ function learned() {
   await p.goto(B);
   await p.waitForFunction(() => sbClient && document.getElementById('authGate') && !document.getElementById('authGate').classList.contains('hidden'), null, { timeout: 10000 });
   await p.evaluate(seedApp); await p.waitForTimeout(4500);
-  await p.evaluate((f) => { mgMar = Object.assign({}, mgMar || {}, { forecast_v2: f }); mgMarAt = Date.now(); mgMarCompany = ''; showView('cash'); }, fv);
+  await p.evaluate((f) => { mgMar = Object.assign({}, mgMar || {}, { forecast_v2: f }); mgMarAt = Date.now(); mgMarCompany = ''; showView('cash'); mgSetTab('cash', 'forecast'); }, fv);   // the forecast is the Cash page's Forecast tab
   await p.waitForTimeout(600);
 
   // 1. Cash page: learned forecast with its range

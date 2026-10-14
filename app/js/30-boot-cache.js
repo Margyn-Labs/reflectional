@@ -12,7 +12,7 @@
    - Read-only: drawing from it calls render functions only, never a save.
      If anything about it fails, start-up carries on exactly as before.
    ============================================================ */
-const MG_BC_DB = 'margyn-boot', MG_BC_STORE = 'state', MG_BC_VER = 1, MG_BC_MAX_AGE = 14 * 86400000;
+const MG_BC_DB = 'margyn-boot', MG_BC_STORE = 'state', MG_BC_VER = 2 /* 2 = the Oct 2026 redesign: a copy saved by the old layout is dropped once */, MG_BC_MAX_AGE = 14 * 86400000;
 let mgBcShownFor = null;   // the auth user whose saved screen is on display (routeFor skips the empty-shell wait)
 let mgBcTimer = null;
 
