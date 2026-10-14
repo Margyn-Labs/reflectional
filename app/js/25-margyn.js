@@ -779,7 +779,7 @@ function mgrMood(){
   if(f && f.firstBelow >= 0) cashLine = 'Cash dips below your floor in week ' + (f.firstBelow + 1) + '.';
   else if(f) cashLine = 'Cash stays above your floor for the next 13 weeks.';
   else if(rNow != null && isFinite(rNow)) cashLine = rNow <= 0 ? 'Cash is below zero on the books.' : 'You have about ' + rNow.toFixed(1) + ' months of runway.';
-  else cashLine = s ? '' : 'I don’t have your figures yet.';
+  else cashLine = s ? '' : typeof mgDataReady !== 'undefined' && !mgDataReady ? 'Reading your books…' : 'I don’t have your figures yet.';
   const collLine = overdue > 0 ? (over60 > 0 ? 'Collections are slipping: ' + fmtINR(over60, 'tile') + ' is past 60 days.' : fmtINR(overdue, 'tile') + ' is overdue across ' + nOver + ' customer' + (nOver === 1 ? '' : 's') + '.') : (s ? 'Collections are on track.' : '');
   const level = (f && f.firstBelow >= 0 && f.firstBelow < 5) || (rNow != null && rNow < 1.5) ? 'act' : (over60 > 0 || dec.length || warnSrc.length || (pd != null && pd <= -3)) ? 'watch' : 'steady';
   const bits = [];

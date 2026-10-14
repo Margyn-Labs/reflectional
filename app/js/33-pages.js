@@ -223,3 +223,14 @@ if(typeof renderConnectionsHub === 'function'){
   renderConnectionsHub = function(){ const out = baseHub2.apply(this, arguments); try { mgSrcBandPaint(); } catch(e){ console.error('[margyn] sources band', e); } return out; };
 }
 (function(){ const base = showView; showView = function(){ const out = base.apply(this, arguments); if(mgCurrentView === 'connectors'){ try { mgSrcBandPaint(); } catch(e){} } return out; }; })();
+
+/* The first finished load: from here an empty page really means no figures (see mgDataReady in 19-pages.js). */
+(function(){
+  const base = refreshAll;
+  refreshAll = async function(){
+    try { return await base.apply(this, arguments); }
+    finally {
+      if(!mgDataReady){ mgDataReady = true; try { if(typeof MG_OWN !== 'undefined' && MG_OWN.includes(mgCurrentView) && typeof mgRenderOwn === 'function') mgRenderOwn(mgCurrentView); } catch(e){} }
+    }
+  };
+})();

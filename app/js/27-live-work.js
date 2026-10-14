@@ -71,11 +71,11 @@ const LW_CALLS = [
   [/\/api\/zoho\?action=vitals/, 'books', 'Reading Zoho Books', 'Read Zoho Books'],
   [/\/api\/zoho\?action=sync/, 'books', 'Syncing Zoho Books', 'Synced Zoho Books'],
   [/\/api\/zoho\?action=odoo-sync/, 'books', 'Syncing Odoo', 'Synced Odoo'],
-  [/\/api\/zoho\?action=odoo-status/, 'books', 'Reading Odoo', 'Read Odoo'],
-  [/\/api\/sync-razorpay\?action=cashfree-status/, 'payments', 'Reading Cashfree', 'Read Cashfree'],
+  [/\/api\/zoho\?action=odoo-status/, 'books', 'Checking the Odoo connection', 'Checked the Odoo connection'],
+  [/\/api\/sync-razorpay\?action=cashfree-status/, 'payments', 'Checking the Cashfree connection', 'Checked the Cashfree connection'],
   [/\/api\/sync-razorpay/, 'payments', 'Syncing Razorpay', 'Synced Razorpay'],
   [/\/api\/shopify\?action=sync/, 'payments', 'Syncing Shopify orders', 'Synced Shopify'],
-  [/\/api\/shopify\?action=status/, 'payments', 'Reading Shopify', 'Read Shopify'],
+  [/\/api\/shopify\?action=status/, 'payments', 'Checking the Shopify connection', 'Checked the Shopify connection'],
   [/\/api\/ask-margyn\?action=watch/, 'watch', 'Reading what I noticed in your books', 'Read what I noticed'],
   [/\/api\/ops\?action=cron-cfo-pack|cfo-pack-test/, 'close', 'Preparing the CFO pack', 'Prepared the CFO pack']
 ];
