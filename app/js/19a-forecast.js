@@ -197,6 +197,14 @@ function mgFcTrackLine(v){
   return 'Checked on your last ' + sc.checks.length + ' weeks: money from customers was within ' + Math.round(miss * 100) + '% on average' +
     (m4 ? ', and cash four weeks out within about ' + fmtINR(m4.typical_miss, 'tile') : '') + '.';
 }
+/* Coming in against going out, week by week, under the forecast line (the same weeks the line is built from). */
+function mgFcInOut(f){
+  const ins = f.inflow || [], outs = f.outflow || []; if(!ins.length || !outs.length) return '';
+  const top = Math.max(1, ...ins, ...outs);
+  return '<div class="mg-inout" role="img" aria-label="Money coming in and going out, week by week">' + ins.map((v, i) =>
+      '<div title="Week ' + (i + 1) + ': ' + escapeHtml(fmtINR(v, 'tile')) + ' in, ' + escapeHtml(fmtINR(outs[i] || 0, 'tile')) + ' out"><i style="height:' + Math.max(2, v / top * 100).toFixed(0) + '%"></i><i style="height:' + Math.max(2, (outs[i] || 0) / top * 100).toFixed(0) + '%"></i></div>').join('') + '</div>' +
+    '<div class="mg-inout-leg"><span style="--k:#BFE3D2">Coming in</span><span style="--k:#E9C9BE">Going out</span><span>week by week</span></div>';
+}
 function mgForecastPanel(wide){
   const f = mgForecast(); if(!f) return '';
   if(!f.st.enabled) return null;   // customer switched it off: Home shows cash history instead
@@ -207,7 +215,7 @@ function mgForecastPanel(wide){
     '<div class="mg-fc-callout' + (warn ? ' warn' : '') + '">' + (warn
       ? (f.opening < f.floor ? 'Cash today is already below your floor of ' + escapeHtml(fmtINR(f.floor, 'tile')) + '.' : 'Cash falls below your floor in week ' + (f.firstBelow + 1) + '.') + ' Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.'
       : 'Stays above your floor for 13 weeks. Lowest point ' + escapeHtml(fmtINR(f.min, 'tile')) + ' in week ' + (f.minWeek + 1) + '.') + '</div>' +
-    mgForecastChart(f, wide) +
+    mgForecastChart(f, wide) + mgFcInOut(f) +
     (f.learned && mgFcTrackLine(f.v) ? '<div class="mg-fine"><b>' + escapeHtml(mgFcTrackLine(f.v)) + '</b></div>' : '') +
     '<div class="mg-fine">' + escapeHtml(mgForecastSentence(f)) + ' ' + (f.learned
       ? '<button class="mg-link" type="button" data-fc-how>How Margyn built this</button> · <button class="mg-link" type="button" data-fc-adjust>Adjust</button>'
@@ -345,7 +353,7 @@ document.addEventListener('click', e => {
   if(e.target.closest('[data-fc-adjust]')){ mgForecastEditor(); return; }
   if(e.target.closest('[data-fc-how]')){
     if(mgCurrentView !== 'cash' && typeof mgGo === 'function') mgGo('cash');
-    setTimeout(() => { const el = document.getElementById('mgFcHow'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 80);
+    setTimeout(() => { const el = document.getElementById('mgFcHow'); if(el){ if(typeof mgReveal === 'function') mgReveal(el); el.scrollIntoView({ behavior:'smooth', block:'start' }); } }, 80);
     return;
   }
   if(e.target.closest('[data-fc-reset]')){ mgFcReset(); mgCloseDrawer(); mgFcRerender(); mgForecastEditor(); }

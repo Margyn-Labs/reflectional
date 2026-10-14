@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#FAFAF8" />
 <title>Margyn, your margin, live.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <!-- supabase-js is loaded programmatically at the bottom of this file; fetched now so it is ready when asked for -->
@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="/app/css/voice.css">
 <link rel="stylesheet" href="/app/css/margyn.css">
 <link rel="stylesheet" href="/app/css/live.css">
+<link rel="stylesheet" href="/app/css/polish.css">
 </head>
 <body>
 <!-- ============ AUTH GATE ============ -->
@@ -137,6 +138,7 @@
       <img src="images/margyn-logo-mark.png" alt="Margyn" class="nav-logo-mark">
       <span class="nav-logo">Margyn</span>
     </a>
+    <button class="mg-rail-t" id="mgRailToggle" type="button" title="Collapse the menu" aria-label="Collapse the menu" aria-pressed="false" aria-controls="sidebarNav">«</button>
     <div class="mg-scope" id="mgScope" role="group" aria-label="What you are looking at">
       <div class="org-switch mg-sc" id="orgSwitch">
         <button class="org-switch-btn mg-sc-btn" id="orgSwitchBtn" type="button" aria-haspopup="true" aria-expanded="false">
@@ -173,6 +175,7 @@
         <div class="mg-pop" id="mgScopeCompactPop" role="menu"></div>
       </div>
     </div>
+    <div class="mg-status-wrap"><span class="top-sync" id="topSync"><span class="pip"></span><span id="topSyncText">No sources</span></span><div class="mg-pop mg-status-pop" id="mgStatusPop" role="dialog" aria-label="What Margyn has been doing"></div></div>
     <div class="mg-spacer"></div>
     <button class="top-k" id="cmdkTrigger" type="button" aria-label="Search or ask Margyn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -186,7 +189,6 @@
       <button class="mg-icon-btn" id="mgBellBtn" type="button" aria-label="Notifications" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="mg-bell-dot hidden" id="mgBellDot"></span></button>
       <div class="mg-pop mg-pop-right" id="mgBellPop" role="menu"></div>
     </div>
-    <div class="mg-status-wrap"><span class="top-sync" id="topSync"><span class="pip"></span><span id="topSyncText">No sources</span></span><div class="mg-pop mg-pop-right mg-status-pop" id="mgStatusPop" role="dialog" aria-label="What Margyn has been doing"></div></div>
     <div class="nav-user mg-user" id="mgUser">
       <button class="top-avatar" id="topAvatar" type="button" title="" aria-haspopup="true" aria-expanded="false" aria-controls="mgUserPop">M</button>
       <div class="mg-pop mg-pop-right" id="mgUserPop" role="menu">
@@ -203,6 +205,14 @@
   </div>
 </nav>
 <div class="mg-scrim" id="mgRailScrim"></div>
+<!-- Phone: a bottom bar for the thumb, Margyn in the middle (app/js/31-polish.js). Hidden on wider screens. -->
+<div class="mg-bbar" id="mgBottomBar" role="navigation" aria-label="Quick navigation">
+  <button type="button" data-bb="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg><span>Home</span></button>
+  <button type="button" data-bb="inbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span>Inbox</span><b class="hidden" id="mgBbBadge"></b></button>
+  <button type="button" class="mm" data-bb="margyn" aria-label="Open Margyn"><i aria-hidden="true">M</i><span>Margyn</span></button>
+  <button type="button" data-bb="money"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg><span>Money</span></button>
+  <button type="button" data-bb="more" aria-controls="sidebarNav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>More</span></button>
+</div>
 <div class="app-body">
   <aside class="sidebar" id="sidebarNav" aria-label="Main">
     <div class="pagenav">
@@ -230,8 +240,8 @@
       <button data-view="agents"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Automations</span></button>
       <div class="mg-rail-bottom">
       <button data-view="connectors"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg><span>Organisations and sources</span></button>
-      <button data-view="people"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>People and roles</span></button>
-      <button data-view="settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></button>
+      <button data-view="people" class="mg-nav-folded"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>People and roles</span></button>
+      <button data-view="settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings and people</span></button>
       <button data-view="audit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Audit log</span></button>
       <button data-view="channels"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span>Channel health</span></button>
       <button data-view="financing" class="mg-nav-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="5" y1="21" x2="5" y2="10"/><line x1="19" y1="21" x2="19" y2="10"/><polygon points="12 3 21 8 3 8"/><line x1="12" y1="10" x2="12" y2="21"/></svg><span>Financing</span></button>
@@ -1244,6 +1254,7 @@
       <div class="mgr-id"><b>Margyn</b><span id="mgrSub">Your finance operator</span></div>
       <button type="button" class="mg-icon-btn" id="mgrNew" title="New conversation" aria-label="New conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
       <button type="button" class="mg-icon-btn" id="mgrHistoryBtn" title="Past conversations" aria-label="Past conversations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg></button>
+      <button type="button" class="mgr-pin-btn" id="mgrPin" aria-pressed="false" title="Keep Margyn open beside the page">Pin open</button>
       <button type="button" class="mg-icon-btn" id="mgrClose" title="Hide Margyn (⌘J)" aria-label="Hide Margyn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="mgr-call hidden" id="vxDock" data-state="connecting" role="region" aria-label="Live call with Margyn">
@@ -1263,10 +1274,16 @@
       <button type="button" class="mgr-talk" id="mgrTalk" title="Talk to Margyn (⌥M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg><span>Talk</span></button>
     </form>
   </aside>
+  <!-- Margyn, closed: a slim strip beside the page. Opens the panel over the page; Pin docks it (app/js/25-margyn.js) -->
+  <aside class="mgr-strip" id="mgrStrip" aria-label="Margyn">
+    <button type="button" class="mgr-launch hidden" id="mgrLaunch" aria-label="Open Margyn (⌘J)" title="Open Margyn (⌘J)"><i aria-hidden="true">M</i><span>Margyn</span><b class="hidden" id="mgrStripBadge"></b></button>
+    <button type="button" class="mgr-strip-btn" id="mgrStripAsk" title="Ask Margyn (⌘J)" aria-label="Ask Margyn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
+    <button type="button" class="mgr-strip-btn" id="mgrStripTalk" data-mgr-talk title="Talk to Margyn (⌥M)" aria-label="Talk to Margyn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+    <span class="mgr-strip-l" aria-hidden="true">Margyn</span>
+  </aside>
 </div>
 </div>
-<!-- ---------- Margyn, when the panel is closed: a button and a speech bubble (app/js/25-margyn.js) ---------- -->
-<button type="button" class="mgr-launch hidden" id="mgrLaunch" aria-label="Open Margyn (⌘J)" title="Open Margyn (⌘J)"><img src="images/margyn-logo-mark.png" alt=""><span>Margyn</span></button>
+<!-- ---------- Margyn's one-line nudge, when the panel is closed (app/js/25-margyn.js) ---------- -->
 <div class="mgr-bubble hidden" id="mgrBubble" role="status" aria-live="polite"></div>
 <audio id="rtRemoteAudio" autoplay hidden></audio>
 <div class="detail-overlay hidden" id="detailOverlay">
@@ -1389,5 +1406,8 @@
 <script src="/app/js/28-live-team.js"></script>
 <script src="/app/js/29-live-writes.js"></script>
 <script src="/app/js/30-boot-cache.js"></script>
+<script src="/app/js/31-polish.js"></script>
+<script src="/app/js/32-tabs.js"></script>
+<script src="/app/js/33-pages.js"></script>
 </body>
 </html>

@@ -16,6 +16,27 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-14-new-look', date:'14 Oct 2026', title:'A calmer Margyn, with more room for your numbers',
+    items:[
+      { t:'A new look, the same app', what:'The page is now one white sheet on a warm background, with lighter lines and figures in the same typeface as everything else. Every page, button and figure is where it was; nothing was removed.',
+        how:'Nothing to do. To get more room, press <b>«</b> next to the Margyn logo to fold the menu down to icons.', act:'home' },
+      { t:'Margyn stays out of the way until you want it', what:'Margyn used to sit open on the right and take a third of the screen. It is now a slim strip with your Inbox count on it. It opens over the page, and a nudge is one quiet line at the bottom that steps back after a few seconds.',
+        how:'Click the green <b>M</b> on the right, or press <kbd>⌘J</kbd>. To keep Margyn beside the page as before, open it and press <b>Pin open</b>.', act:'panel' },
+      { t:'Home shows what Margyn is working on', what:'Margyn’s read of the business and your Pulse Score lead the page. Under them, one tile per job (Payments, Books, Close, GST, Forecast, Documents, Watch, Collections) says what is running now, what needs you and what was last done.',
+        how:'Open <b>Home</b>. Click a tile to ask Margyn about it, or <b>All activity</b> for the day’s log.', act:'home' },
+      { t:'Inbox: pick on the left, decide on the right', what:'Everything waiting on you is one list, and the item you pick opens beside it with its amount, the reason and the same Approve, Dismiss and “this is the one” buttons as before.',
+        how:'Open <b>Inbox</b>. Use <kbd>↑</kbd> <kbd>↓</kbd> to move between items, and <b>Ask Margyn why</b> if you want the reasoning.', act:'inbox' },
+      { t:'Long pages are now tabs', what:'<b>Cash</b> has Position, Forecast, Settlements and Payment gateways. <b>Ledger</b> has Entries, Position, Checks, Tally books and Balances. <b>Margin</b> has seven tabs. <b>Settings</b> has its sections down the left, and People and roles is now one of them. Each tab has its own link, so Back and bookmarks land where you were.',
+        how:'Click a tab, or type its name in search (<kbd>⌘K</kbd>): “settlements”, “ledger balances”, “scoring”. You can also tell Margyn “open the forecast”.', act:'cash' },
+      { t:'Reports has an overview', what:'Seven measures across the top (revenue, spend, profit, margin, cash, Pulse Score, GST leakage), one chart you can point at any one or two of them, and a plain list of what moved, worked out from your figures. Your saved charts and every ready-made report are on the next two tabs.',
+        how:'Open <b>Reports</b>. Click a measure to chart it, then <b>Save to your charts</b> to keep it.', act:'analytics' },
+      { t:'Tables read faster', what:'Receivables, Payables, Customers, Vendors and the Audit log open with a summary line, show status as a dot and a word, and load 50 rows at a time on long lists. Customers and Vendors can be filtered to those overdue.',
+        how:'Open <b>Receivables</b>. Click a colour in the ageing bar’s key to see only that bucket.', act:'receivables' },
+      { t:'On your phone', what:'A bar at the bottom has Home, Inbox, Margyn, Money and More. Margyn opens full screen, and tables become two-line rows with every field kept.',
+        how:'Open Margyn on your phone. <b>More</b> has every other page.' }
+    ]
+  },
+  {
     id:'2026-10-12-exact-to-tally', date:'12 Oct 2026', title:'Every customer and supplier matches their Tally ledger',
     items:[
       { t:'Receivables match each customer’s ledger to the rupee', what:'A customer whose open bills were within 1% of their ledger used to be shown at the bills’ total. They now follow the ledger exactly, like everyone else.',
@@ -419,6 +440,7 @@ const MG_WN_ACTS = {
   cashflow:{ label:'Open Cash flow', run:() => { if(typeof showView === 'function') showView('cashflow'); } },
   borrowing:{ label:'Open Cash', run:() => { if(typeof showView === 'function') showView('cash'); setTimeout(() => { const el = document.getElementById('mgBorrowHist'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 120); } },
   home:{ label:'Open Home', run:() => { if(typeof showView === 'function') showView('home'); } },
+  analytics:{ label:'Open Reports', run:() => { if(typeof showView === 'function') showView('analytics'); } },
   receivables:{ label:'Open Receivables', run:() => { if(typeof showView === 'function') showView('receivables'); } },
   cfopack:{ label:'Open CFO pack', run:() => { if(typeof showView === 'function') showView('cfopack'); } },
   gst:{ label:'Open GST and tax', run:() => { if(typeof showView === 'function') showView('gst'); } },

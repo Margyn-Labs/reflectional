@@ -692,7 +692,8 @@ const REALTIME_TOOLS = [
       properties: {
         page: { type: 'string', enum: PAGE_KEYS, description: 'home, inbox (decisions waiting on the user), cash, payments (payment gateways), receivables, payables, gst, books (the ledger, every accounting source side by side), invoicing, calculate (file import), customers, vendors, margin (gross margin and what slow payers cost, from Tally), cashflow (the cash flow statement: where cash came from and went, month by month), cfopack (monthly CFO pack), analytics (reports and charts), scores (Pulse Score), history (Ask Margyn chat), agents, connectors (data sources), people (team members, their WhatsApp numbers and access), channels (channel health: whether WhatsApp and email reminders are actually being delivered, and money paid after a chase), settings, audit (audit log), financing (capital readiness), profile.' },
         view: { type: 'string', description: 'Optional. On receivables/payables/customers/vendors/cash: "reconciled", "compare", or a source key (zoho, tally, odoo, manual). On payments/books: a source key. Omit to keep the current view.' },
-        period: { type: 'string', description: 'Optional. On analytics: 1m, 1q, 1y or max. On cfopack: a month as YYYY-MM.' }
+        period: { type: 'string', description: 'Optional. On analytics: 1m, 1q, 1y or max. On cfopack: a month as YYYY-MM.' },
+        tab: { type: 'string', description: 'Optional. Some pages are split into tabs; name one to land on it. cash: position, forecast, settlements (payment gateways is its own page: payments). books: entries, position, checks, tally, balances. margin: overview, customers, items, costs, working-capital, gst, help. settings: logins, whatsapp, notifications, scoring, sources, consent, account. analytics: overview, charts, library. agents: roster, chasing, log. invoicing: invoice-new, invoices, printing. Omit to open the page where they left it.' }
       },
       required: ['page']
     }

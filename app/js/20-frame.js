@@ -141,6 +141,7 @@ function mgOrgShort(){ return mgOrgName().replace(/\s+(Private Limited|Pvt\.? Lt
 
 /* ---------- state ---------- */
 let mgCurrentView = 'home';
+let mgChipView = '';   // the own page being rendered (its header draws before mgCurrentView moves)
 let mgApplying = false;       // true while the router itself is navigating
 let mgFirstLoadDone = false;  // set once the first refreshAll() after login has applied the URL
 
@@ -210,6 +211,8 @@ function mgEntitiesHtml(){
 }
 function mgRefreshScope(){
   const page = mgCurrentView;
+  // styling hook only (polish.css picks the page colour from these)
+  try { document.body.dataset.mgPage = page || ''; document.body.dataset.mgGroup = (MG_PAGES[page] || {}).group || ''; } catch(e){}
   const p = mgScopeParts(page);
   const set = (id, fn) => { const el = document.getElementById(id); if(el) fn(el); };
   set('mgSrcVal', el => el.textContent = p.srcLabel);
@@ -243,6 +246,8 @@ function mgRenderPageHead(page, p){
   if(P.base === 'agents'){
     root.classList.toggle('mg-is-inbox', page === 'inbox'); root.classList.toggle('mg-is-agents', page === 'agents');
   }
+  const oldChip = head.querySelector(':scope > .mg-ph-chip'); if(oldChip) oldChip.remove();
+  head.insertAdjacentHTML('afterbegin', mgPageChip(page));
   const sub = head.querySelector('.rd-sub');
   if(sub && P.sub) sub.textContent = P.sub;
   const eb = head.querySelector('.rd-eyebrow');
@@ -259,7 +264,10 @@ function mgRenderPageHead(page, p){
   }
   let line = head.querySelector('.mg-scopeline');
   if(!MG_DATA_VIEWS.includes(P.base)){ if(line) line.remove(); return; }
-  if(!line){ line = document.createElement('div'); line.className = 'mg-scopeline'; (head.firstElementChild || head).appendChild(line); }
+  // Under the title, never inside the page-title chip (the chip is the header's first child).
+  const lineHost = [...head.children].find(c => !c.classList.contains('mg-ph-chip')) || head;
+  if(!line){ line = document.createElement('div'); line.className = 'mg-scopeline'; }
+  if(line.parentElement !== lineHost) lineHost.appendChild(line);
   line.textContent = mgOrgShort() + ' · ' + p.srcLabel + ' · ' + p.perLabel;
 }
 function mgRenderUser(){
@@ -283,6 +291,7 @@ showView = function(name){
   MG_OWN.forEach(k => { const el = document.getElementById('view-' + k); if(el) el.classList.add('hidden'); });
   if(!P){ mgBaseShowView(name); }
   else if(P.own){
+    mgChipView = page;
     mgBaseShowView(page);   // hides every existing view; no existing view has this name
     const el = document.getElementById('view-' + page);
     if(el){ el.classList.remove('hidden', 'rd-fade'); void el.offsetWidth; el.classList.add('rd-fade'); }
@@ -320,7 +329,7 @@ function mgParseHash(){
   const m = /^#\/([\w-]+)(?:\?(.*))?$/.exec(location.hash || '');
   if(!m) return null;
   const q = new URLSearchParams(m[2] || '');
-  return { slug:m[1], src:q.get('src'), period:q.get('period') };
+  return { slug:m[1], src:q.get('src'), period:q.get('period'), tab:q.get('tab') };
 }
 function mgHashFor(page){
   const P = MG_PAGES[page]; if(!P) return null;
@@ -329,6 +338,8 @@ function mgHashFor(page){
   if(src && src !== 'all' && src !== 'reconciled') q.set('src', src);
   if(page === 'analytics' && typeof analyticsRange !== 'undefined' && analyticsRange !== '1q') q.set('period', analyticsRange);
   if(page === 'cfopack' && mgPackMonth) q.set('period', mgPackMonth);
+  const tab = typeof mgTabOf === 'function' ? mgTabOf(page) : null;   // 32-tabs.js
+  if(tab) q.set('tab', tab);
   const qs = q.toString();
   return '#/' + P.slug + (qs ? '?' + qs : '');
 }
@@ -351,6 +362,7 @@ function mgApplyRoute(){
     if(page === 'cash') mgCashSrc = r.src || 'reconciled';
     if(page === 'cfopack') mgPackMonth = /^\d{4}-\d{2}$/.test(r.period || '') ? r.period : null;
     if(page === 'agents') agentsActiveTab = 'roster';
+    if(typeof mgTabRoute === 'function') mgTabRoute(page, r.tab);   // 32-tabs.js
     showView(page);
     if(MG_SRC[page]){
       const want = r.src || 'all';

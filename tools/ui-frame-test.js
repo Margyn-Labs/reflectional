@@ -29,7 +29,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
 
   // 3. Scope bar source switch on Payment gateways (Cash -> Payment gateways) drives the page's own tabs
   await p.click('.pagenav button[data-view="cash"]'); await p.waitForTimeout(300);
-  await p.click('#view-cash .mg-ph-actions [data-go-page="payments"]'); await p.waitForTimeout(300);
+  await p.click('#view-cash .mg-tabs [data-mg-tab="gateways"]'); await p.waitForTimeout(300);   // Payment gateways is the fourth Cash tab
   ok(JSON.stringify(await vis()) === '["view-payments"]' && p.url().endsWith('#/payment-gateways'), 'Cash -> Payment gateways opens the old Payments view');
   ok(await p.evaluate(() => document.querySelector('.pagenav button[data-view="cash"]').classList.contains('active')), 'Payment gateways keeps Cash lit in the rail');
   await p.click('#mgSrcBtn'); await p.waitForTimeout(150);
@@ -58,10 +58,13 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok((await p.$$('#mgFcTable tbody tr')).length === 13, 'forecast table has 13 weeks');
   ok((await p.$$('#mgCashSettle tbody tr')).length === 12 && /Pending/.test(await p.textContent('#mgCashSettle')), 'settlements grid with status (one pending)');
   ok(!(await p.$('#view-cash [data-idx]')) && !/Mark as settled/.test(await p.textContent('#view-cash')), 'no settle toggle on Cash (it is session-only)');
+  await p.click('#view-cash .mg-tabs [data-mg-tab="forecast"]'); await p.waitForTimeout(200);   // the forecast is Cash's Forecast tab
+  ok(p.url().endsWith('#/cash?tab=forecast') && await p.isVisible('#mgFcTable') && !(await p.isVisible('#mgCashWhere')), 'Forecast tab: its own address, forecast shown, Position put away');
   await p.click('#view-cash [data-fc-adjust]'); await p.waitForTimeout(200);
   await p.fill('.mg-drawer input[data-fc="collectDelay"]', '40'); await p.waitForTimeout(250);
   ok(/pay 40 days after/.test(await p.textContent('#view-cash')), 'Adjust from Cash updates the Cash forecast');
   await p.click('.mg-drawer [data-fc-reset]'); await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+  await p.click('#view-cash .mg-tabs [data-mg-tab="position"]'); await p.waitForTimeout(150);   // back to the Position tab
   await p.click('#mgSrcBtn'); await p.waitForTimeout(150);
   const cashOpts = await p.$$eval('#mgSrcPop [data-mg-src]', x => x.map(e => e.dataset.mgSrc));
   ok(cashOpts.join() === 'reconciled,zoho,tally,razorpay', 'Cash sources in the Scope bar: ' + cashOpts);
@@ -207,12 +210,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   // 6. Import / Ask / user menu
   await p.click('#mgImportBtn'); await p.waitForTimeout(250);
   ok(JSON.stringify(await vis()) === '["view-calculate"]' && p.url().endsWith('#/import'), 'Import button opens the upload page');
-  // The top bar's Margyn button toggles the Margyn panel (25-margyn.js); Conversations is in the rail.
-  const railWas = await p.isVisible('#mgRail');
-  await p.click('#mgAskBtn'); await p.waitForTimeout(250);
-  ok(await p.isVisible('#mgRail') === !railWas, 'Margyn button toggles the Margyn panel');
-  await p.click('#mgAskBtn'); await p.waitForTimeout(250);
-  ok(await p.isVisible('#mgRail') === railWas, 'and again closes/opens it');
+  // Margyn lives in the strip beside the page (25-margyn.js); Conversations is in the rail.
+  if(await p.isVisible('#mgRail')){ await p.click('#mgrClose'); await p.waitForTimeout(250); }
+  await p.click('#mgrLaunch'); await p.waitForTimeout(250);
+  ok(await p.isVisible('#mgRail'), 'the Margyn strip opens the Margyn panel');
+  await p.click('#mgrClose'); await p.waitForTimeout(250);
+  ok(!(await p.isVisible('#mgRail')) && await p.isVisible('#mgrLaunch'), 'and closing it brings the strip back');
   await p.click('#topAvatar'); await p.waitForTimeout(150);
   ok(await p.isVisible('#mgUserPop') && await p.isVisible('#logoutBtn'), 'user menu opens with Log out');
   ok((await p.textContent('#mgUserName')) === 'Aditi Kulkarni', 'user menu names the primary person');
@@ -260,7 +263,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(await p.evaluate(() => localStorage.getItem('margyn_forecast_v1')) === null, 'nothing written to localStorage when the column exists');
   await p.keyboard.press('Escape');
   await p.evaluate(() => { window.__profileUpdates = []; setMetricSelection('summary', ['cash', 'netMargin']); saveAnalyticsCharts([{ id:'x1', name:'Only cash', type:'area', metrics:['cash'], group:'Week' }]); });
-  await p.evaluate(() => { document.getElementById('setBandHealthy') || showView('settings'); }); await p.waitForTimeout(250);
+  await p.evaluate(() => { document.getElementById('setBandHealthy') || showView('settings'); mgSetTab('settings', 'scoring'); }); await p.waitForTimeout(250);   // Scoring is one of Settings' sections
   await p.fill('#setBandHealthy', '75'); await p.fill('#setBandCaution', '45'); await p.click('#setBandSave'); await p.waitForTimeout(1000);
   const ups2 = await p.evaluate(() => window.__profileUpdates);
   const last = ups2.length ? ups2[ups2.length - 1].preferences : {};
@@ -386,6 +389,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(/Not available yet/.test(await p.textContent('#view-margin')) && /next Margyn Tally agent update/.test(await p.textContent('#view-margin')), 'item margin is honestly "not available yet"');
   ok(await p.evaluate(() => { const h = [...document.querySelectorAll('#view-margin .mg-panel-h h2')].find(x => x.textContent === 'Month by month'); const t = h.closest('.mg-panel').textContent; return /month in progress/.test(t) && /Orders and delivery notes are left out/.test(t); }), 'monthly table marks the month in progress and says orders are left out');
   const marBefore = await p.evaluate(() => (window.__tallyCalls || []).length);
+  await p.click('#view-margin .mg-tabs [data-mg-tab="help"]'); await p.waitForTimeout(150);   // Needs your help is one of Margin's tabs
   await p.selectOption('#view-margin [data-mar-bucket="Digital Marketing"]', 'opex');
   await p.click('#view-margin [data-mar-confirm="Digital Marketing"]'); await p.waitForTimeout(500);
   ok(await p.evaluate(n => (window.__tallyCalls || []).length === n + 1 && window.__tallyCalls[window.__tallyCalls.length - 1] === 'classify', marBefore), 'confirming a ledger calls classify once');

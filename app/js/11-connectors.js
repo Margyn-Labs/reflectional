@@ -498,20 +498,32 @@ function renderTallyTab(){
 
   // ledger balances
   const ledItems = (led.items || []).filter(x => x.closing_balance != null)
-    .slice().sort((a, c) => Math.abs(c.closing_balance) - Math.abs(a.closing_balance)).slice(0, 40);
+    .slice().sort((a, c) => Math.abs(c.closing_balance) - Math.abs(a.closing_balance));
+  // Every ledger the server sent is listed (it sends every bank, cash, loan and tax ledger, then the
+  // largest of the rest, 400 at most). The first 40 show; "Show all" opens the rest.
+  const LED_FIRST = 40, ledTotal = led.count || ledItems.length;
   const ledSub = document.getElementById('tvLedgersSub');
-  if(ledSub) ledSub.textContent = ledItems.length ? (ledItems.length + ' of ' + (led.count || ledItems.length) + ' · largest first') : 'largest first';
+  const ledSubText = shown => ledItems.length ? (shown + ' of ' + ledTotal + ' ledgers · largest first' + (ledTotal > ledItems.length && shown >= ledItems.length ? ' · the other ' + (ledTotal - ledItems.length) + ' are smaller or have no balance' : '')) : 'largest first';
+  if(ledSub) ledSub.textContent = ledSubText(Math.min(LED_FIRST, ledItems.length));
   document.getElementById('tvLedgersList').innerHTML = ledItems.length ? (
     '<div class="dscroll"><table class="dtable"><colgroup><col><col style="width:116px"></colgroup>' +
     '<thead><tr><th>Ledger</th><th class="num">Closing balance</th></tr></thead><tbody>' +
     ledItems.map((x, i) => {
       const bal = Number(x.closing_balance);
-      return '<tr data-row data-led-idx="' + i + '">' +
+      return '<tr data-row data-led-idx="' + i + '"' + (i >= LED_FIRST ? ' hidden' : '') + '>' +
         '<td><div class="dt-main">' + escapeHtml(x.name) + '</div>' +
         '<div class="dt-sub">' + escapeHtml(x.parent || '') + '</div></td>' +
         '<td class="num">' + inr(Math.abs(bal)) + (bal < 0 ? ' Cr' : ' Dr') + '</td></tr>';
-    }).join('') + '</tbody></table></div>'
+    }).join('') + '</tbody></table></div>' +
+    (ledItems.length > LED_FIRST ? '<div style="padding:12px 0 2px;"><button type="button" class="mg-btn mg-btn-sm" id="tvLedgersAll">Show all ' + ledItems.length + ' ledgers</button></div>' : '')
   ) : '<div class="ledger-empty">No closing balances yet — some Tally setups return these blank; the connector still records ledger names and groups.</div>';
+  const ledAll = document.getElementById('tvLedgersAll');
+  if(ledAll) ledAll.addEventListener('click', () => {
+    document.querySelectorAll('#tvLedgersList tr[data-led-idx][hidden]').forEach(r => { r.hidden = false; });
+    const sc = document.querySelector('#tvLedgersList .dscroll'); if(sc){ sc.style.maxHeight = 'none'; sc.classList.add('fits'); }
+    if(ledSub) ledSub.textContent = ledSubText(ledItems.length);
+    ledAll.parentElement.remove();
+  });
   document.querySelectorAll('#tvLedgersList tr[data-led-idx]').forEach(row => {
     const x = ledItems[Number(row.dataset.ledIdx)];
     const bal = Number(x.closing_balance);
@@ -1070,6 +1082,46 @@ function mgRenderDataCheck(){
     '<table style="width:100%;border-collapse:collapse;"><tbody>' + rows + '</tbody></table>' + mt + '</div>';
 }
 document.addEventListener('click', e => { if(e.target.closest && e.target.closest('[data-datacheck-run]')){ mgDataCheck = null; mgRenderDataCheck(); mgLoadDataCheck(true); } });
+/* The flow map is drawn in real pixels for the width it has, so the lines start
+   at the source chips and end at the Margyn mark at any page width. It redraws
+   when the page is resized or the Margyn panel is pinned. */
+let connFlowW = 0, connFlowRO = null;
+function connDrawFlowMap(){
+  const map = document.getElementById('connFlowMap');
+  if(!map) return;
+  map.className = 'rd-flowmap';
+  const n = CONN_FEED_MAP.length;
+  const H = Math.max(300, n * 64 + 40);
+  const W = Math.max(560, Math.round(map.clientWidth || 620));
+  connFlowW = map.clientWidth;
+  const chipX = 236, hubX = W - 64, hubY = H / 2, bend = Math.min(260, (hubX - chipX) * 0.45);
+  const yFor = i => 40 + i * ((H - 80) / (n - 1));
+  let chips = '', paths = '', dots = '';
+  CONN_FEED_MAP.forEach((c, i) => {
+    const live = connIsLive(c.key);
+    const y = yFor(i);
+    const brand = CONN_BRAND[c.key] || { color: '#767E8B' };
+    chips += '<div class="fm-chip' + (live ? '' : ' off') + '" style="top:' + y + 'px;">' +
+      '<span class="fm-logo" style="background:' + (live ? brand.color : 'var(--surf-2)') + ';color:' + (live ? '#fff' : 'var(--text-3)') + ';">' + escapeHtml(c.label[0]) + '</span>' +
+      '<span class="fm-meta"><span class="fm-name">' + escapeHtml(c.label) + '</span>' +
+      '<span class="fm-stat">' + (live ? 'Live' : 'Not connected') + '</span></span></div>';
+    const d = 'M' + chipX + ',' + y.toFixed(0) + ' C' + Math.round(chipX + bend) + ',' + y.toFixed(0) + ' ' + Math.round(hubX - 34 - bend) + ',' + hubY + ' ' + (hubX - 34) + ',' + hubY;
+    paths += '<path class="fm-path' + (live ? ' live' : '') + '" d="' + d + '"></path>';
+    if(live) dots += '<circle class="fm-dot" r="3.2"><animateMotion dur="2.4s" begin="' + (i * 0.45).toFixed(2) + 's" repeatCount="indefinite" path="' + d + '"></animateMotion></circle>';
+  });
+  map.style.height = H + 'px';
+  map.innerHTML =
+    '<div class="fm-stage" style="width:' + W + 'px;height:' + H + 'px;">' +
+    '<svg class="fm-lines" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+    '<defs><linearGradient id="rdEmGrad" gradientUnits="userSpaceOnUse" x1="' + chipX + '" x2="' + hubX + '" y1="0" y2="0"><stop offset="0" stop-color="#3FD79A"/><stop offset="1" stop-color="#0E8F5C"/></linearGradient></defs>' +
+    paths + dots + '</svg>' +
+    chips +
+    '<div class="fm-hub" style="left:' + hubX + 'px;"><span class="fm-hub-ring"></span><span class="fm-hub-core">M</span></div></div>';
+  if(!connFlowRO && typeof ResizeObserver === 'function'){
+    connFlowRO = new ResizeObserver(() => { const m = document.getElementById('connFlowMap'); if(m && m.clientWidth && Math.abs(m.clientWidth - connFlowW) > 1) connDrawFlowMap(); });
+    connFlowRO.observe(map);
+  }
+}
 function renderConnectionsHub(){
   ['renderRazorpayStatus','renderZohoStatus','renderOdooStatus','renderShopifyStatus','renderTallyStatus','renderCashfreeStatus'].forEach(fn => { if(typeof window[fn] === 'function'){ try { window[fn](); } catch(e){} } });
   try { if(typeof mgRenderBooksHealth === 'function') mgRenderBooksHealth(); } catch(e){ console.error('[margyn] books check render:', e); }
@@ -1078,34 +1130,7 @@ function renderConnectionsHub(){
   const nudge = document.getElementById('day1Nudge');
   if(nudge) nudge.classList.toggle('hidden', anyLive);
   // flow map: HTML chips (crisp type, drop-in logos later) + an SVG line layer
-  const map = document.getElementById('connFlowMap');
-  if(map){
-    map.className = 'rd-flowmap';
-    const n = CONN_FEED_MAP.length;
-    const H = Math.max(300, n * 64 + 40);
-    const chipX = 244, hubX = 560, hubY = H / 2, W = 620;
-    const yFor = i => 40 + i * ((H - 80) / (n - 1));
-    let chips = '', paths = '', dots = '';
-    CONN_FEED_MAP.forEach((c, i) => {
-      const live = connIsLive(c.key);
-      const y = yFor(i);
-      const brand = CONN_BRAND[c.key] || { color: '#767E8B' };
-      chips += '<div class="fm-chip' + (live ? '' : ' off') + '" style="top:' + y + 'px;">' +
-        '<span class="fm-logo" style="background:' + (live ? brand.color : 'var(--surf-2)') + ';color:' + (live ? '#fff' : 'var(--text-3)') + ';">' + escapeHtml(c.label[0]) + '</span>' +
-        '<span class="fm-meta"><span class="fm-name">' + escapeHtml(c.label) + '</span>' +
-        '<span class="fm-stat">' + (live ? 'Live' : 'Not connected') + '</span></span></div>';
-      const d = 'M' + chipX + ',' + y.toFixed(0) + ' C' + (chipX + 90) + ',' + y.toFixed(0) + ' ' + (hubX - 120) + ',' + hubY + ' ' + (hubX - 30) + ',' + hubY;
-      paths += '<path class="fm-path' + (live ? ' live' : '') + '" d="' + d + '"></path>';
-      if(live) dots += '<circle class="fm-dot" r="3.2"><animateMotion dur="2.4s" begin="' + (i * 0.45).toFixed(2) + 's" repeatCount="indefinite" path="' + d + '"></animateMotion></circle>';
-    });
-    map.style.height = H + 'px';
-    map.innerHTML =
-      '<svg class="fm-lines" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
-      '<defs><linearGradient id="rdEmGrad" x1="0" x2="1"><stop offset="0" stop-color="#3FD79A"/><stop offset="1" stop-color="#0E8F5C"/></linearGradient></defs>' +
-      paths + dots + '</svg>' +
-      chips +
-      '<div class="fm-hub"><span class="fm-hub-ring"></span><span class="fm-hub-core">M</span></div>';
-  }
+  connDrawFlowMap();
   // feed table
   const t = document.getElementById('connFeedTable');
   if(t){

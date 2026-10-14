@@ -209,9 +209,30 @@ function mgAgreeBadge(g){
   if(g.status === 'conflict') return '<span class="mg-bdg neg">Conflict ' + escapeHtml(fmtINR(g.diff)) + '</span>';
   return '<span class="mg-bdg">Single source</span>';
 }
+// A figure with its unit set small: "₹1.84 Cr", "1.7 months" (the text is unchanged, only the unit's size).
+function mgFig(v){
+  const t = String(v == null ? '' : v), m = t.match(/^(.*\d)(\s?(?:Cr|L|K|months?|days?|weeks?|pts))$/);
+  return m ? escapeHtml(m[1]) + '<span class="mg-u">' + m[2] + '</span>' : escapeHtml(t);
+}
+// A party's name with its initials tile, as the first cell of a row.
+function mgWho(name, sub){
+  const n = String(name || '').trim(), w = n.split(/\s+/).filter(x => /[A-Za-z0-9]/.test(x));
+  const ini = ((w[0] || '?')[0] + (w.length > 1 ? w[1][0] : (w[0] || '').slice(1, 2))).toUpperCase();
+  return '<span class="mg-who"><i class="mg-who-av" aria-hidden="true">' + escapeHtml(ini) + '</i><span><b title="' + escapeHtml(n) + '">' + escapeHtml(n) + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</span></span>';
+}
+// The summary band on a table page: a few figures, then anything wide (the ageing bar).
+function mgSum(items, wide){
+  return '<div class="mg-sum">' + items.map(([l, v, cls]) => '<div><div class="mg-sum-l">' + escapeHtml(l) + '</div><div class="mg-sum-v' + (cls ? ' ' + cls : '') + '">' + mgFig(v) + '</div></div>').join('') + (wide || '') + '</div>';
+}
 function mgNum(n){ return escapeHtml(fmtINR(n).replace('₹', '')); }   // table cells: unit lives in the header
+// The page's own menu icon, as a small chip in its section colour (decorative).
+function mgPageChip(page){
+  let svg = '';
+  try { const b = document.querySelector('#sidebarNav .pagenav button[data-view="' + (page || mgChipView || mgCurrentView) + '"] svg'); svg = b ? b.outerHTML : ''; } catch(e){}
+  return svg ? '<span class="mg-ph-chip" aria-hidden="true">' + svg + '</span>' : '';
+}
 function mgPageHead(o){
-  return '<div class="mg-ph"><div class="mg-ph-l">' +
+  return '<div class="mg-ph">' + mgPageChip() + '<div class="mg-ph-l">' +
     '<div class="mg-crumb">' + escapeHtml(mgOrgShort() + ' / ' + o.group) + '</div>' +
     '<h1 class="mg-title">' + escapeHtml(o.title) + '</h1>' +
     (o.sub ? '<div class="mg-ph-sub">' + escapeHtml(o.sub) + '</div>' : '') +
@@ -248,7 +269,7 @@ function mgTile(o){
   }
   return '<button class="mg-tile" type="button" data-go-page="' + o.go + '"' + (o.full ? ' title="' + escapeHtml(o.full) + '"' : '') + '>' +
     '<div class="mg-tile-l">' + escapeHtml(o.label) + '</div>' +
-    '<div class="mg-tile-v">' + escapeHtml(o.value) + '</div>' + chg +
+    '<div class="mg-tile-v">' + mgFig(o.value) + '</div>' + chg +
     '<div class="mg-tile-src">' + escapeHtml(o.src) + '</div></button>';
 }
 function mgCashChart(hist){
@@ -356,21 +377,47 @@ function mgRenderHome(){
   const desk = typeof mgrDeskTop === 'function';
   host.innerHTML = mgPageHead({ group:'Overview', title:first ? (since ? 'Welcome back, ' : 'Welcome, ') + first : (desk ? 'Welcome back' : 'Home'),
       sub:who ? 'Signed in as ' + mgActor.roleLabel + (mgCan('edit') ? '' : ', read-only') + '. You see what your role allows.' : '', scope:mgScopeText('Reconciled') }) +
-    (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>') +
-    (desk ? mgrDeskTop() + '<div class="mgd-sec"><h2>Where things stand</h2><span>' + escapeHtml(mgAsOf ? mgAsOf() : '') + '</span></div>' : '') +
-    tiles +
-    '<div class="mg-row2">' +
-      (typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (bookHist ? 'Last 90 days, from your books' : hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
-        (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>')) +
+    (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>');
+  const cashPanel = typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (bookHist ? 'Last 90 days, from your books' : hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
+    (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>');
+  const disPanel = '<div class="mg-panel"><div class="mg-panel-h"><h2>Sources disagree</h2>' + (dis.length ? '<button class="mg-link mg-aside" type="button" data-compare="receivables">Open in Compare →</button>' : '') + '</div>' +
+    (dis.length ? listRows(dis, 'neg') : '<div class="mg-empty">Your connected sources agree.</div>') + '</div>';
+  const briefPanel = brief ? '<div class="mg-panel mg-ai-panel"><div class="mg-panel-h"><h2>Margyn’s briefing</h2><span class="mg-ai-tag">Written by Margyn</span><span class="mg-aside">' + escapeHtml(s.briefing_generated_at ? fmtDate(s.briefing_generated_at) : '') + '</span></div><div class="mg-panel-b"><p>' + escapeHtml(brief) + '</p></div></div>' : '';
+  if(desk){
+    // Quick actions under the title: only the pages this person's role may open.
+    const can = pg => typeof mgPageAllowed !== 'function' || mgPageAllowed(pg);
+    const ic = pg => { const b = document.querySelector('#sidebarNav .pagenav button[data-view="' + pg + '"] svg'); return b ? b.outerHTML : ''; };
+    const qa = '<div class="mgh-qa">' + [
+      can('inbox') ? '<button type="button" data-go-page="inbox">' + ic('inbox') + 'Review Inbox' + (dec.length ? ' <b>' + dec.length + '</b>' : '') + '</button>' : '',
+      can('invoicing') ? '<button type="button" data-go-page="invoicing">' + ic('invoicing') + 'New invoice</button>' : '',
+      can('books') ? '<button type="button" data-go-page="ledger">' + ic('books') + 'Add a bill</button>' : '',
+      can('calculate') ? '<button type="button" data-go-page="import">' + ic('calculate') + 'Import a file</button>' : '',
+      can('cfopack') ? '<button type="button" data-go-page="cfo-pack">' + ic('cfopack') + 'This month’s CFO pack</button>' : ''].join('') + '</div>';
+    // Pulse sits in Margyn's read: the score as a ring, and the three vitals moving it most.
+    let ring = '';
+    if(s){
+      const band = scoreBand(s.pulse_score), d = p ? s.pulse_score - p.pulse_score : null, sc = Math.max(0, Math.min(100, Number(s.pulse_score) || 0));
+      const drivers = (s.vitals || []).map(v => ({ label:mgVitalName(v.label), pts:(Number(v.score) - 50) * vitalWeight(v.label, s.vitals) })).sort((x, y) => Math.abs(y.pts) - Math.abs(x.pts)).slice(0, 3);
+      ring = '<div class="mgh-pulse" title="Pulse Score: operating health, not a credit score"><button type="button" class="mgh-ring ' + band.cls + '" data-go-page="pulse" aria-label="Pulse Score ' + sc + ', ' + escapeHtml(band.label) + '">' +
+        '<svg viewBox="0 0 96 96" aria-hidden="true"><circle cx="48" cy="48" r="41" fill="none" stroke="#F1EFEA" stroke-width="8"/><circle class="mgh-ring-v" cx="48" cy="48" r="41" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + (sc / 100 * 257.6).toFixed(1) + ' 258"/></svg>' +
+        '<span><b class="mg-pulse-n">' + escapeHtml(String(s.pulse_score)) + '</b><i>' + escapeHtml(band.label) + '</i></span></button>' +
+        '<div class="mgh-drv">' + drivers.map(x => '<div><span>' + escapeHtml(x.label) + '</span><span class="mg-pts ' + (x.pts < 0 ? 'neg' : 'pos') + '">' + (x.pts < 0 ? '−' : '+') + Math.abs(x.pts).toFixed(0) + ' pts</span></div>').join('') +
+        '<div class="mgh-fine">' + escapeHtml((d === null ? 'First reading' : d === 0 ? 'No change on last reading' : (d > 0 ? 'Up ' : 'Down ') + Math.abs(d) + ' on last reading') + (s.confidence != null ? ' · ' + Math.round(Number(s.confidence) * 100) + '% confidence' : '')) + '</div>' +
+        '<button class="mg-link" type="button" data-go-page="pulse">What would move it →</button></div></div>';
+    }
+    const cap = s ? '<p class="mgh-cap">' + escapeHtml(srcLine + (mgAsOf ? ' · ' + mgAsOf() : '')) + '</p>' : '';
+    host.innerHTML += qa + mgrDeskTop({ ring, tiles:tiles + cap, cash:cashPanel, dis:'<div class="mg-row3 mgd-one">' + disPanel + '</div>', brief:briefPanel });
+    const q = host.querySelector('.mgh-qa'), ph = host.querySelector('.mg-ph'); if(q && ph) ph.after(q);
+    return;
+  }
+  host.innerHTML += tiles +
+    '<div class="mg-row2">' + cashPanel +
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Pulse Score</h2><span class="mg-aside">Operating health, not a credit score</span></div><div class="mg-panel-b">' + pulse + '</div></div>' +
     '</div>' +
-    '<div class="mg-row3' + (desk ? ' mgd-one' : '') + '">' +
-      (desk ? '' : '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs your decision</h2>' + (dec.length ? '<button class="mg-link mg-aside" type="button" data-go-page="inbox">All ' + dec.length + ' in Inbox →</button>' : '') + '</div>' +
-        (dec.length ? listRows(dec) : '<div class="mg-empty">Nothing is waiting on you.</div>') + '</div>') +
-      '<div class="mg-panel"><div class="mg-panel-h"><h2>Sources disagree</h2>' + (dis.length ? '<button class="mg-link mg-aside" type="button" data-compare="receivables">Open in Compare →</button>' : '') + '</div>' +
-        (dis.length ? listRows(dis, 'neg') : '<div class="mg-empty">Your connected sources agree.</div>') + '</div>' +
-    '</div>' +
-    (brief ? '<div class="mg-panel mg-ai-panel"><div class="mg-panel-h"><h2>Margyn’s briefing</h2><span class="mg-ai-tag">Written by Margyn</span><span class="mg-aside">' + escapeHtml(s.briefing_generated_at ? fmtDate(s.briefing_generated_at) : '') + '</span></div><div class="mg-panel-b"><p>' + escapeHtml(brief) + '</p></div></div>' : '');
+    '<div class="mg-row3">' +
+      '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs your decision</h2>' + (dec.length ? '<button class="mg-link mg-aside" type="button" data-go-page="inbox">All ' + dec.length + ' in Inbox →</button>' : '') + '</div>' +
+        (dec.length ? listRows(dec) : '<div class="mg-empty">Nothing is waiting on you.</div>') + '</div>' + disPanel +
+    '</div>' + briefPanel;
 }
 
 /* ---------- Receivables / Payables ---------- */
@@ -401,9 +448,9 @@ function mgRenderMoney(dir){
   } else if(mode === 'compare'){
     const groups = mgMoneyGroups(dir).filter(g => !q || g.party.toLowerCase().includes(q));
     count = groups.length;
-    body = '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>' + who + '</th>' +
+    body = '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy"><thead><tr><th>' + who + '</th>' +
       srcs.map(s => '<th class="r">' + escapeHtml(MG_SRC_NAME[s]) + ' (₹)</th>').join('') + '<th class="r">Difference (₹)</th><th>Agreement</th></tr></thead><tbody>' +
-      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td>' + escapeHtml(g.party) + '</td>' +
+      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td>' + mgWho(g.party) + '</td>' +
         srcs.map(s => g.by[s] ? '<td class="r">' + mgNum(g.by[s].amount) + '</td>' : '<td class="r mg-muted">not listed</td>').join('') +
         '<td class="r' + (g.status === 'conflict' ? ' mg-diff' : ' mg-muted') + '">' + (g.status === 'single' ? '—' : mgNum(g.diff)) + '</td><td>' + mgAgreeBadge(g) + '</td></tr>').join('') +
       '</tbody></table><div class="mg-foot-note">Compared per ' + who.toLowerCase() + ', because invoice numbers differ between systems. Each column is exactly what that system says; “not listed” means that source didn’t send an open item for this ' + who.toLowerCase() + '. Agreement is judged across the sources that list it. Totals are never added across sources.</div></div>';
@@ -421,46 +468,62 @@ function mgRenderMoney(dir){
     if(mode === 'reconciled') buckets = mgInvoiceAgeing(rows.map(r => r.g));
     else rows.forEach(r => { buckets[mgBucketOf(r.days)] += r.amount; });
     const btot = Object.values(buckets).reduce((a, b) => a + b, 0) || 1;
+    const allRows = rows;   // before the search and age filters: the band describes the whole list
     rows = rows.filter(r => (!q || r.party.toLowerCase().includes(q)) && (!mgMoneyAge || mgBucketOf(r.days) === mgMoneyAge));
     count = rows.length;
     const total = rows.reduce((t, r) => t + r.amount, 0);
     const colors = { b0:'var(--brand)', b1:'var(--warn)', b2:'#C77A2E', b3:'var(--neg)' };
-    body = '<div class="mg-aging">' + MG_BUCKETS.map(([k, l]) =>
-      '<button type="button" data-money-age="' + k + '" class="' + (mgMoneyAge === k ? 'on' : '') + '"><div class="mg-ag-l">' + l + '</div><div class="mg-ag-v">' + escapeHtml(fmtINR(buckets[k], 'tile')) + '</div>' +
-      '<div class="mg-ag-bar"><i style="width:' + (buckets[k] / btot * 100).toFixed(1) + '%;background:' + colors[k] + '"></i></div></button>').join('') + '</div>' +
-      '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>' + who + '</th><th>' + (mode === 'reconciled' ? 'Invoices' : 'Reference') + '</th><th>Status</th><th class="r">Open amount (₹)</th><th>' + (mode === 'reconciled' ? 'Agreement' : 'Source') + '</th><th></th></tr></thead><tbody>' +
-      rows.map((r, i) => '<tr class="mg-click" data-open-party="' + escapeHtml(r.g ? r.g.key : r.r.key) + '" data-dir="' + dir + '"><td>' + escapeHtml(r.party) + '</td><td class="mg-mono">' + escapeHtml(r.ref) + '</td><td>' + mgStatusBadge(r.days, dir) + '</td><td class="r">' + mgNum(r.amount) + '</td>' +
-        '<td>' + (mode === 'reconciled' ? mgAgreeBadge(r.g) + ' <span class="mg-srcs">' + r.g.sources.map(mgLogo).join('') + '</span>' : '<span class="mg-srccell">' + mgLogo(r.src) + escapeHtml(r.src === 'manual' ? 'Entered by you' : (mgSourceHealth(r.src).text || '')) + '</span>') + '</td>' +
+    const SHORT = { b0:'0–30 days', b1:'31–60', b2:'61–90', b3:'90+' };
+    const open = Object.values(buckets).reduce((a, b) => a + b, 0);
+    const overdue = mode === 'reconciled' ? allRows.reduce((t, r) => t + (Number(r.g.overdue) || 0), 0) : allRows.reduce((t, r) => t + (r.days != null && r.days < 0 ? r.amount : 0), 0);
+    const age = '<div class="mg-age"><div class="mg-age-bar">' + MG_BUCKETS.map(([k]) => buckets[k] > 0 ? '<i style="flex:' + (buckets[k] / btot * 100).toFixed(2) + ';background:' + colors[k] + '"></i>' : '').join('') + '</div>' +
+      '<div class="mg-aging">' + MG_BUCKETS.map(([k, l]) =>
+        '<button type="button" data-money-age="' + k + '" class="' + (mgMoneyAge === k ? 'on' : '') + '" title="Show only ' + escapeHtml(l) + '" style="--k:' + colors[k] + '"><span class="mg-ag-l">' + SHORT[k] + '</span> <span class="mg-ag-v">' + escapeHtml(fmtINR(buckets[k], 'tile')) + '</span></button>').join('') + '</div></div>';
+    body = mgSum([['Open', fmtINR(open, 'tile')], ['Overdue', fmtINR(overdue, 'tile'), overdue > 0 ? 'bad' : ''],
+        [mode === 'reconciled' ? who + 's' : 'Open items', String(allRows.length)]], age) +
+      '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy mg-rows2"><thead><tr><th>' + who + '</th><th>' + (mode === 'reconciled' ? 'Invoices' : 'Reference') + '</th><th>Status</th><th class="r">Open amount (₹)</th><th>' + (mode === 'reconciled' ? 'Agreement' : 'Source') + '</th>' + (mode === 'reconciled' ? '<th>Sources</th>' : '') + '<th></th></tr></thead><tbody>' +
+      rows.map((r, i) => '<tr class="mg-click" data-open-party="' + escapeHtml(r.g ? r.g.key : r.r.key) + '" data-dir="' + dir + '"><td>' + mgWho(r.party) + '</td><td class="mg-mono">' + escapeHtml(r.ref) + '</td><td>' + mgStatusBadge(r.days, dir) + '</td><td class="r mg-amt">' + mgNum(r.amount) + '</td>' +
+        (mode === 'reconciled' ? '<td>' + mgAgreeBadge(r.g) + '</td><td><span class="mg-srcs">' + r.g.sources.map(mgLogo).join('') + '</span></td>' : '<td><span class="mg-srccell">' + mgLogo(r.src) + escapeHtml(r.src === 'manual' ? 'Entered by you' : (mgSourceHealth(r.src).text || '')) + '</span></td>') +
         '<td class="r">' + (r.r && r.r.editable && r.r.raw ? '<button class="mg-row-act" type="button" data-money-settle="' + i + '">' + (dir === 'recv' ? 'Mark received' : 'Mark paid') + '</button>' : '') + '</td></tr>').join('') +
-      '</tbody><tfoot><tr><td colspan="3">Total' + (mode === 'reconciled' ? ', each ' + who.toLowerCase() + ' counted once' : ', ' + MG_SRC_NAME[mode] + ' only') + '</td><td class="r">' + mgNum(total) + '</td><td colspan="2"></td></tr></tfoot></table></div>';
+      '</tbody><tfoot><tr><td colspan="3">Total' + (mode === 'reconciled' ? ', each ' + who.toLowerCase() + ' counted once' : ', ' + MG_SRC_NAME[mode] + ' only') + '</td><td class="r">' + mgNum(total) + '</td><td colspan="' + (mode === 'reconciled' ? 3 : 2) + '"></td></tr></tfoot></table></div>';
     host.__rows = rows;
     csv = [[who, mode === 'reconciled' ? 'Invoices' : 'Reference', 'Days to due (negative = overdue)', 'Open amount (INR)', mode === 'reconciled' ? 'Agreement' : 'Source'],
       rows.map(r => [r.party, r.ref, r.days == null ? '' : r.days, Math.round(r.amount), mode === 'reconciled' ? r.g.status : MG_SRC_NAME[r.src]])];
   }
   host.__csv = csv;
   host.innerHTML = mgPageHead({ group:'Money', title:dir === 'recv' ? 'Receivables' : 'Payables', scope:mgScopeText(modeLabel),
+      sub:mode === 'compare' ? 'Each source side by side. Totals are never added across sources.' : (dir === 'recv' ? 'What customers owe you' : 'What you owe vendors') + (mode === 'reconciled' ? ', each ' + who.toLowerCase() + ' counted once' : ', as ' + MG_SRC_NAME[mode] + ' has it'),
       actions:mgExportBtn('mgExport-' + page) + (dir === 'recv' ? mgBtn('New invoice', 'data-go-page="invoicing"', true) : mgBtn('Add a bill', 'data-go-page="ledger"', true)) }) +
     '<div class="mg-toolbar">' + seg + '<input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + '" value="' + escapeHtml(mgMoneyQ) + '" data-money-q>' +
     (mgMoneyAge ? '<button class="mg-chip" type="button" data-money-age="">Age ' + escapeHtml(MG_BUCKETS.find(b => b[0] === mgMoneyAge)[1]) + ' ✕</button>' : '') +
     '<span class="mg-count">' + count + (mode === 'reconciled' || mode === 'compare' ? ' ' + who.toLowerCase() + (count === 1 ? '' : 's') : ' open') + '</span></div>' +
     (mgPosNote(dir) ? '<div class="mg-posnote" role="note">' + escapeHtml(mgPosNote(dir)) + '</div>' : '') + body;
+  // The summary band leads the page, above the mode switch and search.
+  const sum = host.querySelector('.mg-sum'), tb = host.querySelector('.mg-toolbar'); if(sum && tb) tb.before(sum);
 }
 
 /* ---------- Customers / Vendors ----------
    Everyone with an open item in any source, plus everyone in the party
    master (ledger_parties) who has none right now. New customers and
    vendors are created here; see 19f-parties.js. */
+let mgPartyFilter = { recv:'all', pay:'all' };   // Customers / Vendors filter pill
+let mgAuditFilter = 'all';                       // Audit log: all | ledger | team
 function mgRenderParties(dir){
   const page = dir === 'recv' ? 'customers' : 'vendors';
   const host = document.getElementById('view-' + page); if(!host) return;
   const who = dir === 'recv' ? 'Customer' : 'Vendor';
   const q = mgMoneyQ.trim().toLowerCase();
   const all = mgMoneyGroups(dir);
-  const groups = all.filter(g => !q || g.party.toLowerCase().includes(q));
+  // Filter pills (mock v9): everyone, those overdue, and where sources differ (customers) or GST is at risk (vendors).
+  let risky = new Set(); try { if(dir === 'pay' && zohoConnected && zohoVitals) risky = new Set((zohoVitals.gst_top_at_risk_vendors || []).map(v => normPartyName(v.vendor_name || ''))); } catch(e){}
+  const third = dir === 'recv' ? ['differ', 'Sources differ', g => g.status === 'conflict'] : ['gst', 'GST at risk', g => risky.has(g.key)];
+  const PF = { all:() => true, overdue:g => g.overdue > 0, [third[0]]:third[2] };
+  const pf = PF[mgPartyFilter[dir]] ? mgPartyFilter[dir] : 'all';
+  const groups = all.filter(g => (!q || g.party.toLowerCase().includes(q)) && PF[pf](g));
   const master = ((typeof khataParties !== 'undefined' && khataParties) || []).filter(p => mgPartyFits(p, dir));
   const masterOf = g => master.find(p => normPartyName(p.name) === g.key) || null;
   const listed = new Set(all.map(g => g.key));
-  const idle = master.filter(p => !listed.has(normPartyName(p.name)) && (!q || (p.name || '').toLowerCase().includes(q) || (p.gstin || '').toLowerCase().includes(q)));
+  const idle = pf !== 'all' ? [] : master.filter(p => !listed.has(normPartyName(p.name)) && (!q || (p.name || '').toLowerCase().includes(q) || (p.gstin || '').toLowerCase().includes(q)));
   const count = groups.length + idle.length;
   host.__csv = [[who, 'GSTIN', 'Sources', 'Open invoices', 'Outstanding (INR)', 'Overdue (INR)', 'Agreement'],
     groups.map(g => { const m = masterOf(g); return [g.party, (m && m.gstin) || '', g.sources.map(s => MG_SRC_NAME[s]).join(' + '), g.invoices, Math.round(g.amount), Math.round(g.overdue), g.status]; })
@@ -469,11 +532,16 @@ function mgRenderParties(dir){
   host.innerHTML = mgPageHead({ group:'Parties', title:who + 's', scope:mgScopeText('Reconciled'),
       sub:'Everyone you ' + (dir === 'recv' ? 'invoice' : 'buy from') + ': your saved ' + who.toLowerCase() + 's, and anyone with an open ' + (dir === 'recv' ? 'invoice' : 'bill') + ' in a connected source.',
       actions:mgExportBtn('mgExport-' + page) + mgBtn('New ' + who.toLowerCase(), 'data-party-new="' + dir + '"', true) }) +
-    '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + ' or GSTIN" value="' + escapeHtml(mgMoneyQ) + '" data-money-q><span class="mg-count">' + count + ' ' + who.toLowerCase() + (count === 1 ? '' : 's') + '</span></div>' +
-    (count ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>' + who + '</th><th>GSTIN</th><th>Sources</th><th class="r">Open</th><th class="r">Outstanding (₹)</th><th class="r">Overdue (₹)</th><th>Oldest</th><th>Agreement</th></tr></thead><tbody>' +
-      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td><b>' + escapeHtml(g.party) + '</b></td><td>' + gst(masterOf(g)) + '</td><td><span class="mg-srcs">' + g.sources.map(mgLogo).join('') + '</span></td><td class="r">' + g.invoices + '</td><td class="r">' + mgNum(g.amount) + '</td>' +
-        '<td class="r' + (g.overdue ? ' mg-diff' : ' mg-muted') + '">' + (g.overdue ? mgNum(g.overdue) : '0') + '</td><td>' + mgStatusBadge(g.oldestDays, dir) + '</td><td>' + mgAgreeBadge(g) + '</td></tr>').join('') +
-      idle.map(p => '<tr class="mg-click" data-open-master="' + escapeHtml(p.id) + '"><td><b>' + escapeHtml(p.name) + '</b></td><td>' + gst(p) + '</td><td><span class="mg-master-tag">Your list</span></td><td class="r mg-muted">0</td><td class="r mg-muted">—</td><td class="r mg-muted">—</td><td><span class="mg-bdg">No open ' + (dir === 'recv' ? 'invoices' : 'bills') + '</span></td><td></td></tr>').join('') +
+    mgSum([[who + 's', String(all.length + master.filter(p => !listed.has(normPartyName(p.name))).length)], ['Outstanding', fmtINR(all.reduce((t, g) => t + (Number(g.amount) || 0), 0), 'tile')],
+      ['Overdue', fmtINR(all.reduce((t, g) => t + (Number(g.overdue) || 0), 0), 'tile'), all.some(g => g.overdue > 0) ? 'bad' : ''], ['Sources disagree', String(all.filter(g => g.status === 'conflict').length), all.some(g => g.status === 'conflict') ? 'bad' : '']]) +
+    '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find a ' + who.toLowerCase() + ' or GSTIN" value="' + escapeHtml(mgMoneyQ) + '" data-money-q>' +
+      [['all', 'All', all.length + master.filter(p => !listed.has(normPartyName(p.name))).length], ['overdue', 'Overdue', all.filter(PF.overdue).length], [third[0], third[1], all.filter(third[2]).length]].map(x =>
+        '<button type="button" class="mg-pill' + (pf === x[0] ? ' on' : '') + '" data-party-filter="' + x[0] + '" data-dir="' + dir + '" aria-pressed="' + (pf === x[0]) + '">' + x[1] + '<b>' + x[2] + '</b></button>').join('') +
+      '<span class="mg-count">' + count + ' ' + who.toLowerCase() + (count === 1 ? '' : 's') + '</span></div>' +
+    (count ? '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy mg-rows2"><thead><tr><th>' + who + '</th><th>GSTIN</th><th>Sources</th><th class="r">Open</th><th class="r">Outstanding (₹)</th><th class="r">Overdue (₹)</th><th>Oldest</th><th>Agreement</th></tr></thead><tbody>' +
+      groups.map(g => '<tr class="mg-click" data-open-party="' + escapeHtml(g.key) + '" data-dir="' + dir + '"><td>' + mgWho(g.party) + '</td><td>' + gst(masterOf(g)) + '</td><td><span class="mg-srcs">' + g.sources.map(mgLogo).join('') + '</span></td><td class="r" data-l="Open">' + g.invoices + '</td><td class="r mg-amt">' + mgNum(g.amount) + '</td>' +
+        '<td data-l="Overdue" class="r' + (g.overdue ? ' mg-diff' : ' mg-muted') + '">' + (g.overdue ? mgNum(g.overdue) : '0') + '</td><td>' + mgStatusBadge(g.oldestDays, dir) + '</td><td>' + mgAgreeBadge(g) + '</td></tr>').join('') +
+      idle.map(p => '<tr class="mg-click" data-open-master="' + escapeHtml(p.id) + '"><td>' + mgWho(p.name) + '</td><td>' + gst(p) + '</td><td><span class="mg-master-tag">Your list</span></td><td class="r mg-muted">0</td><td class="r mg-muted">—</td><td class="r mg-muted">—</td><td><span class="mg-bdg">No open ' + (dir === 'recv' ? 'invoices' : 'bills') + '</span></td><td></td></tr>').join('') +
       '</tbody></table></div>'
     : '<div class="mg-panel mg-empty-panel"><h2>' + (q ? 'No ' + who.toLowerCase() + ' matches “' + escapeHtml(mgMoneyQ) + '”' : 'No ' + who.toLowerCase() + 's yet') + '</h2><p>Add one here, or they appear on their own once a connected source or an import has an open ' + (dir === 'recv' ? 'invoice' : 'bill') + ' for them.</p>' +
       mgBtn('New ' + who.toLowerCase(), 'data-party-new="' + dir + '"' + (q ? ' data-party-name="' + escapeHtml(mgMoneyQ.trim()) + '"' : ''), true) + '</div>');
@@ -517,17 +585,29 @@ function mgRenderAudit(){
   // were written before this was recorded.
   const CH = { app:'in the app', voice:'by voice', whatsapp:'on WhatsApp', agent:'by an agent', import:'by import' };
   const who = e => e.actor_name ? e.actor_name + (e.channel && CH[e.channel] ? ' · ' + CH[e.channel] : '') : '—';
-  const rows = ev.filter(e => !q || [e.party_name, e.event, e.entity_type, e.note, e.source, e.actor_name].join(' ').toLowerCase().includes(q));
+  const isTeam = e => e.entity_type === 'person';
+  const searched = ev.filter(e => !q || [e.party_name, e.event, e.entity_type, e.note, e.source, e.actor_name].join(' ').toLowerCase().includes(q));
+  const rows = searched.filter(e => mgAuditFilter === 'team' ? isTeam(e) : mgAuditFilter === 'ledger' ? !isTeam(e) : true);
   const PERSON = { invited:'Invited', joined:'Joined', role_changed:'Changed the role of', access_changed:'Changed the access of', suspended:'Suspended', restored:'Restored', removed:'Removed', invite_cancelled:'Cancelled the invite for', whatsapp_linked:'Linked WhatsApp for' };
   const what = e => e.entity_type === 'person' ? (PERSON[e.event] || e.event) :
     ({ settled:'Settled', deleted:'Deleted', created:'Added', imported:'Imported', updated:'Changed' }[e.event] || e.event || '—') + ' ' + (e.entity_type || '');
   host.__csv = [['When', 'Who', 'Event', 'Party', 'Amount (INR)', 'Source', 'Note'], rows.map(e => [e.created_at, who(e), what(e), e.party_name || '', e.amount != null ? Math.round(e.amount) : '', e.source || '', e.note || ''])];
   host.innerHTML = mgPageHead({ group:'Admin', title:'Audit log', sub:'Every change to your ledger and your team: what, when, who, and where it came from.', actions:mgExportBtn('mgExport-audit') }) +
-    '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find an entry" value="' + escapeHtml(mgMoneyQ) + '" data-money-q><span class="mg-count">' + rows.length + ' entries</span></div>' +
-    (rows.length ? '<div class="mg-panel mg-gridwrap"><table class="mg-grid"><thead><tr><th>When</th><th>Who</th><th>Event</th><th>Party</th><th class="r">Amount (₹)</th><th>Source</th><th>Note</th></tr></thead><tbody>' +
-      rows.map(e => '<tr><td class="mg-mono">' + escapeHtml(e.created_at ? fmtDate(e.created_at) : '') + '</td><td>' + escapeHtml(who(e)) + '</td><td>' + escapeHtml(what(e)) + '</td><td>' + escapeHtml(e.party_name || '—') + '</td><td class="r">' + (e.amount != null ? mgNum(e.amount) : '') + '</td><td>' + escapeHtml(e.source || '') + '</td><td class="mg-muted">' + escapeHtml(e.note || '') + '</td></tr>').join('') +
+    '<div class="mg-toolbar"><input class="mg-search" type="search" placeholder="Find an entry" value="' + escapeHtml(mgMoneyQ) + '" data-money-q>' +
+      [['all', 'All', searched.length], ['ledger', 'Ledger', searched.filter(e => !isTeam(e)).length], ['team', 'Team', searched.filter(isTeam).length]].map(x =>
+        '<button type="button" class="mg-pill' + (mgAuditFilter === x[0] ? ' on' : '') + '" data-audit-filter="' + x[0] + '" aria-pressed="' + (mgAuditFilter === x[0]) + '">' + x[1] + '<b>' + x[2] + '</b></button>').join('') +
+      '<span class="mg-count">' + rows.length + ' entries</span></div>' +
+    (rows.length ? '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid mg-wrapcells mg-rows2"><thead><tr><th>When</th><th>Who</th><th>Event</th><th>Party</th><th class="r">Amount (₹)</th><th>Source</th><th>Note</th></tr></thead><tbody>' +
+      rows.map(e => '<tr><td class="mg-mono">' + escapeHtml(e.created_at ? fmtDate(e.created_at) : '') + '</td><td>' + escapeHtml(who(e)) + '</td><td>' + escapeHtml(what(e)) + '</td><td>' + escapeHtml(e.party_name || '—') + '</td><td class="r mg-amt">' + (e.amount != null ? mgNum(e.amount) : '') + '</td><td>' + escapeHtml(e.source || '') + '</td><td class="mg-muted">' + escapeHtml(e.note || '') + '</td></tr>').join('') +
       '</tbody></table></div>' : '<div class="mg-panel mg-empty-panel"><h2>' + (mgAuditLoading ? 'Loading…' : 'No changes recorded yet') + '</h2><p>Adding, settling, deleting or importing an entry, and every change to who can sign in, is recorded here.</p></div>');
 }
+
+document.addEventListener('click', e => {
+  const pf = e.target.closest('[data-party-filter]');
+  if(pf){ mgPartyFilter[pf.dataset.dir] = pf.dataset.partyFilter; mgRenderParties(pf.dataset.dir); return; }
+  const af = e.target.closest('[data-audit-filter]');
+  if(af){ mgAuditFilter = af.dataset.auditFilter; mgRenderAudit(); }
+});
 
 /* ---------- notifications (source health + waiting items) ---------- */
 function mgNotifications(){

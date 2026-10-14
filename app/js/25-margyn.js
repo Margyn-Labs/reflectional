@@ -24,7 +24,8 @@ let mgrBusy = false, mgrFocus = null, mgrGreeted = false, mgrUserId = null;
 const mgrQueue = [];           // messages sent while Margyn was still answering; answered in order
 let mgrAway = null;            // what happened since the last visit (shared with the Home desk)
 let mgrName = null;            // first name, once known
-const MGR_OPEN_KEY = 'mg.panel', MGR_SEEN_KEY = 'mg.lastSeen.', MGR_SNOOZE_KEY = 'mg.nudge.snooze';
+let mgrRestNudge = null, mgrRestTimer = null;   // a nudge whose pill has faded; shown in the panel when it next opens
+const MGR_OPEN_KEY = 'mg.panel', MGR_PIN_KEY = 'mg.panel.pin', MGR_SEEN_KEY = 'mg.lastSeen.', MGR_SNOOZE_KEY = 'mg.nudge.snooze';
 
 function mgrEl(id){ return document.getElementById(id); }
 function mgrFeed(){ return mgrEl('vxFeed'); }
@@ -32,21 +33,32 @@ function mgrWide(){ return window.innerWidth >= 1100; }
 
 /* ---------- open / close ---------- */
 function mgrIsOpen(){ return document.body.classList.contains('mgr-open'); }
+function mgrPinned(){ return document.body.classList.contains('mgr-pin'); }
+/* Closed by default: a strip beside the page. Opening lays the panel over the
+   page; Pin docks it beside the page, and that choice is remembered. */
+function mgrSetPin(on){
+  on = !!on && mgrWide();
+  document.body.classList.toggle('mgr-pin', on);
+  lsSet(MGR_PIN_KEY, on ? '1' : '0');
+  const b = mgrEl('mgrPin'); if(b){ b.textContent = on ? 'Unpin' : 'Pin open'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+}
 function mgrOpen(focusInput){
   const r = mgrEl('mgRail'); if(!r) return;
   r.classList.remove('hidden');
   document.body.classList.add('mgr-open');
   lsSet(MGR_OPEN_KEY, 'open');
+  const rest = mgrRestNudge; mgrRestNudge = null;
   mgrHideBubble();
   const b = mgrEl('mgAskBtn'); if(b) b.classList.add('on');
   if(focusInput) setTimeout(() => { const i = mgrEl('mgrInput'); if(i) i.focus(); }, 60);
+  if(rest) mgrNudge(rest);   // a nudge that faded while the panel was closed is waiting here
   mgrScroll();
 }
 function mgrClose(dontRemember){
   if(typeof vxActive !== 'undefined' && vxActive) closeRealtimeOverlay();
   const r = mgrEl('mgRail'); if(r) r.classList.add('hidden');
   document.body.classList.remove('mgr-open');
-  if(!dontRemember) lsSet(MGR_OPEN_KEY, 'closed');
+  if(!dontRemember){ lsSet(MGR_OPEN_KEY, 'closed'); mgrSetPin(false); }
   const b = mgrEl('mgAskBtn'); if(b) b.classList.remove('on');
 }
 function mgrToggle(){ if(mgrIsOpen()) mgrClose(); else mgrOpen(true); }
@@ -532,6 +544,7 @@ async function mgrGreet(){
   try { if(typeof loadChaseTargets === 'function') await loadChaseTargets(); } catch(e){}
   mgrName = await mgrResolveName();
   mgrAway = await mgrAwayFacts(since || null);
+  try { if(mgrAway && since) mgrAway.ago = mgrAgo(since); } catch(e){}
   let dec = []; try { dec = mgDecisions(); } catch(e){}
   const fresh = (typeof mgWnUnseen === 'function' && since) ? mgWnUnseen() : [];
   const hi = mgrName ? 'Hey ' + escapeHtml(mgrName) : 'Hey there';
@@ -688,16 +701,29 @@ function mgrBubble(n, quiet){
   const el = mgrEl('mgrBubble'); if(!el) return;
   el.innerHTML = '<div class="mgr-bub-h"><img src="images/margyn-logo-mark.png" alt="">Margyn</div><p>' + escapeHtml(n.text) + '</p><div class="mgr-acts">' +
     n.acts.map((a, i) => '<button type="button" class="mgr-chip' + (i === 0 ? ' on' : '') + '" data-n="' + i + '">' + escapeHtml(a.label) + '</button>').join('') +
-    '<button type="button" class="mgr-chip ghost" data-n="x">' + (quiet ? 'Close' : 'Later') + '</button></div>';
-  el.classList.remove('hidden');
+    '<button type="button" class="mgr-chip ghost" data-n="x" title="' + (quiet ? 'Close' : 'Later') + '" aria-label="' + (quiet ? 'Close' : 'Later') + '">' + (quiet ? 'Close' : 'Later') + '</button></div>';
+  el.classList.remove('hidden', 'rest');
+  mgrRestNudge = null;
+  // The pill steps back after a few seconds. A real nudge then waits in the panel; the strip keeps a dot.
+  const arm = () => { clearTimeout(mgrRestTimer); mgrRestTimer = setTimeout(() => {
+    if(el.classList.contains('hidden')) return;
+    el.classList.add('rest');
+    if(!quiet){ mgrRestNudge = n; const st = mgrEl('mgrStrip'); if(st) st.classList.add('has-nudge'); }
+  }, 9000); };
+  arm(); el.onmouseenter = () => clearTimeout(mgrRestTimer); el.onmouseleave = arm;
   el.onclick = e => {
     const b = e.target.closest('[data-n]'); if(!b) return;
     if(!quiet) mgrSnooze(n.key);
+    mgrRestNudge = null;
     mgrHideBubble();
     if(b.dataset.n !== 'x'){ mgrOpen(); n.acts[Number(b.dataset.n)].run(); }
   };
 }
-function mgrHideBubble(){ const el = mgrEl('mgrBubble'); if(el) el.classList.add('hidden'); }
+function mgrHideBubble(){
+  clearTimeout(mgrRestTimer);
+  const el = mgrEl('mgrBubble'); if(el) el.classList.add('hidden');
+  if(!mgrRestNudge){ const st = mgrEl('mgrStrip'); if(st) st.classList.remove('has-nudge'); }
+}
 
 /* ---------- status line: what Margyn is doing ----------
    Lives in the top bar where the sync pill was. Real events only (a sync,
@@ -810,10 +836,15 @@ document.addEventListener('click', e => {
   const n = mgdLook[i]; if(!n || !n.acts[j]) return;
   try { n.acts[j].run(); } catch(err){ console.error('[margyn] needs-you action', err); }
 });
-function mgrDeskTop(){
+/* Home (mock v9): Margyn's read with the Pulse ring, then what it is working
+   on, the figures, the forecast and the briefing on the left; what needs you,
+   where sources disagree and how Margyn works on the right. 19-pages.js hands
+   in the pieces it owns (o.ring, o.tiles, o.cash, o.dis, o.brief). */
+function mgrDeskTop(o){
+  o = o || {};
   const m = mgrMood();
   let dec = []; try { dec = mgDecisions(); } catch(e){}
-  const away = mgrAway && mgrAway.did.length ? '<div class="mgd-away"><b>While you were away:</b> ' + escapeHtml(mgrAway.did.join(', ')) + '.</div>' : '';
+  const away = mgrAway && mgrAway.did.length ? '<div class="mgd-away"><span>Since you were last here' + (mgrAway.ago ? ', ' + escapeHtml(mgrAway.ago) : '') + ':</span> ' + mgrAway.did.map(x => '<span class="mgh-tag"><i></i>' + escapeHtml(x) + '</span>').join('') + '</div>' : '';
   // What needs a look, not an approval: the same list Margyn's own cards come from (late customers, cash under the
   // floor, bills due, a source or WhatsApp not delivering). A Tally-only account has no approvals, so without this
   // the panel said "Nothing is waiting on you" beside a card saying ₹62 L was 60+ days late.
@@ -828,18 +859,23 @@ function mgrDeskTop(){
         '<div class="mgd-look-acts">' + n.acts.slice(0, 2).map((a, j) => '<button type="button" class="mg-btn mg-btn-sm' + (j ? '' : ' primary') + '" data-mgd-look="' + i + ':' + j + '">' + escapeHtml(a.label) + '</button>').join('') + '</div></div></div>').join('') : '')
     : '<div class="mg-empty">Nothing is waiting on you. I’ll tell you when something is.</div>';
   const aside = [dec.length ? dec.length + ' to approve' : '', lookN ? look.length + ' to look at' : ''].filter(Boolean).join(' · ') || 'All clear';
-  return '<section class="mgd-hero mgd-' + m.level + '">' +
-      '<div class="mgd-mark"><img src="images/margyn-logo-mark.png" alt=""></div>' +
-      '<div class="mgd-read"><span class="mgd-tag">' + escapeHtml(m.tag) + '</span>' +
-        '<h2>' + escapeHtml(m.line || 'Let’s get your figures in.') + '</h2>' +
-        (m.sub ? '<div class="mgd-sub">' + escapeHtml(m.sub) + '</div>' : '') + away +
-        '<form class="mgd-ask" data-mgd-ask><input type="text" placeholder="Ask or give me a task, e.g. “chase everyone past 90 days”" aria-label="Ask Margyn"><button type="submit" class="mg-btn primary mg-btn-sm">Ask</button><button type="button" class="mg-btn mg-btn-sm" data-mgr-talk>Talk</button></form>' +
-      '</div>' + mgrHowIWork() +
-    '</section>' +
-    '<div class="mg-row2 mgd-row">' +
-      '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs you</h2><span class="mg-aside">' + escapeHtml(aside) + '</span></div>' + need + '</div>' +
-      '<div class="mg-panel"><div class="mg-panel-h"><h2>What I’m working on</h2><span class="mg-aside">live</span></div>' + mgrWorkingOn() + '</div>' +
-    '</div>';
+  return '<div class="mgh-grid"><div class="mgh-main">' +
+      '<section class="mgd-hero mgd-' + m.level + '">' +
+        '<div class="mgd-read"><span class="mgd-tag">' + escapeHtml(m.tag) + '</span>' +
+          '<h2>' + escapeHtml(m.line || 'Let’s get your figures in.') + '</h2>' +
+          (m.sub ? '<div class="mgd-sub">' + escapeHtml(m.sub) + '</div>' : '') +
+          '<form class="mgd-ask" data-mgd-ask><input type="text" placeholder="Ask or give me a task, e.g. “chase everyone past 90 days”" aria-label="Ask Margyn">' +
+            '<button type="button" class="mgd-ask-talk" data-mgr-talk><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Talk</button>' +
+            '<button type="submit" class="mgd-ask-send" aria-label="Ask" title="Ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>' +
+          '<div class="mgh-chips"><button type="button" data-mgr-ask="Who should I chase first?">Who should I chase first?</button><button type="button" data-mgr-ask="Can we cover this week’s bills?">Can we cover this week’s bills?</button></div>' +
+        '</div>' + (o.ring || '') +
+      '</section>' +
+      '<div class="mg-panel mgh-work"><div class="mg-panel-h"><h2>What I’m working on</h2><span class="mg-aside">live</span><button type="button" class="mg-btn mg-btn-sm" data-lw-all>All activity</button></div>' + away + mgrWorkingOn() + '</div>' +
+      (o.tiles || '') + (o.cash || '') + (o.brief || '') +
+    '</div><div class="mgh-side">' +
+      '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs you</h2>' + (dec.length ? '<b class="mgh-cnt">' + dec.length + '</b>' : '') + '<span class="mg-aside">' + escapeHtml(aside) + '</span></div>' + need + '</div>' +
+      (o.dis || '') + mgrHowIWork() +
+    '</div></div>';
 }
 
 /* ---------- wiring ---------- */
@@ -849,6 +885,21 @@ function mgrDeskTop(){
   on('mgrNew', 'click', () => mgrNewThread());
   on('mgrHistoryBtn', 'click', () => showView('history'));
   on('mgrLaunch', 'click', () => mgrOpen(true));
+  on('mgrStripAsk', 'click', () => mgrOpen(true));
+  on('mgrPin', 'click', () => mgrSetPin(!mgrPinned()));
+  // The Inbox count rides on the strip, so it shows while the panel is closed.
+  (function(){
+    const src = mgrEl('agentsBadge'), dst = mgrEl('mgrStripBadge'); if(!src || !dst) return;
+    const copy = () => { dst.textContent = src.textContent; dst.classList.toggle('hidden', src.classList.contains('hidden') || !src.textContent.trim()); };
+    new MutationObserver(copy).observe(src, { childList:true, characterData:true, subtree:true, attributes:true, attributeFilter:['class'] }); copy();
+  })();
+  // Open over the page (not pinned): Escape puts Margyn away.
+  document.addEventListener('keydown', e => {
+    if(e.key !== 'Escape' || !mgrIsOpen() || mgrPinned() || !mgrWide()) return;
+    if(typeof vxActive !== 'undefined' && vxActive) return;   // Escape ends a call first
+    if(document.querySelector('.mg-drawer-scrim, .mg-dialog-scrim, .mg-wn-scrim, .mg-pop.open, .cmdk:not(.hidden)')) return;
+    mgrClose(true);
+  });
   on('mgrTalk', 'click', () => {
     if(typeof vxActive !== 'undefined' && vxActive) closeRealtimeOverlay();
     else { mgrOpen(); openRealtimeOverlay(); }
@@ -901,8 +952,8 @@ function mgrDeskTop(){
   setInterval(mgrCheckNudges, 4 * 60000);
 })();
 
-/* After the first load for a signed-in user: open the panel (on a wide
-   screen, unless they closed it), say hello, and start watching. A later
+/* After the first load for a signed-in user: Margyn stays out of the way as a
+   strip (docked only if they pinned it), says hello, and starts watching. A later
    refresh re-checks nudges. A different login starts over. */
 (function(){
   const base = refreshAll;
@@ -913,7 +964,7 @@ function mgrDeskTop(){
         if(mgrUserId !== currentUser.id){
           mgrUserId = currentUser.id; mgrGreeted = false; mgrThread = null; mgrHistory.length = 0; mgrName = null; mgrAway = null; mgrNudgesShown = 0; mgrNudgeQueue = [];
           const f = mgrFeed(); if(f) f.innerHTML = '';
-          if(mgrWide() && lsGet(MGR_OPEN_KEY, 'open') !== 'closed') mgrOpen(); else mgrClose(true);
+          if(mgrWide() && lsGet(MGR_PIN_KEY, '0') === '1'){ mgrSetPin(true); mgrOpen(); } else mgrClose(true);
           const l = mgrEl('mgrLaunch'); if(l) l.classList.remove('hidden');
           setTimeout(mgrGreet, 400);
         } else if(mgrGreeted) setTimeout(mgrCheckNudges, 3000);

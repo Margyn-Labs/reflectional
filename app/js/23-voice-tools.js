@@ -70,6 +70,8 @@ function vxFindMaster(name){
   const best = list.map(p => ({ p, s:vxScoreName(name, p.name) })).filter(x => x.s >= 0.6).sort((a, b) => b.s - a.s)[0];
   return best ? best.p : null;
 }
+/* On screen, or one tap away on another tab of this page or another Inbox item (32-tabs.js). */
+function vxReach(el){ return !!el.offsetParent || (typeof mgHiddenByLayout === 'function' && mgHiddenByLayout(el)); }
 /* Section titles on the page, or the ones in view after a scroll. */
 function vxHeadings(page, box, top){
   const r = box && box.getBoundingClientRect ? box.getBoundingClientRect() : null;
@@ -214,9 +216,10 @@ const VX_PRESS_NO = /\b(approve|confirm|dismiss|reject|delete|remove|disconnect|
 
 /* ---------- the tools ---------- */
 const VX_TOOLS = {
-  navigate({ page, view, period }){
+  navigate({ page, view, period, tab }){
     if(!MG_PAGES[page]) return { ok:false, error:'No page called ' + page };
     vxDrive(() => {
+      if(tab && typeof mgTabRoute === 'function') mgTabRoute(page, String(tab).toLowerCase());   // 32-tabs.js: land on that tab
       if(view && MG_MONEY[page]){ mgMoneySrc = view; mgMoneyAge = null; }
       if(view && page === 'cash') mgCashSrc = view;
       if(page === 'cfopack' && /^\d{4}-\d{2}$/.test(period || '')) mgPackMonth = period;
@@ -229,6 +232,8 @@ const VX_TOOLS = {
     // What's on the page comes back with the move, for every page: "open the inbox, what does it say"
     // was answered "it's empty" when only money pages carried their figures (2026-10-03).
     const base = { ok:true, now_showing:vxLabel(page), view:mgCurrentSource(page) || null };
+    // Which tab is open and which others exist, so "that is under Checks" can be said and opened.
+    try { const tabs = typeof mgTabNames === 'function' ? mgTabNames(mgCurrentView) : null; if(tabs){ base.tab = tabs.on; base.other_tabs = tabs.others; } } catch(e){}
     const shape = sm => {
       if(sm && sm.largest) sm.largest = sm.largest.slice(0, 3).map(r => ({ name:r.name, outstanding:r.outstanding, oldest_days_overdue:r.oldest_days_overdue }));
       if(!sm || (Object.keys(sm).length === 1 && 'about' in sm)) sm = Object.assign({}, sm, { page_text:vxPageText(1200) });
@@ -680,8 +685,10 @@ const VX_TOOLS = {
     const page = drawer || document.getElementById('view-' + mgCurrentView) || document.body;
     if(to){
       const want = String(to).toLowerCase().trim();
-      const el = [...page.querySelectorAll('h1, h2, h3, h4, .mg-panel-h, .mgd-sec, th, .mg-tile-l, .rd-head, label')]
-        .find(x => x.offsetParent && x.textContent.toLowerCase().includes(want));
+      const cands = [...page.querySelectorAll('h1, h2, h3, h4, .mg-panel-h, .mgd-sec, th, .mg-tile-l, .rd-head, label')].filter(x => x.textContent.toLowerCase().includes(want));
+      // What is on screen first; then a section on another tab of this page, which is opened for them.
+      const el = cands.find(x => x.offsetParent) || cands.find(vxReach);
+      if(el && !el.offsetParent && typeof mgReveal === 'function') mgReveal(el);
       if(!el) return { ok:false, note:'Nothing called "' + to + '" on this page. Headings here: ' + vxHeadings(page).join(', ') };
       el.scrollIntoView({ behavior:'smooth', block:'start' }); vxSpot(el.closest('.mg-panel') || el);
       vxActivity('Scrolled to ' + el.textContent.trim().slice(0, 40));
@@ -873,13 +880,16 @@ const VX_TOOLS = {
     let hit = null;
     for(const sc of scopes){
       const els = [...sc.querySelectorAll('button, [role="button"], [role="tab"], a[href], summary, .mg-seg button, [data-go-page]')]
-        .filter(el => el.offsetParent && !el.disabled && !el.closest('#mgRail') && text(el));
-      hit = els.find(el => text(el).toLowerCase() === want) || els.find(el => text(el).toLowerCase().startsWith(want)) || els.find(el => text(el).toLowerCase().includes(want));
+        .filter(el => vxReach(el) && !el.disabled && !el.closest('#mgRail') && text(el));
+      // A button on screen wins; failing that, one on another tab of this page (or another Inbox item).
+      const pick = list => list.find(el => text(el).toLowerCase() === want) || list.find(el => text(el).toLowerCase().startsWith(want)) || list.find(el => text(el).toLowerCase().includes(want));
+      hit = pick(els.filter(el => el.offsetParent)) || pick(els);
       if(hit) break;
     }
     if(!hit) return { pressed:false, note:'No button called "' + label + '" on screen.', buttons_on_screen:vxButtons() };
     const name = text(hit);
     if(!VX_PRESS_OK.test(name) && VX_PRESS_NO.test(name)) return { pressed:false, refused:name, reason:'That one changes data or sends something. Prepare it with propose_change (or save_form for an open form) so they confirm on the card, or ask them to tap it.' };
+    if(!hit.offsetParent && typeof mgReveal === 'function') mgReveal(hit);
     vxDrive(() => hit.click());
     vxSpot(hit); vxActivity('Pressed ' + name.slice(0, 40));
     return { pressed:name.slice(0, 60), now_on:vxLabel(mgCurrentView), note:/print|pdf/i.test(name) ? 'The browser’s print window is open. They pick "Save as PDF" as the printer and press Save there; that window is the browser’s, so you can’t press it for them.' : null };
