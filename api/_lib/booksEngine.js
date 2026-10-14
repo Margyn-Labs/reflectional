@@ -179,6 +179,9 @@ function prepare(book, opts) {
     syncRuns: book.syncRuns || [], diagnostics: book.diagnostics || null, edition: book.edition || null, now,
     balance_convention: book.balance_convention, priorLedgers: book.priorLedgers || []
   });
+  // The books handed to computeAnalytics are already as of today, so ledgers renamed in Tally are already moved
+  // (tallyAnalytics.renamedInTally) and it would find none: keep the list asOfToday made, for the data check.
+  if (asOf.renamed && asOf.renamed.length && analytics.quality && !(analytics.quality.renamed_in_tally || []).length) analytics.quality.renamed_in_tally = asOf.renamed;
   const classes = A.classifyLedgers(ledgers, book.overrides || {}, A.partyRolesFromVouchers(all));
   classes.set(nameKey(A.IMPLIED_SALES), { bucket: 'sales' });
   classes.set(nameKey(A.IMPLIED_PURCHASES), { bucket: 'purchases' });

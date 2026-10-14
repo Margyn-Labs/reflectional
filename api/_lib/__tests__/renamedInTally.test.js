@@ -55,6 +55,9 @@ const chamunda = (V) => [
   check('nothing is shown as owed to the renamed supplier', !open.some((x) => /CHAMUNDA/.test(x.party)), open);
   const sup = T.shownVsLedger(ctx, open).suppliers;
   check('the supplier check is exact for every supplier', sup.differ === 0, sup);
+  const dc = require('../dataCompleteness').tallyCompleteness({ connected: true, ledgers: b.ledgers, vouchers: b.vouchers, bills: [] }, ctx, { now: NOW });
+  const line = (dc.checks || []).find((c) => c.key === 'renamed');
+  check('the data check names the rename (through the books engine, as the endpoint calls it)', line && /CHAMUNDA PACKGING/.test(line.detail) && /CHAMUNDA PACKAGING/.test(line.detail), dc.checks && dc.checks.map((c) => c.key));
   const out = A.computeAnalytics({ ledgers: b.ledgers, vouchers: b.vouchers, bills: [], overrides: {}, now: NOW });
   check('the quality notes say so', (out.quality.renamed_in_tally || []).length === 1 && out.quality.reasons.some((r) => /renamed in Tally/.test(r)), out.quality.reasons);
 }
