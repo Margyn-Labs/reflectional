@@ -1,3 +1,8 @@
+/* Until the first load of the account's data has finished, an empty page means "still reading", not "no figures".
+   Set by the refreshAll wrapper in 33-pages.js. Without it a cold open (no saved screen) said "Start with your
+   figures" for ~10 s on a large Tally book. */
+let mgDataReady = false;
+function mgReadingPanel(){ return '<div class="mg-panel mg-empty-panel"><h2>Reading your books…</h2><p>Your figures are on their way. The first open on a device, or after an update, takes a few seconds.</p></div>'; }
 /* ============================================================
    NEW PAGES (the agreed mock, app-frame-mock.html): Home,
    Receivables / Payables with Reconciled | By source | Compare,
@@ -377,7 +382,7 @@ function mgRenderHome(){
   const desk = typeof mgrDeskTop === 'function';
   host.innerHTML = mgPageHead({ group:'Overview', title:first ? (since ? 'Welcome back, ' : 'Welcome, ') + first : (desk ? 'Welcome back' : 'Home'),
       sub:who ? 'Signed in as ' + mgActor.roleLabel + (mgCan('edit') ? '' : ', read-only') + '. You see what your role allows.' : '', scope:mgScopeText('Reconciled') }) +
-    (s ? '' : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>');
+    (s ? '' : !mgDataReady ? mgReadingPanel() : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>');
   const cashPanel = typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (bookHist ? 'Last 90 days, from your books' : hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
     (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>');
   const disPanel = '<div class="mg-panel"><div class="mg-panel-h"><h2>Sources disagree</h2>' + (dis.length ? '<button class="mg-link mg-aside" type="button" data-compare="receivables">Open in Compare →</button>' : '') + '</div>' +
