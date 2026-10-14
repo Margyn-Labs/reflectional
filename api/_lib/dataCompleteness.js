@@ -84,6 +84,12 @@ function tallyCompleteness(book, ctx, opts) {
     hit.length ? `Readers stop at ${hit.map(([k, c]) => `${c.cap.toLocaleString('en-IN')} ${k}`).join(', ')}, and this book has more.`
       : `All ${vouchersRaw.length.toLocaleString('en-IN')} vouchers, ${ledgersRaw.length.toLocaleString('en-IN')} ledgers and ${billsRaw.length.toLocaleString('en-IN')} bills are read.`));
 
+  // Ledgers renamed in Tally after their entries were read (tallyAnalytics.renamedInTally): counted under the new name.
+  const renamed = (ctx && ctx.analytics && ctx.analytics.quality && ctx.analytics.quality.renamed_in_tally) || [];
+  if (renamed.length) checks.push(check('renamed', 'Ledgers renamed in Tally', 'ok',
+    renamed.slice(0, 5).map((x) => `“${x.from}” is now “${x.to}” (${x.entries} entr${x.entries === 1 ? 'y' : 'ies'}, ₹${Math.round(x.amount).toLocaleString('en-IN')})`).join(' · ') +
+    '. Margyn counts those entries under the new name, because Tally’s balances show they belong there.'));
+
   /* ---- 3: what is set aside, and why ---- */
   const excluded = [];
   const add = (reason, type, n) => { const e = excluded.find((x) => x.reason === reason && x.type === type); if (e) e.count += n; else excluded.push({ reason, type, count: n }); };
