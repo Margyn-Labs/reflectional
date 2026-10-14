@@ -495,6 +495,81 @@ function alignToToday(ledgers, vouchers, now, known) {
 }
 
 /**
+ * Ledgers renamed in Tally after Margyn read their entries (Care Hygiene, 12-13 Oct 2026: a payment of 3,965
+ * was entered against "CHAMUNDA PACKGING", then the accountant fixed the spelling to "CHAMUNDA PACKAGING").
+ * Tally moves the old entries to the new name without altering them, so the agent never sends them again and
+ * Margyn's copy keeps a ledger name Tally no longer has: the bill looked unpaid and the supplier 3,965 out.
+ *
+ * An entry moves to the new name only when Tally's balances prove it: the old name has no ledger in the books
+ * (this year's file or an older one); exactly one ledger with a balance is out by exactly the old name's
+ * movement over the period Tally's balances cover, in the same file, and moving it makes that ledger tie to
+ * the rupee. Under 1,000 a similar name is also required, since an equal gap could be chance. Nothing else
+ * is touched. Returns { vouchers (the same array when nothing moved), renamed: [{ from, to, entries, amount }] }.
+ */
+function renamedInTally(ledgers, vouchers, bp, priorLedgers) {
+  const none = { vouchers, renamed: [] };
+  if (!bp || bp.from == null || bp.to == null || !Array.isArray(vouchers) || !vouchers.length) return none;
+  const sg = bp.sign === 'opposite' ? -1 : 1;
+  const known = new Set(), byKey = new Map();
+  for (const l of [].concat(ledgers || [], priorLedgers || [])) if (l && l.name) known.add(nameKey(l.name));
+  for (const l of ledgers || []) {
+    if (!l || !l.name || l.opening_balance == null || l.closing_balance == null) continue;
+    const k = nameKey(l.name); if (!byKey.has(k)) byKey.set(k, { l, delta: num(l.closing_balance) - num(l.opening_balance), mv: 0 });
+  }
+  const orphans = new Map();   // old name -> { name, mv, n, companies }
+  for (const [v, dt] of countedOnce(vouchers)) {
+    const t = dt.getTime(), inWin = t >= bp.from && t <= bp.to;
+    for (const e of Array.isArray(v.entries) ? v.entries : []) {
+      if (!e || !e.ledger) continue;
+      const k = nameKey(e.ledger);
+      if (byKey.has(k)) { if (inWin) byKey.get(k).mv += num(e.amount); continue; }
+      if (known.has(k)) continue;
+      const o = orphans.get(k) || { name: e.ledger, mv: 0, n: 0, companies: new Set() };
+      if (inWin) o.mv += num(e.amount);
+      o.n++; o.companies.add(v.company_name || null); orphans.set(k, o);
+    }
+  }
+  if (!orphans.size || orphans.size > 50) return none;
+  const compact = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const near = (a0, b0) => {   // edit distance at most 2 (3 for long names)
+    const a = compact(a0), b = compact(b0), max = Math.max(a.length, b.length) >= 15 ? 3 : 2;
+    if (Math.min(a.length, b.length) < 6 || Math.abs(a.length - b.length) > max) return false;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i]; let best = i;
+      for (let j = 1; j <= b.length; j++) { cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); if (cur[j] < best) best = cur[j]; }
+      if (best > max) return false;
+      prev = cur;
+    }
+    return prev[b.length] <= max;
+  };
+  const map = new Map(), renamed = [], used = new Set();
+  for (const [k, o] of orphans) {
+    if (Math.abs(o.mv) < 1) continue;
+    const fits = [];
+    for (const [tk, t] of byKey) {
+      if (used.has(tk)) continue;
+      if (t.l.company_name && !o.companies.has(t.l.company_name) && !o.companies.has(null)) continue;
+      const gap = t.delta - sg * t.mv;
+      if (Math.abs(gap) > 1 && Math.abs(gap - sg * o.mv) <= 1) fits.push(t);
+    }
+    const similar = fits.filter((t) => near(o.name, t.l.name));
+    const pick = similar.length === 1 ? similar[0] : fits.length === 1 && Math.abs(o.mv) >= 1000 ? fits[0] : null;
+    if (!pick) continue;
+    used.add(nameKey(pick.l.name)); map.set(k, pick.l.name);
+    renamed.push({ from: o.name, to: pick.l.name, entries: o.n, amount: r2(Math.abs(o.mv)), similar_name: near(o.name, pick.l.name) });
+  }
+  if (!map.size) return none;
+  const out = vouchers.map((v) => {
+    if (!v || !Array.isArray(v.entries) || !v.entries.some((e) => e && e.ledger && map.has(nameKey(e.ledger)))) return v;
+    const party = v.party_name && map.has(nameKey(v.party_name)) ? map.get(nameKey(v.party_name)) : v.party_name;
+    return Object.assign({}, v, { party_name: party,
+      entries: v.entries.map((e) => (e && e.ledger && map.has(nameKey(e.ledger)) ? Object.assign({}, e, { ledger: map.get(nameKey(e.ledger)), renamed_from: e.ledger }) : e)) });
+  });
+  return { vouchers: out, renamed };
+}
+
+/**
  * The books as of today (India date). Tally's closing balances take in every entry in the financial year,
  * including ones dated in the future: on 3 Oct Care Hygiene's accountant entered the Kotak loan EMIs for
  * Oct-Mar in advance, and Tally's bank balance dropped by all six (₹9.45 L) at once, so Margyn showed ₹4.38 L
@@ -517,11 +592,14 @@ function alignToToday(ledgers, vouchers, now, known) {
  */
 function asOfToday(ledgers, vouchers, now, convention, opts) {
   // Entries Tally's own balances prove deleted are set aside first, for this year's file and older ones.
-  const bp0 = balancePeriod(ledgers, vouchers);
+  let bp0 = balancePeriod(ledgers, vouchers);
+  // Ledgers renamed in Tally after their entries were read: the entries move to the new name when Tally's balances prove it.
+  const ren = renamedInTally(ledgers, vouchers, bp0, opts && opts.priorLedgers);
+  if (ren.renamed.length) { vouchers = ren.vouchers; bp0 = balancePeriod(ledgers, vouchers); }
   const gone = [].concat((bp0 && bp0.deleted) || [], deletedInPriorFiles(opts && opts.priorLedgers, vouchers, (bp0 && bp0.sign) || (convention === 'opposite' ? 'opposite' : 'same')));
   const setAside = gone.map((v) => asSetAside(v));
   if (gone.length) { const drop = new Set(gone); vouchers = (vouchers || []).filter((v) => !drop.has(v)); }
-  const done = (r) => Object.assign(r, { set_aside: setAside });
+  const done = (r) => Object.assign(r, { set_aside: setAside, renamed: ren.renamed });
   const aligned = alignToToday(ledgers, vouchers, now, bp0);
   if (aligned) return done(aligned);
   const dir = convention === 'opposite' ? 1 : -1;
@@ -1309,6 +1387,8 @@ function computeAnalytics(input) {
   if (stock.opening_differs) reasons.push(`Stock opens this year at ₹${Math.round(stock.opening).toLocaleString('en-IN')} but closed last year at ₹${Math.round(stock.last_year_closing).toLocaleString('en-IN')}. Gross margin after stock is ${p1(period.gross_margin_pct_after_stock)}% on this year's opening figure and ${p1(period.gross_margin_pct_after_stock_on_last_year_closing)}% on last year's closing figure.`);
   const setAside = today.set_aside || [];
   if (setAside.length) reasons.push(`${setAside.length} entr${setAside.length === 1 ? 'y is' : 'ies are'} set aside because Tally's own balances show ${setAside.length === 1 ? 'it was' : 'they were'} deleted after Margyn read ${setAside.length === 1 ? 'it' : 'them'} (${setAside.slice(0, 3).map((x) => `${x.type || 'entry'} ${x.number || ''} of ${x.date ? longDay(x.date) : '?'}, ₹${Math.round(x.amount).toLocaleString('en-IN')}`).join('; ')}${setAside.length > 3 ? '; …' : ''}).`);
+  const renamedL = today.renamed || [];
+  if (renamedL.length) reasons.push(`${renamedL.length} ledger${renamedL.length === 1 ? ' was' : 's were'} renamed in Tally after Margyn read ${renamedL.length === 1 ? 'its' : 'their'} entries (${renamedL.slice(0, 3).map((x) => '“' + x.from + '” is now “' + x.to + '”').join('; ')}). Those entries count under the new name, as Tally's balances show.`);
   if (unclassified.length) reasons.push(`${unclassified.length} ledger(s) with activity are unclassified.`);
   if (guessed.length) reasons.push(`${guessed.length} ledger(s) classified by guess, not by Tally group.`);
   if (tieBad.length) reasons.push(`${tieBad.length} of ${tieTop.length} largest P&L ledgers don't tie to Tally's own balance.`);
@@ -1341,6 +1421,7 @@ function computeAnalytics(input) {
     coverage: { from: period.from, to: period.to, vouchers: live.length, cancelled: cancelled.length, months: monthKeys.length },
     tally_completeness: completeness,
     set_aside_deleted: setAside,
+    renamed_in_tally: today.renamed || [],
     invoice_numbers: gaps ? { missing: gaps.missing, short_months: gaps.short_months, months: gaps.months, series: gaps.series } : null,
     agent_reading_past_year: readingPastYear ? { from: agentPeriod.from, to: agentPeriod.to } : null,
     unclassified_ledgers: unclassified.slice(0, 20),
@@ -1629,7 +1710,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
-  computeAnalytics, asOfToday, deletedInTally, priorClassifier, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
+  computeAnalytics, asOfToday, deletedInTally, renamedInTally, priorClassifier, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,
   isNonAccounting, isCreditNote, isDebitNote, isSalesType, isPurchaseType, IMPLIED_SALES, IMPLIED_PURCHASES
