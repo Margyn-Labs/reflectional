@@ -245,6 +245,7 @@ function mgRenderPageHead(page, p){
   // Inbox and Agents share the agents view: Inbox is the queue only, Agents the roster and conversations.
   if(P.base === 'agents'){
     root.classList.toggle('mg-is-inbox', page === 'inbox'); root.classList.toggle('mg-is-agents', page === 'agents');
+    if(page === 'agents' && typeof mgAutoPaint === 'function') setTimeout(mgAutoPaint, 0);
   }
   const oldChip = head.querySelector(':scope > .mg-ph-chip'); if(oldChip) oldChip.remove();
   head.insertAdjacentHTML('afterbegin', mgPageChip(page));
