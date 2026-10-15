@@ -233,11 +233,18 @@ function summarise(book) {
     receivables: r2(recv), payables: r2(pay), entries: (book.vouchers || []).length };
 }
 
-/** Which connected book everyone reads: most trusted, then most recently synced, then the one with most entries. */
+/**
+ * Which connected book everyone reads: one with entries, then most trusted, then most recently synced, then the one
+ * with most entries. A book with open invoices but no entries can't make an update, a P&L or a cash figure: on the demo
+ * account (12–15 Oct 2026) Zoho Books (0 entries, 1 invoice) synced nightly after the Tally laptop went quiet, won on
+ * "most recent", and every WhatsApp update said "No books to read yet" while Tally held the books.
+ */
 function choosePrimary(books) {
   const usable = books.filter((b) => b && b.connected && ((b.vouchers || []).length || (b.bills || []).length || (b.ledgers || []).length));
   const pool = usable.length ? usable : books.filter((b) => b && b.connected);
-  return pool.slice().sort((a, b) => (TRUST[b.source] || 0) - (TRUST[a.source] || 0)
+  const hasEntries = (b) => ((b.vouchers || []).length ? 1 : 0);
+  return pool.slice().sort((a, b) => hasEntries(b) - hasEntries(a)
+    || (TRUST[b.source] || 0) - (TRUST[a.source] || 0)
     || (Date.parse(b.lastSync || 0) || 0) - (Date.parse(a.lastSync || 0) || 0)
     || (b.vouchers || []).length - (a.vouchers || []).length)[0] || null;
 }

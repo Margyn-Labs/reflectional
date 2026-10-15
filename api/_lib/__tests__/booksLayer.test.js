@@ -83,7 +83,8 @@ const O = { connected: true, source: 'odoo', lastSync: '2026-10-04T00:00:00Z', v
 check('primary: equal trust → most recent (Zoho over older Tally)', L.choosePrimary([T, Z]) === Z);
 check('primary: full books beat invoices-only, even if older', L.choosePrimary([T, O]) === T);
 check('primary: an empty connection loses to one with entries', L.choosePrimary([Object.assign({}, Z, { vouchers: [], bills: [], ledgers: [] }), T]) === T);
-
+// Demo account 12–15 Oct 2026: Zoho with one open invoice and no entries, synced after Tally, hid Tally's books.
+check('primary: invoices without entries lose to older books with entries', L.choosePrimary([T, Object.assign({}, Z, { vouchers: [], bills: [{ direction: 'receivable' }] })]) === T);
 // loadBooks over a fake Supabase: Tally-only, Zoho-only, both (compared, never added).
 const U1 = 'u-tally', U2 = 'u-zoho', U3 = 'u-both', NONE = 'u-none';
 const DB = {
