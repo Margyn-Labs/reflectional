@@ -154,8 +154,36 @@ document.addEventListener('submit', e => {
 });
 
 /* ---------- Automations: Roster, Chasing, Update log ---------- */
-const MGA_STATE = { active:['pos', 'Chasing'], paused_promise:['warn', 'Promised to pay'], disputed:['neg', 'Disputed'], escalated_human:['warn', 'Needs you'], resolved_paid:['pos', 'Paid'], resolved_manual:['', 'Closed'], opted_out:['', 'Opted out'] };
+const MGA_STATE = { active:['pos', 'Chasing'], paused_promise:['warn', 'Promised to pay'], disputed:['neg', 'Disputed'], escalated_human:['warn', 'Needs you'], resolved_paid:['pos', 'Paid'], resolved_manual:['', 'Closed'], opted_out:['', 'Opted out'], stopped:['', 'Reminders off'] };
 function mgAutoOpen(){ try { return (chaseTargets || []).filter(t => ['active', 'paused_promise', 'disputed', 'escalated_human'].includes(t.state)); } catch(e){ return []; } }
+// Reminders on or off for one customer. A customer who replied STOP (opted out), paid, or is in your hands has no switch.
+function mgAutoSwitch(t){
+  const on = ['active', 'paused_promise'].includes(t.state);
+  if(!on && t.state !== 'stopped') return '<span class="mg-fine">—</span>';
+  return '<label class="mg-switch" style="padding:0"><input type="checkbox" data-chase-onoff="' + escapeHtml(String(t.id)) + '"' + (on ? ' checked' : '') + '> <span>' + (on ? 'On' : 'Off') + '</span></label>';
+}
+document.addEventListener('change', async e => {
+  const box = e.target.closest && e.target.closest('[data-chase-onoff]'); if(!box) return;
+  const t = ((typeof chaseTargets !== 'undefined' && chaseTargets) || []).find(x => String(x.id) === box.dataset.chaseOnoff); if(!t) return;
+  const name = t.party_name || 'this customer';
+  const ok = box.checked
+    ? await mgConfirm({ title:'Send reminders to ' + name + ' again?', body:(t.contact_phone ? 'The next reminder goes out at the 10:30 am run.' : 'There’s no WhatsApp number for them yet, so nothing goes out until you add one.'), effect:(t.amount != null ? [['Outstanding', fmtINR(t.amount)]] : []), confirmLabel:'Turn on' })
+    : await mgConfirm({ title:'Stop reminders to ' + name + '?', body:'Margyn won’t send them payment reminders, including for new invoices, until you turn this back on.', effect:(t.amount != null ? [['Outstanding', fmtINR(t.amount)]] : []), confirmLabel:'Stop reminders' });
+  if(!ok){ box.checked = !box.checked; return; }
+  const patch = box.checked
+    ? { state:'active', resolution:null, next_chase_at:t.contact_phone ? new Date().toISOString() : null }
+    : { state:'stopped', resolution:'Stopped by the owner.', next_chase_at:null };
+  try {
+    const { error } = await sbClient.from('whatsapp_chase_targets').update(patch).eq('id', t.id).eq('user_id', currentUser.id);
+    if(error) throw error;
+    // Every entry for the same customer goes with it, so one switch covers them.
+    const same = (chaseTargets || []).filter(x => x.id !== t.id && String(x.party_name || '').trim().toLowerCase() === String(t.party_name || '').trim().toLowerCase() && (box.checked ? x.state === 'stopped' : ['active', 'paused_promise'].includes(x.state)));
+    for(const x of same) await sbClient.from('whatsapp_chase_targets').update(patch).eq('id', x.id).eq('user_id', currentUser.id);
+    toast(box.checked ? 'Reminders on for ' + name : 'Reminders off for ' + name, { kind:'good' });
+  } catch(err){ toast('Could not change reminders', { kind:'bad', sub:err.message || '' }); }
+  if(typeof loadChaseTargets === 'function') await loadChaseTargets();
+  mgAutoPanels();
+});
 function mgAutoPanels(){
   const root = document.getElementById('view-agents'), roster = document.getElementById('agentPanel-roster'); if(!root || !roster) return;
   let ch = document.getElementById('mgAutoChase'), lg = document.getElementById('mgAutoLog');
@@ -166,9 +194,9 @@ function mgAutoPanels(){
   const when = iso => iso ? fmtDay(iso) : '—';
   ch.innerHTML = (typeof mgSum === 'function' ? mgSum([['Being chased', String(open.length)], ['Outstanding', fmtINR(open.reduce((a, t) => a + (Number(t.amount) || 0), 0), 'tile')], ['Paid after a reminder', String(paid.length), paid.length ? 'pos' : ''],
       ['Payment reminders', st === 'active' ? 'On' : st === 'paused' ? 'Paused' : 'Off']]) : '') +
-    (all.length ? '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy"><thead><tr><th>Customer</th><th>Status</th><th class="r">Amount (₹)</th><th>Last reminder</th><th>Next reminder</th></tr></thead><tbody>' +
+    (all.length ? '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy"><thead><tr><th>Customer</th><th>Status</th><th class="r">Amount (₹)</th><th>Last reminder</th><th>Next reminder</th><th>Reminders</th></tr></thead><tbody>' +
       all.slice().sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0)).map(t => { const s = MGA_STATE[t.state] || ['', String(t.state || '').replace(/_/g, ' ')];
-        return '<tr><td>' + (typeof mgWho === 'function' ? mgWho(t.party_name || 'A customer') : escapeHtml(t.party_name || '')) + '</td><td><span class="mg-bdg ' + s[0] + '">' + escapeHtml(s[1]) + '</span></td><td class="r">' + (t.amount != null ? mgNum(t.amount) : '') + '</td><td>' + escapeHtml(when(t.last_chase_at)) + '</td><td>' + escapeHtml(['active'].includes(t.state) ? when(t.next_chase_at) : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>'
+        return '<tr><td>' + (typeof mgWho === 'function' ? mgWho(t.party_name || 'A customer') : escapeHtml(t.party_name || '')) + '</td><td><span class="mg-bdg ' + s[0] + '">' + escapeHtml(s[1]) + '</span></td><td class="r">' + (t.amount != null ? mgNum(t.amount) : '') + '</td><td>' + escapeHtml(when(t.last_chase_at)) + '</td><td>' + escapeHtml(['active'].includes(t.state) ? when(t.next_chase_at) : '—') + '</td><td>' + mgAutoSwitch(t) + '</td></tr>'; }).join('') + '</tbody></table></div>'
       : '<div class="mg-panel mg-empty-panel"><h2>Nobody is being chased</h2><p>' + (st === 'active' ? 'Payment reminders are on. Customers appear here as their invoices go past due.' : 'Payment reminders on WhatsApp are off. Turn them on from the Roster tab and overdue customers appear here.') + '</p></div>');
   // Update log: what Margyn sent on WhatsApp, run by run (the Conversations page's own log)
   const w = typeof mgHub !== 'undefined' && mgHub ? mgHub.watch : null;

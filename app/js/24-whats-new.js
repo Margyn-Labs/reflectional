@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-16-chase-onoff', date:'16 Oct 2026', title:'Choose which customers get payment reminders',
+    items:[
+      { t:'Reminders on or off, customer by customer', what:'Every customer on the Chasing list now has a Reminders switch. Turn it off and Margyn sends them no payment reminders, including for new invoices, until you turn it back on.',
+        how:'<b>Automations</b> → <b>Chasing</b> → the <b>Reminders</b> switch next to the customer.', act:'agents' },
+      { t:'WhatsApp updates read the right books', what:'When two systems are connected and one of them has no entries yet, Margyn’s updates, screens and answers now read the one that has your entries.',
+        how:'Nothing to do.', act:'history' }
+    ]
+  },
+  {
     id:'2026-10-14-new-look', date:'14 Oct 2026', title:'A calmer Margyn, with more room for your numbers',
     items:[
       { t:'A new look, the same app', what:'The page is now one white sheet on a warm background, with lighter lines and figures in the same typeface as everything else. Every page, button and figure is where it was; nothing was removed.',

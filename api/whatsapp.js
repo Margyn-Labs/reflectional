@@ -1139,6 +1139,8 @@ async function syncChaseQueueAllSources(userId, config) {
   } catch (e) { /* treat as none */ }
   const targetByRecv = new Map(existing.filter((t) => t.receivable_id).map((t) => [t.receivable_id, t]));
   const liveByName = new Set(existing.filter((t) => ['active', 'paused_promise'].includes(t.state)).map((t) => normPartyName(t.party_name)));
+  // The owner switched reminders off for this customer (Automations > Chasing): a new invoice doesn't switch them back on.
+  const stoppedByName = new Set(existing.filter((t) => t.state === 'stopped').map((t) => normPartyName(t.party_name)));
 
   const now = new Date();
   for (const r of items) {
@@ -1165,6 +1167,7 @@ async function syncChaseQueueAllSources(userId, config) {
     }
 
     if ((Number(r.amount) || 0) < c.min_amount) continue;
+    if (stoppedByName.has(k)) continue;
     // A customer already being chased under another entry (e.g. an older manual one) isn't chased twice.
     if (r.src !== 'manual' && liveByName.has(k)) continue;
 
@@ -1255,11 +1258,12 @@ async function syncChaseQueueManualOnly(userId, config) {
   try {
     existing = await selectRows(
       'whatsapp_chase_targets',
-      `select=id,receivable_id,state&user_id=eq.${userId}&limit=2000`
+      `select=id,receivable_id,party_name,state&user_id=eq.${userId}&limit=2000`
     );
   } catch (e) { /* treat as none */ }
   const targetByRecv = new Map(existing.filter((t) => t.receivable_id).map((t) => [t.receivable_id, t]));
   const openRecvIds = new Set(receivables.map((r) => r.id));
+  const stoppedByName = new Set(existing.filter((t) => t.state === 'stopped').map((t) => normPartyName(t.party_name)));
 
   const now = new Date();
   for (const r of receivables) {
@@ -1277,6 +1281,7 @@ async function syncChaseQueueManualOnly(userId, config) {
     }
 
     const k = normPartyName(r.party_name);
+    if (stoppedByName.has(k)) continue;
     const phone = phoneByName.get(k) || '';
     if (!phone) { skipped_no_phone++; }
 
