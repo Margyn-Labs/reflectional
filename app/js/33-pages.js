@@ -189,6 +189,13 @@ function mgAutoPanels(){
   let ch = document.getElementById('mgAutoChase'), lg = document.getElementById('mgAutoLog');
   if(!ch){ ch = document.createElement('div'); ch.id = 'mgAutoChase'; lg = document.createElement('div'); lg.id = 'mgAutoLog'; roster.after(ch, lg); }
   const d = (typeof agentDeployments !== 'undefined' && agentDeployments) || {}, st = (d.chase_agent && d.chase_agent.status) || 'not_deployed';
+  // The list is read here, not left to whichever page loaded it last: it used to show "Nobody is being chased"
+  // (and no switches) whenever Automations opened before anything else had read it. Again at most every 30 s.
+  if(typeof loadChaseTargets === 'function' && !mgAutoPanels.busy && Date.now() - (mgAutoPanels.at || 0) > 30000){
+    mgAutoPanels.busy = true;
+    Promise.resolve(loadChaseTargets()).then(() => { mgAutoPanels.at = Date.now(); }).catch(() => {}).then(() => { mgAutoPanels.busy = false; if(mgCurrentView === 'agents') mgAutoPanels(); });
+  }
+  const loading = !mgAutoPanels.at;
   const all = (typeof chaseTargets !== 'undefined' && chaseTargets) || [], open = mgAutoOpen();
   const paid = all.filter(t => t.state === 'resolved_paid');
   const when = iso => iso ? fmtDay(iso) : '—';
@@ -197,6 +204,7 @@ function mgAutoPanels(){
     (all.length ? '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy"><thead><tr><th>Customer</th><th>Status</th><th class="r">Amount (₹)</th><th>Last reminder</th><th>Next reminder</th><th>Reminders</th></tr></thead><tbody>' +
       all.slice().sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0)).map(t => { const s = MGA_STATE[t.state] || ['', String(t.state || '').replace(/_/g, ' ')];
         return '<tr><td>' + (typeof mgWho === 'function' ? mgWho(t.party_name || 'A customer') : escapeHtml(t.party_name || '')) + '</td><td><span class="mg-bdg ' + s[0] + '">' + escapeHtml(s[1]) + '</span></td><td class="r">' + (t.amount != null ? mgNum(t.amount) : '') + '</td><td>' + escapeHtml(when(t.last_chase_at)) + '</td><td>' + escapeHtml(['active'].includes(t.state) ? when(t.next_chase_at) : '—') + '</td><td>' + mgAutoSwitch(t) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+      : loading ? '<div class="mg-panel mg-empty-panel"><p>Loading who is being chased…</p></div>'
       : '<div class="mg-panel mg-empty-panel"><h2>Nobody is being chased</h2><p>' + (st === 'active' ? 'Payment reminders are on. Customers appear here as their invoices go past due.' : 'Payment reminders on WhatsApp are off. Turn them on from the Roster tab and overdue customers appear here.') + '</p></div>');
   // Update log: what Margyn sent on WhatsApp, run by run (the Conversations page's own log)
   const w = typeof mgHub !== 'undefined' && mgHub ? mgHub.watch : null;
