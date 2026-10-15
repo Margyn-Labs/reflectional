@@ -229,6 +229,9 @@ if(typeof MG_TABX !== 'undefined'){
     const bar = r && r.querySelector('.mg-tabs[data-mg-tabs="agents"]');
     if(!r || !r.classList.contains('mg-is-agents')){ if(bar) bar.remove(); ['mgAutoChase', 'mgAutoLog'].forEach(id => { const e = document.getElementById(id); if(e) e.classList.add('mg-tab-off'); }); return; }
     mgAutoPanels(); if(typeof mgTabsApply === 'function') mgTabsApply('agents'); } catch(e){ console.error('[margyn] automations tabs', e); } };
+  // The frame marks the page as Automations (mg-is-agents) after showView on a cold open straight to #/agents,
+  // so it calls this too; without it the Roster / Chasing / Update log tabs and the switches never drew.
+  window.mgAutoPaint = () => { if(!document.querySelector('.mg-tabs[data-mg-tabs="agents"]') || !document.getElementById('mgAutoChase')) paint(); };
   const base = showView;
   showView = function(){ const out = base.apply(this, arguments); if(mgCurrentView === 'agents' || mgCurrentView === 'inbox') paint(); return out; };
   if(typeof renderAgentRoster === 'function'){ const b = renderAgentRoster; renderAgentRoster = function(){ const o = b.apply(this, arguments); Promise.resolve(o).then(() => { if(mgCurrentView === 'agents') paint(); }); return o; }; }
