@@ -14,6 +14,7 @@
  *   GET  /api/ops?action=metrics               (ops allowlist) ops_metrics aggregates, read as
  *                                                             ops_reader via OPS_METRICS_JWT
  *   POST /api/ops?action=waitlist              (public)       marketing-site waitlist signup
+ *   POST /api/ops?action=preview-view          (public)       view log for the /preview investor film page
  *                                                             (served at /api/waitlist via rewrite)
  *   GET  /api/ops?action=cron-cfo-pack         (CRON_SECRET)  daily: email the monthly CFO pack to
  *                                                             accounts whose day has come
@@ -50,6 +51,7 @@ const {
 const team = require('./_lib/team');
 const { track, ALLOWED_NAMES } = require('./_lib/track');
 const waitlist = require('./_lib/waitlist');
+const previewView = require('./_lib/previewView');
 const cfoPack = require('./_lib/cfoPack');
 
 const DAY = 86400000;
@@ -576,6 +578,9 @@ module.exports = async (req, res) => {
   // ---- waitlist: public marketing-site signup (reached via the
   // /api/waitlist rewrite in vercel.json; handler in _lib/waitlist.js) ----
   if (action === 'waitlist') return waitlist(req, res);
+
+  // ---- preview-view: public, fail-open view log for /preview (_lib/previewView.js) ----
+  if (action === 'preview-view') return previewView(req, res);
 
   // ---- CFO pack: daily cron (CRON_SECRET) and a user's own test send ----
   if (action === 'cron-cfo-pack') {
