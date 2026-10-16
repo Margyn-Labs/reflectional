@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>An early look · Margyn</title>
+<meta name="description" content="60 seconds on Margyn, the financial operating system where AI agents and people run a business's finance side by side.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FAFAF8">
+<link rel="icon" type="image/png" href="img/margyn-logo-mark.png">
+<meta property="og:type" content="video.other"><meta property="og:site_name" content="Margyn">
+<meta property="og:title" content="An early look at Margyn">
+<meta property="og:description" content="60 seconds on the financial operating system for Indian businesses.">
+<meta property="og:image" content="https://www.margynlabs.com/media/margyn-film-v2-poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<style>
+  .pv-nav{ padding:22px 0; }
+  .pv-nav .brand{ display:inline-flex; align-items:center; gap:10px; font-weight:700; font-size:18px; color:var(--ink); text-decoration:none; }
+  .pv-main{ padding:24px 0 72px; }
+  .pv-head{ max-width:760px; margin:0 auto 32px; text-align:center; }
+  .pv-head h1{ font-size:clamp(30px, 4.4vw, 48px); font-weight:600; letter-spacing:-.02em; line-height:1.1; margin:0 0 14px; }
+  .pv-head p{ font-size:17px; line-height:1.55; color:var(--ink-2); margin:0; }
+  .pv-film{ max-width:1040px; margin:0 auto; border-radius:14px; overflow:hidden; background:#0A0E12; box-shadow:var(--shadow-shot); border:1px solid var(--border); aspect-ratio:16/9; }
+  .pv-film video{ display:block; width:100%; height:100%; object-fit:cover; background:#0A0E12; }
+  .pv-facts{ max-width:1040px; margin:28px auto 0; display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
+  .pv-fact{ background:var(--card); border:1px solid var(--border-soft); border-radius:10px; padding:18px 20px; }
+  .pv-fact b{ display:block; font-size:20px; font-weight:700; letter-spacing:-.01em; margin-bottom:4px; }
+  .pv-fact span{ font-size:14px; line-height:1.5; color:var(--ink-2); }
+  .pv-cta{ max-width:760px; margin:40px auto 0; text-align:center; }
+  .pv-cta p{ font-size:16px; color:var(--ink-2); margin:0 0 18px; }
+  .pv-cta .row{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .pv-foot{ border-top:1px solid var(--border-soft); padding:22px 0; font-size:13px; color:var(--ink-3); }
+  .pv-foot .wrap{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .pv-foot a{ color:var(--ink-3); }
+  @media (max-width:720px){
+    :root{ --pad:16px; }
+    .pv-facts{ grid-template-columns:1fr; }
+    .pv-film{ border-radius:10px; }
+  }
+</style>
+</head>
+<body>
+<nav class="pv-nav"><div class="wrap"><a class="brand" href="/" aria-label="Margyn home"><img src="img/margyn-logo-mark.webp" alt="" width="28" height="20"><span>Margyn</span></a></div></nav>
+<main class="pv-main">
+  <div class="wrap">
+    <header class="pv-head">
+      <h1>An early look at Margyn</h1>
+      <p>We launch publicly in a few weeks. Here is what we are building, in 60 seconds.</p>
+    </header>
+    <div class="pv-film">
+      <video id="film" controls playsinline preload="metadata" poster="media/margyn-film-v2-poster.jpg">
+        <source src="media/margyn-film-v2.mp4" type="video/mp4">
+      </video>
+    </div>
+    <div class="pv-facts">
+      <div class="pv-fact"><b>₹30 Cr a year</b><span>already runs through Margyn with our design partner.</span></div>
+      <div class="pv-fact"><b>Under ₹5,000 a month</b><span>is what it costs us to run their books.</span></div>
+      <div class="pv-fact"><b>Agents do the work</b><span>Collect, reconcile, chase, forecast, check GST. People approve the exceptions.</span></div>
+    </div>
+    <div class="pv-cta">
+      <p>Up for 20 minutes the week of 28 Oct? Just reply to the email this link came in.</p>
+      <div class="row">
+        <a class="btn btn-primary" href="/platform.html">See the product</a>
+        <a class="btn btn-quiet" href="mailto:business@margynlabs.com?subject=Margyn%20-%2020%20minutes">Email us</a>
+      </div>
+    </div>
+  </div>
+</main>
+<footer class="pv-foot"><div class="wrap"><span>© 2026 Margyn Labs</span><a href="/privacy.html">Privacy policy</a></div></footer>
+<script>
+(function () {
+  var ref = (new URLSearchParams(location.search).get('ref') || 'direct').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 60) || 'direct';
+  var sent = {};
+  function log(event) {
+    if (sent[event]) return; sent[event] = 1;
+    var body = JSON.stringify({ ref: ref, event: event });
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/ops?action=preview-view', new Blob([body], { type: 'application/json' }));
+      else fetch('/api/ops?action=preview-view', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true });
+    } catch (e) {}
+  }
+  log('open');
+  var v = document.getElementById('film');
+  v.addEventListener('play', function () { log('play'); });
+  v.addEventListener('timeupdate', function () { if (v.duration && v.currentTime / v.duration >= 0.5) log('half'); });
+  v.addEventListener('ended', function () { log('end'); });
+})();
+</script>
+</body>
+</html>
