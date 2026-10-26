@@ -375,7 +375,10 @@ function borrowing(ctx, opts) {
       month_end: me, months_up_in_a_row: up,
       series: { start: dayAt(0), owed: win.map(r0) }
     };
-    if (flows) Object.assign(out, { paid_out: r0(flows.out), paid_in: r0(flows.in), interest_charged: r0(flows.interest), interest_rate_pct: rate != null && rate < 1 ? Math.round(rate * 1000) / 10 : null });
+    // A rate only when the interest charged to this account could be all of it: below 4% a year no bank lends, so
+    // most of its interest is booked elsewhere (Care Hygiene's Kotak OD: ₹1.4 L on it, "2.1% a year", 26 Oct 2026).
+    const partial = rate != null && rate < 0.04;
+    if (flows) Object.assign(out, { paid_out: r0(flows.out), paid_in: r0(flows.in), interest_charged: r0(flows.interest), interest_rate_pct: rate != null && rate < 1 && !partial ? Math.round(rate * 1000) / 10 : null, interest_booked_elsewhere: partial || undefined });
     if (kind === 'loan') out.trend = out.change_90d < -1 ? 'reducing' : out.change_90d > 1 ? 'growing' : 'flat';
     if (limit) Object.assign(out, { limit: r0(limit), used_pct: Math.round(out.owed_today / limit * 1000) / 10, headroom: r0(limit - out.owed_today), peak_used_pct: Math.round(out.peak.owed / limit * 1000) / 10 });
     return out;

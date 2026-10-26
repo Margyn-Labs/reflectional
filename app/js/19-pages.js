@@ -134,11 +134,11 @@ function mgGroupsFromPos(dir, P){
     g.sources.forEach(src => {
       by[src] = { amount:g.by[src].amount, rows:(g.by[src].rows || []).map(r => {
         const raw = src === 'manual' && r.id != null ? own.get(String(r.id)) || null : null;
-        return { party:mgPartyName(r.party || g.party), amount:r.amount, due:r.due, ref:r.ref, src, editable:!!raw, raw, key:g.key, days:r.days };
+        return { party:mgPartyName(r.party || g.party), amount:r.amount, due:r.due, ref:r.ref, src, editable:!!raw, raw, key:g.key, days:r.days, kind:r.kind || 'trade' };
       }) };
     });
     return { key:g.key, party:mgPartyName(g.party), by, sources:g.sources, primary:g.primary, status:g.status, amount:g.amount,
-      diff:g.diff, oldestDays:g.oldest_days, invoices:g.open_items, overdue:g.overdue, due7:g.due_7d };
+      diff:g.diff, oldestDays:g.oldest_days, invoices:g.open_items, overdue:g.overdue, due7:g.due_7d, kind:g.kind || 'trade' };
   });
 }
 function mgMoneyGroups(dir){
@@ -170,10 +170,13 @@ function mgPosNote(dir){
   }
   if(tc && tc.basis === 'supplier_ledgers') bits.push('Tally doesn’t keep your suppliers’ bills one by one, so what you owe each supplier is worked out from your purchases and payments, oldest bills paid first. Due dates are the bill date plus how long you usually take to pay that supplier' +
     (Number(tc.advances) >= 1 ? '. ' + fmtINR(tc.advances) + ' paid ahead to suppliers is not netted off' : ''));
+  if(dir === 'pay' && P.totals && Number(P.totals.other_owed) >= 1) bits.push(fmtINR(P.totals.other_owed) + ' is owed to commission agents, staff and the owner’s family, who are kept under creditors in your books. It is in Open, but not in Overdue to suppliers or the bills due on Home');
   Object.entries(P.coverage || {}).forEach(([s, c]) => { if(c.truncated) bits.push(MG_SRC_NAME[s] + ' has more than ' + c.cap.toLocaleString('en-IN') + ' open items; the first ' + c.rows.toLocaleString('en-IN') + ' are shown'); });
   Object.keys(P.errors || {}).forEach(s => bits.push(MG_SRC_NAME[s] + ' couldn’t be read just now, so it is left out'));
   return bits.length ? bits.join('. ') + '.' : '';
 }
+// Creditors who aren't trade suppliers (api/_lib/cashFlowModel.creditorKinds): shown, never counted as overdue.
+const MG_NON_TRADE = { commission:'Commission', salary:'Salaries', family:'Family and owners' };
 function mgBucketOf(days){
   if(days === null || days >= 0) return 'b0';
   const od = -days; return od <= 30 ? 'b0' : od <= 60 ? 'b1' : od <= 90 ? 'b2' : 'b3';
@@ -331,11 +334,12 @@ function mgRenderHome(){
   const recv = mgMoneyGroups('recv'), pay = mgMoneyGroups('pay');
   const overdue = recv.reduce((t, g) => t + g.overdue, 0);
   // Bills due in the next 7 days, and bills already overdue, apart: "due in 7 days ₹25.4 L" was bills 39–770 days late.
-  const payRows = pay.flatMap(g => (g.by[g.primary] || {}).rows || []);
+  // Trade suppliers only: commission, salaries and family balances kept under creditors aren't bills falling due.
+  const payRows = pay.filter(g => !g.kind || g.kind === 'trade').flatMap(g => ((g.by[g.primary] || {}).rows || []).filter(r => !r.kind || r.kind === 'trade'));
   const due7 = payRows.filter(r => r.days !== null && r.days >= 0 && r.days <= 7).reduce((t, r) => t + r.amount, 0);
   const payLate = payRows.filter(r => r.days !== null && r.days < 0);
   const payLateAmt = payLate.reduce((t, r) => t + r.amount, 0), payOldest = payLate.length ? -Math.min(...payLate.map(r => r.days)) : 0;
-  const nOver = recv.filter(g => g.overdue > 0).length, nDue = pay.filter(g => ((g.by[g.primary] || {}).rows || []).some(r => r.days !== null && r.days >= 0 && r.days <= 7)).length;
+  const nOver = recv.filter(g => g.overdue > 0).length, nDue = pay.filter(g => (!g.kind || g.kind === 'trade') && ((g.by[g.primary] || {}).rows || []).some(r => r.days !== null && r.days >= 0 && r.days <= 7)).length;
   const billwise = typeof mgMar !== 'undefined' && mgMar && mgMar.working_capital ? mgMar.working_capital.suppliers_tracked_billwise : null;
   const payNote = billwise === false ? (payLateAmt > 0 ? fmtINR(payLateAmt, 'tile') + ' past when you usually pay' : 'Due dates from when you usually pay each supplier')
     : (payLateAmt > 0 ? fmtINR(payLateAmt, 'tile') + ' already overdue (oldest ' + payOldest + ' days)' : nDue + ' vendor' + (nDue === 1 ? '' : 's') + ' to pay');
@@ -465,9 +469,9 @@ function mgRenderMoney(dir){
     // Reconciled: one row per party from its most trusted source. By source: that system's invoices.
     let rows;
     if(mode === 'reconciled'){
-      rows = mgMoneyGroups(dir).map(g => ({ party:g.party, amount:g.amount, days:g.oldestDays, ref:g.invoices + ' open', g, src:g.primary }));
+      rows = mgMoneyGroups(dir).map(g => ({ party:g.party, amount:g.amount, days:g.oldestDays, ref:g.invoices + ' open', g, src:g.primary, kind:g.kind || 'trade' }));
     } else {
-      rows = mgMoneyRows(dir).filter(r => r.src === mode).map(r => ({ party:r.party, amount:r.amount, days:r.days, ref:r.ref || '—', r, src:r.src }));
+      rows = mgMoneyRows(dir).filter(r => r.src === mode).map(r => ({ party:r.party, amount:r.amount, days:r.days, ref:r.ref || '—', r, src:r.src, kind:r.kind || 'trade' }));
     }
     let buckets = { b0:0, b1:0, b2:0, b3:0 };
     if(mode === 'reconciled') buckets = mgInvoiceAgeing(rows.map(r => r.g));
@@ -480,14 +484,17 @@ function mgRenderMoney(dir){
     const colors = { b0:'var(--brand)', b1:'var(--warn)', b2:'#C77A2E', b3:'var(--neg)' };
     const SHORT = { b0:'0–30 days', b1:'31–60', b2:'61–90', b3:'90+' };
     const open = Object.values(buckets).reduce((a, b) => a + b, 0);
-    const overdue = mode === 'reconciled' ? allRows.reduce((t, r) => t + (Number(r.g.overdue) || 0), 0) : allRows.reduce((t, r) => t + (r.days != null && r.days < 0 ? r.amount : 0), 0);
+    const overdue = mode === 'reconciled' ? allRows.reduce((t, r) => t + (Number(r.g.overdue) || 0), 0) : allRows.reduce((t, r) => t + (r.kind === 'trade' && r.days != null && r.days < 0 ? r.amount : 0), 0);
+    // Payables: commission agents, staff and family kept under creditors, owed but not overdue to suppliers.
+    const otherOwed = dir === 'pay' ? allRows.reduce((t, r) => t + (r.kind !== 'trade' ? r.amount : 0), 0) : 0;
     const age = '<div class="mg-age"><div class="mg-age-bar">' + MG_BUCKETS.map(([k]) => buckets[k] > 0 ? '<i style="flex:' + (buckets[k] / btot * 100).toFixed(2) + ';background:' + colors[k] + '"></i>' : '').join('') + '</div>' +
       '<div class="mg-aging">' + MG_BUCKETS.map(([k, l]) =>
         '<button type="button" data-money-age="' + k + '" class="' + (mgMoneyAge === k ? 'on' : '') + '" title="Show only ' + escapeHtml(l) + '" style="--k:' + colors[k] + '"><span class="mg-ag-l">' + SHORT[k] + '</span> <span class="mg-ag-v">' + escapeHtml(fmtINR(buckets[k], 'tile')) + '</span></button>').join('') + '</div></div>';
-    body = mgSum([['Open', fmtINR(open, 'tile')], ['Overdue', fmtINR(overdue, 'tile'), overdue > 0 ? 'bad' : ''],
-        [mode === 'reconciled' ? who + 's' : 'Open items', String(allRows.length)]], age) +
+    body = mgSum([['Open', fmtINR(open, 'tile')], [otherOwed >= 1 ? 'Overdue to suppliers' : 'Overdue', fmtINR(overdue, 'tile'), overdue > 0 ? 'bad' : '']]
+        .concat(otherOwed >= 1 ? [['Commission, staff, family', fmtINR(otherOwed, 'tile')]] : [])
+        .concat([[mode === 'reconciled' ? who + 's' : 'Open items', String(allRows.length)]]), age) +
       '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy mg-rows2"><thead><tr><th>' + who + '</th><th>' + (mode === 'reconciled' ? 'Invoices' : 'Reference') + '</th><th>Status</th><th class="r">Open amount (₹)</th><th>' + (mode === 'reconciled' ? 'Agreement' : 'Source') + '</th>' + (mode === 'reconciled' ? '<th>Sources</th>' : '') + '<th></th></tr></thead><tbody>' +
-      rows.map((r, i) => '<tr class="mg-click" data-open-party="' + escapeHtml(r.g ? r.g.key : r.r.key) + '" data-dir="' + dir + '"><td>' + mgWho(r.party) + '</td><td class="mg-mono">' + escapeHtml(r.ref) + '</td><td>' + mgStatusBadge(r.days, dir) + '</td><td class="r mg-amt">' + mgNum(r.amount) + '</td>' +
+      rows.map((r, i) => '<tr class="mg-click" data-open-party="' + escapeHtml(r.g ? r.g.key : r.r.key) + '" data-dir="' + dir + '"><td>' + mgWho(r.party, MG_NON_TRADE[r.kind] ? escapeHtml(MG_NON_TRADE[r.kind]) : '') + '</td><td class="mg-mono">' + escapeHtml(r.ref) + '</td><td>' + (MG_NON_TRADE[r.kind] ? '<span class="mg-bdg">Not a supplier bill</span>' : mgStatusBadge(r.days, dir)) + '</td><td class="r mg-amt">' + mgNum(r.amount) + '</td>' +
         (mode === 'reconciled' ? '<td>' + mgAgreeBadge(r.g) + '</td><td><span class="mg-srcs">' + r.g.sources.map(mgLogo).join('') + '</span></td>' : '<td><span class="mg-srccell">' + mgLogo(r.src) + escapeHtml(r.src === 'manual' ? 'Entered by you' : (mgSourceHealth(r.src).text || '')) + '</span></td>') +
         '<td class="r">' + (r.r && r.r.editable && r.r.raw ? '<button class="mg-row-act" type="button" data-money-settle="' + i + '">' + (dir === 'recv' ? 'Mark received' : 'Mark paid') + '</button>' : '') + '</td></tr>').join('') +
       '</tbody><tfoot><tr><td colspan="3">Total' + (mode === 'reconciled' ? ', each ' + who.toLowerCase() + ' counted once' : ', ' + MG_SRC_NAME[mode] + ' only') + '</td><td class="r">' + mgNum(total) + '</td><td colspan="' + (mode === 'reconciled' ? 3 : 2) + '"></td></tr></tfoot></table></div>';

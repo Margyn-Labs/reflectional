@@ -60,6 +60,7 @@ const cashFlow = require('./cashFlowModel');
 const forecastStore = require('./forecastStore');
 const brief = require('./watchBrief');
 const booksHealth = require('./booksHealth');
+const tallyData = require('./tallyData');
 
 const DAY = 86400000;
 const MAX_PER_RUN = 3;
@@ -384,9 +385,34 @@ function buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, ex
  * it only to the preview phone (and only in preview mode), and records nothing, so it never repeats or uses up
  * a point.
  */
+/**
+ * Wait (briefly) for a Tally sync in progress to finish, so an update never reads half-synced books
+ * (tallyData.syncState). Returns true when the books are whole. waitMs: how long to keep checking.
+ */
+async function settled(userId, waitMs, now) {
+  const until = Date.now() + Math.max(0, waitMs || 0);
+  for (;;) {
+    const st = await tallyData.syncState(userId, now);
+    if (!st.mid) return true;
+    if (Date.now() + SETTLE_POLL_MS > until) return false;
+    await new Promise((r) => setTimeout(r, SETTLE_POLL_MS));
+  }
+}
+const SETTLE_POLL_MS = 15000;
+
 async function watchAccount(userId, opts) {
   const o = opts || {};
   const slot = o.slot === 'manual' || !o.slot || !(INTRADAY.has(o.slot) || o.slot === 'evening' || o.slot === 'morning') ? 'morning' : o.slot;
+  // Never read the books in the middle of a Tally sync: the morning and evening wait up to two and a half minutes
+  // and then go out (they're the ones the owner expects); a pulse waits a minute, then holds for the next one.
+  if (!o.previewOnly && !o.dryRun && !o.skipSettle) {
+    const wait = Math.min(INTRADAY.has(slot) ? 60000 : 150000, o.waitMs != null ? o.waitMs : Infinity);
+    const ok = await settled(userId, wait, o.now);
+    if (!ok && INTRADAY.has(slot)) {
+      await logRun(userId, slot, { outcome: 'quiet', reason: 'Tally was in the middle of a sync, so the books were half updated. This waits for the next update.' }, o.now);
+      return { user: userId, slot, skipped: 'mid_sync' };
+    }
+  }
   const { ctx } = await booksTools.contextFor(userId);
   if (!ctx || !ctx.rows.length) {
     if (!o.previewOnly && !o.dryRun) await logRun(userId, slot, { outcome: 'skipped', reason: 'No books to read yet.' }, o.now);
@@ -523,7 +549,8 @@ async function watchAccount(userId, opts) {
       await saveSnap(userId, 'last', snap);
     } else if (sentInfo || slot === 'evening' || !(snaps.last && snaps.last.day === snap.day)) {
       // What's been said today (each pulse line once a day) and how many pulses went out (at most four).
-      const keep = sentInfo ? { said: msg.said, pulses: msg.pulses } : { said: snaps.last && snaps.last.day === snap.day ? snaps.last.said : [], pulses: snaps.last && snaps.last.day === snap.day ? snaps.last.pulses : 0 };
+      const same = snaps.last && snaps.last.day === snap.day;
+      const keep = sentInfo ? { said: msg.said, pulses: msg.pulses, sig: msg.sig || null } : { said: same ? snaps.last.said : [], pulses: same ? snaps.last.pulses : 0, sig: same ? snaps.last.sig || null : null };
       await saveSnap(userId, 'last', Object.assign({}, snap, { points: undefined }, keep));
     }
   }
@@ -554,7 +581,8 @@ function firstNameOf(profile) {
 /** Every account with books connected (Tally, Zoho Books or Odoo: dataLayer/books.js). Bounded so one cron run can't overrun. */
 async function runWatchAll(slot, opts) {
   const o = opts || {};
-  const started = Date.now(), budgetMs = o.budgetMs || 45000;
+  // The morning and evening may wait out a Tally sync (watchAccount), so they get most of the function's 300 s.
+  const started = Date.now(), budgetMs = o.budgetMs || (slot === 'morning' || slot === 'evening' ? 200000 : 45000);
   let users = [];
   try {
     const rows = await selectRows('tally_installs', 'select=user_id&status=eq.active&limit=500');
@@ -567,7 +595,8 @@ async function runWatchAll(slot, opts) {
   const results = [];
   for (const u of users) {
     if (Date.now() - started > budgetMs) { results.push({ user: u, skipped: 'out of time this run' }); continue; }
-    try { results.push(await watchAccount(u, { slot })); }
+    // A sync in progress may hold one account a little; never past this run's budget.
+    try { results.push(await watchAccount(u, { slot, waitMs: Math.max(0, budgetMs - (Date.now() - started) - 20000) })); }
     catch (e) { results.push({ user: u, error: String(e.message || e).slice(0, 160) }); }
   }
   return { slot, accounts: users.length, sent: results.filter((r) => r.sent).length, results };

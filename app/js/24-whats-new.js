@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-27-honest-updates', date:'27 Oct 2026', title:'Steadier WhatsApp updates, and suppliers apart from commission and family',
+    items:[
+      { t:'Updates wait for Tally to finish syncing', what:'Margyn no longer reads your books while Tally is halfway through a sync, so an update can’t say late money fell and then rose again an hour later. If a sync is running, the update waits for it or holds until the next one.',
+        how:'Nothing to do.', act:'agents' },
+      { t:'No more updates that say nothing new', what:'An update that would repeat the last one, or compare a figure with itself (“down to ₹1.51 Cr from ₹1.51 Cr”), isn’t sent.',
+        how:'Nothing to do. <b>Automations</b> → <b>Update log</b> shows what went out and why an update stayed quiet.', act:'agents' },
+      { t:'Commission, salaries and family kept apart in Payables', what:'Commission agents, staff and the owner’s family kept under creditors in Tally are now marked as such. They still count in what you owe, but not in “Overdue to suppliers”, the bills due on Home, or “You owe suppliers” in your updates.',
+        how:'<b>Payables</b>: they carry a <b>Commission</b>, <b>Salaries</b> or <b>Family and owners</b> label, with their own total at the top.', act:'payables' },
+      { t:'A truer interest figure on each overdraft', what:'When most of an overdraft’s interest is booked to another ledger, Margyn no longer shows a misleading low rate for that account. The total cost of borrowing above it includes all your interest.',
+        how:'<b>Cash</b> → <b>Overdraft and loans this year</b>.', act:'borrowing' }
+    ]
+  },
+  {
     id:'2026-10-16-chase-onoff', date:'16 Oct 2026', title:'Choose which customers get payment reminders',
     items:[
       { t:'Reminders on or off, customer by customer', what:'Every customer on the Chasing list now has a Reminders switch. Turn it off and Margyn sends them no payment reminders, including for new invoices, until you turn it back on.',

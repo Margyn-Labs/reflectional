@@ -207,7 +207,7 @@ function mgBorrowAccount(a){
     lim ? stat('Limit used', Math.round(a.owed_today / lim * 100) + '%', fmtINR(Math.max(0, lim - a.owed_today), 'tile') + ' left · peak ' + Math.round(a.peak.owed / lim * 100) + '%')
       : a.kind === 'overdraft' ? '<div class="mg-bw-stat"><div class="mg-bw-k">Limit</div><button class="mg-btn mg-btn-sm" type="button" data-bw-limit="' + escapeHtml(a.name) + '">Enter your limit</button><div class="mg-bw-s">So Margyn can show what’s left</div></div>'
       : stat('Trend', { reducing:'Reducing', growing:'Growing', flat:'Not reducing' }[a.trend] || '—', (a.change_90d < 0 ? '▼ ' : a.change_90d > 0 ? '▲ ' : '') + fmtINR(Math.abs(a.change_90d), 'tile') + ' in 90 days'),
-    a.interest_charged ? stat('Interest charged to it', fmtINR(a.interest_charged, 'tile'), a.interest_rate_pct != null ? 'About ' + a.interest_rate_pct + '% a year on the average owed' : '') : null
+    a.interest_charged ? stat('Interest charged to it', fmtINR(a.interest_charged, 'tile'), a.interest_rate_pct != null ? 'About ' + a.interest_rate_pct + '% a year on the average owed' : a.interest_booked_elsewhere ? 'Only part of its interest: the rest is booked to another ledger, so it is in the total cost of borrowing above' : '') : null
   ].filter(Boolean).join('');
   const months = a.month_end.map(m => '<td class="r">' + mgNum(m.owed) + '</td>').join('');
   const up = a.months_up_in_a_row >= 2 ? '<div class="mg-bw-alert">Higher at the end of each of the last ' + a.months_up_in_a_row + ' months.</div>' : '';

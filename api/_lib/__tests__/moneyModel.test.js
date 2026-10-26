@@ -89,6 +89,9 @@ check('sorted largest first', pos.groups[0].party === 'Acme Pvt Ltd');
 check('rows omitted when withRows=false', !M.position(rowsA, T, { withRows: false }).groups[0].by.zoho.rows);
 const conflict = M.position([{ party: 'X', amount: 1000, src: 'zoho' }, { party: 'X', amount: 900, src: 'manual' }], T).groups[0];
 check('10% gap -> conflict, diff 100', conflict.status === 'conflict' && conflict.diff === 100);
+// Creditors who aren't trade suppliers (commission, salaries, family): owed, never overdue (26 Oct 2026).
+const nt = M.position([{ party: 'Agent Commission', amount: 50000, due: '2026-05-01', src: 'tally', kind: 'commission' }, { party: 'Supplier', amount: 20000, due: '2026-08-01', src: 'tally', kind: 'trade' }], T);
+check('commission owed is apart, not overdue', nt.totals.other_owed === 50000 && nt.totals.overdue === 20000 && nt.groups.find((g) => g.party === 'Agent Commission').kind === 'commission', nt.totals);
 
 /* ---------- parity with the browser ---------- */
 function extract(file, name, kind = 'function') {

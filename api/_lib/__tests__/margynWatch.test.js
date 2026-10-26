@@ -14,7 +14,9 @@ const d = (daysAgo) => { const x = new Date(today.getTime() - daysAgo * 86400000
 const sale = (date, party, v) => ({ tally_guid: 'g' + Math.random(), voucher_type: 'Sales', voucher_number: 'S' + Math.random(), date, party_name: party, amount: v, is_cancelled: false,
   entries: [{ ledger: party, amount: -v, is_party: true }, { ledger: 'Sales', amount: v }] });
 const DB = {
-  tally_installs: [{ id: 'i1', user_id: U, status: 'active', company_name: 'Acme Ltd (2026-27)', last_sync_at: new Date().toISOString() }],
+  tally_installs: [{ id: 'i1', user_id: U, status: 'active', company_name: 'Acme Ltd (2026-27)', last_sync_at: new Date().toISOString(),
+    // The agent's health report closes every sync (tally.js handleHealth); later than any write here = books whole.
+    diagnostics: { received_at: '2099-01-01T00:00:00.000Z' } }],
   tally_ledgers: [{ name: 'Sales', parent: 'Sales Accounts' }, { name: 'Big Co', parent: 'Sundry Debtors' }],
   tally_vouchers: [sale(d(150), 'Big Co', 5000000), sale(d(120), 'Big Co', 5000000), sale(d(90), 'Big Co', 5000000), sale(d(60), 'Big Co', 5000000)],
   tally_bills: [{ direction: 'receivable', party_name: 'Big Co', bill_ref: 'B1', closing_balance: 9000000, overdue_days: 120 }],
@@ -284,6 +286,23 @@ const W = require('../margynWatch');
   for (const row of DB.margyn_signals) if (row.key === 'snap:morning' || row.key === 'snap:last') { const j = JSON.parse(row.detail); delete j.seen; j.said = []; j.pulses = 0; row.detail = JSON.stringify(j); }
   r = await W.watchAccount(U, { slot: 'late', previewOnly: true });
   check('yesterday\'s entries are never counted as new', !/Yesterday Co|₹9 L/.test(r.text || '') && (r.text == null || /update/.test(r.text)), r);
+  console.log('never reads half-synced books (26 Oct 2026: late money ₹51.6 L at 12:30, ₹1.35 Cr at 3 pm)');
+  const keepDiag = DB.tally_installs[0].diagnostics;
+  DB.tally_installs[0].last_sync_at = new Date().toISOString();
+  DB.tally_installs[0].diagnostics = { received_at: new Date(Date.now() - 600000).toISOString() };   // report before the latest write
+  const sentBefore = sent.length;
+  r = await W.watchAccount(U, { slot: 'noon', waitMs: 0 });
+  check('a pulse mid-sync is held, nothing sent', r.skipped === 'mid_sync' && sent.length === sentBefore, r);
+  r = await W.watchAccount(U, { slot: 'morning', waitMs: 0, dryRun: true });
+  check('the morning still goes out after its wait', !r.skipped, r);
+  DB.tally_installs[0].diagnostics = { received_at: new Date(Date.now() + 1000).toISOString() };
+  r = await W.watchAccount(U, { slot: 'noon', waitMs: 0, dryRun: true });
+  check('once the sync\'s report is in, the pulse reads the books', r.skipped !== 'mid_sync', r);
+  DB.tally_installs[0].diagnostics = null;
+  DB.tally_installs[0].last_sync_at = new Date(Date.now() - 10 * 60000).toISOString();
+  r = await W.watchAccount(U, { slot: 'noon', waitMs: 0, dryRun: true });
+  check('an agent with no stamped report: a write 10 minutes ago is not mid-sync', r.skipped !== 'mid_sync', r);
+  DB.tally_installs[0].diagnostics = keepDiag;
   console.log('every account');
   const all = await W.runWatchAll('morning');
   check('runs over Tally accounts', all.accounts === 1 && all.results.length === 1, all);
