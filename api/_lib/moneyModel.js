@@ -29,7 +29,7 @@
 const { selectRows, selectAllRows, rpc } = require('./supabaseRest');
 const { calibrateBills } = require('./tallyBills');
 const { loadTallyBook } = require('./tallyData');
-const { supplierOpenItems } = require('./cashFlowModel');
+const { supplierOpenItems, creditorKindOf } = require('./cashFlowModel');
 
 const SRC_ORDER = ['zoho', 'tally', 'odoo', 'manual'];
 const SRC_NAME = { zoho: 'Zoho Books', tally: 'Tally', odoo: 'Odoo', manual: 'Manual entries' };
@@ -101,7 +101,9 @@ function groupRows(rows, today) {
       diff: multi ? max - min : 0,
       oldestDays: dues.length ? Math.min(...dues) : null,
       invoices: prow.length,
-      overdue: prow.filter((r) => r.days !== null && r.days < 0).reduce((s, r) => s + r.amount, 0),
+      // Commission agents, staff and family kept under creditors (cashFlowModel.creditorKinds): owed, never "overdue".
+      kind: (prow.find((r) => r.kind && r.kind !== 'trade') || {}).kind || 'trade',
+      overdue: prow.some((r) => r.kind && r.kind !== 'trade') ? 0 : prow.filter((r) => r.days !== null && r.days < 0).reduce((s, r) => s + r.amount, 0),
       due7: prow.filter((r) => r.days !== null && r.days <= 7).reduce((s, r) => s + r.amount, 0)
     };
   }).sort((a, b) => b.amount - a.amount);
@@ -121,6 +123,7 @@ function summarise(rows, groups) {
     parties: groups.length,
     total: groups.reduce((t, g) => t + g.amount, 0),
     overdue: groups.reduce((t, g) => t + g.overdue, 0),
+    other_owed: groups.filter((g) => g.kind && g.kind !== 'trade').reduce((t, g) => t + g.amount, 0),
     due_7d: groups.reduce((t, g) => t + g.due7, 0),
     agree: groups.filter((g) => g.status === 'agree').length,
     conflict: groups.filter((g) => g.status === 'conflict').length,
@@ -140,6 +143,7 @@ function position(rows, today, { withRows = true } = {}) {
       if (withRows) {
         by[s].rows = g.by[s].rows.map((r) => {
           const o = { party: r.party, ref: r.ref || null, amount: r.amount, due: r.due || null, days: r.days };
+          if (r.kind && r.kind !== 'trade') o.kind = r.kind;
           if (r.id != null) o.id = r.id;   // manual rows: lets the app act on the entry
           return o;
         });
@@ -147,7 +151,7 @@ function position(rows, today, { withRows = true } = {}) {
     }
     return {
       key: g.key, party: g.party, amount: g.amount, primary: g.primary, sources: g.sources,
-      status: g.status, diff: g.diff, oldest_days: g.oldestDays, open_items: g.invoices,
+      status: g.status, diff: g.diff, oldest_days: g.oldestDays, open_items: g.invoices, kind: g.kind,
       overdue: g.overdue, due_7d: g.due7, by
     };
   });
@@ -247,14 +251,18 @@ async function loadTally(accountId, dir) {
     if (dir === 'pay' && wc.suppliers_tracked_billwise === false) {
       const led = supplierOpenItems(ctx);
       return {
-        rows: led.items.filter((b) => b.amount > 0.5).map((b) => ({ party: b.party || 'Unknown', amount: b.amount, due: b.due_day, ref: b.ref, src: 'tally' })),
-        truncated: false, basis: 'supplier_ledgers', advances: led.advances
+        rows: led.items.filter((b) => b.amount > 0.5).map((b) => ({ party: b.party || 'Unknown', amount: b.amount, due: b.due_day, ref: b.ref, src: 'tally', kind: b.kind || 'trade' })),
+        truncated: false, basis: 'supplier_ledgers', advances: led.advances, other_owed: led.other || 0
       };
     }
     const want = dir === 'recv' ? 'receivable' : 'payable';
     const out = {
       rows: ctx.bills.filter((b) => b.direction === want && !b.advance)
-        .map((b) => ({ party: b.party_name || 'Unknown', amount: Math.abs(num(b.closing_balance)), due: b.due_date || null, ref: b.bill_ref || null, src: 'tally' }))
+        .map((b) => {
+          const o = { party: b.party_name || 'Unknown', amount: Math.abs(num(b.closing_balance)), due: b.due_date || null, ref: b.bill_ref || null, src: 'tally' };
+          if (dir === 'pay') o.kind = creditorKindOf(ctx, o.party);
+          return o;
+        })
         .filter((r) => r.amount > 0),
       truncated: !!(ctx.book && ctx.book.caps && ctx.book.caps.bills && ctx.book.caps.bills.truncated)
     };

@@ -254,7 +254,7 @@ function renderTallyStatus(){
         escapeHtml(prod) + (i.tally_version ? ' ' + escapeHtml(i.tally_version) : ''),
         'company ' + escapeHtml(i.company_name || '—'),
         (c.ledgers||0) + ' ledgers · ' + (c.vouchers||0) + ' vouchers · ' + (c.bills||0) + ' bills',
-        'agent checked in ' + tallyFmtAgo(i.last_seen_at),
+        (i.agent_version ? 'agent ' + escapeHtml(i.agent_version) + ' · ' : '') + 'agent checked in ' + tallyFmtAgo(i.last_seen_at),
         'last sync ' + tallyFmtAgo(i.last_sync_at)
       ];
       const outdated = tallyAgentOutdated(i.agent_version);

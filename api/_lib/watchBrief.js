@@ -101,7 +101,8 @@ function snapshot(ctx, fc, now) {
   const f = (ctx.book && ctx.book.files) || {};
   const basis = ['b2', decision || '', f.ledgers_from || '', f.bills_from || ''].join('|');
   const owed = owedByParty(ctx);
-  const pay = E.billRows(ctx, 'payable');
+  // "You owe suppliers": trade suppliers only; commission, salaries and family balances are paid on their own timetable.
+  const pay = E.billRows(ctx, 'payable').filter((b) => !b.kind || b.kind === 'trade');
   const parties = {};
   for (const [k, g] of [...owed.entries()].sort((a, b) => b[1].owed - a[1].owed).slice(0, 80)) parties[k] = [g.name, Math.round(g.owed), Math.round(g.late30)];
   return {
@@ -192,7 +193,7 @@ function moved(now, before, since, ctx) {
 /** Bills falling due between today+from and today+to (inclusive), customers or suppliers. */
 function dueBetween(ctx, direction, from, to) {
   const t0 = ctx.today.getTime() + from * DAY, t1 = ctx.today.getTime() + to * DAY;
-  const bills = E.billRows(ctx, direction).filter((b) => b.due && b.due.getTime() >= t0 && b.due.getTime() <= t1);
+  const bills = E.billRows(ctx, direction).filter((b) => b.due && b.due.getTime() >= t0 && b.due.getTime() <= t1 && (!b.kind || b.kind === 'trade'));
   const by = new Map();
   for (const b of bills) by.set(nice(b.party), (by.get(nice(b.party)) || 0) + b.amount);
   return { total: bills.reduce((s, b) => s + b.amount, 0), count: bills.length, top: [...by.entries()].sort((a, b) => b[1] - a[1]) };
@@ -405,7 +406,10 @@ function morning(ctx, fc, snap, prev, points, insight, o) {
   const head = `${previewTag(opt)}Good morning${greetingName(opt.firstName)}. ${asOfLine(ctx)}`;
 
   const stand = ['*Where you stand*'];
-  if (snap.cash != null) stand.push(`Bank and cash ${inr(snap.cash)}` + (prev && prev.day !== snap.day ? `, ${moved(snap.cash, prev.cash, 'yesterday morning', ctx)}` : '') +
+  // Figures from a sync before today say so on the line itself: the WhatsApp template carries this section without
+  // the heading that names the sync (26 Oct 2026: Saturday's ₹13.9 L went out on Monday as today's cash).
+  const asOf = ctx.lastSync && istDay(ctx.lastSync) !== snap.day ? ` (books as of ${istStamp(ctx.lastSync)})` : '';
+  if (snap.cash != null) stand.push(`Bank and cash ${inr(snap.cash)}${asOf}` + (prev && prev.day !== snap.day ? `, ${moved(snap.cash, prev.cash, 'yesterday morning', ctx)}` : '') +
     (snap.borrowed ? `. Overdraft and loans ${inr(snap.borrowed)}` : '') + '.');
   if (snap.recv_total) stand.push(`Customers owe you ${inr(snap.recv_total)}` + (snap.recv_late30 ? `; ${inr(snap.recv_late30)} of it is more than a month late` : '') +
     (prev && prev.recv_total ? ` (${moved(snap.recv_total, prev.recv_total, 'yesterday', ctx)})` : '') + '.');
@@ -452,7 +456,7 @@ function morning(ctx, fc, snap, prev, points, insight, o) {
   const text = fit([head, stand.length > 1 ? stand.join('\n') : null, wk, ySec, week.length > 1 ? week.join('\n') : null, pts, worth], foot);
   const headline = points.length
     ? (points.length === 1 ? 'One thing in your books needs you today: ' : `${points.length} things in your books need you today. The biggest: `) + points[0].title
-    : `Your morning update is ready: bank and cash ${snap.cash != null ? inr(snap.cash) : 'n/a'}, customers owe ${inr(snap.recv_total)}.`;
+    : `Your morning update is ready: bank and cash ${snap.cash != null ? inr(snap.cash) : 'n/a'}, customers owe ${inr(snap.recv_total)}${asOf}.`;
   return { text, headline, send: true };
 }
 
@@ -516,6 +520,7 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   const today = snap.day;
   // What was already said today is remembered whatever the basis; only comparisons need like for like.
   const said = new Set((last && last.day === today && last.said) || []);
+  const prevSig = (last && last.day === today && last.sig) || null;
   last = comparable(last, snap); morningSnap = comparable(morningSnap, snap);
   const ms = morningSnap && morningSnap.day === today ? morningSnap : null;
   const since = last && last.day === today ? last : ms;
@@ -558,9 +563,17 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
       }
     }
   }
-  if (ms && ms.recv_late30 && ms.recv_late30 - snap.recv_late30 >= t) {
-    const l = say('late_down:' + Math.round(snap.recv_late30 / t), `✅ Money more than a month late is down to ${inr(snap.recv_late30)}, from ${inr(ms.recv_late30)} this morning.`);
-    if (l) good.push(l);
+  // Late money down since the morning: said again only when it has fallen a further step since the last time it
+  // was said, and never when the two figures read the same (24 Oct 2026: "down to ₹1.51 Cr, from ₹1.51 Cr";
+  // 23 Oct: "down to ₹1.48 Cr from ₹1.75 Cr" at 12:30 and again at 3 pm).
+  if (ms && ms.recv_late30 && ms.recv_late30 - snap.recv_late30 >= t && inr(snap.recv_late30) !== inr(ms.recv_late30)) {
+    const before = [...said].filter((k) => /^late_down:\d{5,}$/.test(k)).map((k) => Number(k.slice(10)));
+    const lastSaid = before.length ? Math.min(...before) : null;
+    const repeat = [...said].some((k) => /^late_down:\d{1,4}$/.test(k)) && lastSaid == null;   // said today in the old form: once is enough
+    if (!repeat && (lastSaid == null || (lastSaid - snap.recv_late30 >= t && inr(snap.recv_late30) !== inr(lastSaid)))) {
+      const l = say('late_down:' + Math.round(snap.recv_late30), `✅ Money more than a month late is down to ${inr(snap.recv_late30)}, from ${inr(ms.recv_late30)} this morning.`);
+      if (l) good.push(l);
+    }
   }
   const usual = usualDay(ctx);
   const td = movement(ctx, [today]);
@@ -643,6 +656,9 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   }
 
   const pulses = (last && last.day === today && last.pulses) || 0;
+  // The same lines as the update that went out last: nothing new to say, whatever the keys (repeats on 23 Oct 2026).
+  const sig = good.concat(bad).join('\n');
+  if (sig && prevSig === sig && !moneyLines.length) return { send: false, said: [...said], reason: 'Same as the last update; nothing new to say.' };
   const worth = good.length + bad.length > 0 || moneyMoved;
   if (worth && pulses >= 4) return { send: false, said: [...said], reason: 'Already sent four updates today; the rest waits for the evening wrap.' };
   if (!worth) return { send: false, said: [...said], reason: still.length ? 'Only the morning\'s points still open; that alone isn\'t worth a message.' : 'Nothing moved enough since the last update.' };
@@ -654,7 +670,7 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
     still.length ? '*Not moving yet*\n' + still.join('\n') : null];
   const text = fit(sections, 'Ask me about any of it in your own words, like "why did cash drop?" Reply STOP ALERTS to pause these.');
   const first = (good[0] || bad[0] || moneyLines[0] || '').replace(/^[✅⚠️⏳*\s]+/u, '').replace(/\*/g, '');
-  return { text, headline: first, send: true, important, said: [...said], pulses: pulses + 1 };
+  return { text, headline: first, send: true, important, said: [...said], pulses: pulses + 1, sig };
 }
 /**
  * EVENING: today's money, then each of this morning's points checked again, then tomorrow, then at most one new

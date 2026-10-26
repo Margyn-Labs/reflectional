@@ -395,4 +395,28 @@ async function archiveRaw(userId, installId, kind, companyName, body) {
   } catch (e) { console.warn('[tallyData] raw batch not kept:', e.message); return null; }
 }
 
-module.exports = { archiveRaw, companyFiles, recoverCurrentFile, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };
+/**
+ * Is a Tally sync running right now? A sync writes ledgers, then vouchers month by month, then the open bills,
+ * and ends with the agent's health report. In between, the books are half new and half old: on 26 Oct 2026 the
+ * 12:30 update read new ledger balances against the morning's bills and said late money was ₹51.6 L (it was
+ * ₹1.35 Cr at 3 pm). Mid-sync = something was stored in the last 20 minutes and no health report has arrived
+ * since. Before any report carries received_at (tally.js handleHealth), only a write in the last 3 minutes counts.
+ * Returns { mid, lastSync, reportAt }; never throws (no install = not mid-sync).
+ */
+const MID_SYNC_MS = 20 * 60000, MID_SYNC_UNSTAMPED_MS = 3 * 60000;
+async function syncState(userId, now) {
+  const t = now ? new Date(now).getTime() : Date.now();
+  try {
+    const { chosen } = await installsFor(userId);
+    for (const i of chosen) {
+      const last = Date.parse(i.last_sync_at || '');
+      if (!Number.isFinite(last) || t - last > MID_SYNC_MS) continue;
+      const rep = Date.parse((i.diagnostics && i.diagnostics.received_at) || '');
+      const mid = Number.isFinite(rep) ? rep < last : t - last < MID_SYNC_UNSTAMPED_MS;
+      if (mid) return { mid: true, lastSync: i.last_sync_at, reportAt: Number.isFinite(rep) ? new Date(rep).toISOString() : null };
+    }
+    return { mid: false };
+  } catch (e) { return { mid: false }; }
+}
+
+module.exports = { syncState, archiveRaw, companyFiles, recoverCurrentFile, loadTallyBook, forgetTallyBook, installsFor, pagedAll, bookKey, readSaved, writeSaved };

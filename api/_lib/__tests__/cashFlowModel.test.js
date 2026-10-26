@@ -206,6 +206,34 @@ const so2 = CF.supplierOpenItems(E.prepare(book2, { now: NOW }));
 check('paid ahead to a supplier is kept apart, not netted', so2.advances === 50000, so2.advances);
 check('a balance carried from last year counts, settled first', so2.total === so.total + 300000, [so2.total, so.total]);
 
+// ---------- creditors that aren't trade suppliers (26 Oct 2026) ----------
+// Care Hygiene keeps commission agents, staff and the owner's family under Sundry Creditors: owed, never "overdue to suppliers".
+const jv = (n, date, party, ledger, amt) => ({ tally_guid: 'k' + n, voucher_type: 'Journal', voucher_number: 'J' + n, date, party_name: party, amount: amt, is_cancelled: false,
+  entries: [{ ledger: party, amount: amt, is_party: true }, { ledger, amount: -amt }] });
+const extraL = [
+  { name: 'RAVI AGENT COMMISSION', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: 80000 },
+  { name: 'Asha Rao', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: 60000 },
+  { name: 'AMIT SHAH HUF', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: 90000 },
+  { name: 'NITA SHAH', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: 70000 },
+  { name: 'NITA SHAH - D. LOAN', parent: 'Unsecured Loans', opening_balance: 0, closing_balance: 0 },
+  { name: 'Shah Packaging', parent: 'Sundry Creditors', opening_balance: 0, closing_balance: 40000 },
+  { name: 'Commission Paid', parent: 'Indirect Expenses' }, { name: 'Salary Payable Exp', parent: 'Indirect Expenses' }, { name: 'Office Rent', parent: 'Indirect Expenses' }];
+const extraV = [jv(1, '2026-05-01', 'RAVI AGENT COMMISSION', 'Office Rent', 80000), jv(2, '2026-05-02', 'Asha Rao', 'Salary Payable Exp', 60000),
+  jv(3, '2026-05-03', 'AMIT SHAH HUF', 'Office Rent', 90000), jv(4, '2026-05-04', 'NITA SHAH', 'Office Rent', 70000),
+  { tally_guid: 'k5', voucher_type: 'Purchase', voucher_number: 'P5', date: '2026-05-05', party_name: 'Shah Packaging', amount: 40000, is_cancelled: false,
+    entries: [{ ledger: 'Shah Packaging', amount: 40000, is_party: true }, { ledger: 'Purchases', amount: -40000 }] }];
+const ctx3 = E.prepare(Object.assign({}, book, { ledgers: L.concat(extraL), vouchers: V.concat(extraV) }), { now: NOW });
+const kinds = CF.creditorKinds(ctx3);
+check('a creditor named for commission is commission', kinds.get('ravi agent commission') === 'commission', [...kinds]);
+check('a creditor paid through a salary ledger is salaries', kinds.get('asha rao') === 'salary', [...kinds]);
+check('a HUF and an owner-family surname (from the loans) are family', kinds.get('amit shah huf') === 'family' && kinds.get('nita shah') === 'family', [...kinds]);
+check('a family-surname supplier you buy goods from stays a trade supplier', kinds.get('shah packaging') === 'trade' && kinds.get('supplier') === 'trade', [...kinds]);
+const so3 = CF.supplierOpenItems(ctx3);
+check('their balances are owed, apart from trade suppliers', so3.other === 300000 && so3.total === so.total + 340000, [so3.other, so3.total, so.total]);
+const owed3 = E.moneyOwed(ctx3, { direction: 'payable' });
+check('Margyn\'s answer keeps them out of overdue and names them', owed3.owed_besides_suppliers && owed3.owed_besides_suppliers.total === E.inr(300000) &&
+  owed3.overdue.startsWith(E.inr(60000)) && owed3.largest.every((p) => !/AGENT|Asha|HUF|NITA/i.test(p.vendor) || p.overdue === E.inr(0)), owed3);
+
 // ---------- doubtful + accuracy ----------
 const old = CF.forecast(ctx, { asOfMs: today, opening: 0, openItems: [{ party: 'Alpha', amt: 100000, ageDays: 500 }] });
 check('a 500-day-old invoice is left out as doubtful', old.drivers.doubtful.amount === 100000);

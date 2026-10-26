@@ -224,6 +224,71 @@ function partyHabits(ctx, cutMs, bucket) {
 const customerHabits = (ctx, cutMs) => partyHabits(ctx, cutMs, 'debtor');
 
 /**
+ * Which creditors are trade suppliers and which are people the business owes for something else (2026-10-26).
+ * Care Hygiene keeps commission agents, staff and the owner's family under Sundry Creditors, so "₹50 L overdue
+ * to suppliers" was mostly commission and family balances that are paid on their own timetable.
+ * Judged from what each creditor's credits were booked against: a purchase means a trade supplier; salary,
+ * wages or commission expense means one of those. A creditor whose name says commission or salary is that.
+ * Family: a creditor (not mostly purchases) sharing a surname with the people the business borrows from or who
+ * own it (Unsecured Loans, Capital), or a HUF. Everything else stays a trade supplier.
+ * Returns Map(keyOf(name) -> 'trade' | 'commission' | 'salary' | 'family'), cached on ctx.
+ */
+const NON_TRADE_LABEL = { commission: 'Commission', salary: 'Salaries', family: 'Family and owners' };
+const COMMISSION_RE = /\bcommission\b|\bcomm\b|brokerage|incentive/i;
+const SALARY_RE = /\bsalar(y|ies)\b|\bwages?\b|stipend|\bbonus\b|remunerat/i;
+function creditorKinds(ctx) {
+  if (ctx._creditorKinds) return ctx._creditorKinds;
+  const surnames = new Set();
+  for (const l of ctx.ledgers || []) {
+    if (!l || !l.name || !/unsecured\s*loans?|capital|partners?|proprietor|drawings?|directors?/i.test(l.parent || '')) continue;
+    const words = String(l.name).split(/\s+-|\(|-\s|-(?=loan)/i)[0].replace(/\b(loans?|a\/?c|account|capital|dr|cr|d)\b\.?/gi, ' ').trim().split(/\s+/).filter((w) => /^[a-z]{3,}$/i.test(w));
+    if (words.length >= 2 && words.length <= 4) surnames.add(words[words.length - 1].toLowerCase());
+  }
+  const by = new Map();
+  for (const r of ctx.rows || []) {
+    const party = r.lines.filter((l) => l.bucket === 'creditor' && l.amount > 0);
+    if (!party.length) continue;
+    const against = { trade: 0, commission: 0, salary: 0, other: 0 };
+    for (const l of r.lines) {
+      if (l.amount >= 0 || l.bucket === 'tax' || l.bucket === 'creditor') continue;
+      const kind = l.bucket === 'purchases' || l.bucket === 'stock' || r.kind === 'purchase' ? 'trade'
+        : COMMISSION_RE.test(l.ledger) ? 'commission' : SALARY_RE.test(l.ledger) ? 'salary' : 'other';
+      against[kind] += -l.amount;
+    }
+    const tot = against.trade + against.commission + against.salary + against.other;
+    if (!tot) continue;
+    for (const p of party) {
+      const k = keyOf(p.ledger), g = by.get(k) || { trade: 0, commission: 0, salary: 0, other: 0 };
+      for (const kind of Object.keys(against)) g[kind] += p.amount * against[kind] / tot;
+      by.set(k, g);
+    }
+  }
+  const out = new Map();
+  const names = new Map();
+  for (const l of ctx.ledgers || []) if (l && l.name && ctx.cls(l.name) === 'creditor') names.set(keyOf(l.name), l.name);
+  for (const k of by.keys()) if (!names.has(k)) names.set(k, k);
+  for (const [k, name] of names) {
+    const g = by.get(k) || { trade: 0, commission: 0, salary: 0, other: 0 };
+    const tot = g.trade + g.commission + g.salary + g.other;
+    const share = (x) => (tot > 0 ? x / tot : 0);
+    let kind = 'trade';
+    if (COMMISSION_RE.test(name)) kind = 'commission';
+    else if (SALARY_RE.test(name)) kind = 'salary';
+    else if (share(g.trade) >= 0.5) kind = 'trade';
+    else if (share(g.commission) >= 0.6) kind = 'commission';
+    else if (share(g.salary) >= 0.6) kind = 'salary';
+    else {
+      const words = String(name).toLowerCase().split(/[^a-z]+/).filter(Boolean);
+      if (words.includes('huf') || (words.length >= 2 && words.length <= 4 && words.some((w) => surnames.has(w)))) kind = 'family';
+    }
+    out.set(k, kind);
+  }
+  ctx._creditorKinds = out;
+  return out;
+}
+const creditorKindOf = (ctx, name) => creditorKinds(ctx).get(keyOf(name)) || 'trade';
+
+/**
  * What is owed to each supplier today, bill by bill, rebuilt from the entries (2026-10-04).
  * For books where Tally doesn't keep supplier bills one by one (working_capital.suppliers_tracked_billwise ===
  * false): Tally's bill list then holds a handful of stray bills (Care Hygiene: 5 vendors, ₹25 L) while the
@@ -246,20 +311,25 @@ function supplierOpenItems(ctx) {
   // nothing in today's books says they are owed. Only applied when Tally gives supplier balances at all.
   const live = new Set();
   for (const l of ctx.ledgers || []) if (l && l.name && l.closing_balance != null && !l.history_only && ctx.cls(l.name) === 'creditor') live.add(keyOf(l.name));
+  const kinds = creditorKinds(ctx);
+  let other = 0;
   for (const p of sup.parties.values()) {
     if (live.size && !live.has(keyOf(p.name))) continue;
     advances += p.advance;
     if (!p.open.length) continue;
     const h = habitOf(p, sup.pool);
     const usual = h.p50 != null ? h.p50 : 30;
+    const kind = kinds.get(keyOf(p.name)) || 'trade';
     for (const b of p.open) {
       if (b.amt < 1) continue;
       total += b.amt;
+      if (kind !== 'trade') other += b.amt;
       items.push({ party: p.name, ref: b.ms == null ? 'Carried from last year' : (b.ref || null), amount: Math.round(b.amt * 100) / 100,
-        bill_day: b.ms == null ? null : dayKey(b.ms), due_day: dayKey(b.ms == null ? fyStart : b.ms + usual * DAY), carried: b.ms == null, usual_days: usual });
+        bill_day: b.ms == null ? null : dayKey(b.ms), due_day: dayKey(b.ms == null ? fyStart : b.ms + usual * DAY), carried: b.ms == null, usual_days: usual, kind });
     }
   }
-  return { items, total: r0(total), advances: r0(advances) };
+  // other: owed to commission agents, staff and family (in total, not overdue to suppliers).
+  return { items, total: r0(total), advances: r0(advances), other: r0(other) };
 }
 
 /** wPct at 25/50/75 from one sort (same answers as three wPct calls). */
@@ -798,4 +868,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, supplierOpenItems, partyBalancesToday, sinceOpening, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, accuracyFromRuns, supplierOpenItems, creditorKinds, creditorKindOf, NON_TRADE_LABEL,partyBalancesToday, sinceOpening, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };

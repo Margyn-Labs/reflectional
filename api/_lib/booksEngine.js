@@ -553,13 +553,21 @@ function billRows(ctx, direction) {
     const t = ctx.today.getTime();
     return led.items.map((b) => {
       const due = A.parseDate(b.due_day);
-      return { party: b.party, ref: b.ref, date: b.bill_day ? A.parseDate(b.bill_day) : null, due, amount: b.amount, late: due ? Math.max(0, Math.round((t - due.getTime()) / 86400000)) : 0 };
+      return { party: b.party, ref: b.ref, date: b.bill_day ? A.parseDate(b.bill_day) : null, due, amount: b.amount, late: due ? Math.max(0, Math.round((t - due.getTime()) / 86400000)) : 0, kind: b.kind || 'trade' };
     }).filter((b) => b.amount >= 1);
   }
+  // Payables say which creditors are trade suppliers and which are commission, salaries or family (cashFlowModel.creditorKinds).
+  const CF = direction === 'payable' ? require('./cashFlowModel') : null;
   return ctx.bills.filter((b) => !b.advance && (direction === 'payable' ? b.direction === 'payable' : b.direction !== 'payable'))
-    .map((b) => ({ party: b.party_name || 'Unknown', ref: b.bill_ref || null, date: A.parseDate(b.bill_date), due: A.parseDate(b.due_date), amount: Math.abs(num(b.closing_balance)), late: b.overdue_days == null ? 0 : num(b.overdue_days) }))
+    .map((b) => {
+      const o = { party: b.party_name || 'Unknown', ref: b.bill_ref || null, date: A.parseDate(b.bill_date), due: A.parseDate(b.due_date), amount: Math.abs(num(b.closing_balance)), late: b.overdue_days == null ? 0 : num(b.overdue_days) };
+      if (CF) o.kind = CF.creditorKindOf(ctx, o.party);
+      return o;
+    })
     .filter((b) => b.amount >= 1);
 }
+/** Payables owed to trade suppliers only: commission, salaries and family balances are paid on their own timetable. */
+const tradeOnly = (bills) => bills.filter((b) => !b.kind || b.kind === 'trade');
 function ageing(bills) {
   return Object.fromEntries(AGE_BUCKETS.map(([label, lo, hi]) => [label, inr(bills.filter((b) => b.late >= lo && b.late <= hi).reduce((s, b) => s + b.amount, 0))]));
 }
@@ -586,8 +594,10 @@ function moneyOwed(ctx, args) {
   const dir = /pay|owe them|vendor|supplier/i.test(a.direction || '') ? 'payable' : 'receivable';
   let bills = billRows(ctx, dir);
   if (a.party) { const f = matcher(a.party); bills = bills.filter((b) => f(b.party)); }
-  const total = bills.reduce((s, b) => s + b.amount, 0), overdue = bills.filter((b) => b.late > 0).reduce((s, b) => s + b.amount, 0);
-  const parties = byParty(bills);
+  // Commission, salaries and family balances are owed but not "overdue to suppliers": counted in the total, apart.
+  const nonTrade = dir === 'payable' ? bills.filter((b) => b.kind && b.kind !== 'trade') : [];
+  const total = bills.reduce((s, b) => s + b.amount, 0), overdue = tradeOnly(bills).filter((b) => b.late > 0).reduce((s, b) => s + b.amount, 0);
+  const parties = byParty(bills.map((b) => (b.kind && b.kind !== 'trade' ? Object.assign({}, b, { late: 0 }) : b)));
   const top = Math.max(1, Math.min(25, parseInt(a.top, 10) || 10));
   const wc = ctx.analytics.working_capital || {};
   const out = {
@@ -595,10 +605,16 @@ function moneyOwed(ctx, args) {
     direction: dir === 'payable' ? 'what you owe vendors' : 'what customers owe you',
     total: inr(total), overdue: inr(overdue) + (total ? ' (' + pctStr(pctOf(overdue, total)) + ')' : ''),
     parties: parties.length,
-    ageing: ageing(bills),
+    ageing: ageing(tradeOnly(bills)),
     largest: parties.slice(0, top).map((g) => ({ [dir === 'payable' ? 'vendor' : 'customer']: g.party, owed: inr(g.total), overdue: inr(g.overdue), oldest_bill_days_late: g.oldest, bills: g.bills })),
     most_overdue: parties.filter((g) => g.overdue > 0).sort((x, y) => y.overdue - x.overdue).slice(0, 5).map((g) => ({ name: g.party, overdue: inr(g.overdue), oldest_days_late: g.oldest }))
   };
+  if (nonTrade.length) {
+    const L = require('./cashFlowModel').NON_TRADE_LABEL, by = new Map();
+    for (const b of nonTrade) by.set(b.kind, (by.get(b.kind) || 0) + b.amount);
+    out.owed_besides_suppliers = { total: inr(nonTrade.reduce((s, b) => s + b.amount, 0)), by_kind: [...by.entries()].map(([k, v]) => ({ what: L[k] || k, amount: inr(v) })),
+      note: 'Commission agents, staff and the owner\'s family are kept under creditors in the books. They are in the total but not in "overdue", which counts trade suppliers only.' };
+  }
   const veryOld = parties.filter((g) => g.oldest > 365);
   if (veryOld.length) out.over_a_year_old = { amount: inr(bills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0)), names: veryOld.slice(0, 6).map((g) => g.party + ' (' + g.oldest + ' days)'), note: 'Bills this old are usually disputed, short-paid or already settled but not knocked off in Tally. Worth a review: chase, settle, or write off.' };
   if (dir === 'receivable') {

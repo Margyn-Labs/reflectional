@@ -1174,6 +1174,9 @@ async function handleHealth(req, res) {
       } catch (e) { /* keep the report as sent */ }
     }
   } catch (e) { /* column missing or read failed: store the report as sent */ }
+  // The agent sends this report as the last step of every sync, after ledgers, vouchers and bills: when it arrived
+  // (server clock) tells Margyn Watch the books are whole again (tallyData.syncState).
+  diagnostics = Object.assign({}, diagnostics, { received_at: patch.last_seen_at });
   try {
     await updateRows('tally_installs', `id=eq.${inst.id}`, Object.assign({}, patch, { diagnostics }));
   } catch (e) {
