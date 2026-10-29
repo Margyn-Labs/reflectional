@@ -73,12 +73,25 @@
   .suggest{ background:rgba(204,91,52,.08); border:1px solid rgba(204,91,52,.25); color:#8a3f24; border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:16px; }
   .loading{ padding:40px; color:var(--ink-2); }
   .banner{ font-size:12.5px; color:var(--ink-1); background:var(--surf); border:1px solid var(--border); border-radius:8px; padding:8px 12px; margin-bottom:14px; }
+  header nav{ display:flex; gap:4px; margin-left:8px; }
+  header nav button.on{ color:var(--ink-0); border-color:var(--ink-1); }
+  .funnel{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .funnel .st{ background:var(--surf); border:1px solid var(--border); border-radius:8px; padding:8px 12px; min-width:120px; }
+  .funnel .st b{ display:block; font-size:18px; font-family:'IBM Plex Mono',monospace; }
+  .funnel .st span{ font-size:11px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.04em; }
+  .step{ font-size:11.5px; white-space:nowrap; }
+  .step.done{ color:var(--emerald); font-weight:700; }
+  .step.stuck{ color:var(--orange); font-weight:700; }
+  .invform{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:12.5px; }
+  .invform input{ font:inherit; font-size:12.5px; border:1px solid var(--border); border-radius:7px; padding:6px 9px; background:var(--surf); min-width:200px; }
+  @media (max-width:720px){ main{ padding:16px; } table{ display:block; overflow-x:auto; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Margyn Ops</h1>
   <span class="sub">design-partner health &middot; usage &middot; value</span>
+  <nav><button id="tabPartners" class="on">Partners</button><button id="tabInvestors">Investors</button></nav>
   <span class="spacer"></span>
   <span class="sub" id="genAt"></span>
   <button id="refreshBtn">Refresh</button>
@@ -89,6 +102,7 @@
 <script>
 const SUPABASE_URL = 'https://lmegnxrixlrvyodqfthn.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_TcTCDSECsRxbDVXAnI893w_3BJC0Kgh';
+let view = 'partners', investors = null;
 let sb = null, token = null, watchLog = null, watchDay = 'today', partners = [], metricsById = {}, metricsConfigured = null, sortKey = 'status', sortDir = 1;
 
 const $ = (s, r=document) => r.querySelector(s);
@@ -307,6 +321,79 @@ function trustPane(id){
     + '</div><h3>Verified coverage, 14 days</h3><div>' + (trend || '<span class="muted">—</span>') + '</div>';
 }
 
+/* ---------- Investors: tenants + funnel (api/ops.js?action=investor-*) ----------
+   Counts, timestamps, statuses and closed error codes only — the API never sends
+   amounts, party names, GSTINs, free text, emails or phone numbers. */
+const STEP_SHORT = { invite:'Invited', first_login:'Login', preview_watched:'Preview', connect_started:'Connect', org_picked:'Org', first_sync:'Sync' };
+function stepCell(r, s){
+  const at = r.steps[s];
+  if(at) return '<span class="step done" title="' + escapeHtml(fmtDate(at)) + '">&#10003; ' + ago(at) + '</span>';
+  if(r.stuck_at === s) return '<span class="step stuck">stuck here</span>';
+  if((r.skipped || []).includes(s)) return '<span class="muted">skipped</span>';
+  return '<span class="muted">—</span>';
+}
+function renderInvestors(){
+  const d = investors;
+  if(!d){ $('#main').innerHTML = '<div class="loading">Loading investors…</div>'; return; }
+  if(d.error){ $('#main').innerHTML = '<div class="gate">Could not load investors.</div>'; return; }
+  const steps = d.steps || [];
+  const banner = d.tenants_table === false
+    ? '<div class="banner">Investor invites aren’t stored yet: run <span class="mono">2026-10-29-ops-investor-funnel.sql</span>. Preview refs still show below, unlinked.</div>' : '';
+  const funnel = '<div class="funnel">' + steps.map(s => '<div class="st"><span>' + escapeHtml(d.step_labels[s] || s) + '</span><b>' + (d.totals[s] || 0) + '</b></div>').join('') + '</div>';
+  const form = '<div class="invform"><b>Register invite</b><input id="invRef" placeholder="preview ref, e.g. avijeet-shastra"><input id="invUid" placeholder="Margyn login id (optional, uuid)"><button class="savebtn" style="margin:0" id="invSave">Save</button><span class="muted" id="invMsg"></span></div>';
+  const rows = (d.tenants || []).map(r => '<tr data-ref="' + escapeHtml(r.ref) + '">'
+    + '<td class="mono">' + escapeHtml(r.ref) + (r.registered ? '' : ' <span class="muted">(preview only)</span>') + '</td>'
+    + '<td>' + (r.linked ? '<span class="chip green">linked</span>' : '<span class="chip grey">no login</span>') + '</td>'
+    + steps.map(s => '<td>' + stepCell(r, s) + '</td>').join('')
+    + '<td class="muted">' + escapeHtml(r.preview && r.preview.furthest ? r.preview.furthest + ' · ' + r.preview.opens + ' open' + (r.preview.opens === 1 ? '' : 's') : '—') + '</td>'
+    + '<td>' + (r.last_sync ? '<span class="chip ' + (r.last_sync.ok ? 'green' : 'red') + '">' + (r.last_sync.ok ? 'ok' : escapeHtml(r.last_sync.error_code || 'error')) + '</span>' + (r.last_sync.rows_synced != null ? ' <span class="num muted">' + r.last_sync.rows_synced + ' rows</span>' : '') : '<span class="muted">—</span>') + '</td>'
+    + '<td class="num">' + ago(r.last_activity_at) + '</td></tr>').join('');
+  $('#main').innerHTML = banner + funnel + form + '<table><thead><tr><th>Ref</th><th>Login</th>'
+    + steps.map(s => '<th>' + escapeHtml(STEP_SHORT[s] || s) + '</th>').join('')
+    + '<th>Preview</th><th>Last sync</th><th>Active</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="' + (steps.length + 5) + '" class="muted">No investor tenants or preview views yet.</td></tr>') + '</tbody></table>';
+  $('#main').querySelectorAll('tr[data-ref]').forEach(tr => tr.onclick = () => openInvestor(tr.dataset.ref));
+  $('#invSave').onclick = () => saveInvestor($('#invRef').value, $('#invUid').value, $('#invMsg'));
+}
+async function saveInvestor(ref, uid, msgEl){
+  msgEl.textContent = 'Saving…';
+  try {
+    await api('?action=investor-tenant', { method:'PUT', body: JSON.stringify({ ref: ref.trim(), user_id: uid.trim() || null }) });
+    msgEl.textContent = 'Saved';
+    await loadInvestors(); renderInvestors();
+  } catch(e){ msgEl.textContent = e.gate ? 'Not allowed' : 'Failed (check the ref and the login id)'; }
+}
+async function loadInvestors(){
+  try { investors = await api('?action=investor-tenants'); }
+  catch(e){ if(e.gate) throw e; investors = { error: true }; }
+}
+async function openInvestor(ref){
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = '<div class="drawer"><div class="loading">Loading investor…</div></div>';
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+  let d;
+  try { d = await api('?action=investor-timeline&ref=' + encodeURIComponent(ref)); }
+  catch(e){ $('.drawer', ov).innerHTML = '<div class="loading">Could not load.</div>'; return; }
+  const f = d.funnel || { steps:{} };
+  const kv = Object.keys(STEP_SHORT).map(s => '<div>' + escapeHtml((investors && investors.step_labels && investors.step_labels[s]) || s) + '</div><div>' + (f.steps[s] ? fmtDate(f.steps[s]) : (f.stuck_at === s ? '<b style="color:var(--orange)">stuck here</b>' : '—')) + '</div>').join('');
+  const tl = (d.timeline || []).map(e => '<div class="evrow"><div>' + fmtDate(e.at) + '</div><div>' + escapeHtml(e.label) + ' <span class="muted">' + escapeHtml(e.kind) + '</span></div><div class="muted mono">' + escapeHtml(JSON.stringify(e.detail || {})) + '</div></div>').join('') || '<p class="muted">Nothing yet.</p>';
+  $('.drawer', ov).innerHTML = '<div class="dhead"><button class="x">&times;</button><h2 class="mono">' + escapeHtml(d.ref) + '</h2>'
+    + '<div class="muted mono" style="font-size:11px">' + escapeHtml(d.user_id || 'no Margyn login linked') + '</div></div>'
+    + '<div class="tabpane"><h3>Funnel</h3><div class="kv">' + kv + '</div>'
+    + '<h3>Link to a Margyn login</h3><div class="invform"><input id="dUid" placeholder="login id (uuid)" value="' + escapeHtml(d.user_id || '') + '"><button class="savebtn" style="margin:0" id="dSave">Save</button><span class="muted" id="dMsg"></span></div>'
+    + '<h3>Timeline</h3><p class="muted" style="margin-top:0;font-size:12px">Counts, statuses and error codes only. No amounts, names, GSTINs or message text.</p>' + tl + '</div>';
+  $('.x', ov).onclick = () => ov.remove();
+  $('#dSave', ov).onclick = () => saveInvestor(d.ref, $('#dUid', ov).value, $('#dMsg', ov));
+}
+function setView(v){
+  view = v;
+  $('#tabPartners').classList.toggle('on', v === 'partners');
+  $('#tabInvestors').classList.toggle('on', v === 'investors');
+  load();
+}
+
 function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
 async function load(){
@@ -314,6 +401,13 @@ async function load(){
     const { data:{ session } } = await sb.auth.getSession();
     if(!session){ $('#main').innerHTML = '<div class="gate">Not signed in. Open the app, sign in as the founder, then reload this page.</div>'; return; }
     token = session.access_token;
+    if(view === 'investors'){
+      investors = null; renderInvestors();
+      await loadInvestors();
+      $('#genAt').textContent = investors && investors.generated_at ? 'as of ' + fmtDate(investors.generated_at) : '';
+      renderInvestors();
+      return;
+    }
     const [res, met] = await Promise.all([
       api('?action=partners'),
       api('?action=metrics').catch(() => null),
@@ -334,6 +428,8 @@ async function load(){
   if(!window.supabase){ $('#main').innerHTML = '<div class="gate">Could not load auth library.</div>'; return; }
   sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   $('#refreshBtn').onclick = load;
+  $('#tabPartners').onclick = () => setView('partners');
+  $('#tabInvestors').onclick = () => setView('investors');
   load();
 })();
 </script>

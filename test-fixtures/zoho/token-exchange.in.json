@@ -1,0 +1,9 @@
+{
+  "_note": "Shape of POST https://accounts.zoho.in/oauth/v2/token (grant_type=authorization_code). Tokens scrubbed. api_domain keeps Zoho's trailing slash on purpose.",
+  "access_token": "1000.exch0access0in.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "refresh_token": "1000.exch0refresh0in.rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+  "scope": "ZohoBooks.invoices.READ ZohoBooks.bills.READ ZohoBooks.customerpayments.READ ZohoBooks.vendorpayments.READ ZohoBooks.banking.READ ZohoBooks.settings.READ ZohoBooks.contacts.READ",
+  "api_domain": "https://www.zohoapis.in/",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}

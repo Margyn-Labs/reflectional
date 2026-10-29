@@ -125,7 +125,11 @@ export function formatMargynContext(context) {
     } else if (c.zoho_reported_balance != null) {
       lines.push(`Cash position (per books): ${inr(c.zoho_reported_balance)}${c.divergence_pct != null ? ' — ' + Number(c.divergence_pct).toFixed(0) + '% divergence vs 90d gateway settlements' : ''}`);
     }
-    if (g.total_leakage != null) lines.push(`ITC at risk: ${inr(g.total_leakage)}${g.leakage_pct != null ? ' (' + Number(g.leakage_pct).toFixed(0) + '% of claimed ITC' + (g.filing_period ? ', period ' + g.filing_period : '') + ')' : ''}`);
+    // GSTR-2B is fail-closed (api/_lib/gstr2bGate.js): a missing figure is
+    // "not available", never ₹0 — the model must not tell the owner nothing is at risk.
+    if (books.gstr2b && books.gstr2b.available === false) lines.push(`ITC at risk: not available (${books.gstr2b.message || 'GSTR-2B not read yet'}). Do not state or imply a figure, including zero.`);
+    else if (g.total_leakage == null || !isFinite(Number(g.total_leakage))) lines.push('ITC at risk: not available. Do not state or imply a figure, including zero.');
+    else lines.push(`ITC at risk: ${inr(g.total_leakage)}${g.leakage_pct != null ? ' (' + Number(g.leakage_pct).toFixed(0) + '% of claimed ITC' + (g.filing_period ? ', period ' + g.filing_period : '') + ')' : ''}`);
     if (m.net_margin_pct != null) lines.push(`Net margin (from books COGS/opex): ${Number(m.net_margin_pct).toFixed(1)}%`);
     if (w.runway_days != null) lines.push(`Working capital runway: ${Math.round(w.runway_days)} days`);
     if (Array.isArray(books.top_overdue_customers) && books.top_overdue_customers.length) {

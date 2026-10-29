@@ -29,6 +29,7 @@
  */
 
 const crypto = require('crypto');
+const { sendsBlocked, blockedResult } = require('./sendGuard');
 
 function bspName() {
   return (process.env.WHATSAPP_BSP || 'gupshup').toLowerCase();
@@ -47,7 +48,8 @@ function bspName() {
  * @param {{to: string, templateId: string, params: string[]}} opts
  * @returns {Promise<{ok: boolean, messageId?: string, error?: string, raw?: any}>}
  */
-async function sendTemplate({ to, templateId, params }) {
+async function sendTemplate({ to, templateId, params, dryRun }) {
+  if (sendsBlocked({ dryRun, to })) return blockedResult('whatsapp-template', to);
   const adapter = SEND_ADAPTERS[bspName()];
   if (!adapter) {
     return { ok: false, error: `No send adapter configured for WHATSAPP_BSP=${bspName()}` };
@@ -144,7 +146,8 @@ const SEND_ADAPTERS = {
  * @param {{to: string, text: string}} opts
  * @returns {Promise<{ok: boolean, messageId?: string, error?: string}>}
  */
-async function sendText({ to, text }) {
+async function sendText({ to, text, dryRun }) {
+  if (sendsBlocked({ dryRun, to })) return blockedResult('whatsapp-text', to);
   const adapter = SEND_TEXT_ADAPTERS[bspName()];
   if (!adapter) {
     return { ok: false, error: `No text-send adapter configured for WHATSAPP_BSP=${bspName()}` };
@@ -231,7 +234,8 @@ const SEND_TEXT_ADAPTERS = {
  * @param {{to: string, text: string, buttons: {id: string, title: string}[]}} opts
  * @returns {Promise<{ok: boolean, messageId?: string, error?: string}>}
  */
-async function sendButtons({ to, text, buttons }) {
+async function sendButtons({ to, text, buttons, dryRun }) {
+  if (sendsBlocked({ dryRun, to })) return blockedResult('whatsapp-buttons', to);
   const adapter = SEND_BUTTONS_ADAPTERS[bspName()];
   if (!adapter) {
     return { ok: false, error: `No button-send adapter configured for WHATSAPP_BSP=${bspName()}` };

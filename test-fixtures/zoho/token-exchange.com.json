@@ -1,0 +1,9 @@
+{
+  "_note": "Same exchange answered by the US data centre (accounts.zoho.com). api_domain differs per DC and must be persisted, not guessed.",
+  "access_token": "1000.exch0access0com.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "refresh_token": "1000.exch0refresh0com.rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+  "scope": "ZohoBooks.invoices.READ ZohoBooks.bills.READ",
+  "api_domain": "https://www.zohoapis.com",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}

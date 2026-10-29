@@ -1,0 +1,8 @@
+{
+  "_note": "GET /books/v3/organizations for a US-DC login whose only org reports in USD.",
+  "code": 0,
+  "message": "success",
+  "organizations": [
+    { "organization_id": "70011112222", "name": "Northwind Inc.", "is_default_org": true, "plan_name": "Professional", "currency_code": "USD", "currency_symbol": "$", "country": "U.S.A", "time_zone": "America/New_York", "is_org_active": true }
+  ]
+}

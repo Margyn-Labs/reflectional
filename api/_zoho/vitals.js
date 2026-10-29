@@ -17,8 +17,11 @@
  *   receivables:   { current, days_1_30, days_31_60, days_61_90, days_90_plus, total },
  *   top_overdue_customers: [ { customer_name, invoice_number, balance, days_overdue } ],
  *   payables:      { current, due_this_week, overdue, total, projected_cash_after_this_weeks_payables },
- *   gst_leakage:   { filing_period, total_leakage, vendors_not_filed, leakage_pct },
+ *   gst_leakage:   { filing_period, total_leakage, vendors_not_filed, leakage_pct }
+ *                  | null when GSTR-2B is not available (see gstr2b below),
  *   gst_top_at_risk_vendors: [ { vendor_gstin, vendor_name, at_risk } ],
+ *   gstr2b:        { available, state, reason, message }  (api/_lib/gstr2bGate.js:
+ *                  fail-closed — null gst_leakage means "not available", never ₹0),
  *   net_margin:    { period, income, cogs, opex, net_margin_pct },
  *   working_capital_runway: { adjusted_cash_position, receivables_due_30d, payables_due_30d, avg_daily_burn, runway_days },
  *   flags: [ ... ],
@@ -35,6 +38,7 @@
 const { getUserFromRequest, rpc, selectRows } = require('../_lib/supabaseRest');
 // Drafts and voided invoices aren't money anyone owes (see moneyModel.js).
 const { ZOHO_OPEN } = require('../_lib/moneyModel');
+const { readGstr2bAvailability, applyGstr2bGate } = require('../_lib/gstr2bGate');
 
 function inr(n) {
   const v = Number(n) || 0;
@@ -98,6 +102,56 @@ function buildBriefingHints(v) {
   };
 }
 
+/** 'YYYY-MM' of a time in India. */
+function istMonth(ms) {
+  return new Date(ms + 5.5 * 3600000).toISOString().slice(0, 7);
+}
+
+function nextMonth(period) {
+  const [y, m] = period.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+const PNL_TYPES = ['income', 'other_income', 'cost_of_goods_sold', 'expense', 'other_expense'];
+
+/**
+ * Pure: the month's P&L from chart-of-accounts rows and postings, as Zoho's
+ * Profit and Loss report adds it. Income (operating + other) is credit minus
+ * debit, so credit notes reduce it; costs are debit minus credit. Exported for tests.
+ */
+function netMarginFrom(accounts, postings, period) {
+  const typeOf = new Map(accounts.map((a) => [String(a.id), String(a.account_type || '').toLowerCase()]));
+  let income = 0, cogs = 0, opex = 0, seen = 0;
+  for (const p of postings) {
+    if (String(p.entry_date || '').slice(0, 7) !== period) continue;
+    const t = typeOf.get(String(p.account_ref));
+    const cr = Number(p.credit) || 0, dr = Number(p.debit) || 0;
+    if (t === 'income' || t === 'other_income') income += cr - dr;
+    else if (t === 'cost_of_goods_sold') cogs += dr - cr;
+    else if (t === 'expense' || t === 'other_expense') opex += dr - cr;
+    else continue;
+    seen++;
+  }
+  if (!seen) return null;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  return {
+    period, income: r2(income), cogs: r2(cogs), opex: r2(opex),
+    net_profit: r2(income - cogs - opex),
+    net_margin_pct: income ? r2(((income - cogs - opex) / income) * 100) : 0,
+    basis: 'zoho_postings'
+  };
+}
+
+async function netMarginFromPostings(orgRef, period) {
+  if (!orgRef) return null;
+  const accounts = await selectRows('zoho_chart_of_accounts',
+    `select=id,account_type&org_ref=eq.${orgRef}&account_type=in.(${PNL_TYPES.join(',')})&limit=5000`);
+  if (!accounts.length) return null;
+  const postings = await selectRows('zoho_journal_entries',
+    `select=account_ref,entry_date,debit,credit&org_ref=eq.${orgRef}&entry_date=gte.${period}-01&entry_date=lt.${nextMonth(period)}-01&order=id.asc&limit=100000`);
+  return netMarginFrom(accounts, postings, period);
+}
+
 async function handler(req, res) {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -127,13 +181,35 @@ async function handler(req, res) {
   }
 
   // PostgREST returns the JSONB directly for a scalar-returning function.
-  const v = (vitals && typeof vitals === 'object' && !Array.isArray(vitals))
+  const raw = (vitals && typeof vitals === 'object' && !Array.isArray(vitals))
     ? vitals
     : (Array.isArray(vitals) ? vitals[0] : {});
 
-  if (!v || v.connected !== true) {
+  if (!raw || raw.connected !== true) {
     res.status(200).json({ connected: false });
     return;
+  }
+
+  // GSTR-2B / ITC at risk is fail-closed: unless the endpoint is validated
+  // and the last gstr2b run succeeded, gst_leakage goes out as null with a
+  // gstr2b.reason, so no surface can render an empty table as ₹0 at risk.
+  const v = applyGstr2bGate(raw, await readGstr2bAvailability(selectRows, raw.org_ref));
+
+  // Net margin the way Zoho's own Profit and Loss adds it up, from the synced postings (exact to the rupee on
+  // a live org, 29 Oct 2026). The SQL function's figure is kept only when no postings have synced.
+  try {
+    const nm = await netMarginFromPostings(v.org_ref, istMonth(Date.now()));
+    if (nm) v.net_margin = nm;
+  } catch (err) {
+    console.error('zoho net margin from postings failed:', err.message);
+  }
+
+  // Cash vs gateway: with no gateway settlements there is nothing to compare, so no divergence and no flag
+  // (it read 100% and raised cash_position_mismatch on every Zoho-only account).
+  const cp = v.cash_position;
+  if (cp && !(Number(cp.gateway_settled_90d) > 0)) {
+    cp.divergence_pct = null;
+    if (Array.isArray(v.flags)) v.flags = v.flags.filter((f) => f !== 'cash_position_mismatch');
   }
 
   // The `zoho_vitals` SQL function's JSON payload never carried
@@ -160,15 +236,15 @@ async function handler(req, res) {
   // ---- Row-level open receivables / payables ----------------------------
   // The vitals RPC only returns aggregates + top_overdue_customers. The
   // unified Ledger view and the cross-source reconciliation logic need every
-  // open invoice / bill as a row, tagged source='zoho_books'. Bounded so a
-  // huge set of books can't blow the payload.
+  // open invoice / bill as a row, tagged source='zoho_books'. Every open
+  // row (it was the first 250: 250 of 883 open invoices on a live org).
   let receivablesList = [];
   let payablesList = [];
   if (v.org_ref) {
     try {
       const invs = await selectRows(
         'zoho_invoices',
-        `select=invoice_number,customer_name,balance,due_date,invoice_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast&limit=250`
+        `select=invoice_number,customer_name,balance,due_date,invoice_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast,invoice_number.asc&limit=20000`
       );
       receivablesList = (invs || []).map((r) => ({
         party_name: r.customer_name || 'Unnamed customer',
@@ -185,7 +261,7 @@ async function handler(req, res) {
     try {
       const bills = await selectRows(
         'zoho_bills',
-        `select=bill_number,vendor_name,balance,due_date,bill_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast&limit=250`
+        `select=bill_number,vendor_name,balance,due_date,bill_date,status&org_ref=eq.${v.org_ref}&balance=gt.0&${ZOHO_OPEN}&order=due_date.asc.nullslast,bill_number.asc&limit=20000`
       );
       payablesList = (bills || []).map((r) => ({
         party_name: r.vendor_name || 'Unnamed vendor',
@@ -211,4 +287,4 @@ async function handler(req, res) {
   });
 };
 
-module.exports = { handler, buildBriefingHints };
+module.exports = { handler, buildBriefingHints, netMarginFrom, istMonth, nextMonth };

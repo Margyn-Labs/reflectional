@@ -1,0 +1,45 @@
+{
+  "_note": "GET /books/v3/chartofaccounts/transactions?account_id=..&date_start=..&date_end=.. Shape recorded from a live .in org on 29 Oct 2026 (ids shortened).",
+  "code": 0,
+  "message": "success",
+  "transactions": [
+    {
+      "categorized_transaction_id": "CT-1",
+      "transaction_type": "invoice",
+      "transaction_id": "TXN-1",
+      "transaction_date": "2026-09-01",
+      "account_id": "ACC",
+      "customer_id": "C-1",
+      "payee": "Northwind Retail Pvt Ltd",
+      "entry_number": "INV-000001",
+      "currency_code": "INR",
+      "debit_or_credit": "credit",
+      "debit_amount": "",
+      "credit_amount": 203644.07,
+      "fcy_debit_amount": "",
+      "fcy_credit_amount": 203644.07
+    },
+    {
+      "categorized_transaction_id": "CT-2",
+      "transaction_type": "bill",
+      "transaction_id": "TXN-2",
+      "transaction_date": "2026-09-10",
+      "account_id": "ACC",
+      "payee": "Apex Supplies",
+      "entry_number": "SP/26-27/0042",
+      "currency_code": "INR",
+      "debit_or_credit": "debit",
+      "debit_amount": 45000.0,
+      "credit_amount": "",
+      "fcy_debit_amount": 45000.0,
+      "fcy_credit_amount": ""
+    }
+  ],
+  "page_context": {
+    "page": 1,
+    "per_page": 200,
+    "has_more_page": false,
+    "report_name": "Transactions",
+    "sort_column": "transaction_date"
+  }
+}

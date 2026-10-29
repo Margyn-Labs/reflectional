@@ -35,6 +35,7 @@ const {
   selectRows,
   insertRows,
   updateRows,
+  deleteRows,
   getUserFromRequest,
   logConnectorEvent
 } = require('../_lib/supabaseRest');
@@ -51,10 +52,19 @@ const {
   ZohoAuthError,
   ZohoModuleUnavailable
 } = require('../_lib/zohoClient');
+const { track } = require('../_lib/track');
+
+// Ops funnel event (api/_lib/eventSchema.js): outcome, a closed error code and
+// row counts. Never amounts, party names or Zoho's raw error text.
+function syncEvent(userId, props) {
+  return track(userId, 'zoho_sync', props);
+}
 
 const BACKFILL_MONTHS = 12;
-const JOURNAL_ACCOUNT_TYPES = ['income', 'cost_of_goods_sold', 'expense', 'other_expense'];
-const MAX_JOURNAL_ACCOUNTS = 60;   // rate-limit guard: 1 call per P&L account
+// P&L accounts, plus bank / cash / card: an expense or journal paid straight from the bank has its other
+// side there, so the books layer can book it as a Payment or Receipt the way Tally does.
+const JOURNAL_ACCOUNT_TYPES = ['income', 'other_income', 'cost_of_goods_sold', 'expense', 'other_expense', 'bank', 'cash', 'credit_card'];
+const MAX_JOURNAL_ACCOUNTS = 150;  // rate-limit guard: 1+ call per account read (unused accounts are skipped)
 const ACCOUNT_CALL_DELAY_MS = 700;
 
 // ------------------------------------------------------------ date helpers
@@ -131,6 +141,7 @@ function mapCustomerPayment(p, orgRef) {
   return {
     org_ref: orgRef,
     payment_id: String(p.payment_id),
+    payment_number: p.payment_number || null,
     invoice_ref: firstInvoice ? String(firstInvoice) : (p.invoice_id ? String(p.invoice_id) : null),
     customer_ref: p.customer_id ? String(p.customer_id) : null,
     amount: toNumber(p.amount),
@@ -147,6 +158,7 @@ function mapVendorPayment(p, orgRef) {
   return {
     org_ref: orgRef,
     payment_id: String(p.payment_id),
+    payment_number: p.payment_number || null,
     bill_ref: firstBill ? String(firstBill) : (p.bill_id ? String(p.bill_id) : null),
     vendor_ref: p.vendor_id ? String(p.vendor_id) : null,
     amount: toNumber(p.amount),
@@ -162,7 +174,8 @@ function mapBankAccount(a, orgRef) {
   return {
     org_ref: orgRef,
     account_id: String(a.account_id),
-    bank_name: a.bank_name || a.account_name || null,
+    // The account name the owner sees in Zoho ("HDFC Current A/c"), not just the bank's.
+    bank_name: a.account_name || a.bank_name || null,
     account_type: a.account_type || null,
     currency_code: a.currency_code || 'INR',
     current_balance: toNumber(a.balance !== undefined ? a.balance : a.current_balance),
@@ -185,18 +198,23 @@ function mapAccount(a, orgRef) {
 
 // ----------------------------------------------------------------- upsert
 
+const OPTIONAL_COLUMNS = ['sub_total', 'party_ref', 'payment_number', 'entry_number'];
+
 async function upsert(table, rows, conflictColumns) {
   if (!rows.length) return 0;
   // Chunk so a very large backfill batch doesn't blow the PostgREST payload limit.
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
     let chunk = rows.slice(i, i + CHUNK);
-    try { await insertRows(table, chunk, { onConflict: conflictColumns, merge: true }); }
-    catch (e) {
-      // sub_total arrives with 2026-10-04-books-layer.sql; until it's run, sync exactly as before.
-      if (!/sub_total/.test(String(e && e.message)) || !('sub_total' in chunk[0])) throw e;
-      chunk = chunk.map(({ sub_total, ...r }) => r);
-      await insertRows(table, chunk, { onConflict: conflictColumns, merge: true });
+    // Columns added by later migrations: sub_total (2026-10-04-books-layer.sql), party_ref
+    // (2026-10-29-zoho-journal-party.sql). Until a migration is run, sync exactly as before without it.
+    for (;;) {
+      try { await insertRows(table, chunk, { onConflict: conflictColumns, merge: true }); break; }
+      catch (e) {
+        const col = OPTIONAL_COLUMNS.find((c) => c in chunk[0] && new RegExp(c).test(String(e && e.message)));
+        if (!col) throw e;
+        chunk = chunk.map((r) => { const { [col]: _drop, ...rest } = r; return rest; });
+      }
     }
   }
   return rows.length;
@@ -281,6 +299,93 @@ async function syncCollection(session, org, userId, spec, mode, results, errors,
 }
 
 /**
+ * Map one P&L account's postings to zoho_journal_entries rows.
+ *
+ * Postings without a transaction_id fall back to an account:date:side:amount
+ * key. Two genuine same-day postings of the same amount share that key and
+ * used to collapse into one row on upsert, understating the P&L. The 2nd, 3rd
+ * ... repeat of a key in one fetch now gets a #2, #3 suffix. The first keeps
+ * the bare key, so rows already stored are matched, not duplicated. A fetch
+ * always covers whole days (date_start..today), so the count is stable from
+ * run to run.
+ */
+function journalRows(txns, acct, orgRef) {
+  const seen = new Map();
+  const rows = [];
+  for (const t of txns) {
+    const date = toDateOnly(t.transaction_date || t.date);
+    if (!date) continue;
+    // Zoho returns debit_amount / credit_amount, with "" on the unused side.
+    // amount + debit_or_credit is the older shape, kept as a fallback.
+    const debit = t.debit_amount !== undefined ? toNumber(t.debit_amount)
+      : toNumber(t.debit_or_credit === 'debit' ? (t.amount || t.debit) : t.debit);
+    const credit = t.credit_amount !== undefined ? toNumber(t.credit_amount)
+      : toNumber(t.debit_or_credit === 'credit' ? (t.amount || t.credit) : t.credit);
+    // categorized_transaction_id is per posting; transaction_id is the source
+    // document (an invoice, a credit note), which can post to one account more
+    // than once. Keep both, document first: "<doc>:<posting>". The books layer
+    // reads the document id back to put each sale against its customer.
+    let id = t.transaction_id && t.categorized_transaction_id
+      ? `${t.transaction_id}:${t.categorized_transaction_id}`
+      : (t.categorized_transaction_id || t.transaction_id);
+    if (!id) {
+      const base = `${acct.account_id}:${date}:${t.debit_or_credit || ''}:${debit || credit}`;
+      const n = (seen.get(base) || 0) + 1;
+      seen.set(base, n);
+      id = n === 1 ? base : `${base}#${n}`;
+    }
+    const party = t.customer_id || t.vendor_id || t.contact_id;
+    rows.push({
+      org_ref: orgRef,
+      account_ref: acct.id,
+      transaction_id: String(id),
+      entry_date: date,
+      debit,
+      credit,
+      // The customer or vendor on the posting, so a credit note or a bill lands against its party, as in Tally.
+      party_ref: party ? String(party) : null,
+      entry_number: t.entry_number || null,   // Zoho's own number for the document (journal, expense, invoice)
+      synced_at: new Date().toISOString()
+    });
+  }
+  return rows;
+}
+
+/**
+ * Account ids worth reading: a non-zero balance in Zoho (chartofaccounts?showbalance=true), or postings
+ * already stored (so an account that has gone back to zero is still re-read and its old rows replaced).
+ * null when Zoho won't say, and then every account is read.
+ */
+async function usedAccountIds(session, orgRef, accounts) {
+  try {
+    const all = await session.apiGetAll('books/v3/chartofaccounts', 'chartofaccounts', { showbalance: 'true' });
+    const used = new Set(all.filter((a) => Number(a.current_balance) !== 0 && a.current_balance != null).map((a) => String(a.account_id)));
+    if (!all.some((a) => a.current_balance !== undefined)) return null;
+    const stored = await selectRows('zoho_journal_entries', `select=account_ref&org_ref=eq.${orgRef}&order=id.asc&limit=100000`);
+    const refs = new Set(stored.map((r) => String(r.account_ref)));
+    for (const a of accounts) if (refs.has(String(a.id))) used.add(String(a.account_id));
+    return used;
+  } catch (err) {
+    if (err instanceof ZohoAuthError) throw err;
+    return null;
+  }
+}
+
+/** Remove this account's stored postings in the window that Zoho no longer returns. */
+async function dropStalePostings(orgRef, accountRef, dateStart, rows) {
+  const keep = new Set(rows.map((r) => r.transaction_id));
+  const stored = await selectRows(
+    'zoho_journal_entries',
+    `select=id,transaction_id&org_ref=eq.${orgRef}&account_ref=eq.${accountRef}&entry_date=gte.${dateStart}&order=id.asc&limit=100000`
+  );
+  const stale = stored.filter((r) => !keep.has(String(r.transaction_id))).map((r) => r.id);
+  for (let i = 0; i < stale.length; i += 100) {
+    await deleteRows('zoho_journal_entries', `org_ref=eq.${orgRef}&id=in.(${stale.slice(i, i + 100).join(',')})`);
+  }
+  return stale.length;
+}
+
+/**
  * Journal entries for P&L accounts only (income / COGS / opex) — the
  * accounts net margin and burn rate actually read. Zoho exposes postings per
  * account via /chartofaccounts/{id}/transactions, so this costs one call per
@@ -292,15 +397,24 @@ async function syncCollection(session, org, userId, spec, mode, results, errors,
  */
 async function syncJournalEntries(session, org, userId, mode, results, errors) {
   const opStart = Date.now();
-  const cursor = await getSyncCursor(org.id, 'journals');
-  const { since } = windowFor(mode, cursor);
+  // Always the full 12 months, not a delta. Postings carry no modified time,
+  // so a delta by date misses an invoice edited, backdated or deleted after
+  // its date had passed, and the P&L drifts from Zoho's. Each account's
+  // window is replaced: what Zoho no longer returns is removed. About one
+  // call per P&L account (more for busy ones), well inside the daily cap.
+  const since = monthsAgoIso(BACKFILL_MONTHS);
 
   try {
-    const accounts = await selectRows(
+    let accounts = await selectRows(
       'zoho_chart_of_accounts',
       `select=id,account_id,account_type&org_ref=eq.${org.id}` +
       `&account_type=in.(${JOURNAL_ACCOUNT_TYPES.join(',')})&limit=${MAX_JOURNAL_ACCOUNTS}`
     );
+
+    // Skip accounts never used: zero balance in Zoho and nothing stored. A default Zoho org has ~40 P&L
+    // accounts, most of them empty, and each read is a call against the per-minute and daily limits.
+    const used = await usedAccountIds(session, org.id, accounts);
+    if (used) accounts = accounts.filter((a) => used.has(String(a.account_id)));
 
     if (accounts.length === 0) {
       results.journals = 0;
@@ -311,38 +425,44 @@ async function syncJournalEntries(session, org, userId, mode, results, errors) {
     const dateStart = toDateOnly(since);
     const dateEnd = toDateOnly(new Date().toISOString());
     let total = 0;
+    let unavailable = 0;
 
     for (const acct of accounts) {
       let txns = [];
       try {
-        txns = await session.apiGetAll(
-          `books/v3/chartofaccounts/${acct.account_id}/transactions`,
-          'transactions',
-          { date_start: dateStart, date_end: dateEnd }
-        );
+        // The account id is a query param. The path form
+        // chartofaccounts/{id}/transactions 404s ("Invalid URL Passed"), and
+        // a 404 reads as "module unavailable", so every account was skipped
+        // silently and net margin came out as 0 (found live, 29 Oct 2026).
+        // chartofaccounts/transactions reproduced Zoho's own P&L to the rupee
+        // on a live org. Zoho's docs name chartofaccounts/accounttransactions,
+        // so that is the fallback if the first form 404s.
+        const q = { account_id: acct.account_id, date_start: dateStart, date_end: dateEnd };
+        try {
+          txns = await session.apiGetAll('books/v3/chartofaccounts/transactions', 'transactions', q);
+        } catch (e) {
+          if (!(e instanceof ZohoModuleUnavailable)) throw e;
+          txns = await session.apiGetAll('books/v3/chartofaccounts/accounttransactions', 'transactions', q);
+        }
       } catch (err) {
         if (err instanceof ZohoAuthError) throw err;
-        if (err instanceof ZohoModuleUnavailable) continue;
+        if (err instanceof ZohoModuleUnavailable) { unavailable++; continue; }
         errors.push(`journals(${acct.account_id}): ${err.message}`);
         continue;
       }
 
-      const rows = txns.map((t) => {
-        const date = toDateOnly(t.date || t.transaction_date);
-        if (!date) return null;
-        return {
-          org_ref: org.id,
-          account_ref: acct.id,
-          transaction_id: String(t.transaction_id || t.categorized_transaction_id || `${acct.account_id}:${date}:${t.debit_or_credit || ''}:${t.amount || 0}`),
-          entry_date: date,
-          debit: toNumber(t.debit_or_credit === 'debit' ? (t.amount || t.debit) : t.debit),
-          credit: toNumber(t.debit_or_credit === 'credit' ? (t.amount || t.credit) : t.credit),
-          synced_at: new Date().toISOString()
-        };
-      }).filter(Boolean);
+      const rows = journalRows(txns, acct, org.id);
+      await dropStalePostings(org.id, acct.id, dateStart, rows);
 
       total += await upsert('zoho_journal_entries', rows, 'org_ref,account_ref,transaction_id');
       await sleep(ACCOUNT_CALL_DELAY_MS);
+    }
+
+    // Every account unavailable means the endpoint itself is wrong or
+    // blocked, not a plan limit on one account. Say so instead of reporting
+    // a clean run with no P&L.
+    if (unavailable === accounts.length) {
+      throw new Error(`transactions unavailable for all ${accounts.length} P&L accounts`);
     }
 
     results.journals = total;
@@ -420,10 +540,18 @@ const COLLECTION_SPECS = [
 const SWEEP_EVERY_MS = 6.5 * 24 * 3600 * 1000;
 const SWEEP_MAX_PAGES = 150;   // 30,000 records; beyond that we skip, never guess
 const SWEEP_SPECS = [
-  { module: 'invoices', path: 'books/v3/invoices', key: 'invoices', idField: 'invoice_id', table: 'zoho_invoices' },
-  { module: 'bills', path: 'books/v3/bills', key: 'bills', idField: 'bill_id', table: 'zoho_bills' }
+  { module: 'invoices', path: 'books/v3/invoices', key: 'invoices', idField: 'invoice_id', table: 'zoho_invoices', map: (r, o) => mapInvoice(r, o) },
+  { module: 'bills', path: 'books/v3/bills', key: 'bills', idField: 'bill_id', table: 'zoho_bills', map: (r, o) => mapBill(r, o) }
 ];
 
+/**
+ * Both directions, weekly and right after the first sync:
+ *  - deleted at source: an open row here that Zoho no longer has is closed (balance 0, 'deleted_at_source');
+ *  - missing here: an open document Zoho has that was never synced is added. The backfill reads 12 months
+ *    by last modified time, so an invoice raised 14 months ago, still unpaid and untouched since, never
+ *    arrived and receivables read short of Zoho's own aging.
+ * Zoho's own count of each module is kept (zoho_sync_state.remote_count) for the "Is all your data in?" check.
+ */
 async function sweepDeletedAtSource(session, org, userId, results) {
   const last = await getSyncCursor(org.id, 'deleted_sweep');
   if (last && Date.now() - new Date(last).getTime() < SWEEP_EVERY_MS) return;
@@ -431,15 +559,12 @@ async function sweepDeletedAtSource(session, org, userId, results) {
   for (const s of SWEEP_SPECS) {
     const opStart = Date.now();
     try {
-      const open = await selectRows(s.table, `select=${s.idField}&org_ref=eq.${org.id}&balance=gt.0&limit=10000`);
-      if (!open.length) continue;
-
-      const remote = new Set();
+      const remote = new Map();   // id -> list row
       let complete = false;
       for (let page = 1; page <= SWEEP_MAX_PAGES; page++) {
         const data = await session.apiGet(s.path, { page: String(page), per_page: '200' });
         const batch = data[s.key] || [];
-        for (const r of batch) if (r[s.idField]) remote.add(String(r[s.idField]));
+        for (const r of batch) if (r[s.idField]) remote.set(String(r[s.idField]), r);
         const ctx = data.page_context || {};
         if (!ctx.has_more_page) { complete = true; break; }
         if (batch.length === 0) break; // "more pages" but an empty page: don't trust it
@@ -447,9 +572,25 @@ async function sweepDeletedAtSource(session, org, userId, results) {
       }
       if (!complete) throw new Error('listing exceeded sweep cap; skipped');
 
+      const stored = await selectRows(s.table, `select=${s.idField},balance&org_ref=eq.${org.id}&order=${s.idField}.asc&limit=100000`);
+      const storedIds = new Set(stored.map((r) => String(r[s.idField])));
+
+      // Missing here: open in Zoho (balance > 0, not draft or void), never stored.
+      const add = [];
+      for (const [id, r] of remote) {
+        if (storedIds.has(id) || !(Number(r.balance) > 0) || /^(draft|void)$/i.test(String(r.status || ''))) continue;
+        const row = s.map(r, org.id);
+        if (row) add.push(row);
+      }
+      if (add.length) {
+        await upsert(s.table, add, `org_ref,${s.idField}`);
+        results[s.module + '_added_from_sweep'] = add.length;
+      }
+
+      // Deleted at source: open here, gone from Zoho.
+      const open = stored.filter((r) => Number(r.balance) > 0);
       const missing = open.map((r) => String(r[s.idField])).filter((id) => !remote.has(id));
-      if (!missing.length) continue;
-      if (open.length >= 10 && missing.length > open.length * 0.5) {
+      if (missing.length && open.length >= 10 && missing.length > open.length * 0.5) {
         throw new Error(`would close ${missing.length}/${open.length} open ${s.module}; skipped as a likely Zoho-side glitch`);
       }
       for (let i = 0; i < missing.length; i += 100) {
@@ -460,10 +601,12 @@ async function sweepDeletedAtSource(session, org, userId, results) {
         // balance-0 patch above has already done the part that matters.
         await updateRows(s.table, filter, { status: 'deleted_at_source' }).catch(() => {});
       }
-      results[s.module + '_deleted_at_source'] = missing.length;
+      if (missing.length) results[s.module + '_deleted_at_source'] = missing.length;
+
+      await setRemoteCount(org.id, s.module, remote.size);
       await logConnectorEvent({
         userId, connectorType: 'zoho_books', operation: 'sweep_' + s.module,
-        status: 'success', recordsSynced: missing.length, syncDurationMs: Date.now() - opStart
+        status: 'success', recordsSynced: missing.length + add.length, syncDurationMs: Date.now() - opStart
       });
     } catch (err) {
       if (err instanceof ZohoAuthError) throw err;
@@ -478,6 +621,18 @@ async function sweepDeletedAtSource(session, org, userId, results) {
     }
   }
   await setSyncCursor(org.id, 'deleted_sweep', new Date().toISOString(), 'success');
+}
+
+/** Zoho's own count of a module, from the sweep's full listing (2026-10-29-zoho-journal-party.sql adds the column). */
+async function setRemoteCount(orgRef, moduleName, count) {
+  try {
+    await insertRows('zoho_sync_state', [{
+      org_ref: orgRef, module: 'count:' + moduleName, last_synced_at: new Date().toISOString(),
+      last_run_at: new Date().toISOString(), last_run_status: 'success', remote_count: count
+    }], { onConflict: 'org_ref,module', merge: true });
+  } catch (err) {
+    console.error(`Could not record Zoho's count for ${moduleName}`);
+  }
 }
 
 // -------------------------------------------------------------- core sync
@@ -497,6 +652,7 @@ async function syncZohoForUser(userId, mode) {
       userId, connectorType: 'zoho_books', operation: 'sync_all',
       status: 'error', errorMessage: 'Zoho Books not connected or org not selected'
     });
+    await syncEvent(userId, { ok: false, status: 'error', error_code: 'not_connected', mode: syncMode, rows_synced: 0, modules_failed: 0, duration_s: 0 });
     return { status: 'error', message: 'Zoho Books not connected' };
   }
 
@@ -511,10 +667,9 @@ async function syncZohoForUser(userId, mode) {
 
   await syncJournalEntries(session, org, userId, syncMode, results, errors);
 
-  // Deleted-at-source sweep: delta runs only (a backfill just pulled fresh).
-  if (syncMode === 'delta') {
-    await sweepDeletedAtSource(session, org, userId, results);
-  }
+  // Sweep both ways (deleted at source, open but never synced). Weekly; also right after the first sync,
+  // which is when anything open but untouched for over 12 months would otherwise be missed.
+  await sweepDeletedAtSource(session, org, userId, results);
 
   // Persist plan-level flags discovered during the run.
   const orgPatch = {};
@@ -578,6 +733,17 @@ async function syncZohoForUser(userId, mode) {
     syncDurationMs: durationMs
   });
 
+  const moduleErrors = errors.filter((e) => !/^rate_budget_warning/.test(e)).length;
+  await syncEvent(userId, {
+    ok: runStatus !== 'error',
+    status: runStatus,
+    error_code: moduleErrors ? 'module_errors' : (errors.length ? 'rate_limited' : 'none'),
+    mode: syncMode,
+    rows_synced: totalSynced,
+    modules_failed: moduleErrors,
+    duration_s: Math.round(durationMs / 1000)
+  });
+
   // Stamp a run timestamp on the org row so the freshness line (Ops Console,
   // the app's "last synced" text) reflects reality. Reaching here means the
   // session authenticated — a ZohoAuthError would have thrown long before.
@@ -618,6 +784,7 @@ async function handleAuthFailure(userId, detail) {
     // Console and connector_logs show more than a bare 'needs_reauth'.
     errorMessage: detail ? `needs_reauth: ${String(detail).slice(0, 240)}` : 'needs_reauth'
   });
+  await syncEvent(userId, { ok: false, status: 'error', error_code: 'needs_reauth', rows_synced: 0, modules_failed: 0 });
 }
 
 async function handler(req, res) {
@@ -652,4 +819,9 @@ async function handler(req, res) {
   }
 };
 
-module.exports = { handler, syncZohoForUser, handleAuthFailure };
+module.exports = {
+  handler, syncZohoForUser, handleAuthFailure, journalRows,
+  // mappers, for tests that build stored rows exactly as a sync would
+  _mapInvoice: mapInvoice, _mapBill: mapBill, _mapCustomerPayment: mapCustomerPayment,
+  _mapVendorPayment: mapVendorPayment, _mapBankAccount: mapBankAccount, _mapAccount: mapAccount
+};

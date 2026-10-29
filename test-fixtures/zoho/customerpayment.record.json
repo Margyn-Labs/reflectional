@@ -1,0 +1,16 @@
+{
+  "_note": "One row of GET /books/v3/customerpayments (list shape; invoices[] only present on detail, so invoice_id fallback is exercised).",
+  "payment_id": "460000000077001",
+  "payment_number": "7",
+  "invoice_numbers": "INV-000001",
+  "date": "2026-09-15",
+  "payment_mode": "Bank Transfer",
+  "amount": 100000.0,
+  "bcy_amount": 100000.0,
+  "unused_amount": 0.0,
+  "customer_id": "460000000000111",
+  "customer_name": "Acme Retail Pvt Ltd",
+  "reference_number": "UTR998877",
+  "created_time": "2026-09-15T16:20:00+0530",
+  "last_modified_time": "2026-09-15T16:20:00+0530"
+}

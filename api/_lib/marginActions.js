@@ -446,7 +446,7 @@ async function executeAction(action, userId, actor) {
     if (t.contact_phone) {
       const bsp = require('./whatsappBsp');
       const msg = 'Hi ' + (t.party_name || '') + ', following up on invoice ' + (t.invoice_ref || '') + ' for ' + (t.amount || 0) + '. Could we sort out payment this week?';
-      await bsp.sendText({ to: t.contact_phone, text: msg }).catch(() => {});
+      await require('./sendGuard').runAsAccount(userId, () => bsp.sendText({ to: t.contact_phone, text: msg })).catch(() => {});
     }
     return;
   }

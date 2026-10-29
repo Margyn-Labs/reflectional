@@ -37,6 +37,12 @@ const nameKey = A.nameKey;
 
 /* ---------------- words for money, dates, shares ---------------- */
 
+
+/** The books system's own name for owner-facing text (Tally, Zoho Books, Odoo). */
+const SRC = (ctx) => (ctx && ctx.source_name) || 'Tally';
+/** "Tally books", "Odoo books", but "Zoho Books" (already a name for books). */
+const BOOKS = (ctx) => (/books$/i.test(SRC(ctx)) ? SRC(ctx) : SRC(ctx) + ' books');
+
 function trimZeros(s) { return s.includes('.') ? s.replace(/\.?0+$/, '') : s; }
 /** ₹14.52 Cr, ₹41.2 L, ₹4.12 L, ₹45,300. Never a bare digit string the model could misread. */
 function inr(n) {
@@ -288,10 +294,10 @@ function inPeriod(r, per) { return r.dt >= per.from && r.dt <= per.to; }
 function periodNotes(ctx, per) {
   const notes = [];
   const c = ctx.coverage;
-  if (!c.from) { notes.push('No Tally entries have synced yet.'); return notes; }
-  if (per.from < c.from) notes.push(`Margyn has your Tally entries only from ${dayStr(c.from, true)} (this financial year). Anything earlier isn't synced yet, so it can't be counted.`);
+  if (!c.from) { notes.push(`No ${SRC(ctx)} entries have synced yet.`); return notes; }
+  if (per.from < c.from) notes.push(`Margyn has your ${SRC(ctx)} entries only from ${dayStr(c.from, true)} (this financial year). Anything earlier isn't synced yet, so it can't be counted.`);
   const unfinished = (ctx.analytics.pnl || []).filter((m) => m.costs_incomplete && m.month >= per.fromISO.slice(0, 7) && m.month <= per.toISO.slice(0, 7));
-  for (const m of unfinished) notes.push(`${monthLabel(m.month)} looks unfinished in Tally: running costs are ${inr(m.opex)} against a usual ${inr(m.typical_opex)}, so its profit is overstated until salaries and other costs are booked.`);
+  for (const m of unfinished) notes.push(`${monthLabel(m.month)} looks unfinished in ${SRC(ctx)}: running costs are ${inr(m.opex)} against a usual ${inr(m.typical_opex)}, so its profit is overstated until salaries and other costs are booked.`);
   const cur = isoDay(ctx.today).slice(0, 7);
   if (per.toISO.slice(0, 7) >= cur && per.fromISO.slice(0, 7) <= cur) notes.push(`${MON[ctx.today.getUTCMonth()]} is still in progress.`);
   return notes;
@@ -300,7 +306,7 @@ function periodNotes(ctx, per) {
 function sourceLine(ctx) {
   const when = ctx.lastSync ? new Date(new Date(ctx.lastSync).getTime() + 5.5 * 3600000) : null;
   const hrs = ctx.lastSync ? Math.round((ctx.now - new Date(ctx.lastSync)) / 3600000) : null;
-  return `From your Tally books${ctx.company ? ' (' + ctx.company + ')' : ''}${when ? ', last synced ' + dayStr(when) + ' ' + String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0') + ' IST' : ''}${hrs != null && hrs > 26 ? ' (' + hrs + ' hours ago: the Tally PC may be off, so the latest entries may be missing)' : ''}.`;
+  return `From your ${BOOKS(ctx)}${ctx.company ? ' (' + ctx.company + ')' : ''}${when ? ', last synced ' + dayStr(when) + ' ' + String(when.getUTCHours()).padStart(2, '0') + ':' + String(when.getUTCMinutes()).padStart(2, '0') + ' IST' : ''}${hrs != null && hrs > 26 ? ' (' + hrs + ' hours ago: the Tally PC may be off, so the latest entries may be missing)' : ''}.`;
 }
 
 /* ---------------- 1. totals for a period ---------------- */
@@ -349,7 +355,7 @@ function summary(ctx, args) {
   // The whole synced year: Tally's stock change is known, so give the profit after it too.
   const P = ctx.analytics.period || {};
   if (P.from && per.fromISO <= P.from && per.toISO >= P.to && P.net_profit_after_stock != null) {
-    out.profit_after_stock_change = inr(P.net_profit_after_stock) + ' (' + pctStr(P.net_margin_pct_after_stock) + '), gross margin ' + pctStr(P.gross_margin_pct_after_stock) + '. Indicative: uses the stock value Tally holds.';
+    out.profit_after_stock_change = inr(P.net_profit_after_stock) + ' (' + pctStr(P.net_margin_pct_after_stock) + '), gross margin ' + pctStr(P.gross_margin_pct_after_stock) + '. Indicative: uses the stock value ' + SRC(ctx) + ' holds.';
   }
   const months = [...new Set(rows.map((r) => r.mk))].sort();
   if (months.length > 1) {
@@ -496,7 +502,7 @@ function breakdown(ctx, args) {
     out.sign_note = 'Positive = money spent / debited to the ledger; negative = credited (income).';
   }
   if (measure === 'margin') out.margin_note = 'Margin = sales value less quantity x average cost (purchase price, or for kits you assemble, the cost of the parts).' + (costMissing ? ' ' + inr(costMissing) + ' of sales had no known cost and is left out.' : '');
-  if (itemLevel && !ctx.rows.some((r) => r.items.length)) out.note = 'Item lines haven\'t synced from Tally for these vouchers, so item-level figures aren\'t available.';
+  if (itemLevel && !ctx.rows.some((r) => r.items.length)) out.note = `Item lines haven't synced from ${SRC(ctx)} for these vouchers, so item-level figures aren't available.`;
   out.notes = periodNotes(ctx, per);
   out.rupees_note = '"rupees" is for charts only; say the "amount" text.';
   return out;
@@ -625,7 +631,7 @@ function moneyOwed(ctx, args) {
   else if (wc.suppliers_tracked_billwise === false) {
     const led = supplierLedgerBills(ctx);
     out.source = sourceLine(ctx) + ' Worked out from each supplier\'s purchases and payments.';
-    out.note = 'Tally doesn\'t keep these suppliers\' bills one by one, so each supplier\'s payments were matched to their oldest purchases first; what is left is what you owe. "Days late" counts from when you usually pay that supplier, not a due date in Tally.' +
+    out.note = SRC(ctx) + ' doesn\'t keep these suppliers\' bills one by one, so each supplier\'s payments were matched to their oldest purchases first; what is left is what you owe. "Days late" counts from when you usually pay that supplier, not a due date in Tally.' +
       (led && led.advances >= 1 ? ' Separately, ' + inr(led.advances) + ' was paid ahead to suppliers and isn\'t netted off.' : '');
   }
   return out;
@@ -658,7 +664,7 @@ function partyProfile(ctx, args) {
   const q = String((args && (args.name || args.party)) || '').trim();
   if (!q) return { error: 'Say whose story you want: a customer or vendor name.' };
   const res = resolveParty(ctx, q);
-  if (!res.match) return { found: false, note: `No customer or vendor in your Tally books matches "${q}". Check the spelling or try part of the name.` };
+  if (!res.match) return { found: false, note: `No customer or vendor in your ${BOOKS(ctx)} matches "${q}". Check the spelling or try part of the name.` };
   const key = norm(res.match);
   const mine = ctx.rows.filter((r) => norm(r.party) === key);
   const fy = resolvePeriod('this_fy', ctx.now);
@@ -795,7 +801,7 @@ function products(ctx, args) {
   const a = args || {};
   const per = resolvePeriod(a.period || 'this_fy', ctx.now);
   const stats = productStats(ctx, per);
-  if (!stats.length) return { source: sourceLine(ctx), note: ctx.rows.some((r) => r.items.length) ? 'No items sold in ' + per.label + '.' : 'Tally hasn\'t sent item lines yet, so product figures aren\'t available.' };
+  if (!stats.length) return { source: sourceLine(ctx), note: ctx.rows.some((r) => r.items.length) ? 'No items sold in ' + per.label + '.' : SRC(ctx) + ' hasn\'t sent item lines yet, so product figures aren\'t available.' };
   const fmt = (s) => ({ item: s.g.item, sold: Math.round(s.g.qty).toLocaleString('en-IN') + (s.g.unit ? ' ' + s.g.unit.toLowerCase() : ''), sales: inr(s.g.value), avg_price: s.price != null ? inr(s.price) : null, avg_cost: s.cost != null ? inr(s.cost) : null, margin: s.margin != null ? inr(s.margin) : null, margin_pct: s.marginPct != null ? pctStr(s.marginPct) : null, flags: s.flags.length ? s.flags : undefined });
 
   if (a.name) {
@@ -922,21 +928,21 @@ function cashAndDebt(ctx) {
   if (lastGst) {
     const [y, m] = lastGst.month.split('-').map(Number);
     const due = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 20));
-    out.gst_estimate = { month: monthLabel(lastGst.month), output_tax: inr(lastGst.output_tax), input_tax: inr(lastGst.input_tax), net_payable: inr(lastGst.net_payable_estimate), usual_due_date: dayStr(due, true), note: 'Estimate from the tax ledgers in Tally, not the GST portal. Your CA files the actual return.' };
+    out.gst_estimate = { month: monthLabel(lastGst.month), output_tax: inr(lastGst.output_tax), input_tax: inr(lastGst.input_tax), net_payable: inr(lastGst.net_payable_estimate), usual_due_date: dayStr(due, true), note: `Estimate from the tax ledgers in ${SRC(ctx)}, not the GST portal. Your CA files the actual return.` };
   }
   const later = (ctx.future || []).filter((v) => !v.is_cancelled && (v.entries || []).some((e) => e && ['bank', 'cash', 'bank_od'].includes(ctx.cls(e.ledger))));
   if (later.length) {
     const tot = later.reduce((t, v) => t + Math.abs(num(v.amount)), 0);
     out.entered_for_later_dates = {
       total: inr(tot), count: later.length,
-      note: 'Already entered in Tally with a future date (for example loan EMIs entered in advance). Not taken out of today\'s balances; they will be on their dates.',
+      note: 'Already entered in ' + SRC(ctx) + ' with a future date (for example loan EMIs entered in advance). Not taken out of today\'s balances; they will be on their dates.',
       items: later.slice(0, 12).map((v) => ({ date: dayStr(A.parseDate(v.date), true), amount: inr(Math.abs(num(v.amount))), what: v.narration ? String(v.narration).slice(0, 60) : v.voucher_type }))
     };
   }
   out.notes = [
-    'Balances use Tally\'s figure where it sent one; otherwise the opening balance plus this year\'s entries.',
-    later.length ? 'Balances are as of today: entries Tally already has for later dates are not counted yet.' : null,
-    misfiled.length ? misfiled.join(', ') + ' is filed under income in Tally but is interest you paid, so it\'s counted here. Worth asking your accountant to move it under expenses.' : null,
+    'Balances use the figure ' + SRC(ctx) + ' sent where there is one; otherwise the opening balance plus this year\'s entries.',
+    later.length ? 'Balances are as of today: entries ' + SRC(ctx) + ' already has for later dates are not counted yet.' : null,
+    misfiled.length ? misfiled.join(', ') + ' is filed under income in ' + SRC(ctx) + ' but is interest you paid, so it\'s counted here. Worth asking your accountant to move it under expenses.' : null,
     loans.some((x) => /o\.?\s?d|overdraft|cash credit/i.test(x.name + ' ' + (x.group || ''))) ? 'The business runs on an overdraft. Margyn doesn\'t know the overdraft limit, so it can\'t say how much headroom is left; cash alone understates what you can draw.' : null
   ].filter(Boolean);
   return out;
@@ -988,7 +994,7 @@ function insights(ctx) {
   // Sync freshness first: everything else depends on it.
   if (ctx.lastSync) {
     const hrs = (ctx.now - new Date(ctx.lastSync)) / 3600000;
-    if (hrs > 26) push({ key: 'stale:' + String(ctx.lastSync).slice(0, 10), kind: 'stale', severity: 'high', title: `Tally hasn't synced since ${dayStr(new Date(new Date(ctx.lastSync).getTime() + 5.5 * 3600000), true)}.`, detail: 'Is the Tally PC switched on with Tally and the Margyn agent running? Until it syncs, new sales, receipts and payments are missing here.', action: 'Switch on the Tally PC and open Tally.', ask: 'When did Tally last sync?' });
+    if (hrs > 26) push({ key: 'stale:' + String(ctx.lastSync).slice(0, 10), kind: 'stale', severity: 'high', title: `${SRC(ctx)} hasn't synced since ${dayStr(new Date(new Date(ctx.lastSync).getTime() + 5.5 * 3600000), true)}.`, detail: 'Is the Tally PC switched on with Tally and the Margyn agent running? Until it syncs, new sales, receipts and payments are missing here.', action: 'Switch on the Tally PC and open Tally.', ask: 'When did Tally last sync?' });
   }
 
   // Overdue money, split the way an accountant would: "slipping" (1-30 days past due, usually a reminder) is not
@@ -1017,7 +1023,7 @@ function insights(ctx) {
   const veryOldAmt = recvBills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0);
   if (veryOldAmt >= M / 2) push({ key: 'old_debts', kind: 'old_debts', severity: 'low', impact: veryOldAmt,
     title: `${inr(veryOldAmt)} has been unpaid for over a year.`,
-    detail: veryOld.slice(0, 4).map((g) => `${niceName(g.party)} (${g.oldest} days)`).join(', ') + '. Bills this old are usually disputed, short-paid, or paid but never knocked off in Tally.',
+    detail: veryOld.slice(0, 4).map((g) => `${niceName(g.party)} (${g.oldest} days)`).join(', ') + '. Bills this old are usually disputed, short-paid, or paid but never knocked off in ' + SRC(ctx) + '.',
     action: 'Decide for each with your CA: chase, settle the difference, or write it off.', ask: 'Which bills are more than a year old?' });
 
   // Customers more than a month late, ranked by money x how late (₹2.67 L at 212 days outranks ₹53 L at 11 days).
@@ -1028,7 +1034,7 @@ function insights(ctx) {
     if (g.paidRecently) {
       push({ key: 'short:' + norm(g.party) + ':' + norm(o.ref), kind: 'short_paid', party: g.party, severity: 'low', impact: g.late30,
         title: `${name} paid ${inr(g.paidRecently.amount)} on ${dayStr(g.paidRecently.dt)}, but ${billTxt} is still open, ${o.late} days late.`,
-        detail: 'Usually a short payment, a deduction, or a receipt not set against the right bill in Tally.',
+        detail: 'Usually a short payment, a deduction, or a receipt not set against the right bill in ' + SRC(ctx) + '.',
         action: `Ask your accountant to check ${o.ref ? 'bill ' + o.ref : 'that bill'} against their payment.`, ask: `Tell me about ${g.party}` });
     } else {
       push({ key: 'late:' + norm(g.party), kind: 'late', party: g.party, severity: g.late30 >= 10 * M || o.late > 90 ? 'high' : 'medium', impact: g.late30, score: g.score,
@@ -1116,7 +1122,7 @@ function insights(ctx) {
   // Unfinished month.
   const unb = (an.pnl || []).filter((m) => m.costs_incomplete).slice(-1)[0];
   if (unb) push({ key: 'unbooked:' + unb.month, kind: 'unbooked', severity: 'medium', impact: num(unb.typical_opex) - num(unb.opex),
-    title: `${monthLabel(unb.month)}'s running costs aren't fully in Tally yet.`,
+    title: `${monthLabel(unb.month)}'s running costs aren't fully in ${SRC(ctx)} yet.`,
     detail: `Booked so far ${inr(unb.opex)} against a usual ${inr(unb.typical_opex)}. Salaries and bills are probably still to be entered, so that month's profit looks better than it is.`,
     action: 'Ask your accountant to finish booking the month.', ask: `What did ${monthLabel(unb.month)} look like?` });
 
@@ -1143,8 +1149,8 @@ function insights(ctx) {
   const odd = stats.filter((s) => s.cost != null && s.price != null && s.price > 0 && s.price < 0.25 * s.cost && s.g.value >= 5000);
   for (const s of odd.slice(0, 2)) push({ key: 'unit:' + norm(s.g.item), kind: 'unit_mismatch', severity: 'low', impact: s.g.qty * s.cost - s.g.value,
     title: `${s.g.item} sells at ${inr(s.price)} but costs ${inr(s.cost)} a unit.`,
-    detail: 'That gap is too big to be a discount. Usually the item is bought by the pack and sold by the piece (or the other way round) under one unit in Tally. If it\'s real, it\'s a loss.',
-    action: 'Check the unit on this item in Tally.', ask: `Tell me about ${s.g.item}` });
+    detail: 'That gap is too big to be a discount. Usually the item is bought by the pack and sold by the piece (or the other way round) under one unit in ' + SRC(ctx) + '. If it\'s real, it\'s a loss.',
+    action: 'Check the unit on this item in ' + SRC(ctx) + '.', ask: `Tell me about ${s.g.item}` });
 
   // GST due.
   const cur = isoDay(ctx.today).slice(0, 7);
@@ -1155,7 +1161,7 @@ function insights(ctx) {
     const left = Math.round((due - ctx.today) / DAY);
     if (left >= 0 && left <= 20) push({ key: 'gst:' + lastGst.month, kind: 'gst_due', severity: left <= 7 ? 'high' : 'medium', impact: num(lastGst.net_payable_estimate),
       title: `GST for ${monthLabel(lastGst.month)} looks like about ${inr(lastGst.net_payable_estimate)}, usually due ${dayStr(due)}.`,
-      detail: 'Estimate from your Tally tax ledgers (output less input). Your CA\'s return is the real figure.',
+      detail: 'Estimate from your ' + SRC(ctx) + ' tax ledgers (output less input). Your CA\'s return is the real figure.',
       action: 'Keep the cash ready.', ask: 'How much GST do I owe?' });
   }
 

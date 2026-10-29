@@ -8,61 +8,32 @@
  *   - NEVER throws into a product code path. Any failure is swallowed +
  *     console.error'd. A tracking outage must not break a sync / a chat / a
  *     webhook.
- *   - Unknown event names are dropped silently (allowlist below mirrors the
- *     CHECK constraint in the migration).
- *   - props is shape metadata only. Callers must not pass raw message text,
- *     bank account numbers, PAN/Aadhaar, full webhook bodies. This helper does
- *     a last-ditch strip of obviously-unsafe keys but the caller owns this.
+ *   - Unknown event names are dropped silently. The allowlist of names AND
+ *     of each event's properties lives in ./eventSchema.js (mirrors the
+ *     product_events_name_allowlist CHECK in the migrations).
+ *   - props is counts and metadata only. Any key the schema does not list
+ *     for that event, or any value that is not the listed type (enum / bool /
+ *     count / slug), is dropped here — so amounts, party names, GSTINs, free
+ *     text, emails and phone numbers cannot reach the table even if a caller
+ *     passes them by mistake.
  *
  * Zero-npm: uses the shared PostgREST helper, plain fetch() underneath.
  */
 
 const { insertRows } = require('./supabaseRest');
+const { EVENT_NAMES, sanitizeEventProps } = require('./eventSchema');
 
-const ALLOWED_NAMES = new Set([
-  'app_open',
-  'connector_sync_manual',
-  'reconcile_run',
-  'reconcile_summary_view',
-  'mismatch_opened',
-  'mismatch_resolved_marked',
-  'ask_message_sent',
-  'whatsapp_inbound',
-  'whatsapp_outbound',
-  'tally_agent_sync',
-  'briefing_opened',
-  'question_asked',     // { channel, topic, answered }: the question index, no words
-  'watch_sent'          // { kind, mode, via }: a Margyn Watch message went out
-]);
+const ALLOWED_NAMES = new Set(EVENT_NAMES);
 
-// Keys we refuse to persist even if a caller passes them by mistake.
-const BLOCKED_PROP_KEYS = new Set([
-  'text', 'body', 'message', 'msg', 'content', 'raw', 'raw_payload', 'payload',
-  'account_number', 'account_no', 'bank_account', 'pan', 'aadhaar', 'phone',
-  'from_phone', 'email'
-]);
-
-function sanitizeProps(props) {
-  if (!props || typeof props !== 'object' || Array.isArray(props)) return {};
-  const out = {};
-  for (const [k, v] of Object.entries(props)) {
-    if (BLOCKED_PROP_KEYS.has(k.toLowerCase())) continue;
-    if (v === null || v === undefined) continue;
-    if (typeof v === 'string') {
-      // never store anything long enough to be a message body
-      out[k] = v.length > 120 ? v.slice(0, 120) : v;
-    } else if (typeof v === 'number' || typeof v === 'boolean') {
-      out[k] = v;
-    }
-    // objects / arrays are dropped — props is flat shape metadata only
-  }
-  return out;
+/** Back-compat name: sanitizeProps(name, props) -> the schema-filtered props. */
+function sanitizeProps(name, props) {
+  return sanitizeEventProps(name, props);
 }
 
 /**
  * @param {string} userId  auth.users.id of the partner the event belongs to
  * @param {string} name     one of ALLOWED_NAMES
- * @param {object} [props]   flat shape metadata, e.g. { pair: 'razorpay_shopify' }
+ * @param {object} [props]   flat metadata listed for this event in eventSchema.js
  * @returns {Promise<void>}  always resolves
  */
 async function track(userId, name, props) {
@@ -71,11 +42,11 @@ async function track(userId, name, props) {
     await insertRows('product_events', [{
       user_id: userId,
       name,
-      props: sanitizeProps(props)
+      props: sanitizeProps(name, props)
     }]);
   } catch (err) {
     console.error(`track(${name}) failed:`, err && err.message);
   }
 }
 
-module.exports = { track, ALLOWED_NAMES };
+module.exports = { track, ALLOWED_NAMES, sanitizeProps };

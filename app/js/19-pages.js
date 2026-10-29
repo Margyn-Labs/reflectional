@@ -564,21 +564,25 @@ function mgRenderGst(){
   const host = document.getElementById('view-gst'); if(!host) return;
   const s = (snapshots || [])[0] || null, p0 = (snapshots || [])[1] || null;
   let z = null; try { z = zohoConnected && zohoVitals ? zohoVitals : null; } catch(e){}
-  const g = z && z.gst_leakage ? z.gst_leakage : null;
-  const vendors = (z && z.gst_top_at_risk_vendors) || [];
+  // GSTR-2B is fail-closed on the server (api/_lib/gstr2bGate.js): gst_leakage comes back null with
+  // gstr2b.available === false until it has really been read. Show "Not available", never ₹0.
+  const g = z && z.gst_leakage && z.gst_leakage.total_leakage != null ? z.gst_leakage : null;
+  const g2bOff = !!z && !g;
+  const g2bWhy = g2bOff ? ((z.gstr2b && z.gstr2b.message) || 'GSTR-2B has not been read from Zoho Books yet.') : '';
+  const vendors = (g && z.gst_top_at_risk_vendors) || [];
   let acts = []; try { acts = ((agentActions && agentActions.actions) || []).filter(a => a.kind === 'itc_risk'); } catch(e){}
   const tiles = '<div class="mg-tiles four">' +
     (() => { const G = mgGstFig(s, 'gst_payable');
       return mgTile({ label:'GST payable this month', value:G.known ? fmtINR(G.v, 'tile') : 'n/a', full:G.known ? fmtINR(G.v) : '', delta:G.known && p0 && mgGstFig(p0, 'gst_payable').known ? mgPct(G.v, Number(p0.gst_payable)) : null, goodUp:false, src:G.src, go:'gst' }); })() +
     (() => { const L = mgGstFig(s, 'gst_leak');
-      return mgTile({ label:'Input credit at risk', value:g ? fmtINR(g.total_leakage, 'tile') : (L.known ? fmtINR(L.v, 'tile') : 'n/a'), full:g ? fmtINR(g.total_leakage) : '', note:vendors.length ? vendors.length + ' vendor' + (vendors.length === 1 ? '' : 's') + ' behind it' : '', src:g ? 'GSTR-2B against Zoho Books' : L.src, go:'gst' }); })() +
-    mgTile({ label:'Vendors not filed', value:g ? String(g.vendors_not_filed || 0) : 'n/a', note:g ? 'GSTR-1 for ' + (g.filing_period || 'this period') : '', src:g ? 'GSTR-2B against Zoho Books' : 'Needs Zoho Books', go:'gst' }) +
-    mgTile({ label:'Share of ITC at risk', value:g && g.leakage_pct != null ? Number(g.leakage_pct).toFixed(1) + '%' : 'n/a', note:g ? 'of input credit claimed' : '', src:g ? 'GSTR-2B against Zoho Books' : 'Needs Zoho Books', go:'gst' }) + '</div>';
+      return mgTile({ label:'Input credit at risk', value:g ? fmtINR(g.total_leakage, 'tile') : (L.known ? fmtINR(L.v, 'tile') : 'Not available'), full:g ? fmtINR(g.total_leakage) : '', note:vendors.length ? vendors.length + ' vendor' + (vendors.length === 1 ? '' : 's') + ' behind it' : (g2bOff && !L.known ? g2bWhy : ''), src:g ? 'GSTR-2B against Zoho Books' : L.src, go:'gst' }); })() +
+    mgTile({ label:'Vendors not filed', value:g ? String(g.vendors_not_filed || 0) : 'Not available', note:g ? 'GSTR-1 for ' + (g.filing_period || 'this period') : '', src:g ? 'GSTR-2B against Zoho Books' : (g2bOff ? 'GSTR-2B not read yet' : 'Needs Zoho Books'), go:'gst' }) +
+    mgTile({ label:'Share of ITC at risk', value:g && g.leakage_pct != null ? Number(g.leakage_pct).toFixed(1) + '%' : 'Not available', note:g ? 'of input credit claimed' : '', src:g ? 'GSTR-2B against Zoho Books' : (g2bOff ? 'GSTR-2B not read yet' : 'Needs Zoho Books'), go:'gst' }) + '</div>';
   host.innerHTML = mgPageHead({ group:'Money', title:'GST and tax', scope:mgScopeText(g ? 'Zoho Books' : 'Reconciled'), sub:'GSTR-2B against your books, and the input credit at risk vendor by vendor.' }) + tiles +
     '<div class="mg-panel"><div class="mg-panel-h"><h2>Input credit at risk, by vendor</h2><span class="mg-aside">' + (g ? escapeHtml('Filing period ' + (g.filing_period || '')) : '') + '</span></div>' +
     (vendors.length ? '<div class="mg-gridwrap"><table class="mg-grid comfy"><thead><tr><th>Vendor</th><th>GSTIN</th><th class="r">At risk (₹)</th></tr></thead><tbody>' +
       vendors.map(v => '<tr><td>' + escapeHtml(v.vendor_name || '—') + '</td><td class="mg-mono">' + escapeHtml(v.vendor_gstin || '') + '</td><td class="r">' + mgNum(v.at_risk) + '</td></tr>').join('') + '</tbody></table></div>'
-      : '<div class="mg-empty">' + (z ? 'No vendor has credit at risk this period.' : 'Connect Zoho Books to match GSTR-2B against your books.') + '</div>') + '</div>' +
+      : '<div class="mg-empty">' + (g ? 'No vendor has credit at risk this period.' : z ? 'Input credit at risk is not available. ' + escapeHtml(g2bWhy) : 'Connect Zoho Books to match GSTR-2B against your books.') + '</div>') + '</div>' +
     (acts.length ? '<div class="mg-panel"><div class="mg-panel-h"><h2>Waiting on your decision</h2><button class="mg-link mg-aside" type="button" data-go-page="inbox">Open in Inbox →</button></div>' +
       acts.map(a => '<div class="mg-li"><div><div class="mg-li-t">' + escapeHtml(a.title) + '</div><div class="mg-li-s">' + escapeHtml(a.rationale || '') + '</div></div><div class="mg-li-a">' + escapeHtml(fmtINR(a.amount)) + '</div></div>').join('') + '</div>' : '');
 }

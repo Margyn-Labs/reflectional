@@ -1,0 +1,10 @@
+{
+  "_note": "GET /books/v3/bankaccounts.",
+  "code": 0,
+  "message": "success",
+  "bankaccounts": [
+    { "account_id": "460000000099001", "account_name": "HDFC Current", "account_code": "", "currency_id": "4600000000000000099", "currency_code": "INR", "account_type": "bank", "uncategorized_transactions": 3, "is_active": true, "balance": 2100000.0, "bank_name": "HDFC Bank", "routing_number": "", "is_primary_account": true, "is_paypal_account": false },
+    { "account_id": "460000000099002", "account_name": "Petty Cash", "currency_code": "INR", "account_type": "cash", "is_active": true, "balance": 15000.0, "bank_name": "", "is_primary_account": false }
+  ],
+  "page_context": { "page": 1, "per_page": 200, "has_more_page": false }
+}

@@ -80,7 +80,7 @@
     cash: {
       label: 'Cash position', aliases: ['cash', 'bank balance', 'cash balance', 'how much cash'],
       what: 'Money you can spend today: bank and cash-in-hand, not borrowed money.',
-      formula: 'Tally: the closing balances of every ledger under Bank Accounts or Cash-in-Hand (and sweep deposits), added up. Overdraft, cash credit and loan ledgers are left out: that is borrowed money. Zoho Books: the bank balance Zoho reports (only when your plan has bank feeds). Odoo: its liquidity accounts.',
+      formula: 'Tally: the closing balances of every ledger under Bank Accounts or Cash-in-Hand (and sweep deposits), added up. Overdraft, cash credit and loan ledgers are left out: that is borrowed money. Zoho Books: the balances of the bank, cash and card accounts Zoho reports. Odoo: its liquidity accounts.',
       inputs: ['cash'],
       notes: ['Tally exports sometimes flip the sign of bank balances. Margyn takes the sign most of your bank ledgers carry as "in credit" and treats the rest as overdrawn.', 'Negative or implausible cash is usually a sync or sign issue, not reality: check the ledgers on the Cash page.', SRC],
       code: '15-scoring.js tallyCashBalance, tallyLiquidLedgers, zohoInputCandidates', page: 'cash'
@@ -95,7 +95,7 @@
     revenue: {
       label: 'Monthly revenue', aliases: ['revenue', 'sales', 'monthly sales', 'turnover'],
       what: 'Sales in a typical month, before GST.',
-      formula: 'Tally: the average over up to six closed months of net sales (sales − sales returns), before GST. If there is no monthly P&L yet, sales in the last 30 days. Zoho Books: income.',
+      formula: 'Tally: the average over up to six closed months of net sales (sales − sales returns), before GST. If there is no monthly P&L yet, sales in the last 30 days. Zoho Books: income after credit notes, before GST.',
       inputs: ['revenue'],
       notes: ['For any exact period ("sales in August", "this year") the books tools add up every Tally entry instead.'],
       code: '15-scoring.js tallyInputCandidates; tallyAnalytics.js net_sales', page: 'margin'
@@ -103,7 +103,7 @@
     net_profit: {
       label: 'Net profit', aliases: ['profit', 'net profit', 'monthly profit'],
       what: 'What is left after every cost, per month.',
-      formula: 'Tally: net sales + direct income − (purchases + direct expenses) + other income − running costs, averaged over up to six closed months. This is before the stock adjustment, so a month you bought ahead for stock looks worse than it is. Zoho Books: income − (cost of goods + operating expenses).',
+      formula: 'Tally: net sales + direct income − (purchases + direct expenses) + other income − running costs, averaged over up to six closed months. This is before the stock adjustment, so a month you bought ahead for stock looks worse than it is. Zoho Books: the same, from Zoho\'s postings: income (operating and other, after credit notes) − (cost of goods + operating and other expenses), as Zoho\'s own Profit and Loss adds it up.',
       inputs: ['netProfit'],
       code: 'tallyAnalytics.js net_profit_pre_stock; 15-scoring.js zohoInputCandidates', page: 'margin'
     },

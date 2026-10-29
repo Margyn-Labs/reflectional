@@ -1,0 +1,12 @@
+{
+  "_note": "GET /books/v3/chartofaccounts (trimmed to the account types the sync cares about).",
+  "code": 0,
+  "message": "success",
+  "chartofaccounts": [
+    { "account_id": "460000000000501", "account_name": "Sales", "account_type": "income", "is_active": true, "is_user_created": false, "is_system_account": true },
+    { "account_id": "460000000000502", "account_name": "Cost of Goods Sold", "account_type": "cost_of_goods_sold", "is_active": true },
+    { "account_id": "460000000000503", "account_name": "Rent Expense", "account_type": "expense", "is_active": true },
+    { "account_id": "460000000099001", "account_name": "HDFC Current", "account_type": "bank", "is_active": true }
+  ],
+  "page_context": { "page": 1, "per_page": 200, "has_more_page": false }
+}

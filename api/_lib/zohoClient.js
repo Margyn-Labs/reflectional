@@ -44,7 +44,11 @@ const SCOPES = [
   'ZohoBooks.vendorpayments.READ',
   'ZohoBooks.banking.READ',
   'ZohoBooks.settings.READ',
-  'ZohoBooks.contacts.READ'
+  'ZohoBooks.contacts.READ',
+  // Chart of accounts + account transactions (net margin). Without it
+  // chartofaccounts returns code 57, the module is skipped, and there are
+  // no P&L accounts to pull postings for (found live, 29 Oct 2026).
+  'ZohoBooks.accountants.READ'
 ].join(',');
 
 /**
@@ -394,13 +398,16 @@ function createSession(org) {
    * injected here so no caller can forget it.
    */
   async function apiGet(path, query = {}) {
-    const token = await getAccessToken();
+    let token = await getAccessToken();
     const params = new URLSearchParams({
       organization_id: org.organization_id,   // required on EVERY Zoho Books call
       ...query
     });
     const url = `${org.api_domain}/${path.replace(/^\/+/, '')}?${params.toString()}`;
 
+    // One token refresh per call. The retry after it goes back through this
+    // same loop, so a 429/5xx right after the refresh still gets the backoff.
+    let refreshed = false;
     let lastError;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       let res;
@@ -421,16 +428,20 @@ function createSession(org) {
 
       if (res.status === 401 || res.status === 403) {
         const body = await res.text().catch(() => '');
+        // classifyZohoAuthStatus splits "the grant is dead" (ZohoAuthError ->
+        // needs_reauth) from "this org/role can't see this one module"
+        // (ZohoModuleUnavailable, Zoho code 57 -> skip the module, keep the
+        // connection).
         const classified = classifyZohoAuthStatus(res.status, body, path);
-        // A role/plan permission block on one module — skip it, don't touch
-        // the connection. (Zoho code 57, e.g. chartofaccounts on a limited role.)
         if (classified instanceof ZohoModuleUnavailable) throw classified;
         // Genuine token failure: refresh once and retry, then give up.
-        if (res.status === 401 && attempt < MAX_RETRIES) {
+        if (res.status === 401 && !refreshed) {
+          refreshed = true;
           state.accessToken = null;
           state.obtainedAt = 0;
-          const fresh = await getAccessToken();
-          return apiGetWithToken(url, fresh, path);
+          token = await getAccessToken();
+          attempt--;   // the refresh retry does not use up a backoff slot
+          continue;
         }
         throw classified;
       }
@@ -460,24 +471,6 @@ function createSession(org) {
       return res.json();
     }
     throw lastError || new Error('Zoho request failed after retries');
-  }
-
-  async function apiGetWithToken(url, token, path) {
-    state.calls++;
-    const res = await fetch(url, {
-      headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' }
-    });
-    // 401/403 with a *freshly refreshed* token. classifyZohoAuthStatus splits
-    // "the grant is dead" (ZohoAuthError -> needs_reauth) from "this org/role
-    // can't see this one module" (ZohoModuleUnavailable -> skip module, keep
-    // the connection). Before this split, a code-57 permission block on e.g.
-    // chartofaccounts flipped the whole connection to needs_reauth.
-    if (res.status === 401 || res.status === 403) {
-      const body = await res.text().catch(() => '');
-      throw classifyZohoAuthStatus(res.status, body, path || url);
-    }
-    if (!res.ok) throw new Error(`Zoho retry returned ${res.status} at ${path || url}`);
-    return res.json();
   }
 
   /**

@@ -384,15 +384,20 @@ const VX_TOOLS = {
   get_gst(){
     const s = (snapshots || [])[0] || null;
     let z = null; try { z = zohoConnected && zohoVitals ? zohoVitals : null; } catch(e){}
-    const g = z && z.gst_leakage ? z.gst_leakage : null;
+    // Fail-closed GSTR-2B (api/_lib/gstr2bGate.js): no figure means "not available", never ₹0.
+    const g = z && z.gst_leakage && z.gst_leakage.total_leakage != null ? z.gst_leakage : null;
     const out = { gst_payable_this_month:s ? vxInr(s.gst_payable) : null };
-    if(g){
+    if(z && !g){
+      out.itc_at_risk = s && s.gst_leak != null ? vxInr(s.gst_leak) : 'not available';
+      out.itc_at_risk_from_gstr2b = 'not available';
+      out.note = ((z.gstr2b && z.gstr2b.message) || 'GSTR-2B has not been read from Zoho Books yet.') + (s && s.gst_leak != null ? ' The figure shown is self-reported.' : ' Do not state or imply a figure, including zero.');
+    } else if(g){
       out.itc_at_risk = vxInr(g.total_leakage); out.vendors_not_filed = g.vendors_not_filed || 0;
       out.share_of_itc_at_risk_pct = g.leakage_pct != null ? Number(g.leakage_pct).toFixed(1) : null; out.filing_period = g.filing_period || null;
       out.vendors_behind_it = ((z.gst_top_at_risk_vendors) || []).slice(0, 8).map(v => ({ vendor:v.vendor_name, at_risk:vxInr(v.at_risk) }));
       out.source = 'GSTR-2B against Zoho Books';
     } else {
-      out.itc_at_risk = s ? vxInr(s.gst_leak) : null;
+      out.itc_at_risk = s && s.gst_leak != null ? vxInr(s.gst_leak) : 'not available';
       out.note = 'Vendor-level GST needs Zoho Books connected; this is the self-reported figure.';
     }
     let acts = []; try { acts = ((agentActions && agentActions.actions) || []).filter(a => a.kind === 'itc_risk'); } catch(e){}

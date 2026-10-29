@@ -27,7 +27,7 @@ const TO = { type: 'string', description: 'Custom range end, YYYY-MM-DD.' };
 const TOOLS = [
   {
     name: 'books_summary',
-    description: 'Totals from the Tally books for any period: sales (before and including GST), returns, purchases, gross profit, running costs, profit, money received from customers, money paid out, invoices and customers billed, and a month-by-month table. Use for "what were my sales this year / last month / yesterday", "how much profit", "how did we do in August", "how much came in this week". Covers every synced entry, not a sample.',
+    description: 'Totals from the books (Tally, Zoho Books or Odoo) for any period: sales (before and including GST), returns, purchases, gross profit, running costs, profit, money received from customers, money paid out, invoices and customers billed, and a month-by-month table. Use for "what were my sales this year / last month / yesterday", "how much profit", "how did we do in August", "how much came in this week". Covers every synced entry, not a sample.',
     input_schema: { type: 'object', properties: { period: PERIOD, from: FROM, to: TO }, additionalProperties: false }
   },
   {
@@ -70,7 +70,7 @@ const TOOLS = [
   },
   {
     name: 'money_owed',
-    description: 'Who owes the business money (direction receivable, default) or whom the business owes (payable), from Tally\'s bill-wise outstanding: total, overdue, ageing buckets (not yet due, 1-30, 31-60, 61-90, 91-180, 181-365, over a year late), the largest and most overdue names, bills over a year old, days to get paid, and how much cash 10 days faster collection frees. Use for "who owes me", "who should I chase first", "how much is overdue", "what do I owe suppliers". Optional party narrows to one name.',
+    description: 'Who owes the business money (direction receivable, default) or whom the business owes (payable), from the books\' bill-wise outstanding: total, overdue, ageing buckets (not yet due, 1-30, 31-60, 61-90, 91-180, 181-365, over a year late), the largest and most overdue names, bills over a year old, days to get paid, and how much cash 10 days faster collection frees. Use for "who owes me", "who should I chase first", "how much is overdue", "what do I owe suppliers". Optional party narrows to one name.',
     input_schema: {
       type: 'object',
       properties: { direction: { type: 'string', enum: ['receivable', 'payable'] }, party: { type: 'string' }, top: { type: 'integer' } },
@@ -79,7 +79,7 @@ const TOOLS = [
   },
   {
     name: 'find_entries',
-    description: 'Find individual Tally entries (vouchers): by customer/vendor, ledger, item, type (sales, purchase, receipt, payment, credit_note, debit_note, journal, contra), words in the narration, amount range, voucher number or dates. Returns date, type, number, party, amount, narration and items. Use for "show me payments to X last week", "find the invoice for ₹1,24,500", "what was bill VSI1046", "entries with freight in September", "largest receipts this month" (sort largest).',
+    description: 'Find individual entries (vouchers) in the books: by customer/vendor, ledger, item, type (sales, purchase, receipt, payment, credit_note, debit_note, journal, contra), words in the narration, amount range, voucher number or dates. Returns date, type, number, party, amount, narration and items. Use for "show me payments to X last week", "find the invoice for ₹1,24,500", "what was bill VSI1046", "entries with freight in September", "largest receipts this month" (sort largest).',
     input_schema: {
       type: 'object',
       properties: {
@@ -221,12 +221,12 @@ function realtimeDefs() {
 }
 
 const STEP_LABELS = {
-  books_summary: 'Added up your Tally books',
-  books_breakdown: 'Broke it down from your Tally entries',
-  customer_or_vendor: 'Pulled their history from Tally',
+  books_summary: 'Added up your books',
+  books_breakdown: 'Broke it down from your entries',
+  customer_or_vendor: 'Pulled their history from your books',
   products: 'Worked out product margins',
-  money_owed: 'Read who owes what in Tally',
-  find_entries: 'Searched your Tally entries',
+  money_owed: 'Read who owes what in your books',
+  find_entries: 'Searched your entries',
   cash_and_loans: 'Read cash, loans and interest',
   cash_flow_statement: 'Built the cash flow statement from your entries',
   borrowing_history: 'Traced your overdraft and loans day by day',

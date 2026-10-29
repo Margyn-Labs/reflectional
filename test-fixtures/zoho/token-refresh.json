@@ -1,0 +1,8 @@
+{
+  "_note": "Shape of POST /oauth/v2/token (grant_type=refresh_token). No refresh_token is returned on refresh. access_token is replaced per call by the fake.",
+  "access_token": "1000.refreshed.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "scope": "ZohoBooks.invoices.READ ZohoBooks.bills.READ",
+  "api_domain": "https://www.zohoapis.in",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}

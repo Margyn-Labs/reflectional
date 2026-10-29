@@ -151,6 +151,15 @@ async function updateRows(table, filter, patch) {
   return res.json();
 }
 
+/** Delete rows matching a PostgREST filter string. Callers MUST scope the filter themselves. */
+async function deleteRows(table, filter) {
+  const res = await restRequest(`${table}?${filter}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Delete on ${table} failed: ${res.status} ${text}`);
+  }
+}
+
 /** Select rows matching a PostgREST query string, e.g. "select=*&user_id=eq.<id>". */
 async function selectOnce(table, query) {
   const res = await restRequest(`${table}?${query}`);
@@ -281,6 +290,7 @@ module.exports = {
   restRequest,
   insertRows,
   updateRows,
+  deleteRows,
   selectRows,
   selectAllRows,
   accountFor,

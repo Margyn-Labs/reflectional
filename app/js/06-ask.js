@@ -435,6 +435,7 @@ function buildMargynContext(focusLabel){
     payables: zohoVitals.payables || null,
     cash_position: zohoVitals.cash_position || null,
     gst_leakage: zohoVitals.gst_leakage || null,
+    gstr2b: zohoVitals.gstr2b || null, // { available:false, message } -> "ITC at risk: not available", never 0
     net_margin: zohoVitals.net_margin || null,
     working_capital_runway: zohoVitals.working_capital_runway || null,
     top_overdue_customers: zohoVitals.top_overdue_customers || null,

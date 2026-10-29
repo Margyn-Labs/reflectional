@@ -243,10 +243,16 @@ function renderZohoBooksTab(){
   zvFlag('zvPayFlag', crunch ? 'bad' : (Number(p.overdue) > 0 ? 'warn' : 'ok'),
          crunch ? 'Shortfall this week' : (Number(p.overdue) > 0 ? inr(p.overdue) + ' overdue' : inr(p.due_this_week) + ' due this week'));
 
-  zvSet('zvGstVal', inr(g.total_leakage));
-  const leakPct = Number(g.leakage_pct) || 0;
-  zvFlag('zvGstFlag', leakPct > 15 ? 'bad' : (leakPct > 0 ? 'warn' : 'ok'),
-         leakPct > 0 ? leakPct + '% of claimed ITC' : 'Nothing at risk');
+  // GSTR-2B is fail-closed (api/_lib/gstr2bGate.js): no figure is "Not available", never ₹0 / "Nothing at risk".
+  if(g.total_leakage == null || !isFinite(Number(g.total_leakage))){
+    zvSet('zvGstVal', 'Not available');
+    zvFlag('zvGstFlag', 'warn', 'GSTR-2B not read yet');
+  } else {
+    zvSet('zvGstVal', inr(g.total_leakage));
+    const leakPct = Number(g.leakage_pct) || 0;
+    zvFlag('zvGstFlag', leakPct > 15 ? 'bad' : (leakPct > 0 ? 'warn' : 'ok'),
+           leakPct > 0 ? leakPct + '% of claimed ITC' : 'Nothing at risk');
+  }
 
   zvSet('zvMarginVal', (m.net_margin_pct !== null && m.net_margin_pct !== undefined) ? m.net_margin_pct + '%' : '—');
   zvSet('zvRunwayVal', (w.runway_days !== null && w.runway_days !== undefined) ? Math.round(w.runway_days) + ' days' : '—');

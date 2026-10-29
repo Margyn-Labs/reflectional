@@ -19,6 +19,12 @@
  * ZOHO_GSTR2B_PATH, and a 404/plan error is treated as "not available for
  * this org" rather than a sync failure. Validate the real path against a
  * sandbox org before pilot use.
+ *
+ * FAIL CLOSED (2026-10-29): until ZOHO_GSTR2B_VALIDATED=1 is set, this sync
+ * does not call Zoho at all. It records last_run_status='not_available' in
+ * zoho_sync_state and a 'skipped' connector_logs line, and every reader
+ * (api/_lib/gstr2bGate.js) shows ITC at risk as "Not available" — never an
+ * empty table summed to ₹0.
  */
 
 const {
@@ -36,6 +42,8 @@ const {
   ZohoAuthError,
   ZohoModuleUnavailable
 } = require('../_lib/zohoClient');
+const { gstr2bValidated } = require('../_lib/gstr2bGate');
+const { track } = require('../_lib/track');
 
 const GSTR2B_PATH = process.env.ZOHO_GSTR2B_PATH || 'books/v3/gstreports/2b/reconciliation';
 const PERIODS_TO_SYNC = 3;   // current + 2 prior filing periods (covers late vendor filings)
@@ -89,6 +97,30 @@ async function syncGstr2bForUser(userId) {
 
   if (!org) {
     return { status: 'error', message: 'Zoho Books not connected' };
+  }
+
+  // Fail closed: the endpoint path is unvalidated, so don't call it and don't
+  // write anything that a reader could sum to 0.
+  if (!gstr2bValidated()) {
+    await setSyncCursor(org.id, 'gstr2b', new Date().toISOString(), 'not_available');
+    // status 'success' + a reason code, same shape as the module-unavailable
+    // path below: a deliberate skip is not a sync failure (ops-metrics counts
+    // status='error' as one).
+    await logConnectorEvent({
+      userId, connectorType: 'zoho_books', operation: 'sync_gstr2b',
+      status: 'success', errorMessage: 'gstr2b_not_validated',
+      recordsSynced: 0, syncDurationMs: Date.now() - startedAt
+    });
+    await track(userId, 'zoho_gstr2b_sync', { ok: false, state: 'not_available', error_code: 'gstr2b_not_validated', rows_synced: 0, periods: 0 });
+    return {
+      status: 'skipped',
+      state: 'not_available',
+      reason: 'gstr2b_not_validated',
+      org_ref: org.id,
+      records_synced: 0,
+      module_unavailable: true,
+      duration_ms: Date.now() - startedAt
+    };
   }
 
   // Map Zoho bill_id -> our zoho_bills.id so bill_ref resolves.
@@ -159,6 +191,14 @@ async function syncGstr2bForUser(userId) {
       : (errors.length ? errors.join('; ') : null),
     recordsSynced: totalRows,
     syncDurationMs: Date.now() - startedAt
+  });
+
+  await track(userId, 'zoho_gstr2b_sync', {
+    ok: status !== 'error' && !unavailable,
+    state: unavailable ? 'not_available' : status,
+    error_code: unavailable ? 'module_unavailable' : (errors.length ? 'module_errors' : 'none'),
+    rows_synced: totalRows,
+    periods: periods.length
   });
 
   return {

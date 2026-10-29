@@ -1,0 +1,9 @@
+{
+  "_note": "GET /books/v3/organizations for an Indian (INR) login with two orgs.",
+  "code": 0,
+  "message": "success",
+  "organizations": [
+    { "organization_id": "60012345678", "name": "Northwind Trading Co.", "contact_name": "Owner", "email": "owner@example.in", "is_default_org": true, "plan_type": 1, "plan_name": "Standard", "currency_id": "4600000000000000099", "currency_code": "INR", "currency_symbol": "₹", "country": "India", "time_zone": "Asia/Calcutta", "is_org_active": true },
+    { "organization_id": "60087654321", "name": "Northwind Exports LLP", "contact_name": "Owner", "email": "owner@example.in", "is_default_org": false, "plan_type": 0, "plan_name": "Free", "currency_code": "INR", "country": "India", "is_org_active": true }
+  ]
+}
