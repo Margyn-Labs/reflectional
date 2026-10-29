@@ -71,13 +71,16 @@ function partyType(primaryGroup, parent) {
  * Plan the writes.
  * @param ledgers  [{ tally_guid, name, primary_group, parent, contact }]
  * @param parties  existing ledger_parties rows for the account
+ * @param opts     { source: 'tally', refKey: 'tally_guid' }: Zoho Books contacts come through here too
+ *                 (zohoParties.js: source 'zoho', refKey 'zoho_contact_id', a `type` on each ledger)
  * @returns {{ inserts: object[], updates: {id, patch}[] }}
  */
-function planPartyWrites(ledgers, parties, userId) {
+function planPartyWrites(ledgers, parties, userId, opts) {
+  const source = (opts && opts.source) || 'tally', refKey = (opts && opts.refKey) || 'tally_guid';
   const byGuid = new Map(), byGstin = new Map(), byName = new Map();
   for (const p of parties || []) {
     const refs = p.external_refs || {};
-    if (refs.tally_guid) byGuid.set(refs.tally_guid, p);
+    if (refs[refKey]) byGuid.set(refs[refKey], p);
     if (p.gstin) byGstin.set(String(p.gstin).toUpperCase(), p);
     const k = normName(p.name);
     if (k && !byName.has(k)) byName.set(k, p);
@@ -85,14 +88,14 @@ function planPartyWrites(ledgers, parties, userId) {
 
   const inserts = [], updates = [], touched = new Set();
   for (const l of ledgers || []) {
-    const type = partyType(l.primary_group, l.parent);
+    const type = l.type || partyType(l.primary_group, l.parent);
     const c = cleanContact(l.contact);
     if (!type || !c || !l.name) continue;
     const want = {
       phone: bestPhone(c), email: c.email || null, gstin: c.gstin || null, address: c.address || null,
       state: c.state || null, pincode: c.pincode || null, pan: c.pan || (c.gstin ? c.gstin.slice(2, 12) : null)
     };
-    const found = (l.tally_guid && byGuid.get(l.tally_guid)) || (want.gstin && byGstin.get(want.gstin)) || byName.get(normName(l.name));
+    const found = (l[refKey] && byGuid.get(l[refKey])) || (want.gstin && byGstin.get(want.gstin)) || byName.get(normName(l.name));
 
     if (found) {
       if (touched.has(found.id)) continue;
@@ -100,15 +103,15 @@ function planPartyWrites(ledgers, parties, userId) {
       const patch = {};
       for (const f of FIELDS) if (want[f] && !String(found[f] || '').trim()) patch[f] = want[f];
       const refs = Object.assign({}, found.external_refs || {});
-      if (l.tally_guid && refs.tally_guid !== l.tally_guid) { refs.tally_guid = l.tally_guid; patch.external_refs = refs; }
+      if (l[refKey] && refs[refKey] !== l[refKey]) { refs[refKey] = l[refKey]; patch.external_refs = refs; }
       if (found.type && found.type !== type && found.type !== 'both') patch.type = 'both';
       if (Object.keys(patch).length) updates.push({ id: found.id, patch });
       continue;
     }
 
     if (!want.phone && !want.email) continue;
-    const row = { user_id: userId, name: String(l.name).slice(0, 160), type, opening_balance: 0, source: 'tally',
-      external_refs: l.tally_guid ? { tally_guid: l.tally_guid } : {} };
+    const row = { user_id: userId, name: String(l.name).slice(0, 160), type, opening_balance: 0, source,
+      external_refs: l[refKey] ? { [refKey]: l[refKey] } : {} };
     for (const f of FIELDS) row[f] = want[f];
     inserts.push(row);
     // a second ledger with the same name in this batch updates, never duplicates
@@ -128,21 +131,25 @@ async function syncTallyPartyContacts(userId, ledgers) {
     if (!withContact.length) return { inserted: 0, updated: 0 };
     const parties = await selectRows('ledger_parties',
       `select=id,name,type,phone,email,gstin,address,state,pincode,pan,external_refs&user_id=eq.${userId}&limit=5000`);
-    const { inserts, updates } = planPartyWrites(withContact, parties, userId);
-    let inserted = 0, updated = 0;
-    for (let i = 0; i < inserts.length; i += 500) {
-      await insertRows('ledger_parties', inserts.slice(i, i + 500));
-      inserted += Math.min(500, inserts.length - i);
-    }
-    for (const u of updates) {
-      await updateRows('ledger_parties', `id=eq.${u.id}&user_id=eq.${userId}`, Object.assign({ updated_at: new Date().toISOString() }, u.patch));
-      updated++;
-    }
-    return { inserted, updated };
+    return await writePartyPlan(userId, planPartyWrites(withContact, parties, userId));
   } catch (e) {
     console.error('[tallyParties] contact sync failed:', e.message);
     return { error: e.message };
   }
 }
 
-module.exports = { planPartyWrites, syncTallyPartyContacts, cleanContact, bestPhone, indianMobile, partyType, normName };
+/** Apply a planPartyWrites result. Throws on a failed write (callers catch). */
+async function writePartyPlan(userId, { inserts, updates }) {
+  let inserted = 0, updated = 0;
+  for (let i = 0; i < inserts.length; i += 500) {
+    await insertRows('ledger_parties', inserts.slice(i, i + 500));
+    inserted += Math.min(500, inserts.length - i);
+  }
+  for (const u of updates) {
+    await updateRows('ledger_parties', `id=eq.${u.id}&user_id=eq.${userId}`, Object.assign({ updated_at: new Date().toISOString() }, u.patch));
+    updated++;
+  }
+  return { inserted, updated };
+}
+
+module.exports = { planPartyWrites, writePartyPlan, syncTallyPartyContacts, cleanContact, bestPhone, indianMobile, partyType, normName };

@@ -556,7 +556,30 @@ function chaseItemsFromPosition(groups) {
   return { items, openIds };
 }
 
+/* ------------------------------------------------------------------ */
+/* Preview (2026-10-29)                                                */
+/* ------------------------------------------------------------------ */
+// whatsapp_chases.error on a reminder an account with external sends off didn't send (status 'skipped').
+const PREVIEW_NOTE = 'preview: not sent (external sends are off for this account)';
+const isPreviewChase = (row) => !!row && (row.wa_message_id === 'preview-not-sent' || /^preview:/.test(String(row.error || '')));
+
+/** A chase target's next reminder, drafted exactly as the 10:30 run would send it. Sends nothing. */
+function previewNextChase(t, config, businessName) {
+  const n = Number(t.chases_sent) || 0;
+  const c = mergeConfig(config);
+  const tier = resolveTier(n, t.due_date || null, c, Number(t.broken_promise_count) || 0);
+  const msg = buildChaseMessage({ tier, tonePreset: c.tone_preset, businessName, invoiceRef: t.invoice_ref, amount: t.amount, dueDate: t.due_date });
+  return {
+    target_id: t.id, party: t.party_name || 'Customer', amount: Number(t.amount) || 0, due_date: t.due_date || null,
+    invoice_ref: t.invoice_ref || null, has_phone: !!t.contact_phone, next_chase_at: t.next_chase_at || null,
+    chase_number: n + 1, last: n + 1 > c.max_chases, tier, template_ready: !!msg.templateId, body: msg.body
+  };
+}
+
 module.exports = {
+  PREVIEW_NOTE,
+  isPreviewChase,
+  previewNextChase,
   stableChaseId,
   chaseItemsFromPosition,
   DEFAULT_CONFIG,

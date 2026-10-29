@@ -671,6 +671,11 @@ async function syncZohoForUser(userId, mode) {
   // which is when anything open but untouched for over 12 months would otherwise be missed.
   await sweepDeletedAtSource(session, org, userId, results);
 
+  // Customer and vendor phones/emails into the party master, where Payment Chase looks up numbers (zohoParties.js).
+  // Best-effort: a failed read is logged there and never makes the books sync partial.
+  const contacts = await require('../_lib/zohoParties').syncZohoPartyContacts(session, userId);
+  if (!contacts.error && (contacts.inserted || contacts.updated)) results.contacts_to_parties = contacts.inserted + contacts.updated;
+
   // Persist plan-level flags discovered during the run.
   const orgPatch = {};
   if (flags.indexOf('bank_data_unavailable') !== -1 && !org.bank_data_unavailable) {

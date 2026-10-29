@@ -52,6 +52,7 @@ async function route(req, res) {
   if (action === 'cron-closing' && req.method === 'GET') return handleCron(req, res, 'closing');
   if (action === 'cron-chase' && req.method === 'GET') return handleChaseCronAndWatch(req, res);
   if (action === 'cron-watch' && req.method === 'GET') return handleWatchCron(req, res);
+  if (action === 'chase-preview' && req.method === 'POST') return handleChasePreview(req, res);
 
   res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing, cron-chase.' });
 }
@@ -940,7 +941,7 @@ async function handleChaseCron(req, res) {
     return;
   }
 
-  let sent = 0, failed = 0, queued = 0, skipped_no_phone = 0, escalated = 0;
+  let sent = 0, failed = 0, queued = 0, skipped_no_phone = 0, escalated = 0, previewed = 0;
   let budget = SEND_BUDGET;
 
   for (const dep of deployments) {
@@ -1011,7 +1012,7 @@ async function handleChaseCron(req, res) {
       });
 
       const nowIso = new Date().toISOString();
-      let status = 'sent', error = null, waMessageId = null;
+      let status = 'sent', error = null, waMessageId = null, preview = false;
 
       if (!msg.templateId) {
         status = 'skipped';
@@ -1019,7 +1020,11 @@ async function handleChaseCron(req, res) {
       } else {
         const result = await sendGuard.runAsAccount(dep.user_id, () => bsp.sendTemplate({ to: target.contact_phone, templateId: msg.templateId, params: msg.params }));
         if (!result.ok) { status = 'failed'; error = result.error; failed++; }
-        else {
+        else if (result.blocked) {
+          // An account with external sends off (investor demo): nothing reached the customer. The reminder is
+          // logged as "Preview: not sent" and the cadence moves on as if it had gone, so the demo shows the sequence.
+          preview = true; waMessageId = result.messageId || null; previewed++; budget--;
+        } else {
           waMessageId = result.messageId || null; sent++; budget--;
           // So the app can say whether the customer actually got it, not just that Gupshup took it.
           await deliveries.record({ messageId: waMessageId, userId: dep.user_id, kind: 'chase', to: target.contact_phone, sentTo: 'customer', ref: target.id });
@@ -1042,8 +1047,8 @@ async function handleChaseCron(req, res) {
           template_params: msg.params,
           message_body: msg.body,
           wa_message_id: waMessageId,
-          status,
-          error,
+          status: preview ? 'skipped' : status,
+          error: preview ? chase.PREVIEW_NOTE : error,
           scheduled_for: target.next_chase_at,
           sent_at: status === 'sent' ? nowIso : null
         }]);
@@ -1082,14 +1087,14 @@ async function handleChaseCron(req, res) {
       await logConnectorEvent({
         userId: dep.user_id, connectorType: 'whatsapp',
         operation: `chase_${tier}`, status: status === 'sent' ? 'success' : 'error',
-        errorMessage: error, recordsSynced: status === 'sent' ? 1 : 0
+        errorMessage: preview ? chase.PREVIEW_NOTE : error, recordsSynced: status === 'sent' && !preview ? 1 : 0
       });
     }
   }
 
   res.status(200).json({
     deployments: deployments.length,
-    queued, sent, failed, escalated, skipped_no_phone,
+    queued, sent, previewed, failed, escalated, skipped_no_phone,
     duration_ms: Date.now() - startedAt,
     timestamp: new Date().toISOString()
   });
@@ -1336,11 +1341,52 @@ async function syncChaseQueueManualOnly(userId, config) {
   return { created, skipped_no_phone };
 }
 
-/** Per-account switch: include_connectors is true only where it was explicitly set. */
+/**
+ * Per-account switch: include_connectors is true only where it was explicitly set. Since 2026-10-29 the Chase form
+ * sets it ("Customers from your books"), on by default for a new deployment when books are connected.
+ */
+const chaseIncludesBooks = (config) => chase.mergeConfig(config).include_connectors === true;
 async function syncChaseQueue(userId, config) {
-  return chase.mergeConfig(config).include_connectors === true
+  return chaseIncludesBooks(config)
     ? syncChaseQueueAllSources(userId, config)
     : syncChaseQueueManualOnly(userId, config);
+}
+
+/* ------------------------------------------------------------------ */
+/* chase-preview — POST ?action=chase-preview (user JWT)              */
+/* The Chasing tab's "what goes out next": brings the queue up to date */
+/* (same as the 10:30 run, without sending) and drafts each customer's */
+/* next reminder. Sends nothing, ever.                                 */
+/* ------------------------------------------------------------------ */
+async function handleChasePreview(req, res) {
+  const { resolveActor, can } = require('./_lib/actor');
+  let actor;
+  try { actor = await resolveActor(req); } catch (e) { actor = null; }
+  if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return; }
+  if (!can(actor, 'view_receivables')) { res.status(403).json({ error: 'Not permitted' }); return; }
+  const userId = actor.accountId;
+  try {
+    const sendsOff = await sendGuard.accountSendsOff(userId).catch(() => false);
+    const deps = await selectRows('agent_deployments', `select=status,config&user_id=eq.${userId}&agent_id=eq.chase_agent&limit=1`);
+    const dep = deps[0];
+    if (!dep) { res.status(200).json({ deployed: false, sends_off: sendsOff, previews: [] }); return; }
+    const config = chase.mergeConfig(dep.config);
+    const includeBooks = chaseIncludesBooks(dep.config);
+    let queue = null;
+    if (dep.status === 'active' && config.enabled !== false) {
+      try { queue = await syncChaseQueue(userId, dep.config); } catch (e) { console.error('chase-preview: sync failed', e.message); }
+    }
+    const targets = await selectRows('whatsapp_chase_targets',
+      `select=id,party_name,contact_phone,amount,due_date,invoice_ref,chases_sent,broken_promise_count,next_chase_at,state&user_id=eq.${userId}` +
+      `&state=in.(active,paused_promise)&order=amount.desc.nullslast&limit=200`);
+    const businessName = await businessNameFor(userId);
+    const previews = targets.map((t) => chase.previewNextChase(t, config, businessName));
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({ deployed: true, status: dep.status, include_books: includeBooks, sends_off: sendsOff, queue, previews });
+  } catch (err) {
+    console.error('chase-preview failed:', err.message);
+    res.status(500).json({ error: 'Could not build the preview' });
+  }
 }
 
 /**

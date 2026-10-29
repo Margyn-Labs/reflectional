@@ -381,7 +381,7 @@ function mgPackDrawer(){
       '<div class="mg-field-h" id="mgPackAddNote">Up to 10 people. They get the key numbers and Margyn’s commentary by email. The full pack opens for anyone who can log in to this Margyn account.</div>' +
       '<h4>Recent sends</h4>' +
       (sends === false ? '<div class="mg-field-h">The delivery log isn’t set up yet.</div>' : !sends || !sends.length ? '<div class="mg-field-h">Nothing sent yet.</div>' :
-        sends.map(x => '<div class="mg-li"><div><div class="mg-li-t">' + escapeHtml(x.recipient_email) + (x.kind === 'test' ? ' (test)' : '') + '</div><div class="mg-li-s">' + escapeHtml(mgMonthLabel(x.period) + ' · ' + fmtDate(x.created_at)) + '</div></div><span class="mg-bdg ' + (x.status === 'sent' ? 'pos' : 'neg') + '">' + (x.status === 'sent' ? 'Sent' : 'Failed') + '</span></div>').join('')),
+        sends.map(x => '<div class="mg-li"><div><div class="mg-li-t">' + escapeHtml(x.recipient_email) + (x.kind === 'test' ? ' (test)' : '') + '</div><div class="mg-li-s">' + escapeHtml(mgMonthLabel(x.period) + ' · ' + fmtDate(x.created_at)) + '</div></div>' + (x.provider_message_id === 'preview-not-sent' ? '<span class="mg-bdg">Preview: not sent</span>' : '<span class="mg-bdg ' + (x.status === 'sent' ? 'pos' : 'neg') + '">' + (x.status === 'sent' ? 'Sent' : 'Failed') + '</span>') + '</div>').join('')),
     foot:'<button class="mg-btn" type="button" data-pk-test>Send a test to me</button><button class="mg-btn primary" type="button" data-drawer-close>Done</button>',
     onInput:el => {
       if(el.dataset.pkSecopt){

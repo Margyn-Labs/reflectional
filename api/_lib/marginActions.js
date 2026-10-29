@@ -439,7 +439,9 @@ async function executeAction(action, userId, actor) {
     const rows = await selectRows('whatsapp_chase_targets', `select=*&id=eq.${targetId}&user_id=eq.${userId}&limit=1`);
     if (!rows.length) throw new Error('Chase target not found');
     const t = rows[0];
-    await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, { state: 'escalated_human', resolution: 'One-off reminder sent via WhatsApp agent.', next_chase_at: null });
+    // An account with external sends off (investor demo) drafts it but nothing reaches the customer: say so.
+    const off = await require('./sendGuard').accountSendsOff(userId).catch(() => false);
+    await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, { state: 'escalated_human', resolution: off ? 'One-off reminder drafted (preview: not sent).' : 'One-off reminder sent via WhatsApp agent.', next_chase_at: null });
     // Best-effort only: a free-text session send to the CUSTOMER's number,
     // which only lands if they've messaged this WABA in the last 24h — same
     // constraint sendText always carries. Untested against a real account.
