@@ -75,7 +75,8 @@ async function handler(req, res) {
 
   for (const userId of userIds) {
     try {
-      const result = await syncZohoForUser(userId, 'delta');
+      // One deadline for the whole cron run: each org's item-line queue stops by 240 s of this invocation.
+      const result = await syncZohoForUser(userId, 'delta', { deadline: startedAt + 240 * 1000 });
       if (result.status === 'error') {
         failed.push({ userId, reason: result.message || 'sync error' });
       } else if (result.status === 'partial') {

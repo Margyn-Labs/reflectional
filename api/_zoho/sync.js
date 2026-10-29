@@ -637,7 +637,7 @@ async function setRemoteCount(orgRef, moduleName, count) {
 
 // -------------------------------------------------------------- core sync
 
-async function syncZohoForUser(userId, mode) {
+async function syncZohoForUser(userId, mode, opts) {
   const startedAt = Date.now();
   const syncMode = mode === 'backfill' ? 'backfill' : 'delta';
 
@@ -675,6 +675,14 @@ async function syncZohoForUser(userId, mode) {
   // Best-effort: a failed read is logged there and never makes the books sync partial.
   const contacts = await require('../_lib/zohoParties').syncZohoPartyContacts(session, userId);
   if (!contacts.error && (contacts.inserted || contacts.updated)) results.contacts_to_parties = contacts.inserted + contacts.updated;
+
+  // Item lines (items.js): read invoice, bill, credit note and vendor credit details inside today's call budget,
+  // newest first, keeping 200 calls spare. Resumes where it stopped on the next run.
+  const itemStep = require('./items');
+  const usedBefore = await itemStep.callsUsedToday(org.id, startedAt);
+  const itemLines = await itemStep.syncItemLines(session, org, userId, { usedBefore, deadline: (opts && opts.deadline) || startedAt + itemStep.TIME_LIMIT_MS });
+  if (itemLines.error) errors.push(`item_lines: ${itemLines.error}`);
+  else if (itemLines.documents_read) results.item_documents = itemLines.documents_read;
 
   // Persist plan-level flags discovered during the run.
   const orgPatch = {};
@@ -717,6 +725,7 @@ async function syncZohoForUser(userId, mode) {
   // Rate-limit budget warning at 80% of the plan's daily cap.
   const cap = dailyCapFor(org.plan_type);
   const used = session.callCount();
+  await itemStep.addCallsToday(org.id, used, startedAt);
   if (used >= cap * 0.8) {
     errors.push(`rate_budget_warning: used ${used} of ~${cap} daily calls`);
     await logConnectorEvent({
@@ -771,6 +780,7 @@ async function syncZohoForUser(userId, mode) {
     breakdown: results,
     flags,
     api_calls_used: used,
+    item_lines: itemLines,
     errors: errors.length ? errors : undefined,
     duration_ms: durationMs
   };

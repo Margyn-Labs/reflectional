@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-30-zoho-items', date:'30 Oct 2026', title:'Products and item margins from Zoho Books',
+    items:[
+      { t:'Item-level figures for Zoho Books', what:'Margyn now reads the items on each Zoho Books invoice, bill, credit note and vendor credit, so everything it does with Tally items works for Zoho too: what sold, price, cost and margin per product, items sold below cost, a customer’s and a supplier’s top items, and finding entries by item. Returns are taken off.',
+        how:'Ask Margyn “Which products am I selling below cost?” or “How is the gauze swab doing?”, or open <b>Margin</b> for the item table.', act:'margin' },
+      { t:'Item lines fill in newest first', what:'Zoho Books gives each document’s items only one at a time, inside a daily allowance, so the history fills in over a few nights, this month and year first. Until then Margyn says which dates are complete. An item never bought on a bill is costed at the purchase rate on your Zoho item list, and says so.',
+        how:'<b>Connectors</b> → <b>Zoho Books</b> shows how many documents are read. <b>Fill now</b> reads more straight away with the rest of today’s allowance.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-10-30-chase-zoho-preview', date:'30 Oct 2026', title:'Payment reminders for Zoho Books customers, with a word-for-word preview',
     items:[
       { t:'Payment Chase works from your Zoho Books', what:'Margyn now reads your customers’ phone numbers and emails from Zoho Books, so Payment Chase can remind the customers on your Zoho invoices: one reminder per customer for everything they owe. A number you typed into Margyn is never overwritten.',
