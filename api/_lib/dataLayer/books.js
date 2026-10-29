@@ -315,7 +315,9 @@ function zohoToBook(z) {
   const prog = z.lineProgress || null;
   if (prog && prog.pending > 0) notes.push(`Item lines are still coming in from Zoho Books: ${prog.read.toLocaleString('en-IN')} of ${prog.documents.toLocaleString('en-IN')} documents read, newest first${prog.complete_after ? ', so item figures are complete only after ' + prog.complete_after : ''}.`);
   // Item master: purchase rates, the fallback cost for items never bought on a bill in the synced period.
-  const itemMaster = (z.items || []).filter((i) => i.name && num(i.purchase_rate) > 0).map((i) => ({ item: i.name, purchase_rate: num(i.purchase_rate), unit: i.unit || null }));
+  // Purchase rate is the cost fallback; item_type 'sales' marks an item that is only ever sold (a service, a catch-all line).
+  const itemMaster = (z.items || []).filter((i) => i.name && (num(i.purchase_rate) > 0 || i.item_type === 'sales'))
+    .map((i) => ({ item: i.name, purchase_rate: num(i.purchase_rate), unit: i.unit || null, sales_only: i.item_type === 'sales' }));
 
   vouchers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const company = org.organization_name || org.org_name || org.name || 'Zoho Books';
@@ -345,7 +347,7 @@ async function loadZoho(userId) {
     safe(selectRows('tally_ledger_classes', `select=ledger_name,bucket&user_id=eq.${userId}&company_name=eq.${encodeURIComponent(org.organization_name || org.org_name || org.name || 'Zoho Books')}`), []),
     // Item lines (2026-10-30-zoho-items.sql). Until that migration runs these come back empty and nothing changes.
     safe(pagedAll('zoho_document_lines', `select=doc_type,doc_id,item_id,item_name,qty,unit,value,location_name&org_ref=eq.${o}&order=id.asc`, 200000), { rows: [] }),
-    safe(selectRows('zoho_items', `select=item_id,name,unit,purchase_rate&org_ref=eq.${o}&order=id.asc&limit=20000`), []),
+    safe(selectRows('zoho_items', `select=item_id,name,unit,purchase_rate,item_type&org_ref=eq.${o}&order=id.asc&limit=20000`), []),
     safe(selectRows('zoho_line_state', `select=doc_type,doc_date,status,doc_last_modified,read_modified,lines_read_at&org_ref=eq.${o}&order=id.asc&limit=200000`), [])
   ]);
   const overrides = {};

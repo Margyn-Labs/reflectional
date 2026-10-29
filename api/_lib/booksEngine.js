@@ -183,7 +183,7 @@ function prepare(book, opts) {
   const analytics = o.analytics || A.computeAnalytics({
     ledgers: book.ledgers, vouchers: book.vouchers, bills: book.bills, overrides: book.overrides || {},
     syncRuns: book.syncRuns || [], diagnostics: book.diagnostics || null, edition: book.edition || null, now,
-    balance_convention: book.balance_convention, priorLedgers: book.priorLedgers || [], itemMaster: book.item_master || []
+    balance_convention: book.balance_convention, priorLedgers: book.priorLedgers || [], itemMaster: book.item_master || [], source: book.source || 'tally'
   });
   // The books handed to computeAnalytics are already as of today, so ledgers renamed in Tally are already moved
   // (tallyAnalytics.renamedInTally) and it would find none: keep the list asOfToday made, for the data check.
@@ -786,6 +786,7 @@ function productStats(ctx, per) {
       m.set(it.item, g);
     }
   }
+  const salesOnlyItems = new Set((ctx.book.item_master || []).filter((x) => x && x.sales_only).map((x) => x.item));
   return [...m.values()].map((g) => {
     const c = ctx.unitCost(g.item);
     const price = g.qty > 0 ? g.value / g.qty : null;
@@ -796,7 +797,8 @@ function productStats(ctx, per) {
     if (c.basis === 'assembly') flags.push('kit you assemble: cost = its parts');
     if (c.basis === 'item master') flags.push(`cost from your ${SRC(ctx)} item list, not from bills`);
     if (margin != null && g.value > 0 && margin / g.value > 0.9) flags.push('margin looks too high: the purchase unit may differ from the selling unit');
-    if (c.cost == null) flags.push(ctx.book.no_production_entries ? 'no cost known (never purchased in the synced period, and no purchase rate on the item list)' : 'no cost known (never purchased or assembled in the synced period)');
+    if (c.cost == null && salesOnlyItems.has(g.item)) flags.push(`sales-only item in your ${SRC(ctx)} item list (a service or catch-all line), so it has no purchase cost`);
+    else if (c.cost == null) flags.push(ctx.book.no_production_entries ? 'no cost known (never purchased in the synced period, and no purchase rate on the item list)' : 'no cost known (never purchased or assembled in the synced period)');
     return { g, price, cost: c.cost, basis: c.basis, margin, marginPct: margin != null ? pctOf(margin, g.value) : null, flags };
   });
 }

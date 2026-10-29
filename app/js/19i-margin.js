@@ -178,7 +178,7 @@ function mgRenderMargin(){
   if(!mgMar && !mgMarBusy && !mgMarErr) mgLoadMargin();
   const d = mgMar;
   const head = mgPageHead({ group:'Insight', title:'Margin',
-    sub:'How much you keep, worked out from your ' + mgBooksName() + ' books. One source, so every figure is a signal until bank and GST agree with it.' + (d && d.stale ? ' Updating to your latest sync…' : ''),
+    sub:'How much you keep, worked out from your ' + mgBooksName() + (/books$/i.test(mgBooksName()) ? '' : ' books') + '. One source, so every figure is a signal until bank and GST agree with it.' + (d && d.stale ? ' Updating to your latest sync…' : ''),
     actions:mgBtn('Refresh', 'data-mar-refresh') + (d && d.connected ? mgExportBtn('marExport') : '') });
   if(!d){
     host.innerHTML = head + '<div class="mg-panel mg-empty-panel"><h2>' + (mgMarErr ? 'Couldn’t load margin' : 'Loading…') + '</h2>' +
@@ -231,7 +231,7 @@ function mgRenderMargin(){
   let itemsPanel;
   if(d.items_available){
     const ir = d.items.slice(0, 30).map(i =>
-      '<tr><td>' + escapeHtml(i.item) + (i.flags.length ? ' <span class="mg-muted">' + escapeHtml(i.flags.map(f => ({ sold_below_cost:'sold below cost', no_purchase_cost_in_period:'no purchase cost', sold_more_than_bought_in_period:'sold more than bought', cost_from_assembly:'kit: cost from its parts' }[f] || f)).join(', ')) + '</span>' : '') + '</td>' +
+      '<tr><td>' + escapeHtml(i.item) + (i.flags.length ? ' <span class="mg-muted">' + escapeHtml(i.flags.map(f => ({ sold_below_cost:'sold below cost', no_purchase_cost_in_period:'no purchase cost', sales_only_item:'sales-only item', sold_more_than_bought_in_period:'sold more than bought', cost_from_assembly:'kit: cost from its parts', cost_from_item_master:'cost from item list' }[f] || f)).join(', ')) + '</span>' : '') + '</td>' +
       '<td class="r">' + mgNum(i.sold_qty) + '</td><td class="r">' + mgNum(i.sold_value) + '</td><td class="r">' + (i.avg_price == null ? '—' : mgNum(i.avg_price)) + '</td>' +
       '<td class="r">' + (i.avg_cost == null ? '—' : mgNum(i.avg_cost)) + '</td><td class="r">' + (i.est_margin == null ? '—' : mgNum(i.est_margin)) + '</td><td class="r">' + mgMarPct(i.est_margin_pct) + '</td></tr>').join('');
     const b = d.margin_bridge;

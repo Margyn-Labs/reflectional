@@ -422,7 +422,7 @@ async function handleAnalytics(req, res) {
 
   const rate = parseFloat(req.query && req.query.credit_rate);
   const dataAsOf = (book.files && book.files.recovered && book.files.recovered.as_at) || lastSync || null;
-  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, priorLedgers: book.priorLedgers || [], itemMaster: book.item_master || [], dataAsOf, overrides: ov, syncRuns, diagnostics, balance_convention: book.balance_convention, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
+  const run = (ov) => computeAnalytics({ ledgers, vouchers, bills, priorLedgers: book.priorLedgers || [], itemMaster: book.item_master || [], source: book.source || 'tally', dataAsOf, overrides: ov, syncRuns, diagnostics, balance_convention: book.balance_convention, edition: (chosen.find((i) => i.tally_edition) || {}).tally_edition || null, creditRate: Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : 0.12 });
   let out = run(overrides);
   sw.mark('compute');
 

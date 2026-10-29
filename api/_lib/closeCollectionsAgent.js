@@ -35,6 +35,8 @@ const KNOWN_TDS_RATES = [
 ];
 
 const money = (n) => Math.round(Number(n || 0) * 100) / 100;
+// Amounts people read: Indian grouping (₹50,000, not ₹50000). Journals keep money() as numbers.
+const inr = (n) => money(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const daysBetween = (a, b) => (a && b) ? Math.abs((new Date(a) - new Date(b)) / 86400000) : 1e9;
 const near = (a, b, tol) => Math.abs(Number(a) - Number(b)) <= (tol != null ? tol : 0.5);
@@ -143,7 +145,7 @@ function runAgent(bundle, opts) {
       kind: 'split', confidence: tds ? 0.82 : 0.8,
       proposalKey: `split:${g.id}`,
       sourceFindingKey: null,
-      title: `Split ₹${money(g.amount)} across ${combo.length} invoices${tds ? ' (net of TDS)' : ''}`,
+      title: `Split ₹${inr(g.amount)} across ${combo.length} invoices${tds ? ' (net of TDS)' : ''}`,
       rationale: `One gateway payment (${g.id}) — named in its own description — covers ${combo.length} open invoices for ${pg || 'this customer'}${tdsNote}. Allocate it across them${tds ? ' and book the TDS separately' : ''}.`,
       amount: money(g.amount), currency: g.currency || 'INR',
       evidence: {
@@ -177,7 +179,7 @@ function runAgent(bundle, opts) {
       kind: 'reconcile_match', confidence: 0.72,
       proposalKey: `promote:${f.match_key}`,
       sourceFindingKey: f.match_key,
-      title: `Match ${money(bp.amount)} ${bp.currency || 'INR'} — ${advance ? 'customer advance' : `books posted ${dd}d late`}`,
+      title: `Match ₹${inr(bp.amount)} ${bp.currency || 'INR'} — ${advance ? 'customer advance' : `books posted ${dd}d late`}`,
       rationale: advance
         ? `Gateway capture ${g.id} is dated before invoice ${bp.invoiceRef} — this is a prepayment. Same amount, same party; reconcilerV2 only flagged the date gap.`
         : `Books receipt ${bp.ref} and gateway capture ${g.id} agree on amount and party; the books entry was just posted ${dd} days after the payment (outside the ±3d auto-match window).`,
@@ -244,8 +246,8 @@ function runAgent(bundle, opts) {
       kind: 'journal', confidence: 0.78,
       proposalKey: `fee:${f.match_key}`,
       sourceFindingKey: f.match_key,
-      title: `Book gateway fee ₹${money(feeGross - gst)} + GST ₹${gst}`,
-      rationale: `Payment ${f.source_b_ref} settled ₹${money(feeGross)} short of the order value; that equals the gateway's reported fee. Book it as a payment-gateway charge (with 18% input GST) rather than lost revenue.`,
+      title: `Book gateway fee ₹${inr(feeGross - gst)} + GST ₹${gst}`,
+      rationale: `Payment ${f.source_b_ref} settled ₹${inr(feeGross)} short of the order value; that equals the gateway's reported fee. Book it as a payment-gateway charge (with 18% input GST) rather than lost revenue.`,
       amount: feeGross, currency: f.currency || 'INR',
       evidence: { gateway: { id: f.source_b_ref, reportedFee: g ? g.fee : null }, reason: f.reason },
       proposal: {
@@ -299,7 +301,7 @@ function runAgent(bundle, opts) {
       kind: 'flag', confidence: 0.7,
       proposalKey: `dup:${g.id}`,
       sourceFindingKey: f.match_key,
-      title: `Possible duplicate charge — ₹${money(g.amount)}`,
+      title: `Possible duplicate charge — ₹${inr(g.amount)}`,
       rationale: `Gateway capture ${g.id} has the same amount and party as the already-matched capture ${twin.id}, ${Math.round(daysBetween(g.date, twin.date))}d apart, with no books counterpart. Customer was likely charged twice — check for a refund owed.`,
       amount: money(g.amount), currency: g.currency || 'INR',
       evidence: { gateway: { id: g.id, amount: g.amount, date: g.date }, twin: { id: twin.id, date: twin.date } },
@@ -320,8 +322,8 @@ function runAgent(bundle, opts) {
           ? `ITC at risk — ${r.vendor || 'vendor'} bill ${r.billNumber || r.billRef} not in GSTR-2B`
           : `ITC mismatch — ${r.billNumber || r.billRef} differs from GSTR-2B`,
         rationale: missing
-          ? `₹${money(r.atRiskAmount)} of input credit is booked on this bill but the vendor hasn't reported it in GSTR-2B. Chase the vendor before claiming it, or reverse it this period.`
-          : `The bill and its GSTR-2B line don't agree (${r.matchStatus}). Reconcile ₹${money(r.atRiskAmount)} before claiming the full credit.`,
+          ? `₹${inr(r.atRiskAmount)} of input credit is booked on this bill but the vendor hasn't reported it in GSTR-2B. Chase the vendor before claiming it, or reverse it this period.`
+          : `The bill and its GSTR-2B line don't agree (${r.matchStatus}). Reconcile ₹${inr(r.atRiskAmount)} before claiming the full credit.`,
         amount: money(r.atRiskAmount), currency: 'INR',
         evidence: { bill: { ref: r.billRef, number: r.billNumber, vendor: r.vendor, date: r.billDate }, matchStatus: r.matchStatus, vendorGstin: r.vendorGstin },
         proposal: {
@@ -339,10 +341,10 @@ function runAgent(bundle, opts) {
         push({
           kind: 'itc_risk', confidence: 0.85, proposalKey: `itc:missing:${bill.ref}`,
           title: `ITC at risk — ${bill.vendor} bill ${bill.ref} not in GSTR-2B`,
-          rationale: `Input GST of ₹${money(bill.tax)} is booked but the vendor hasn't reported this bill in GSTR-2B. Follow up before claiming, or reverse it this period.`,
+          rationale: `Input GST of ₹${inr(bill.tax)} is booked but the vendor hasn't reported this bill in GSTR-2B. Follow up before claiming, or reverse it this period.`,
           amount: money(bill.tax), currency: 'INR',
           evidence: { bill: { ref: bill.ref, vendor: bill.vendor, taxableValue: bill.taxableValue, tax: bill.tax } },
-          proposal: { flag: 'itc_at_risk', billRef: bill.ref, vendorQueryDraft: `Hi ${bill.vendor}, our purchase invoice ${bill.ref} dated ${bill.date} (taxable ₹${money(bill.taxableValue)}) isn't showing in our GSTR-2B. Could you confirm it's reported in your GSTR-1?` }
+          proposal: { flag: 'itc_at_risk', billRef: bill.ref, vendorQueryDraft: `Hi ${bill.vendor}, our purchase invoice ${bill.ref} dated ${bill.date} (taxable ₹${inr(bill.taxableValue)}) isn't showing in our GSTR-2B. Could you confirm it's reported in your GSTR-1?` }
         });
         continue;
       }
@@ -351,7 +353,7 @@ function runAgent(bundle, opts) {
         push({
           kind: 'itc_risk', confidence: 0.8, proposalKey: `itc:gap:${bill.ref}`,
           title: `ITC mismatch — ${bill.ref} value differs from GSTR-2B`,
-          rationale: `Booked taxable value ₹${money(bill.taxableValue)}; GSTR-2B shows ₹${money(line.taxableValue)}. Reconcile before claiming the full credit.`,
+          rationale: `Booked taxable value ₹${inr(bill.taxableValue)}; GSTR-2B shows ₹${inr(line.taxableValue)}. Reconcile before claiming the full credit.`,
           amount: money(Math.abs(bill.taxableValue - line.taxableValue) * (bill.taxRate || 0.18)), currency: 'INR',
           evidence: { bill: { ref: bill.ref, taxableValue: bill.taxableValue }, gstr2b: { taxableValue: line.taxableValue } },
           proposal: { flag: 'itc_value_gap', billRef: bill.ref }
@@ -377,8 +379,8 @@ function runAgent(bundle, opts) {
       push({
         kind: 'bad_debt', confidence: 0.7,
         proposalKey: `baddebt:${inv.ref}`,
-        title: `${inv.party || 'Customer'} invoice ${inv.number || inv.ref} — ${Math.round(overdue)}d overdue, ₹${money(outstanding)} unpaid`,
-        rationale: `₹${money(outstanding)} outstanding and ${Math.round(overdue)} days past due with no payment recorded. Review for a provision / write-off, or escalate collection.`,
+        title: `${inv.party || 'Customer'} invoice ${inv.number || inv.ref} — ${Math.round(overdue)}d overdue, ₹${inr(outstanding)} unpaid`,
+        rationale: `₹${inr(outstanding)} outstanding and ${Math.round(overdue)} days past due with no payment recorded. Review for a provision / write-off, or escalate collection.`,
         amount: money(outstanding), currency: inv.currency || 'INR',
         evidence: { invoice: { ref: inv.ref, number: inv.number, amount: inv.amount, balance: inv.balance, dueDate: due, party: inv.party } },
         proposal: { flag: 'bad_debt_candidate', invoiceRef: inv.ref }
@@ -395,7 +397,7 @@ function runAgent(bundle, opts) {
       kind: 'flag', confidence: 0.8,
       proposalKey: `refund:${rf.id}`,
       sourceFindingKey: f.match_key,
-      title: `Refund of ₹${money(rf.amount)} issued against ${f.source_b_ref}`,
+      title: `Refund of ₹${inr(rf.amount)} issued against ${f.source_b_ref}`,
       rationale: `A refund was processed after this payment was reconciled. Make sure the revenue reversal / credit note is booked.`,
       amount: money(rf.amount), currency: f.currency || 'INR',
       evidence: { gateway: { id: f.source_b_ref }, refund: { id: rf.id, amount: rf.amount, date: rf.date } },
@@ -431,7 +433,7 @@ function runAgent(bundle, opts) {
       proposalKey: `netting:${f.match_key}`,
       sourceFindingKey: f.match_key,
       title: `Netted against bill ${bill.ref}`,
-      rationale: `Invoice ${inv.number || inv.ref} is ₹${money(shortfall)} short of what was received, and the payment narration cites ${bill.ref}. The counterparty looks like a vendor too, and appears to have deducted that bill from this payment rather than paying it separately.`,
+      rationale: `Invoice ${inv.number || inv.ref} is ₹${inr(shortfall)} short of what was received, and the payment narration cites ${bill.ref}. The counterparty looks like a vendor too, and appears to have deducted that bill from this payment rather than paying it separately.`,
       amount: money(bill.amount), currency: bp.currency || 'INR',
       evidence: {
         books: { ref: bp.ref, amount: bp.amount, invoiceRef: bp.invoiceRef },
@@ -480,19 +482,19 @@ function runAgent(bundle, opts) {
 function classifyGap(bp, g, gap, r, inv, party) {
   const flat = Math.abs(gap);
   if (flat <= 15 && r < 0.0015) {
-    return { type: 'rounding', confidence: 0.78, title: `Match ${money(bp.amount)} — ₹${money(gap)} rounding`, rationale: `Customer rounded the payment; write off the ₹${money(gap)} difference.`, journal: [{ account: 'Rounding Off', debit: money(gap), credit: 0, narration: `Rounding on ${bp.invoiceRef || bp.ref}` }] };
+    return { type: 'rounding', confidence: 0.78, title: `Match ₹${inr(bp.amount)} — ₹${inr(gap)} rounding`, rationale: `Customer rounded the payment; write off the ₹${inr(gap)} difference.`, journal: [{ account: 'Rounding Off', debit: money(gap), credit: 0, narration: `Rounding on ${bp.invoiceRef || bp.ref}` }] };
   }
   if (gap > 0) {                                            // books higher -> customer withheld
     const paidFast = inv && daysBetween(g.date, inv.date) <= 12;
     if ((/discount|2\/10/i.test(bp.reference || '') || paidFast) && r >= 0.017 && r <= 0.023) {
-      return { type: 'early_pay_discount', confidence: 0.72, title: `Match ${money(bp.amount)} — 2% early-payment discount`, rationale: `Customer took an early-payment (2/10) discount of ₹${money(gap)}.`, journal: [{ account: 'Discount Allowed', debit: money(gap), credit: 0, narration: `Early-payment discount ${bp.invoiceRef || bp.ref}` }] };
+      return { type: 'early_pay_discount', confidence: 0.72, title: `Match ₹${inr(bp.amount)} — 2% early-payment discount`, rationale: `Customer took an early-payment (2/10) discount of ₹${inr(gap)}.`, journal: [{ account: 'Discount Allowed', debit: money(gap), credit: 0, narration: `Early-payment discount ${bp.invoiceRef || bp.ref}` }] };
     }
     for (const k of KNOWN_TDS_RATES) {
       if (Math.abs(r - k.rate) / k.rate <= 0.06) {
         return {
           type: 'tds', confidence: 0.82,
-          title: `Match ${money(bp.amount)} — ${(k.rate * 100).toFixed(k.rate < 0.01 ? 1 : 0)}% TDS withheld (${k.section})`,
-          rationale: `Customer paid ₹${money(g.amount)} against a ₹${money(bp.amount)} liability — a ${(k.rate * 100).toFixed(k.rate < 0.01 ? 1 : 0)}% deduction under section ${k.section}. Book a TDS receivable; chase the Form 16A certificate at quarter-end.`,
+          title: `Match ₹${inr(bp.amount)} — ${(k.rate * 100).toFixed(k.rate < 0.01 ? 1 : 0)}% TDS withheld (${k.section})`,
+          rationale: `Customer paid ₹${inr(g.amount)} against a ₹${inr(bp.amount)} liability — a ${(k.rate * 100).toFixed(k.rate < 0.01 ? 1 : 0)}% deduction under section ${k.section}. Book a TDS receivable; chase the Form 16A certificate at quarter-end.`,
           journal: [
             { account: 'TDS Receivable', debit: money(gap), credit: 0, narration: `TDS ${k.section} on ${bp.invoiceRef || bp.ref}` },
             { account: 'Bank', debit: money(g.amount), credit: 0, narration: `Net received ${bp.invoiceRef || bp.ref}` },
@@ -502,19 +504,19 @@ function classifyGap(bp, g, gap, r, inv, party) {
       }
     }
     if (flat >= 20 && flat <= 65 && r < 0.0035 && /netbank|rtgs|neft/i.test(g.method || '')) {
-      return { type: 'bank_charge', confidence: 0.72, title: `Match ${money(bp.amount)} — ₹${money(flat)} bank charge`, rationale: `A flat ₹${money(flat)} NEFT/RTGS charge was deducted by the customer's bank.`, journal: [{ account: 'Bank Charges', debit: money(flat), credit: 0, narration: `Inbound transfer charge ${bp.invoiceRef || bp.ref}` }] };
+      return { type: 'bank_charge', confidence: 0.72, title: `Match ₹${inr(bp.amount)} — ₹${inr(flat)} bank charge`, rationale: `A flat ₹${inr(flat)} NEFT/RTGS charge was deducted by the customer's bank.`, journal: [{ account: 'Bank Charges', debit: money(flat), credit: 0, narration: `Inbound transfer charge ${bp.invoiceRef || bp.ref}` }] };
     }
   } else {                                                  // gateway higher -> extra added
     const abs = -gap;
     if (Math.abs(r - 0.001) / 0.001 <= 0.2) {
-      return { type: 'tcs', confidence: 0.75, title: `Match ${money(bp.amount)} — ₹${money(abs)} TCS added`, rationale: `Customer added 0.1% TCS under 206C(1H); ₹${money(abs)} more than the invoice.`, journal: [{ account: 'TCS Payable', debit: 0, credit: money(abs), narration: `TCS 206C on ${bp.invoiceRef || bp.ref}` }] };
+      return { type: 'tcs', confidence: 0.75, title: `Match ₹${inr(bp.amount)} — ₹${inr(abs)} TCS added`, rationale: `Customer added 0.1% TCS under 206C(1H); ₹${inr(abs)} more than the invoice.`, journal: [{ account: 'TCS Payable', debit: 0, credit: money(abs), narration: `TCS 206C on ${bp.invoiceRef || bp.ref}` }] };
     }
     if (r >= 0.012 && r <= 0.05 && g.fee > 0) {
       const withGst = g.fee * 1.18;
       if (Math.abs(abs - withGst) / withGst <= 0.15 || Math.abs(abs - g.fee) / g.fee <= 0.1) {
         const gst = money(abs - abs / 1.18);
         const fee = money(abs - gst);
-        return { type: 'gateway_fee', confidence: 0.8, title: `Match ${money(bp.amount)} — books is net of gateway fee`, rationale: `Books recorded the net settled amount; the ₹${money(abs)} gap is the gateway fee (₹${fee}) plus 18% GST (₹${gst}), which matches the gateway's reported fee.`, journal: [{ account: 'Payment Gateway Charges', debit: fee, credit: 0, narration: `Fee ${bp.invoiceRef || bp.ref}` }, { account: 'Input GST', debit: gst, credit: 0, narration: `GST on fee ${bp.invoiceRef || bp.ref}` }] };
+        return { type: 'gateway_fee', confidence: 0.8, title: `Match ₹${inr(bp.amount)} — books is net of gateway fee`, rationale: `Books recorded the net settled amount; the ₹${inr(abs)} gap is the gateway fee (₹${fee}) plus 18% GST (₹${gst}), which matches the gateway's reported fee.`, journal: [{ account: 'Payment Gateway Charges', debit: fee, credit: 0, narration: `Fee ${bp.invoiceRef || bp.ref}` }, { account: 'Input GST', debit: gst, credit: 0, narration: `GST on fee ${bp.invoiceRef || bp.ref}` }] };
       }
     }
   }
