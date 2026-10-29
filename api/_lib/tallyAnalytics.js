@@ -675,6 +675,8 @@ function tieOutGuard(ledgers, past, futureMove, convention) {
   return out;
 }
 
+const SOURCE_NAMES = { tally: 'Tally', zoho: 'Zoho Books', odoo: 'Odoo' };
+
 function computeAnalytics(input) {
   const hint = input.balance_convention === 'same' || input.balance_convention === 'opposite' ? input.balance_convention : null;
   const today = asOfToday(input.ledgers, input.vouchers, input.now, hint, { priorLedgers: input.priorLedgers });
@@ -692,6 +694,8 @@ function computeAnalytics(input) {
   const edition = input.edition || null;
   const overrides = input.overrides || {};
   const now = input.now ? new Date(input.now) : new Date();
+  // Which books system this is: Tally unless the caller says otherwise (Zoho Books and Odoo books share this engine).
+  const fromTally = !input.source || input.source === 'tally';
   const creditRate = input.creditRate != null ? input.creditRate : 0.12;
 
   const classes = classifyLedgers(ledgers, overrides, partyRolesFromVouchers(allVouchers));
@@ -1166,6 +1170,9 @@ function computeAnalytics(input) {
   // Manufacturing Journals: one finished line worth exactly the components that went into it.
   const assembled = assemblyCosts(allVouchers);
   const itemListCost = new Map((input.itemMaster || []).filter((m) => m && m.item && num(m.purchase_rate) > 0).map((m) => [m.item, num(m.purchase_rate)]));
+  // Zoho Books "sales only" items (a service, a catch-all "Goods" line) are never bought, so having no purchase cost
+  // is expected: they're labelled as such and listed after the products, not flagged as a gap.
+  const salesOnly = new Set((input.itemMaster || []).filter((m) => m && m.item && m.sales_only).map((m) => m.item));
   const itemRows = [];
   if (itemsAvailable) {
     for (const a of Object.values(items)) {
@@ -1182,7 +1189,7 @@ function computeAnalytics(input) {
       const flags = [];
       if (fromAssembly) flags.push('cost_from_assembly');
       if (listed != null) flags.push('cost_from_item_master');
-      if (a.sold_qty > 0 && avg_cost == null) flags.push('no_purchase_cost_in_period');
+      if (a.sold_qty > 0 && avg_cost == null) flags.push(salesOnly.has(a.item) ? 'sales_only_item' : 'no_purchase_cost_in_period');
       if (avg_price != null && avg_cost != null && avg_price < avg_cost) flags.push('sold_below_cost');
       if (a.sold_qty > a.purchased_qty && avg_cost != null) flags.push('sold_more_than_bought_in_period');
       itemRows.push({
@@ -1193,7 +1200,8 @@ function computeAnalytics(input) {
         net_qty_movement: r2(a.purchased_qty - a.sold_qty), flags
       });
     }
-    itemRows.sort((x, y) => y.sold_value - x.sold_value);
+    const last = (r) => (r.flags.includes('sales_only_item') ? 1 : 0);
+    itemRows.sort((x, y) => last(x) - last(y) || y.sold_value - x.sold_value);
   }
 
   // margin bridge between the two latest complete months that have item sales
@@ -1369,8 +1377,11 @@ function computeAnalytics(input) {
     (agentOld ? 'The installed Margyn Tally agent reads only the current day from Tally; installing the latest agent sends the full financial year.' : 'The agent is fetching the rest of the year; this clears after the next sync.'));
   if (impliedVouchers) reasons.push(`${impliedVouchers} sales or purchase vouchers came without their Sales/Purchase ledger line (item invoices). Their amounts are the invoice total less tax. Updating the Margyn Tally agent sends the exact ledgers.`);
   if (implausible) { level = 'low'; reasons.push('Sales look far too small next to costs and receivables, so margin and days-to-pay are hidden. The voucher sync is probably incomplete.'); }
+  // Tally only: there a skipped invoice number can mean a voucher that never synced. Zoho Books and Odoo send every
+  // invoice through their API (void ones included), and their numbers needn't follow the date, so a gap there is
+  // never a missing invoice (MARGYN DEMO: INV-00001 to 01000 all present, yet 322 "missing", 30 Oct 2026).
   let gaps = null;
-  try { gaps = invoiceGaps(allVouchers, todayIstMs(now)); } catch (e) { gaps = null; }
+  if (fromTally) { try { gaps = invoiceGaps(allVouchers, todayIstMs(now)); } catch (e) { gaps = null; } }
   if (gaps && gaps.short_months.length) {
     level = 'low';
     const n = gaps.short_months.reduce((t, k) => t + gaps.months[k].missing, 0);
@@ -1466,7 +1477,7 @@ function computeAnalytics(input) {
 
   return {
     provenance: 'signal',
-    basis: 'Tally ledgers, vouchers and bills. One source; not yet corroborated by bank or GST. Sales figures exclude GST.',
+    basis: `${fromTally ? 'Tally ledgers, vouchers and bills' : (SOURCE_NAMES[input.source] || 'Your books') + ' invoices, bills and accounts'}. One source; not yet corroborated by bank or GST. Sales figures exclude GST.`,
     as_of: asOf.toISOString(),
     items_available: itemsAvailable,
     period, years, year_join, pnl, stock, cash, cost_structure,

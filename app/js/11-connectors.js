@@ -774,22 +774,39 @@ async function syncZohoNow(){
   }
   if(btn){ btn.disabled = false; btn.textContent = 'Sync now'; }
 }
-/* Item lines: spend the rest of today's Zoho allowance reading documents (newest first), keeping 200 calls spare. */
+/* Item lines: spend the rest of today's Zoho allowance reading documents (newest first), keeping 200 calls spare.
+   Each run on the server stops at 4 minutes, so this keeps starting the next one by itself until everything is read,
+   the day's allowance is used up, or Zoho asks to slow down: one press, not six. */
+const ZOHO_FILL_MAX_ROUNDS = 12;
+let zohoFilling = false;
 async function fillZohoItemsNow(){
-  const btn = document.getElementById('zohoFillBtn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Filling… (up to 4 min)'; }
+  if(zohoFilling) return;
+  zohoFilling = true;
+  const label = (t) => { const b = document.getElementById('zohoFillBtn'); if(b){ b.disabled = true; b.textContent = t; } };
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+  let read = 0, out = null, p = null;
+  label('Filling…');
   try {
-    const out = await zohoApi('/api/zoho?action=fill-items', { method:'POST', body: JSON.stringify({}) });
-    const p = out && out.progress;
-    const why = out.stopped === 'budget' ? 'Today’s Zoho allowance is used up; the rest comes in tonight.'
+    for(let round = 0; round < ZOHO_FILL_MAX_ROUNDS; round++){
+      out = await zohoApi('/api/zoho?action=fill-items', { method:'POST', body: JSON.stringify({}) });
+      read += Number(out.documents_read || 0);
+      p = out && out.progress;
+      if(p) label('Filling… ' + fmt(p.read) + ' of ' + fmt(p.documents));
+      if(out.stopped !== 'time' || !p || !(p.pending > 0) || !(out.documents_read > 0)) break;
+    }
+    const done = p && !(p.pending > 0);
+    const why = done ? 'Every document is read.'
+      : out.stopped === 'budget' ? 'Today’s Zoho allowance is used up; the rest comes in tonight.'
       : out.stopped === 'rate_limited' ? 'Zoho asked Margyn to slow down; the rest comes in tonight.'
-      : out.stopped === 'time' ? 'Press Fill now again to keep going.' : '';
-    toast('Read item lines from ' + Number(out.documents_read || 0).toLocaleString('en-IN') + ' documents', { kind:'info', ms:7000,
-      sub: (p ? Number(p.read).toLocaleString('en-IN') + ' of ' + Number(p.documents).toLocaleString('en-IN') + ' read. ' : '') + why });
-    await loadZohoVitals();
+      : 'The rest comes in tonight, or press Fill now again.';
+    toast('Read item lines from ' + fmt(read) + ' documents', { kind:'info', ms:7000,
+      sub: (p ? fmt(p.read) + ' of ' + fmt(p.documents) + ' read. ' : '') + why });
   } catch(e){
     toast('Could not fill item lines: ' + e.message, { kind:'bad' });
-    if(btn){ btn.disabled = false; btn.textContent = 'Fill now'; }
+  } finally {
+    zohoFilling = false;
+    await loadZohoVitals().catch(() => {});
+    const b = document.getElementById('zohoFillBtn'); if(b){ b.disabled = false; b.textContent = 'Fill now'; }
   }
 }
 async function disconnectZoho(){
