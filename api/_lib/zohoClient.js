@@ -367,9 +367,17 @@ async function purgeRefreshToken(orgRef) {
 function createSession(org) {
   const state = { accessToken: null, obtainedAt: 0, refreshToken: null, calls: 0 };
 
+  // One refresh at a time: the item fill reads several documents at once, and Zoho allows only a few token
+  // refreshes every 10 minutes, so calls that find the token stale wait for the same refresh.
+  let refreshing = null;
   async function getAccessToken() {
     const age = Date.now() - state.obtainedAt;
     if (state.accessToken && age < TOKEN_TTL_MS) return state.accessToken;
+    if (!refreshing) refreshing = refreshNow().finally(() => { refreshing = null; });
+    return refreshing;
+  }
+
+  async function refreshNow() {
 
     if (!state.refreshToken) {
       state.refreshToken = await readRefreshToken(org.id);

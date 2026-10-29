@@ -292,7 +292,7 @@ function statement(ctx, columns, opts) {
   if (odAsCash) notes.push('Overdraft and cash credit count as cash here (negative cash), as AS-3 allows when the overdraft is how the business runs day to day. Money paid in or out through the overdraft shows as what it was for. Term loans stay under loans.');
   notes.push('Net profit is before the stock adjustment: purchases count when they are bought, so a change in stock is not in it. The cash figures are exact either way.');
   if (unsortedLedgers.size) notes.push('Some ledgers aren\'t in a group Margyn can place (or sit in Suspense), so their money is under “Not yet sorted”. Placing them in Tally or on the Margin page moves them to the right line.');
-  if (gaps.length) notes.push(gaps.length + ' cash or overdraft ledger(s) don\'t walk back to the opening balance Tally has for them. Some entries are probably missing from the sync; the statement is short by that much.');
+  if (gaps.length) notes.push(gaps.length + ' cash or overdraft ledger(s) don\'t walk back to the opening balance ' + ((ctx && ctx.source_name) || 'Tally') + ' has for them. Some entries are probably missing from the sync; the statement is short by that much.');
   return {
     as_of: todayKey, basis: 'From every entry in your books that moved cash or an overdraft, worked line by line.',
     overdraft_as_cash: odAsCash,

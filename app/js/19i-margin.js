@@ -147,7 +147,7 @@ function mgMarInsightsPanel(d){
     '<div style="min-width:0;flex:1"><div class="mg-li-t">' + escapeHtml(x.title) + '</div>' + (x.detail ? '<div class="mg-li-s">' + escapeHtml(x.detail) + '</div>' : '') +
     (x.action ? '<div class="mg-li-s"><b>Next:</b> ' + escapeHtml(x.action) + '</div>' : '') + '</div>' +
     (x.ask ? '<button type="button" class="mg-btn mg-btn-sm" data-hub-ask="' + escapeHtml(x.ask) + '">Ask Margyn</button>' : '') + '</div>').join('');
-  return mgMarPanel('What else your books say', 'Worked out from every Tally entry, biggest first', '<div>' + rows + '</div>');
+  return mgMarPanel('What else your books say', 'Worked out from every ' + escapeHtml(mgBooksName()) + ' entry, biggest first', '<div>' + rows + '</div>');
 }
 function mgMarKitsPanel(d){
   const k = (d.kits || []).filter(x => x.made_qty > 0);
@@ -201,7 +201,7 @@ function mgRenderMargin(){
   const yearsPanel = yrs.length > 1 ? mgMarPanel('Year by year', 'Each financial year on its own, April to March',
     '<table class="mg-grid"><thead><tr><th>Year</th><th class="r">Net sales (₹)</th><th class="r">Gross profit (₹)</th><th class="r">Gross %</th><th class="r">Gross % after stock</th><th class="r">Running cost (₹)</th><th class="r">Net profit, after stock (₹)</th></tr></thead><tbody>' +
     yrs.slice().reverse().map(y => '<tr><td>' + escapeHtml(y.fy) + (y.current ? ' <span class="mg-muted">(so far)</span>' : '') + '</td><td class="r">' + mgNum(y.net_sales) + '</td><td class="r">' + mgNum(y.gross_profit_pre_stock) + '</td><td class="r">' + mgMarPct(y.gross_margin_pct_pre_stock) + '</td><td class="r">' + (y.gross_margin_pct_after_stock == null ? '—' : mgMarPct(y.gross_margin_pct_after_stock)) + '</td><td class="r">' + mgNum(y.opex) + '</td><td class="r">' + mgNum(y.net_profit_after_stock != null ? y.net_profit_after_stock : y.net_profit_pre_stock) + '</td></tr>').join('') +
-    '</tbody></table>' + mgMarNote('The tiles above are for ' + escapeHtml(yrs[yrs.length - 1].fy) + '. Stock movement is counted in the year Tally’s stock value belongs to.')) : '';
+    '</tbody></table>' + mgMarNote('The tiles above are for ' + escapeHtml(yrs[yrs.length - 1].fy) + '. Stock movement is counted in the year ' + escapeHtml(mgBooksName()) + '’s stock value belongs to.')) : '';
 
   const companySel = (d.companies || []).length > 1
     ? '<div class="mg-panel-b"><label class="mg-muted">Company&nbsp;</label><select data-mar-company>' +

@@ -132,6 +132,11 @@ check('same books, same keys (stable across runs)', JSON.stringify(H.check(E.pre
   const noBills = { items: res.items.filter((x) => x.area !== 'suppliers' && x.area !== 'customers'), scope: new Map([...res.scope].filter(([k]) => !/bills|unbilled|billwise|old_debt/.test(k))) };
   const nb2 = H.reconcile(stored, noBills, T1);
   check('items of a kind not judged this run stay open (a failed bills sync can\'t "fix" them)', nb2.closed.length === 0, nb2.closed);
+  // Tally disconnected, Zoho Books keeps the books now: Tally's findings can't be checked again, so they close.
+  const zohoRun = H.reconcile(stored, { items: [], scope: new Map(), source: 'zoho' }, T1);
+  check('findings from a disconnected books system close when another system keeps the books', stored.every((r) => r.source !== 'tally' || zohoRun.closed.includes(r.key)) && zohoRun.closed.length > 0, zohoRun.closed.length);
+  const sameSrc = H.reconcile(stored, { items: [], scope: new Map(), source: 'tally' }, T1);
+  check('...but a run on the same system with nothing judged closes nothing', sameSrc.closed.length === 0, sameSrc.closed);
   const monthScope = new Map(res.scope); monthScope.set('costs_not_booked', new Set(['2026-10']));
   const nb3 = H.reconcile(stored, { items: res.items.filter((x) => x.kind !== 'costs_not_booked'), scope: monthScope }, T1);
   check('a month outside this run\'s months is not closed', !nb3.closed.includes('costs_not_booked:2026-09'));

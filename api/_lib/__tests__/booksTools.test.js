@@ -98,7 +98,12 @@ const B = require('../booksTools');
 
   console.log('prompts');
   const sys = M.buildSystemPrompt({ companyName: 'Acme' }, reg.getAgent(), { inPanel: true });
-  check('chat prompt tells Margyn to use the books', /YOUR BOOKS \(TALLY\)/.test(sys[0].text) && /Never say you can only see the last 30 days/.test(sys[0].text));
+  check('chat prompt tells Margyn to use the books', /YOUR BOOKS: THE MOST IMPORTANT PART/.test(sys[0].text) && /Never say you can only see the last 30 days/.test(sys[0].text));
+  // The books section names the system this business keeps (30 Oct 2026: a Zoho account was told "When Tally is connected").
+  const sysT = M.buildSystemPrompt({ companyName: 'Acme', connectors: { tally: true } }, reg.getAgent(), { inPanel: true }).map((b) => b.text).join('\n');
+  const sysZ = M.buildSystemPrompt({ companyName: 'Acme', connectors: { zoho: true } }, reg.getAgent(), { inPanel: true }).map((b) => b.text).join('\n');
+  check('chat prompt on a Tally account: Tally books section', /YOUR BOOKS \(TALLY\)/.test(sysT) && /When Tally is connected you can read every entry/.test(sysT) && /CONNECTOR-SYNCED via the desktop agent/.test(sysT));
+  check('chat prompt on a Zoho account: Zoho books section, no Tally block', /YOUR BOOKS \(ZOHO BOOKS\)/.test(sysZ) && /When Zoho Books is connected you can read every entry/.test(sysZ) && !/CONNECTOR-SYNCED via the desktop agent/.test(sysZ) && !/When Tally is connected/.test(sysZ));
   check('chat prompt: copy money exactly', /Never convert between lakh and crore/.test(sys[0].text));
   check('identity no longer promises chasing on its own', !/you chase overdue customers/.test(reg.getAgent().identity));
   const voice = M.buildRealtimeInstructions({ companyName: 'Acme' });

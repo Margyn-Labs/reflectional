@@ -119,7 +119,11 @@ const run = (W, extra) => items.syncItemLines(createSession(W.org()), W.org(), '
       check('all lines stored (free-text line left out)', W.db.t('zoho_document_lines').length === 10 && lines(W.db, 'I2').length === 1, W.db.t('zoho_document_lines').map((l) => l.line_item_id));
       check('done, nothing pending', out.stopped === 'done' && out.pending === 0 && out.documents_read === 9, out);
       check('each document marked read at its modified time', st(W.db, 'I1').lines_read_at && new Date(st(W.db, 'I1').read_modified).getTime() === new Date('2026-10-05T10:00:00Z').getTime());
-      check('one call at a time, 700 ms apart', timers.delays.filter((d) => d === 700).length >= 9);
+      // The clock barely moves under fast timers, so each read after the first waits about one more 650 ms gap:
+      // 650, 1300, ... 5200 (a millisecond or two of real time comes off).
+      const gaps = timers.delays.filter((d) => d >= 600).sort((a, b) => a - b);
+      check('reads paced: call starts 650 ms apart across the readers', gaps.length === 8 && gaps.every((d, k) => Math.abs(d - 650 * (k + 1)) <= 10), timers.delays);
+      check('reads three at a time', items.READERS === 3);
       check('no network strays', W.strays.length === 0, W.strays);
     }
 
@@ -236,6 +240,24 @@ const run = (W, extra) => items.syncItemLines(createSession(W.org()), W.org(), '
       check('sync reports the item step', r.item_lines && r.item_lines.documents_read === 9 && r.breakdown.item_documents === 9, r.item_lines);
       const ledger = N.db.t('zoho_sync_state').find((s) => s.module === 'api_calls');
       check('the run\'s calls are recorded against today (IST)', ledger && ledger.remote_count === r.api_calls_used && new Date(new Date(ledger.last_synced_at).getTime() + 5.5 * 3600e3).toISOString().slice(0, 10) === istToday, ledger);
+    }
+
+    console.log('# Sales by Item report probe: one call, weekly until it works, never fatal');
+    {
+      const P = world();
+      let hits = 0;
+      P.zoho.route('books/v3/reports/salesbyitem', () => { hits++; return H.json(401, { code: 57, message: 'You are not authorized to perform this operation' }); });
+      const org = P.db.t('zoho_organizations')[0];
+      const refused = await items.probeItemReports(createSession(org), org);
+      const row = () => P.db.t('zoho_sync_state').find((x) => x.module === 'probe:salesbyitem');
+      check('refused: recorded as error, nothing thrown', refused && refused.status === 'error' && row() && row().last_run_status === 'error');
+      check('refused: connection not marked for reconnect', P.db.t('zoho_organizations')[0].status === 'active');
+      check('refused: not asked again inside a week', (await items.probeItemReports(createSession(org), org)) === null && hits === 1);
+      const later = Date.now() + 8 * 24 * 3600e3;
+      P.zoho.route('books/v3/reports/salesbyitem', () => { hits++; return H.json(200, { code: 0, sales: [{ item_id: 'IT1', quantity_sold: 557, amount: 89120 }] }); });
+      const ok = await items.probeItemReports(createSession(org), org, later);
+      check('a week on: asked again, success recorded with the item count', ok && ok.status === 'success' && row().last_run_status === 'success' && row().remote_count === 1 && hits === 2, ok);
+      check('after success: never asked again', (await items.probeItemReports(createSession(org), org, later + 30 * 24 * 3600e3)) === null && hits === 2);
     }
   } finally {
     timers.restore();

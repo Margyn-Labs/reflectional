@@ -357,7 +357,7 @@ function check(ctx) {
   checkAhead(ctx, found, scope);
   for (const x of found) { x.area = AREA[x.kind]; x.source = ctx.source || 'tally'; x.for_accountant = !x.info; }
   found.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || b.amount - a.amount);
-  return { items: found, scope };
+  return { items: found, scope, source: ctx.source || 'tally' };
 }
 
 /* ---------------- the workflow: open / fixed / ignored ---------------- */
@@ -407,8 +407,11 @@ function reconcile(rows, result, now) {
     if (r.status === 'fixed') { upserts.push(row(f, r, { status: 'open', fixed_at: null, reopened_at: at })); out.reopened.push(f.key); continue; }
     upserts.push(row(f, r, { status: 'open' }));
   }
+  // A finding from another books system (Tally disconnected, Zoho now keeps the books) can't be checked again,
+  // so it closes rather than staying open on Home for good ("Test Supplier: 1 bill still open", 30 Oct 2026).
+  const otherBooks = (r) => !!(result.source && r.source && r.source !== result.source);
   for (const r of byKey.values()) {
-    if (seen.has(r.key) || r.status !== 'open' || !covered(result.scope, r)) continue;
+    if (seen.has(r.key) || r.status !== 'open' || !(covered(result.scope, r) || otherBooks(r))) continue;
     upserts.push(row(r, r, { status: 'fixed', fixed_at: at, last_seen: r.last_seen || at }));
     out.closed.push(r.key);
   }

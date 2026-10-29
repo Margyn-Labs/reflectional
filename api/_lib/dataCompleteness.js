@@ -205,8 +205,11 @@ function tallyCompleteness(book, ctx, opts) {
 
 /**
  * The same four stages for Zoho Books. Pure.
- * z: { book, ctx, remote: { invoices, bills } (Zoho's own counts from the sweep's full listing, with when),
- *      stored: { invoices, bills, customer_payments, vendor_payments, postings, pnl_accounts, open_invoices, open_bills },
+ * z: { book, ctx, remote: { invoices, bills, contacts, items } (Zoho's own counts: the sweep's full listing, the
+ *      contact and item reads),
+ *      stored: { invoices, bills, customer_payments, vendor_payments, postings, pnl_accounts, open_invoices, open_bills,
+ *        bank_accounts, items, contacts, contacts_with_phone },
+ *      lines: items.progressFrom(zoho_line_state) + { creditnotes, vendorcredits } (null before the items SQL),
  *      lastSync, sweptAt }
  */
 function zohoCompleteness(z, opts) {
@@ -249,6 +252,35 @@ function zohoCompleteness(z, opts) {
       ? `All ${fmt(openInv)} open invoices and ${fmt(openBill)} open bills are counted (void and draft left out, as Zoho does).`
       : `${fmt(used.receivable)} of ${fmt(openInv)} open invoices and ${fmt(used.payable)} of ${fmt(openBill)} open bills are counted.`,
     { open_invoices: openInv, open_bills: openBill }));
+  /* ---- the other modules Margyn reads from Zoho ---- */
+  checks.push(check('banks', 'Bank accounts', num(st.bank_accounts) ? 'ok' : 'warn',
+    num(st.bank_accounts) ? `${fmt(st.bank_accounts)} bank and cash accounts, with today’s balances. Cash on Home comes from these.`
+      : 'No bank accounts came from Zoho, so cash can’t be read from the books. Add your bank accounts under Banking in Zoho Books.'));
+  if (remote.contacts != null || num(st.contacts)) {
+    const rcn = remote.contacts, sc = num(st.contacts), ph = num(st.contacts_with_phone);
+    checks.push(check('contacts', 'Customers and suppliers', rcn == null || sc >= rcn ? 'ok' : 'warn',
+      (rcn == null ? `${fmt(sc)} customers and suppliers` : sc >= rcn ? `All ${fmt(rcn)} customers and suppliers in Zoho are in Margyn` : `${fmt(sc)} of the ${fmt(rcn)} customers and suppliers in Zoho are in Margyn`) +
+      `; ${fmt(ph)} have a phone number, which Payment Chase needs to send a reminder.`, { zoho: rcn, stored: sc }));
+  }
+  if (remote.items != null || num(st.items)) {
+    checks.push(check('items', 'Items', 'ok', `${fmt(remote.items != null ? remote.items : st.items)} items, with names, units and purchase rates.`));
+  }
+  const L = z.lines;
+  if (L && L.documents) {
+    const done = L.pending === 0;
+    checks.push(check('item_lines', 'Item lines on invoices, bills and returns', done ? 'ok' : 'info',
+      done ? `Item lines are in for all ${fmt(L.documents)} documents, so item sales, purchases and margins are complete.`
+        : `Item lines are in for ${fmt(L.read)} of ${fmt(L.documents)} documents. Zoho sends lines one document at a time and caps calls each day, so the rest arrive over the next nights` +
+          (L.complete_after ? `; item figures are complete only after ${L.complete_after}.` : '.'),
+      { read: L.read, documents: L.documents }));
+    checks.push(check('returns', 'Credit notes and vendor credits', 'ok',
+      `${fmt(L.creditnotes)} credit notes and ${fmt(L.vendorcredits)} vendor credits. Their amounts reach the profit and loss through the account postings; their item lines count as returns.`));
+  }
+  checks.push(check('not_read', 'What Margyn doesn’t read from Zoho', 'info',
+    'Expenses and manual journals reach your figures through the account postings, not as separate records. ' +
+    'Sales orders, purchase orders, estimates, recurring templates, projects, timesheets and bank statement lines aren’t read: they don’t change what is owed or earned until they become an invoice, bill or posting. ' +
+    'Stock movements and production aren’t in Zoho Books, so closing stock is an estimate from the item list.'));
+
   if (z.sweptAt) {
     const days = Math.floor((now - new Date(z.sweptAt)) / 86400000);
     checks.push(check('swept', 'Deleted or missed in Zoho', days > 8 ? 'warn' : 'info',
@@ -258,7 +290,7 @@ function zohoCompleteness(z, opts) {
   const worst = checks.some((c) => c.status === 'warn') ? 'warn' : 'ok';
   return {
     source: 'zoho', company: book.company || null, last_sync: z.lastSync || book.lastSync || null, status: worst,
-    counts: { invoices: num(st.invoices), bills: num(st.bills), postings: num(st.postings) },
+    counts: { invoices: num(st.invoices), bills: num(st.bills), postings: num(st.postings), contacts: num(st.contacts), items: num(st.items) },
     checks, months: [], excluded: []
   };
 }

@@ -675,6 +675,7 @@ async function syncZohoForUser(userId, mode, opts) {
   // Best-effort: a failed read is logged there and never makes the books sync partial.
   const contacts = await require('../_lib/zohoParties').syncZohoPartyContacts(session, userId);
   if (!contacts.error && (contacts.inserted || contacts.updated)) results.contacts_to_parties = contacts.inserted + contacts.updated;
+  if (!contacts.error && contacts.read != null) await setRemoteCount(org.id, 'contacts', contacts.read);
 
   // Item lines (items.js): read invoice, bill, credit note and vendor credit details inside today's call budget,
   // newest first, keeping 200 calls spare. Resumes where it stopped on the next run.
@@ -683,6 +684,9 @@ async function syncZohoForUser(userId, mode, opts) {
   const itemLines = await itemStep.syncItemLines(session, org, userId, { usedBefore, deadline: (opts && opts.deadline) || startedAt + itemStep.TIME_LIMIT_MS });
   if (itemLines.error) errors.push(`item_lines: ${itemLines.error}`);
   else if (itemLines.documents_read) results.item_documents = itemLines.documents_read;
+  if (itemLines.items) await setRemoteCount(org.id, 'items', itemLines.items);
+  // One call, weekly until it answers: may an OAuth token read Zoho's Sales by Item report? (items.js)
+  if (itemLines.items) { const probe = await itemStep.probeItemReports(session, org); if (probe) results.salesbyitem_report = probe.status; }
 
   // Persist plan-level flags discovered during the run.
   const orgPatch = {};

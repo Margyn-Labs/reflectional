@@ -674,11 +674,20 @@ async function runAgentForUser(userId) {
   }));
 
   // never resurrect a proposal a human has already actioned
-  const existing = await selectRows('agent_actions', `select=proposal_key,status&user_id=eq.${userId}&agent=eq.close_collections`).catch(() => []);
+  const existing = await selectRows('agent_actions', `select=proposal_key,status,org_ref&user_id=eq.${userId}&agent=eq.close_collections`).catch(() => []);
   const locked = new Set(existing.filter((e) => e.status !== 'proposed').map((e) => e.proposal_key));
   const fresh = rows.filter((r) => !locked.has(r.proposal_key));
   if (fresh.length) {
     await insertRows('agent_actions', fresh, { onConflict: 'user_id,agent,proposal_key', merge: true });
+  }
+  // Proposals still waiting from a books connection that's gone (Tally disconnected, Zoho keeps the books now)
+  // can't be checked or applied, so they expire instead of sitting in the Inbox for good ("Test Customer invoice 1",
+  // 30 Oct 2026). Only org-tagged ones: untagged rows predate org_ref and are left alone.
+  const liveOrgs = booksSources.map((b) => String(b.orgRef));
+  const gone = existing.filter((e) => e.status === 'proposed' && e.org_ref && !liveOrgs.includes(String(e.org_ref)) && !rows.some((r) => r.proposal_key === e.proposal_key));
+  if (gone.length) {
+    await updateRows('agent_actions', `user_id=eq.${userId}&agent=eq.close_collections&status=eq.proposed&org_ref=in.(${[...new Set(gone.map((g) => g.org_ref))].join(',')})`,
+      { status: 'expired', updated_at: nowIso }).catch((err) => console.error('[close agent] could not expire proposals:', err.message));
   }
 
   if (priorAttempts && newAttempts.length) {

@@ -56,5 +56,20 @@ const m6 = W.morning(fresh, null, W.snapshot(fresh, null, NOW), null, [], null, 
 check('books not synced today: the cash line says when they are from', /Bank and cash [^\n]*\(books as of 22 Oct/.test(m5.text) && /books as of/.test(m5.headline), m5.text.slice(0, 300));
 check('books synced today: no date on the cash line', !/Bank and cash [^\n]*books as of/.test(m6.text) && !/books as of/.test(m6.headline), m6.text.slice(0, 300));
 
+// Books read once a night (Zoho Books, Odoo): a few hours since the last sync is normal, so no "Is the Tally PC on?"
+// in the day's updates (30 Oct 2026). Tally, synced from the shop's PC through the day, still gets it.
+{
+  const fourHoursAgo = new Date(NOW.getTime() - 4 * 3600000).toISOString();
+  const tallyCtx = Object.assign(E.prepare(book(15100000), { now: NOW }), { lastSync: fourHoursAgo });
+  const zohoCtx = Object.assign(E.prepare(Object.assign(book(15100000), { source: 'zoho', source_name: 'Zoho Books' }), { now: NOW }), { lastSync: fourHoursAgo, source: 'zoho', source_name: 'Zoho Books' });
+  const rt = W.pulse(tallyCtx, null, W.snapshot(tallyCtx, null, NOW), null, morning(snap.recv_late30), [], { slot: 'afternoon' });
+  const rz = W.pulse(zohoCtx, null, W.snapshot(zohoCtx, null, NOW), null, morning(snap.recv_late30), [], { slot: 'afternoon' });
+  check('Tally quiet for 4 hours on a working day: the pulse asks about the Tally PC', /Tally hasn't synced/.test(rt.text || ''), rt.text);
+  check('Zoho Books 4 hours after its nightly read: no sync warning, no Tally', !/hasn't synced|Tally/.test(rz.text || ''), rz.text);
+  const staleZ = Object.assign(E.prepare(Object.assign(book(15100000), { source: 'zoho', source_name: 'Zoho Books' }), { now: NOW }), { lastSync: new Date(NOW.getTime() - 40 * 3600000).toISOString(), source: 'zoho', source_name: 'Zoho Books' });
+  const stalePt = (E.insights(staleZ) || []).find((x) => x.kind === 'stale');
+  check('Zoho Books a night behind: the stale point names Zoho and points to Sync now, not the Tally PC', stalePt && /Zoho Books hasn't synced/.test(stalePt.title) && !/Tally/.test(stalePt.detail + stalePt.action + stalePt.ask) && /Sync now/.test(stalePt.action), stalePt);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

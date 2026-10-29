@@ -243,10 +243,25 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
   const live = (r) => Number(r.balance) > 0 && !/^(draft|void|deleted_at_source)$/.test(r.status);
   const comp = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2 },
     stored: { invoices: db.zoho_invoices.length, bills: db.zoho_bills.length, customer_payments: 2, vendor_payments: 1, postings: db.zoho_journal_entries.length, pnl_accounts: 5,
-      open_invoices: db.zoho_invoices.filter(live).length, open_bills: db.zoho_bills.filter(live).length }, sweptAt: new Date().toISOString() });
+      open_invoices: db.zoho_invoices.filter(live).length, open_bills: db.zoho_bills.filter(live).length,
+      bank_accounts: 2, contacts: 6, contacts_with_phone: 1, items: 3 }, sweptAt: new Date().toISOString() });
   check('completeness: all green on a whole Zoho book', comp.status === 'ok' && comp.checks.every((c) => c.status !== 'warn'), comp.checks);
   const noPnl = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2 }, stored: { invoices: 4, bills: 2, postings: 0, open_invoices: 2, open_bills: 1 } });
   check('completeness: says to reconnect when P&L postings are missing', noPnl.checks.some((c) => c.key === 'pnl' && c.status === 'warn' && /Reconnect Zoho Books/.test(c.detail)));
+
+  // Every module Margyn reads gets a row, and what it doesn't read is said plainly (30 Oct 2026).
+  const keys = comp.checks.map((c) => c.key);
+  check('completeness: banks, contacts and items each get a row', ['banks', 'contacts', 'items', 'not_read'].every((k) => keys.includes(k)), keys);
+  check('completeness: contacts row says how many have a phone (Chase needs it)', /1 have a phone number/.test(comp.checks.find((c) => c.key === 'contacts').detail));
+  const short = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2, contacts: 66 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1, bank_accounts: 1, contacts: 60 } });
+  check('completeness: fewer contacts than Zoho holds is flagged', short.checks.some((c) => c.key === 'contacts' && c.status === 'warn' && /60 of the 66/.test(c.detail)));
+  const noBank = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1 } });
+  check('completeness: no bank accounts is flagged, not shown as fine', noBank.checks.some((c) => c.key === 'banks' && c.status === 'warn'));
+  const filling = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1, bank_accounts: 1 },
+    lines: { documents: 1053, read: 220, pending: 833, complete_after: '2026-09-14', creditnotes: 12, vendorcredits: 4 } });
+  const il = filling.checks.find((c) => c.key === 'item_lines');
+  check('completeness: item lines filling in says N of N and the date figures are complete after', il && il.status === 'info' && /220 of 1,053/.test(il.detail) && /2026-09-14/.test(il.detail), il);
+  check('completeness: credit notes and vendor credits counted', /12 credit notes and 4 vendor credits/.test(filling.checks.find((c) => c.key === 'returns').detail));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;
