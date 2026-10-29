@@ -604,17 +604,25 @@ function renderZohoStatus(){
       : (zohoVitals.backfill_completed_at
           ? 'Connected to ' + name + ', syncing nightly at 2:30 AM IST'
           : 'Connected to ' + name + ', first 12-month backfill in progress');
+    // Item lines fill in newest first, one Zoho call per document (a few nights on the Free plan).
+    const il = zohoVitals.item_lines;
+    const itemMeta = !needsReauth && il && il.documents
+      ? (il.pending > 0 ? 'Item lines: ' + Number(il.read).toLocaleString('en-IN') + ' of ' + Number(il.documents).toLocaleString('en-IN') + ' documents read, newest first' : 'Item lines: all ' + Number(il.documents).toLocaleString('en-IN') + ' documents read')
+      : '';
     host.innerHTML =
       '<div class="ledger-row"><div class="lr-main">' +
         '<div class="lr-party">Zoho Books</div>' +
         '<div class="lr-meta">' + meta + '</div>' +
+        (itemMeta ? '<div class="lr-meta" id="zohoItemMeta">' + escapeHtml(itemMeta) + '</div>' : '') +
       '</div><span class="lr-tag ' + (needsReauth ? 'bad' : 'ok') + '">' + (needsReauth ? 'Reconnect' : 'Connected') + '</span>' +
       '<div class="lr-actions">' +
         (needsReauth ? '<button class="lr-btn" id="zohoReconnectBtn">Reconnect</button>'
-                     : '<button class="lr-btn" id="zohoSyncBtn">Sync now</button>') +
+                     : '<button class="lr-btn" id="zohoSyncBtn">Sync now</button>' +
+                       (il && il.pending > 0 ? '<button class="lr-btn" id="zohoFillBtn" title="Read item lines now with the rest of today\'s Zoho allowance (keeps 200 calls for the nightly sync)">Fill now</button>' : '')) +
         '<button class="lr-btn danger" id="zohoDisconnectBtn">Disconnect</button>' +
       '</div></div>';
     const s = document.getElementById('zohoSyncBtn'); if(s) s.addEventListener('click', syncZohoNow);
+    const f = document.getElementById('zohoFillBtn'); if(f) f.addEventListener('click', fillZohoItemsNow);
     const r = document.getElementById('zohoReconnectBtn'); if(r) r.addEventListener('click', openZohoModal);
     document.getElementById('zohoDisconnectBtn').addEventListener('click', disconnectZoho);
   } else {
@@ -765,6 +773,24 @@ async function syncZohoNow(){
     if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
   }
   if(btn){ btn.disabled = false; btn.textContent = 'Sync now'; }
+}
+/* Item lines: spend the rest of today's Zoho allowance reading documents (newest first), keeping 200 calls spare. */
+async function fillZohoItemsNow(){
+  const btn = document.getElementById('zohoFillBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Filling… (up to 4 min)'; }
+  try {
+    const out = await zohoApi('/api/zoho?action=fill-items', { method:'POST', body: JSON.stringify({}) });
+    const p = out && out.progress;
+    const why = out.stopped === 'budget' ? 'Today’s Zoho allowance is used up; the rest comes in tonight.'
+      : out.stopped === 'rate_limited' ? 'Zoho asked Margyn to slow down; the rest comes in tonight.'
+      : out.stopped === 'time' ? 'Press Fill now again to keep going.' : '';
+    toast('Read item lines from ' + Number(out.documents_read || 0).toLocaleString('en-IN') + ' documents', { kind:'info', ms:7000,
+      sub: (p ? Number(p.read).toLocaleString('en-IN') + ' of ' + Number(p.documents).toLocaleString('en-IN') + ' read. ' : '') + why });
+    await loadZohoVitals();
+  } catch(e){
+    toast('Could not fill item lines: ' + e.message, { kind:'bad' });
+    if(btn){ btn.disabled = false; btn.textContent = 'Fill now'; }
+  }
 }
 async function disconnectZoho(){
   if(!(await mgConfirm({ title:'Disconnect Zoho Books?', body:'Your historical figures stay visible in Margyn, but nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;

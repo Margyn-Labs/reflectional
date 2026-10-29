@@ -277,10 +277,20 @@ async function handler(req, res) {
     }
   }
 
+  // Item lines read so far (_zoho/items.js), for the "Fill now" line on the Zoho card. Empty before the migration.
+  let itemLines = null;
+  if (v.org_ref) {
+    try {
+      const state = await selectRows('zoho_line_state', `select=doc_type,doc_date,status,doc_last_modified,read_modified,lines_read_at&org_ref=eq.${v.org_ref}&order=id.asc&limit=200000`);
+      if (state.length) itemLines = require('./items').progressFrom(state);
+    } catch (err) { /* table not migrated yet */ }
+  }
+
   res.setHeader('Cache-Control', 'no-store');
   res.status(200).json({
     ...v,
     backfill_completed_at: backfillCompletedAt,
+    item_lines: itemLines,
     receivables_list: receivablesList,
     payables_list: payablesList,
     briefing_hints: buildBriefingHints(v)

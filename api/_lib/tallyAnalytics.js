@@ -1165,6 +1165,7 @@ function computeAnalytics(input) {
   // Kits and packs the business puts together itself are never purchased, so their cost lives in
   // Manufacturing Journals: one finished line worth exactly the components that went into it.
   const assembled = assemblyCosts(allVouchers);
+  const itemListCost = new Map((input.itemMaster || []).filter((m) => m && m.item && num(m.purchase_rate) > 0).map((m) => [m.item, num(m.purchase_rate)]));
   const itemRows = [];
   if (itemsAvailable) {
     for (const a of Object.values(items)) {
@@ -1172,12 +1173,15 @@ function computeAnalytics(input) {
       const avg_price = a.sold_qty > 0 ? a.sold_value / a.sold_qty : null;
       const asm = assembled[a.item];
       const fromAssembly = !(a.cost_qty > 0) && asm && asm.qty > 0;
+      // Zoho Books: an item never bought on a bill is costed at its item-list purchase rate, and says so.
+      const listed = !(a.cost_qty > 0) && !fromAssembly ? itemListCost.get(a.item) : null;
       // Cost per unit is the average over everything synced (last year's purchases still say what an item costs).
-      const avg_cost = a.cost_qty > 0 ? a.cost_value / a.cost_qty : fromAssembly ? asm.value / asm.qty : null;
+      const avg_cost = a.cost_qty > 0 ? a.cost_value / a.cost_qty : fromAssembly ? asm.value / asm.qty : listed != null ? listed : null;
       const cogs = avg_cost != null ? a.sold_qty * avg_cost : null;
       const margin = cogs != null ? a.sold_value - cogs : null;
       const flags = [];
       if (fromAssembly) flags.push('cost_from_assembly');
+      if (listed != null) flags.push('cost_from_item_master');
       if (a.sold_qty > 0 && avg_cost == null) flags.push('no_purchase_cost_in_period');
       if (avg_price != null && avg_cost != null && avg_price < avg_cost) flags.push('sold_below_cost');
       if (a.sold_qty > a.purchased_qty && avg_cost != null) flags.push('sold_more_than_bought_in_period');

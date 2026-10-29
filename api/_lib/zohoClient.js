@@ -48,7 +48,11 @@ const SCOPES = [
   // Chart of accounts + account transactions (net margin). Without it
   // chartofaccounts returns code 57, the module is skipped, and there are
   // no P&L accounts to pull postings for (found live, 29 Oct 2026).
-  'ZohoBooks.accountants.READ'
+  'ZohoBooks.accountants.READ',
+  // Item lines on returns (ZOHO-ITEM-LEVEL-PLAN.md D1): credit notes, and vendor credits (Zoho's scope name for
+  // them is debitnotes). Without them item sales and purchases would ignore returns.
+  'ZohoBooks.creditnotes.READ',
+  'ZohoBooks.debitnotes.READ'
 ].join(',');
 
 /**
@@ -92,6 +96,7 @@ const DAILY_CAP_BY_PLAN = {
 
 class ZohoAuthError extends Error {}          // refresh token dead -> needs_reauth
 class ZohoModuleUnavailable extends Error {}  // module not on this plan / not enabled / role can't see it
+class ZohoRateLimited extends Error {}        // 429: the per-minute or daily limit is used up
 
 /**
  * Classify a Zoho 401/403 into "the whole grant is dead" (ZohoAuthError,
@@ -397,7 +402,7 @@ function createSession(org) {
    * `path` is relative, e.g. 'books/v3/invoices'. `organization_id` is
    * injected here so no caller can forget it.
    */
-  async function apiGet(path, query = {}) {
+  async function apiGet(path, query = {}, opts = {}) {
     let token = await getAccessToken();
     const params = new URLSearchParams({
       organization_id: org.organization_id,   // required on EVERY Zoho Books call
@@ -447,8 +452,10 @@ function createSession(org) {
       }
 
       if (res.status === 429) {
-        if (attempt < MAX_RETRIES) { await sleep(BACKOFF_MS[attempt] * 2); continue; }
-        throw new Error('Zoho rate limit exceeded after retries');
+        // failFast429: the item-line queue stops at the first 429 and resumes on the next run, instead of
+        // spending retries against a daily limit that is already used up.
+        if (!opts.failFast429 && attempt < MAX_RETRIES) { await sleep(BACKOFF_MS[attempt] * 2); continue; }
+        throw new ZohoRateLimited(opts.failFast429 ? `Zoho rate limit at ${path}` : 'Zoho rate limit exceeded after retries');
       }
 
       if (res.status === 404 || res.status === 400) {
@@ -564,6 +571,8 @@ module.exports = {
   PER_PAGE,
   ZohoAuthError,
   ZohoModuleUnavailable,
+  ZohoRateLimited,
+  DAILY_CAP_BY_PLAN,
   accountsDomainForRegion,
   resolveAccountsDomain,
   buildAuthorizeUrl,

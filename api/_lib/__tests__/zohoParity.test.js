@@ -37,7 +37,7 @@ const Z = {
     // [document, posting, date, debit, credit, contact]; Zoho puts the contact in customer_id even on bills.
     S: [['I1', 'c1', '2026-10-05', '', 100000, 'CA'], ['I2', 'c2', '2026-07-01', '', 50000, 'CB'], ['I4', 'c4', '2026-10-10', '', 20000, 'CA'], ['CN1', 'c5', '2026-10-15', 5000, '', 'CA']],
     OI: [['J1', 'c6', '2026-10-28', '', 1000, '']],
-    C: [['B1', 'c7', '2026-09-01', 40000, '', 'VA']],
+    C: [['B1', 'c7', '2026-09-01', 40000, '', 'VA'], ['VC1', 'c15', '2026-09-20', '', 2000, 'VA']],
     R: [['B2', 'c8', '2026-10-01', 10000, '', 'VL'], ['E1', 'c9', '2026-10-27', 15000, '', '']],
     // Bank side: the expense and the interest journal carry their document; payments carry none (live shape).
     BK: [['E1', 'c10', '2026-10-27', '', 15000, ''], ['J1', 'c11', '2026-10-28', 1000, '', ''],
@@ -61,10 +61,32 @@ for (const [acc, rows] of Object.entries(Z.postings)) {
   const txns = rows.map(([doc, cat, date, dr, cr, who]) => ({ transaction_id: doc || '', entry_number: doc || '', categorized_transaction_id: cat, transaction_date: date, debit_amount: dr, credit_amount: cr, debit_or_credit: dr ? 'debit' : 'credit', customer_id: who }));
   t('zoho_journal_entries').push(...sync.journalRows(txns, { id: 'acc-' + acc, account_id: acc }, ORG));
 }
+
+/* ---------------- items, as Zoho Books keeps them: item master + one detail read per document (items.js) */
+const zitems = require('../../_zoho/items');
+Z.items = [
+  { item_id: 'G', name: 'Gauze Swab 10cm', unit: 'box', rate: 200, purchase_rate: 60, item_type: 'sales_and_purchases', product_type: 'goods' },
+  { item_id: 'M', name: 'Surgical Mask', unit: 'pcs', rate: 10, purchase_rate: 12, item_type: 'sales_and_purchases', product_type: 'goods' },
+  { item_id: 'H', name: 'Hand Rub 500ml', unit: 'btl', rate: 200, purchase_rate: 250, item_type: 'sales_and_purchases', product_type: 'goods' }
+];
+const L = (id, item, qty, rate) => ({ line_item_id: id, item_id: item, name: item, quantity: qty, unit: { G: 'box', M: 'pcs', H: 'btl' }[item], rate, bcy_rate: rate, item_total: qty * rate, tax_percentage: 0, location_name: 'Main Godown' });
+Z.details = [
+  ['invoice', { invoice_id: 'I1', date: '2026-10-05', status: 'sent', line_items: [L('l1', 'G', 500, 200)] }],
+  ['invoice', { invoice_id: 'I2', date: '2026-07-01', status: 'partially_paid', line_items: [L('l2', 'M', 5000, 10)] }],
+  ['invoice', { invoice_id: 'I4', date: '2026-10-10', status: 'paid', line_items: [L('l4', 'H', 100, 200)] }],
+  ['bill', { bill_id: 'B1', date: '2026-09-01', status: 'overdue', line_items: [L('b1', 'G', 400, 60), L('b2', 'H', 40, 250), L('b3', 'M', 500, 12)] }],
+  ['creditnote', { creditnote_id: 'CN1', date: '2026-10-15', status: 'open', line_items: [L('c1', 'G', 25, 200)] }],
+  ['vendorcredit', { vendor_credit_id: 'VC1', date: '2026-09-20', status: 'open', line_items: [L('v1', 'H', 8, 250)] }]
+];
+t('zoho_items').push(...Z.items.map((i) => zitems.mapItem(i, ORG)));
+for (const [type, doc] of Z.details) t('zoho_document_lines').push(...zitems.documentLines(doc, type, ORG));
+
 t('zoho_organizations').push({ id: ORG, user_id: ZU, status: 'active', organization_name: 'Acme (Zoho)', connected_at: '2026-10-01T00:00:00Z', last_synced_at: new Date().toISOString() });
 
 /* ---------------- the same business, as Tally keeps it */
-const tv = (type, date, party, entries, n) => ({ install_id: 'ti', tally_guid: 'tg-' + n, voucher_type: type, voucher_number: n, date, party_name: party, amount: Math.abs(entries[0].amount), is_cancelled: false, entries });
+const tv = (type, date, party, entries, n, items) => ({ install_id: 'ti', tally_guid: 'tg-' + n, voucher_type: type, voucher_number: n, date, party_name: party, amount: Math.abs(entries[0].amount), is_cancelled: false, entries, items: items || null });
+// Tally stock lines as the agent sends them (tallyClient.parseInventoryEntries): sales +, purchases −, credit notes −, debit notes +.
+const ti = (item, qty, unit, rate, sign) => ({ item, qty, unit, rate, amount: sign * qty * rate, abs_amount: qty * rate, godown: 'Main Godown' });
 t('tally_installs').push({ id: 'ti', user_id: TU, status: 'active', company_name: 'Acme (Tally)', last_sync_at: new Date().toISOString() });
 t('tally_ledgers').push(
   { install_id: 'ti', name: 'Sales', parent: 'Sales Accounts' }, { install_id: 'ti', name: 'Interest Income', parent: 'Indirect Incomes' },
@@ -73,12 +95,14 @@ t('tally_ledgers').push(
   { install_id: 'ti', name: 'Alpha Pharma Ltd', parent: 'Sundry Debtors' }, { install_id: 'ti', name: 'Beta Traders', parent: 'Sundry Debtors' },
   { install_id: 'ti', name: 'Apex Supplies', parent: 'Sundry Creditors' }, { install_id: 'ti', name: 'Landlord LLP', parent: 'Sundry Creditors' });
 t('tally_vouchers').push(
-  tv('Sales', '20261005', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: -100000, is_party: true }, { ledger: 'Sales', amount: 100000 }], 'INV-1'),
-  tv('Sales', '20260701', 'Beta Traders', [{ ledger: 'Beta Traders', amount: -50000, is_party: true }, { ledger: 'Sales', amount: 50000 }], 'INV-2'),
-  tv('Sales', '20261010', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: -20000, is_party: true }, { ledger: 'Sales', amount: 20000 }], 'INV-4'),
-  tv('Credit Note', '20261015', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: 5000, is_party: true }, { ledger: 'Sales', amount: -5000 }], 'CN1'),
+  tv('Sales', '20261005', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: -100000, is_party: true }, { ledger: 'Sales', amount: 100000 }], 'INV-1', [ti('Gauze Swab 10cm', 500, 'box', 200, 1)]),
+  tv('Sales', '20260701', 'Beta Traders', [{ ledger: 'Beta Traders', amount: -50000, is_party: true }, { ledger: 'Sales', amount: 50000 }], 'INV-2', [ti('Surgical Mask', 5000, 'pcs', 10, 1)]),
+  tv('Sales', '20261010', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: -20000, is_party: true }, { ledger: 'Sales', amount: 20000 }], 'INV-4', [ti('Hand Rub 500ml', 100, 'btl', 200, 1)]),
+  tv('Credit Note', '20261015', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: 5000, is_party: true }, { ledger: 'Sales', amount: -5000 }], 'CN1', [ti('Gauze Swab 10cm', 25, 'box', 200, -1)]),
   tv('Receipt', '20261028', null, [{ ledger: 'HDFC Current A/c', amount: -1000 }, { ledger: 'Interest Income', amount: 1000 }], 'J1'),
-  tv('Purchase', '20260901', 'Apex Supplies', [{ ledger: 'Apex Supplies', amount: 40000, is_party: true }, { ledger: 'Cost of Goods Sold', amount: -40000 }], 'P1'),
+  tv('Purchase', '20260901', 'Apex Supplies', [{ ledger: 'Apex Supplies', amount: 40000, is_party: true }, { ledger: 'Cost of Goods Sold', amount: -40000 }], 'P1',
+    [ti('Gauze Swab 10cm', 400, 'box', 60, -1), ti('Hand Rub 500ml', 40, 'btl', 250, -1), ti('Surgical Mask', 500, 'pcs', 12, -1)]),
+  tv('Debit Note', '20260920', 'Apex Supplies', [{ ledger: 'Apex Supplies', amount: -2000, is_party: true }, { ledger: 'Cost of Goods Sold', amount: 2000 }], 'VC1', [ti('Hand Rub 500ml', 8, 'btl', 250, 1)]),
   tv('Purchase', '20261001', 'Landlord LLP', [{ ledger: 'Landlord LLP', amount: 10000, is_party: true }, { ledger: 'Rent Expense', amount: -10000 }], 'P2'),
   tv('Receipt', '20260901', 'Beta Traders', [{ ledger: 'Beta Traders', amount: 30000, is_party: true }, { ledger: 'HDFC Current A/c', amount: -30000 }], 'R1'),
   tv('Receipt', '20261020', 'Alpha Pharma Ltd', [{ ledger: 'Alpha Pharma Ltd', amount: 20000, is_party: true }, { ledger: 'HDFC Current A/c', amount: -20000 }], 'R2'),
@@ -122,15 +146,19 @@ global.fetch = async (url, opts = {}) => {
 const B = require('../booksTools');
 const CALLS = {
   books_summary: { period: 'this_fy' }, books_breakdown: { measure: 'sales', by: 'customer' }, customer_or_vendor: { name: 'alpha' },
-  products: { sort: 'sales' }, money_owed: {}, find_entries: { kind: 'receipt' }, cash_and_loans: {}, cash_flow_statement: {},
+  products: { sort: 'sales' }, products_below_cost: { sort: 'below_cost' }, product_detail: { name: 'gauze' }, vendor: { name: 'apex' },
+  item_entries: { kind: 'sales', item: 'hand rub' }, money_owed: {}, find_entries: { kind: 'receipt' }, cash_and_loans: {}, cash_flow_statement: {},
   borrowing_history: {}, what_needs_attention: {}, books_health_check: {}, how_its_calculated: { figure: 'net profit' }
 };
+
+const TOOL = { products_below_cost: 'products', product_detail: 'products', vendor: 'customer_or_vendor', item_entries: 'find_entries' };
 
 (async () => {
   const out = { z: {}, t: {} };
   for (const [name, input] of Object.entries(CALLS)) {
-    out.z[name] = await B.exec(name, input, ZU);
-    out.t[name] = await B.exec(name, input, TU);
+    const tool = TOOL[name] || name;
+    out.z[name] = await B.exec(tool, input, ZU);
+    out.t[name] = await B.exec(tool, input, TU);
   }
   if (process.env.DUMP) { console.log(JSON.stringify(out, null, 1)); return; }
 
@@ -147,9 +175,51 @@ const CALLS = {
   for (const name of Object.keys(CALLS)) {
     const a = flat(out.z[name]), b = flat(out.t[name]);
     const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
-    const diff = keys.filter((k) => JSON.stringify(neutral(a[k])) !== JSON.stringify(neutral(b[k])));
+    // cost_note is the one honest difference: Zoho Books has no production entries (no Manufacturing Journals).
+    const diff = keys.filter((k) => k !== 'cost_note' && JSON.stringify(neutral(a[k])) !== JSON.stringify(neutral(b[k])));
     check(name + ': Zoho answer = Tally answer', diff.length === 0, diff.map((k) => k + ' Z=' + JSON.stringify(a[k]) + ' T=' + JSON.stringify(b[k])));
   }
+
+  console.log('# item level: products, below cost, top items, item filter (same on both books, checked against the figures)');
+  const p = out.z.products, item = (n) => p.items.find((x) => x.item === n);
+  check('products: three items, sales net of the credit note', p.items_sold === 3 && item('Gauze Swab 10cm').sold === '475 box' && item('Gauze Swab 10cm').sales === '₹95,000', p.items);
+  check('item cost = average purchase price net of the vendor credit', item('Hand Rub 500ml').avg_cost === '₹250' && item('Gauze Swab 10cm').avg_cost === '₹60', p.items);
+  check('below cost: Hand Rub and Surgical Mask', out.z.products_below_cost.items.map((x) => x.item).sort().join() === 'Hand Rub 500ml,Surgical Mask', out.z.products_below_cost.items);
+  check('one item in detail: by month, customers, bought from', out.z.product_detail.item === 'Gauze Swab 10cm' && out.z.product_detail.customers[0].customer === 'Alpha Pharma Ltd' && out.z.product_detail.bought_from[0].vendor === 'Apex Supplies', out.z.product_detail);
+  check('customer top items with estimated margin', JSON.stringify(out.z.customer_or_vendor).includes('Gauze Swab 10cm'), out.z.customer_or_vendor);
+  check('vendor top items', JSON.stringify(out.z.vendor).includes('Hand Rub 500ml'), out.z.vendor);
+  check('find_entries by item finds the invoice with its lines', out.z.item_entries.entries.length === 1 && /Hand Rub 500ml x100/.test(out.z.item_entries.entries[0].items), out.z.item_entries.entries);
+  check('Zoho cost note says there are no production entries', /Zoho Books has no production entries/.test(p.cost_note), p.cost_note);
+
+  console.log('# Margin page item analytics: same on both books');
+  const A = require('../tallyAnalytics');
+  const { loadBooks: lb } = require('../dataLayer/books');
+  const zBook = await lb(ZU), tBook = await lb(TU);
+  const an = (bk) => A.computeAnalytics({ ledgers: bk.ledgers, vouchers: bk.vouchers, bills: bk.bills, overrides: bk.overrides || {}, balance_convention: bk.balance_convention, itemMaster: bk.item_master || [] });
+  const za = an(zBook), ta = an(tBook);
+  const itemKeys = Object.keys(za).filter((k) => /item/i.test(k));
+  check('items_available on the Zoho book', za.items_available === true, itemKeys);
+  check('Margin page item table has all three items, Hand Rub flagged below cost', (za.items || []).length === 3 && za.items.find((x) => x.item === 'Hand Rub 500ml').flags.includes('sold_below_cost'), za.items);
+  for (const k of itemKeys) check('analytics.' + k + ': Zoho = Tally', JSON.stringify(za[k]) === JSON.stringify(ta[k]), { z: za[k], t: ta[k] });
+  check('no reconcile note: every document\'s lines add up to what it posts', !zBook.notes.some((n) => /item lines that differ/.test(n)), zBook.notes);
+  const E = require('../booksEngine');
+  check('Margin page: Zoho says it has no production entries', /Zoho Books has no production entries/.test(E.buildInsights(zBook, za).kits_note || ''));
+
+  console.log('# Zoho-only fallbacks');
+  const { zohoToBook } = require('../dataLayer/books');
+  const rows = { org: db.zoho_organizations[0], accounts: db.zoho_chart_of_accounts, journals: db.zoho_journal_entries, invoices: db.zoho_invoices, bills: db.zoho_bills,
+    customerPayments: db.zoho_customer_payments, vendorPayments: db.zoho_vendor_payments, banks: db.zoho_bank_accounts, items: db.zoho_items };
+  const noBills = zohoToBook(Object.assign({}, rows, { lines: db.zoho_document_lines.filter((l) => l.doc_type === 'invoice' || l.doc_type === 'creditnote') }));
+  const fb = E.products(E.prepare(noBills, {}), { name: 'mask' });
+  check('no bill lines: cost from the item master, labelled', fb.avg_cost === '₹12' && /item list, not from bills/.test(fb.cost_basis) && fb.flags.some((f) => /item list/.test(f)), fb);
+  const off = db.zoho_document_lines.map((l) => (l.doc_id === 'I1' ? Object.assign({}, l, { value: l.value - 500 }) : l));
+  const shipped = zohoToBook(Object.assign({}, rows, { lines: off }));
+  check('lines ₹500 short of what the invoice posts: reconcile note', shipped.notes.some((n) => /1 Zoho Books document have item lines that differ from what it posts before tax \(by ₹500/.test(n)), shipped.notes);
+  const partial = zohoToBook(Object.assign({}, rows, { lines: db.zoho_document_lines, lineProgress: { documents: 6, read: 4, pending: 2, complete_after: '2026-07-01' } }));
+  const pc = E.products(E.prepare(partial, {}), {});
+  check('still filling: the products answer says which dates are whole', /4 of 6 documents read, newest first\), so item figures are complete only after/.test(pc.coverage_note || ''), pc.coverage_note);
+  const cnVouchers = zBook.vouchers.filter((v) => v.voucher_type === 'Credit Note' && v.items);
+  check('credit note lines sit on one Credit Note voucher with Tally\'s signs', cnVouchers.length === 1 && cnVouchers[0].items[0].amount === -5000 && cnVouchers[0].items[0].abs_amount === 5000 && cnVouchers[0].items[0].godown === 'Main Godown', cnVouchers);
 
   console.log('# Zoho answers name Zoho Books, never Tally');
   // how_its_calculated explains every source by design ("Tally: ...; Zoho Books: ..."), so it is left out.

@@ -39,7 +39,7 @@ const nameKey = A.nameKey;
 
 
 /** The books system's own name for owner-facing text (Tally, Zoho Books, Odoo). */
-const SRC = (ctx) => (ctx && ctx.source_name) || 'Tally';
+const SRC = (ctx) => (ctx && (ctx.source_name || (ctx.book && ctx.book.source_name))) || 'Tally';
 /** "Tally books", "Odoo books", but "Zoho Books" (already a name for books). */
 const BOOKS = (ctx) => (/books$/i.test(SRC(ctx)) ? SRC(ctx) : SRC(ctx) + ' books');
 
@@ -183,7 +183,7 @@ function prepare(book, opts) {
   const analytics = o.analytics || A.computeAnalytics({
     ledgers: book.ledgers, vouchers: book.vouchers, bills: book.bills, overrides: book.overrides || {},
     syncRuns: book.syncRuns || [], diagnostics: book.diagnostics || null, edition: book.edition || null, now,
-    balance_convention: book.balance_convention, priorLedgers: book.priorLedgers || []
+    balance_convention: book.balance_convention, priorLedgers: book.priorLedgers || [], itemMaster: book.item_master || []
   });
   // The books handed to computeAnalytics are already as of today, so ledgers renamed in Tally are already moved
   // (tallyAnalytics.renamedInTally) and it would find none: keep the list asOfToday made, for the data check.
@@ -251,11 +251,14 @@ function prepare(book, opts) {
       if (r.party) { const vv = b.vendors[r.party] || (b.vendors[r.party] = { qty: 0, value: 0 }); vv.qty += s * num(it.qty); vv.value += s * val; }
     }
   }
+  // Zoho Books: the purchase rate on the item list, for an item no bill in the synced period carries.
+  const listed = new Map((book.item_master || []).filter((m) => m && m.item && num(m.purchase_rate) > 0).map((m) => [m.item, num(m.purchase_rate)]));
   const unitCost = (item) => {
     const b = bought[item];
     if (b && b.qty > 0 && b.value > 0) return { cost: b.value / b.qty, basis: 'purchases' };
     const k = assembled[item];
     if (k && k.qty > 0 && k.value > 0) return { cost: k.value / k.qty, basis: 'assembly' };
+    if (listed.has(item)) return { cost: listed.get(item), basis: 'item master' };
     return { cost: null, basis: 'unknown' };
   };
 
@@ -791,8 +794,9 @@ function productStats(ctx, per) {
     if (c.cost != null && price != null && price < c.cost) flags.push(price < 0.25 * c.cost ? 'price far below cost: check the unit (pack vs piece) or a free scheme' : 'sold below cost');
     if (g.zeroQty > 0) flags.push(Math.round(g.zeroQty) + ' given free (zero price)');
     if (c.basis === 'assembly') flags.push('kit you assemble: cost = its parts');
+    if (c.basis === 'item master') flags.push(`cost from your ${SRC(ctx)} item list, not from bills`);
     if (margin != null && g.value > 0 && margin / g.value > 0.9) flags.push('margin looks too high: the purchase unit may differ from the selling unit');
-    if (c.cost == null) flags.push('no cost known (never purchased or assembled in the synced period)');
+    if (c.cost == null) flags.push(ctx.book.no_production_entries ? 'no cost known (never purchased in the synced period, and no purchase rate on the item list)' : 'no cost known (never purchased or assembled in the synced period)');
     return { g, price, cost: c.cost, basis: c.basis, margin, marginPct: margin != null ? pctOf(margin, g.value) : null, flags };
   });
 }
@@ -827,7 +831,9 @@ function products(ctx, args) {
       price_range: prices.length > 1 ? inr(Math.min(...prices)) + ' to ' + inr(Math.max(...prices)) + ' per unit across customers' : undefined,
       bought_from: b ? Object.entries(b.vendors).sort((x, y) => y[1].value - x[1].value).slice(0, 4).map(([v, x]) => ({ vendor: v, qty: Math.round(x.qty), avg_cost: x.qty > 0 ? inr(x.value / x.qty) : null })) : undefined,
       made_from: k ? Object.values(k.components).sort((x, y) => y.value - x.value).slice(0, 8).map((c) => ({ part: c.item, qty: Math.round(c.qty), value: inr(c.value) })) : undefined,
-      cost_basis: s.basis === 'purchases' ? 'average purchase price over the synced year' : s.basis === 'assembly' ? 'cost of the parts in your Manufacturing Journals' : 'unknown'
+      cost_basis: s.basis === 'purchases' ? 'average purchase price over the synced year' : s.basis === 'assembly' ? 'cost of the parts in your Manufacturing Journals'
+        : s.basis === 'item master' ? `cost from your ${SRC(ctx)} item list, not from bills` : 'unknown',
+      coverage_note: coverageNote(ctx)
     };
   }
 
@@ -853,8 +859,19 @@ function products(ctx, args) {
     items_sold: stats.length, total_item_sales: inr(total),
     overall_item_margin: mv ? inr(mk) + ' (' + pctStr(pctOf(mk, mv)) + ') on ' + inr(mv) + ' of sales with a known cost' : null,
     items: list.slice(0, top).map(fmt),
-    cost_note: 'Cost per unit = average purchase price over the synced year; for kits you assemble, the cost of the parts from Manufacturing Journals. Stock bought before the synced year isn\'t costed.'
+    cost_note: ctx.book.no_production_entries
+      ? `Cost per unit = average purchase price over the synced year, else the purchase rate on your ${SRC(ctx)} item list. ${SRC(ctx)} has no production entries, so kits you assemble aren't costed from their parts. Stock bought before the synced year isn't costed.`
+      : 'Cost per unit = average purchase price over the synced year; for kits you assemble, the cost of the parts from Manufacturing Journals. Stock bought before the synced year isn\'t costed.',
+    coverage_note: coverageNote(ctx)
   };
+}
+
+/** Zoho Books item lines fill in newest first over a few nights: say which dates are whole yet. */
+function coverageNote(ctx) {
+  const c = ctx.book && ctx.book.item_coverage;
+  if (!c || !(c.pending > 0)) return undefined;
+  return `Item lines are still coming in from ${SRC(ctx)} (${c.read.toLocaleString('en-IN')} of ${c.documents.toLocaleString('en-IN')} documents read, newest first)` +
+    (c.complete_after ? `, so item figures are complete only after ${dayStr(new Date(c.complete_after + 'T00:00:00Z'))}.` : '.');
 }
 
 /* ---------------- 6. cash, loans, interest, GST ---------------- */
@@ -1275,6 +1292,7 @@ function buildInsights(book, analytics, opts) {
     funding: { overdraft: cd.notes.some((n) => /overdraft/.test(n)), total_borrowed: cd.total_borrowed, interest_this_fy: cd.interest_paid_this_fy },
     insights: insights(ctx).slice(0, 20),
     kits: kitsTable(ctx),
+    kits_note: book.no_production_entries ? `${book.source_name || SRC(ctx)} has no production entries, so there are no kits you assemble to cost from their parts.` : undefined,
     branches: branchTable(ctx),
     concentration: concentration(ctx),
     receivables_ageing: ageing(billRows(ctx, 'receivable'))

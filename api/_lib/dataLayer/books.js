@@ -22,7 +22,8 @@
  *  - Zoho Books: chart of accounts + per-account transactions (P&L accounts only) for costs, invoices for sales
  *    (before GST, needs zoho_invoices.sub_total; otherwise sales come from the income accounts and there is no
  *    customer split), customer/vendor payments as receipts/payments, bank accounts for cash, open invoices and
- *    bills as bills.
+ *    bills as bills. Item lines (zoho_document_lines, read per document by _zoho/items.js) go on the Sales, Purchase,
+ *    Credit Note and Debit Note vouchers in Tally's `items` shape; the item master's purchase rate is the fallback cost.
  *  - Odoo: posted invoices and bills (before tax, needs amount_untaxed) and the cash aggregate. Odoo sync has no
  *    running costs yet, so its P&L is gross only, and the book says so.
  *
@@ -62,6 +63,35 @@ function zohoToBook(z) {
   const accounts = z.accounts || [], journals = z.journals || [], invoices = z.invoices || [], bills = z.bills || [];
   const custPay = z.customerPayments || [], vendPay = z.vendorPayments || [], banks = z.banks || [];
   const notes = [];
+
+  // Item lines, in Tally's shape: { item, qty, unit, rate, amount, abs_amount, godown }. Quantity and value positive
+  // as stored; `amount` takes Tally's sign (sales lines +, purchase lines −, credit notes −, debit notes +). Every
+  // consumer reads abs_amount and gets the direction from the voucher type, exactly as for Tally.
+  const itemName = new Map((z.items || []).map((i) => [String(i.item_id), i.name]));
+  const linesByDoc = new Map();   // 'invoice:<id>' | 'bill:<id>' | 'creditnote:<id>' | 'vendorcredit:<id>' -> rows
+  for (const l of z.lines || []) {
+    if (!l || !l.doc_id || !l.item_id) continue;
+    const k = l.doc_type + ':' + l.doc_id;
+    if (!linesByDoc.has(k)) linesByDoc.set(k, []);
+    linesByDoc.get(k).push(l);
+  }
+  const LINE_SIGN = { Sales: 1, Purchase: -1, 'Credit Note': -1, 'Debit Note': 1 };
+  const attached = new Set();
+  const recon = { docs: 0, gap: 0 };
+  const itemsFor = (type, key, posted) => {
+    const ls = linesByDoc.get(key);
+    if (!ls || !ls.length || attached.has(key)) return null;   // a document split over several vouchers: first one only
+    attached.add(key);
+    const items = ls.map((l) => {
+      const v = r2(Math.abs(num(l.value))), q = Math.abs(num(l.qty));
+      return { item: itemName.get(String(l.item_id)) || l.item_name || 'Item', qty: q, unit: l.unit || null, rate: q ? r2(v / q) : null,
+        amount: LINE_SIGN[type] * v, abs_amount: v, godown: l.location_name || null };
+    });
+    // Lines vs what the document posts before tax: shipping, an adjustment or a discount after tax sit outside them.
+    const sum = items.reduce((t, it) => t + it.abs_amount, 0);
+    if (posted != null && Math.abs(sum - Math.abs(posted)) > 1) { recon.docs++; recon.gap += Math.abs(sum - Math.abs(posted)); }
+    return items;
+  };
   const ledgers = new Map();
   const addLedger = (name, parent, closing) => { if (name && !ledgers.has(name)) ledgers.set(name, { name, parent, primary_group: parent, opening_balance: null, closing_balance: closing == null ? null : r2(closing) }); };
 
@@ -133,6 +163,14 @@ function zohoToBook(z) {
   const invoiceSales = !postingSales && inv.length > 0 && inv.every((i) => i.sub_total != null);
   if (inv.length && !postingSales && !invoiceSales) notes.push('Sales come from your Zoho income accounts, without the split by customer, until Zoho Books syncs again (it then sends each invoice before GST).');
 
+  // What each document posts to income and cost accounts (credit notes and vendor credits may post to several).
+  const plByDoc = new Map();
+  for (const j of journals) {
+    const a = acct.get(String(j.account_ref));
+    if (!a || !String(j.transaction_id || '').includes(':')) continue;
+    plByDoc.set(docOf(j), (plByDoc.get(docOf(j)) || 0) + num(j.credit) - num(j.debit));
+  }
+
   const vouchers = [];
   for (const j of journals) {
     const a = acct.get(String(j.account_ref));
@@ -155,9 +193,14 @@ function zohoToBook(z) {
       // posting with a contact: against that party, balanced the way Tally books it.
       addLedger(who.name, who.group);
       const type = isIncome(a.type) && amt < 0 ? 'Credit Note' : isCost(a.type) && amt > 0 ? 'Debit Note' : 'Journal';
-      vouchers.push({ voucher_type: type, voucher_number: j.entry_number || null, tally_guid: 'zj:' + j.account_ref + ':' + j.transaction_id, date: day(j.entry_date),
+      const v = { voucher_type: type, voucher_number: j.entry_number || null, tally_guid: 'zj:' + j.account_ref + ':' + j.transaction_id, date: day(j.entry_date),
         party_name: who.name, amount: Math.abs(amt), is_cancelled: false,
-        entries: [{ ledger: who.name, amount: -r2(amt), is_party: true }, { ledger: a.name, amount: r2(amt), is_party: false }], narration: null });
+        entries: [{ ledger: who.name, amount: -r2(amt), is_party: true }, { ledger: a.name, amount: r2(amt), is_party: false }], narration: null };
+      if (type !== 'Journal') {
+        const items = itemsFor(type, (type === 'Credit Note' ? 'creditnote:' : 'vendorcredit:') + docOf(j), plByDoc.get(docOf(j)));
+        if (items) v.items = items;
+      }
+      vouchers.push(v);
       continue;
     }
     vouchers.push({ voucher_type: 'Journal', voucher_number: j.entry_number || null, tally_guid: 'zj:' + j.account_ref + ':' + j.transaction_id, date: day(j.entry_date),
@@ -187,8 +230,11 @@ function zohoToBook(z) {
       for (const l of lines) { entries.push({ ledger: l.ledger, amount: r2(l.amount), is_party: false }); posted += l.amount; }
       const rest = r2(-total - posted);   // costs are debits (negative); the rest of the bill is input GST and the like
       if (Math.abs(rest) >= 0.01) entries.push({ ledger: ZOHO_GST_IN, amount: rest, is_party: false });
-      vouchers.push({ voucher_type: 'Purchase', voucher_number: b.bill_number || null, tally_guid: 'zb:' + id, date: day(b.bill_date) || lines[0].date,
-        party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null });
+      const v = { voucher_type: 'Purchase', voucher_number: b.bill_number || null, tally_guid: 'zb:' + id, date: day(b.bill_date) || lines[0].date,
+        party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null };
+      const items = itemsFor('Purchase', 'bill:' + id, posted);
+      if (items) v.items = items;
+      vouchers.push(v);
     }
   }
 
@@ -207,8 +253,11 @@ function zohoToBook(z) {
       // GST, shipping and adjustment: the rest of the invoice, so the entry balances as Tally's does.
       const rest = r2(total - posted);
       if (Math.abs(rest) >= 0.01) entries.push({ ledger: ZOHO_GST_OUT, amount: rest, is_party: false });
-      vouchers.push({ voucher_type: 'Sales', voucher_number: i.invoice_number || null, tally_guid: 'zi:' + id, date: day(i.invoice_date) || lines[0].date,
-        party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null });
+      const v = { voucher_type: 'Sales', voucher_number: i.invoice_number || null, tally_guid: 'zi:' + id, date: day(i.invoice_date) || lines[0].date,
+        party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null };
+      const items = itemsFor('Sales', 'invoice:' + id, posted);
+      if (items) v.items = items;
+      vouchers.push(v);
     }
   }
   if (invoiceSales) {
@@ -219,8 +268,11 @@ function zohoToBook(z) {
       const total = num(i.total), sub = num(i.sub_total), tax = r2(total - sub);
       const entries = [{ ledger: party, amount: -r2(total), is_party: true }, { ledger: ZOHO_SALES, amount: r2(sub), is_party: false }];
       if (Math.abs(tax) >= 0.01) entries.push({ ledger: ZOHO_GST_OUT, amount: tax, is_party: false });
-      vouchers.push({ voucher_type: 'Sales', voucher_number: i.invoice_number || null, tally_guid: 'zi:' + i.invoice_id, date: day(i.invoice_date),
-        party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null });
+      const v = { voucher_type: 'Sales', voucher_number: i.invoice_number || null, tally_guid: 'zi:' + i.invoice_id, date: day(i.invoice_date),
+        party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null };
+      const items = itemsFor('Sales', 'invoice:' + i.invoice_id, sub);
+      if (items) v.items = items;
+      vouchers.push(v);
     }
   }
 
@@ -258,12 +310,20 @@ function zohoToBook(z) {
   for (const b of bil) if (num(b.balance) > 0.5) { addLedger(b.vendor_name || 'Unknown vendor', 'Sundry Creditors');
     openBills.push({ direction: 'payable', party_name: b.vendor_name || 'Unknown vendor', bill_ref: b.bill_number || String(b.bill_id), bill_date: day(b.bill_date), due_date: day(b.due_date), closing_balance: r2(b.balance), overdue_days: null }); }
 
+  if (recon.docs) notes.push(`${recon.docs} Zoho Books document${recon.docs === 1 ? '' : 's'} have item lines that differ from what ${recon.docs === 1 ? 'it posts' : 'they post'} before tax (by ${'₹' + Math.round(recon.gap).toLocaleString('en-IN')} in all): shipping, an adjustment or a discount after tax sits outside the item lines.`);
+  // How far the per-document reads have got (newest first): item figures are whole only after the last unread date.
+  const prog = z.lineProgress || null;
+  if (prog && prog.pending > 0) notes.push(`Item lines are still coming in from Zoho Books: ${prog.read.toLocaleString('en-IN')} of ${prog.documents.toLocaleString('en-IN')} documents read, newest first${prog.complete_after ? ', so item figures are complete only after ' + prog.complete_after : ''}.`);
+  // Item master: purchase rates, the fallback cost for items never bought on a bill in the synced period.
+  const itemMaster = (z.items || []).filter((i) => i.name && num(i.purchase_rate) > 0).map((i) => ({ item: i.name, purchase_rate: num(i.purchase_rate), unit: i.unit || null }));
+
   vouchers.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const company = org.organization_name || org.org_name || org.name || 'Zoho Books';
   const lastSync = org.last_sync_at || org.last_synced_at || org.last_success_at || null;
   return { connected: true, source: 'zoho', source_name: SOURCE_NAME.zoho, balance_convention: 'opposite', company, companies: [company], chosen: [], lastSync,
     edition: null, agentVersion: null, diagnostics: null,
-    ledgers: [...ledgers.values()], vouchers, bills: openBills, truncated: !!z.truncated, overrides: z.overrides || {}, aiPlaced: new Set(), syncRuns: [], notes };
+    ledgers: [...ledgers.values()], vouchers, bills: openBills, truncated: !!z.truncated, overrides: z.overrides || {}, aiPlaced: new Set(), syncRuns: [], notes,
+    item_master: itemMaster, item_coverage: prog, no_production_entries: true };
 }
 
 async function loadZoho(userId) {
@@ -271,7 +331,7 @@ async function loadZoho(userId) {
   const org = orgs[0];
   if (!org) return { connected: false };
   const o = encodeURIComponent(org.id);
-  const [A, J, I, B, CP, VP, BK, OV] = await Promise.all([
+  const [A, J, I, B, CP, VP, BK, OV, L, IT, LS] = await Promise.all([
     safe(pagedAll('zoho_chart_of_accounts', `select=id,account_id,account_name,account_type&org_ref=eq.${o}&order=id.asc`, 5000), { rows: [] }),
     safe(pagedAll('zoho_journal_entries', `select=account_ref,transaction_id,entry_date,debit,credit,party_ref,entry_number&org_ref=eq.${o}&order=entry_date.asc,transaction_id.asc`, 60000)
       .catch(() => pagedAll('zoho_journal_entries', `select=account_ref,transaction_id,entry_date,debit,credit&org_ref=eq.${o}&order=entry_date.asc,transaction_id.asc`, 60000)), { rows: [] }),
@@ -282,11 +342,16 @@ async function loadZoho(userId) {
     safe(pagedAll('zoho_vendor_payments', `select=payment_id,payment_number,vendor_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000)
       .catch(() => pagedAll('zoho_vendor_payments', `select=payment_id,vendor_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000)), { rows: [] }),
     safe(selectRows('zoho_bank_accounts', `select=account_id,bank_name,account_type,current_balance,is_primary&org_ref=eq.${o}`), []),
-    safe(selectRows('tally_ledger_classes', `select=ledger_name,bucket&user_id=eq.${userId}&company_name=eq.${encodeURIComponent(org.organization_name || org.org_name || org.name || 'Zoho Books')}`), [])
+    safe(selectRows('tally_ledger_classes', `select=ledger_name,bucket&user_id=eq.${userId}&company_name=eq.${encodeURIComponent(org.organization_name || org.org_name || org.name || 'Zoho Books')}`), []),
+    // Item lines (2026-10-30-zoho-items.sql). Until that migration runs these come back empty and nothing changes.
+    safe(pagedAll('zoho_document_lines', `select=doc_type,doc_id,item_id,item_name,qty,unit,value,location_name&org_ref=eq.${o}&order=id.asc`, 200000), { rows: [] }),
+    safe(selectRows('zoho_items', `select=item_id,name,unit,purchase_rate&org_ref=eq.${o}&order=id.asc&limit=20000`), []),
+    safe(selectRows('zoho_line_state', `select=doc_type,doc_date,status,doc_last_modified,read_modified,lines_read_at&org_ref=eq.${o}&order=id.asc&limit=200000`), [])
   ]);
   const overrides = {};
   for (const x of OV) overrides[x.ledger_name] = x.bucket;
   return zohoToBook({ org, accounts: A.rows, journals: J.rows, invoices: I.rows, bills: B.rows, customerPayments: CP.rows, vendorPayments: VP.rows, banks: BK, overrides,
+    lines: L.rows, items: IT, lineProgress: LS.length ? require('../../_zoho/items').progressFrom(LS) : null,
     truncated: [J, I, B, CP, VP].some((x) => x.truncated) });
 }
 
