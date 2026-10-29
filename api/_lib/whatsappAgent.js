@@ -33,6 +33,7 @@ const moneyModel = require('./moneyModel');
 const booksTools = require('./booksTools');
 const topics = require('../../app/js/margyn-topics.js');
 const { track } = require('./track');
+const { readGstr2bAvailability, applyGstr2bGate } = require('./gstr2bGate');
 const jevRouter = require('./jevRouter');
 
 const MODEL = process.env.WHATSAPP_AGENT_MODEL || 'claude-sonnet-5-5';
@@ -502,12 +503,12 @@ EXAMPLES (shape, not numbers):
 "are we fine on cash" -> "Can't see the bank yet. From Razorpay, ₹X settled this week; books show ₹Y. Want the mismatches?"
 "what's wrong with invoice 1042" -> "Mismatch. Zoho 1042 is ₹50,000; Razorpay payment pay_abc is ₹49,100 on the same day. IDs don't line up cleanly."
 
-YOUR BOOKS (TALLY): THE MOST IMPORTANT PART
+YOUR BOOKS (TALLY, ZOHO BOOKS OR ODOO): THE MOST IMPORTANT PART
 - The person texting may not follow their finances closely. Answer in plain words, the number first, then what it means for them, in one or two short lines. Hindi or Hinglish in, easy Hinglish out. No finance jargon: "customers take about 70 days to pay you", not "DSO 70".
 - For ANY question about sales, purchases, profit, costs, a customer or vendor, products, who owes what, cash, overdraft, interest, GST or "what should I look at", use the books tools first: books_summary, books_breakdown, customer_or_vendor, products, money_owed, find_entries, cash_and_loans, cash_flow_statement, borrowing_history, what_needs_attention, books_health_check. They read every Tally entry for the year, not a summary. Never say Zoho isn't connected when the books are in Tally, and never say you only see 30 days.
 - Money comes back written the Indian way ("₹1.32 Cr", "₹41.2 L"). Copy it exactly; never convert lakh and crore or add figures up yourself.
 - "This year" means this Indian financial year (from 1 April). If a tool says a period isn't synced (like last year), say so plainly.
-- Tally is the business's own books: say "per your Tally books" once at most. Don't tack "Signal" on every number.
+- These are the business's own books, in whichever system the tools' source line names: say "per your Tally books" or "per your Zoho Books" once at most. Don't tack "Signal" on every number.
 - "The above", "that problem" with nothing before it: call what_needs_attention and answer about the biggest item.
 - If you just sent them an alert with numbered points and they reply with a number or "why" / "tell me more", explain that point using the books tools.
 - Margyn's website is www.margynlabs.com and the app is at www.margynlabs.com/app.html (it opens in any browser, nothing to download).
@@ -733,7 +734,11 @@ async function toolGetVitals(ctx) {
   }
   try {
     const v = await rpc('zoho_vitals', { p_user_id: ctx.profileId, p_org_ref: null });
-    const vitals = Array.isArray(v) ? v[0] : v;
+    let vitals = Array.isArray(v) ? v[0] : v;
+    // ITC at risk is fail-closed (gstr2bGate.js): null + a reason, never a silent 0.
+    if (vitals && typeof vitals === 'object' && vitals.connected === true) {
+      vitals = applyGstr2bGate(vitals, await readGstr2bAvailability(selectRows, vitals.org_ref));
+    }
     if (vitals && typeof vitals === 'object') return Object.assign({ data_source: 'zoho_books' }, vitals);
   } catch (e) {
     // fall through

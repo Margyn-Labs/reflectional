@@ -48,9 +48,10 @@ const { calibrateBills } = require('./_lib/tallyBills');
 const { classifyLedgersWithAI } = require('./_lib/tallyAiClassify');
 const { archiveRaw, pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = require('./_lib/tallyData');
 const { syncTallyPartyContacts, cleanContact } = require('./_lib/tallyParties');
-const { tallyCompleteness } = require('./_lib/dataCompleteness');
+const { tallyCompleteness, zohoCompleteness } = require('./_lib/dataCompleteness');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
 const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
+const { checkOneBooks } = require('./_lib/booksSource');
 const { buildInsights, prepare: prepareBooks } = require('./_lib/booksEngine');
 const cashFlow = require('./_lib/cashFlowModel');
 const cashFlowStatement = require('./_lib/cashFlowStatement');
@@ -564,6 +565,31 @@ async function handleAnalytics(req, res) {
 /* Sent → stored → read → used, for the Organisations and sources page */
 /* (api/_lib/dataCompleteness.js). Counts and totals only.             */
 /* ------------------------------------------------------------------ */
+async function zohoCompletenessFor(userId) {
+  const orgs = await selectRows('zoho_organizations', `select=id,last_synced_at&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`).catch(() => []);
+  const org = orgs[0];
+  if (!org) return null;
+  const o = encodeURIComponent(org.id);
+  const count = (t, extra) => selectRows(t, `select=org_ref&org_ref=eq.${o}${extra || ''}&order=org_ref.asc&limit=100000`).then((r) => r.length).catch(() => 0);
+  const [book, inv, bil, cp, vp, postings, openInv, openBill, state] = await Promise.all([
+    loadBooks(userId).catch(() => ({})),
+    count('zoho_invoices'), count('zoho_bills'), count('zoho_customer_payments'), count('zoho_vendor_payments'),
+    selectRows('zoho_journal_entries', `select=account_ref&org_ref=eq.${o}&order=id.asc&limit=100000`).catch(() => []),
+    count('zoho_invoices', '&balance=gt.0&' + require('./_lib/moneyModel').ZOHO_OPEN),
+    count('zoho_bills', '&balance=gt.0&' + require('./_lib/moneyModel').ZOHO_OPEN),
+    selectRows('zoho_sync_state', `select=module,last_synced_at,remote_count&org_ref=eq.${o}`).catch(() => [])
+  ]);
+  const rc = (m) => { const r = state.find((x) => x.module === 'count:' + m); return r && r.remote_count != null ? Number(r.remote_count) : null; };
+  const swept = state.find((x) => x.module === 'deleted_sweep');
+  return zohoCompleteness({
+    book: book && book.source === 'zoho' ? book : {},
+    remote: { invoices: rc('invoices'), bills: rc('bills') },
+    stored: { invoices: inv, bills: bil, customer_payments: cp, vendor_payments: vp, postings: postings.length,
+      pnl_accounts: new Set(postings.map((p) => p.account_ref)).size, open_invoices: openInv, open_bills: openBill },
+    lastSync: org.last_synced_at || null, sweptAt: swept ? swept.last_synced_at : null
+  });
+}
+
 async function handleCompleteness(req, res) {
   let user;
   try { user = await getUserFromRequest(req); }
@@ -571,7 +597,12 @@ async function handleCompleteness(req, res) {
   if (!user) return json(res, 401, { error: 'unauthorized' });
   try {
     const book = await loadTallyBook(user.id);
-    if (!book.connected) return json(res, 200, { connected: false });
+    if (!book.connected) {
+      // Zoho Books: the same check, against Zoho's own counts (dataCompleteness.zohoCompleteness).
+      const z = await zohoCompletenessFor(user.id);
+      if (z) { res.setHeader('Cache-Control', 'no-store'); return json(res, 200, Object.assign({ connected: true }, z)); }
+      return json(res, 200, { connected: false });
+    }
     const out = tallyCompleteness(book, prepareBooks(book));
     res.setHeader('Cache-Control', 'no-store');
     return json(res, 200, Object.assign({ connected: true }, out));
@@ -728,6 +759,8 @@ async function handlePairInit(req, res) {
   try { user = await getUserFromRequest(req); }
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
+  const refused = await checkOneBooks(user.id, 'tally');   // one books system per business (booksSource.js)
+  if (refused) return json(res, refused.status, refused.body);
 
   const body = parseBody(req);
   const companyHint = typeof body.companyHint === 'string' ? body.companyHint.trim().slice(0, 120) : null;
@@ -792,6 +825,10 @@ async function handlePairComplete(req, res) {
   if (pairing.attempts >= 5) return reject();
   if (pairing.used) return reject();
   if (new Date(pairing.expires_at).getTime() < Date.now()) return reject();
+
+  // One books system per business (booksSource.js): another may have been connected since the code was made.
+  const refusedPair = await checkOneBooks(pairing.user_id, 'tally');
+  if (refusedPair) return json(res, refusedPair.status, refusedPair.body);
 
   // Mint the install key. 32 random bytes, hex-encoded -> 64 chars.
   const installKey = 'mtly_' + crypto.randomBytes(32).toString('hex');

@@ -14,7 +14,9 @@
  */
 
 const { getUserFromRequest, logConnectorEvent } = require('../_lib/supabaseRest');
+const { checkOneBooks } = require('../_lib/booksSource');
 const { buildAuthorizeUrl, ACCOUNTS_DOMAINS, DEFAULT_REGION } = require('../_lib/zohoClient');
+const { track } = require('../_lib/track');
 
 async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -31,6 +33,13 @@ async function handler(req, res) {
   }
   if (!user) {
     res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
+
+  // One books system per business (booksSource.js).
+  const refused = await checkOneBooks(user.id, 'zoho');
+  if (refused) {
+    res.status(refused.status).json(refused.body);
     return;
   }
 
@@ -71,6 +80,7 @@ async function handler(req, res) {
     status: 'success',
     recordsSynced: 0
   });
+  await track(user.id, 'zoho_connect_started', { region }); // ops funnel: connect started
 
   res.status(200).json({
     authorize_url: built.url,

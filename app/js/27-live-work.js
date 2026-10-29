@@ -65,7 +65,7 @@ const LW_CALLS = [
   [/\/api\/generate-briefing/, 'watch', 'Writing your briefing', 'Wrote your briefing'],
   [/\/api\/tally\?action=books-check-set/, 'books', 'Updating your books check', 'Updated your books check'],
   [/\/api\/tally\?action=books-check/, 'books', 'Checking your books for things to fix', 'Checked your books'],
-  [/\/api\/tally\?action=completeness/, 'books', 'Checking every Tally voucher reached Margyn', 'Checked Tally data is complete'],
+  [/\/api\/tally\?action=completeness/, 'books', 'Checking every entry in your books reached Margyn', 'Checked your books data is complete'],
   [/\/api\/tally\?action=analytics/, 'books', 'Working out margins from Tally', 'Worked out margins'],
   [/\/api\/tally\?action=(status|summary)/, 'books', 'Reading Tally', 'Read Tally'],
   [/\/api\/zoho\?action=vitals/, 'books', 'Reading Zoho Books', 'Read Zoho Books'],

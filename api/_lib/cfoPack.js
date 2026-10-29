@@ -169,6 +169,7 @@ async function closingSnapshot(selectRows, userId, period, historyFrom) {
 
 /* ---------- sending ---------- */
 async function sendViaResend(fetchImpl, { to, subject, html, text }) {
+  if (require('./sendGuard').sendsBlocked()) { require('./sendGuard').blockedResult('email', to); return 'preview-not-sent'; }
   const key = process.env.RESEND_API_KEY;
   const from = process.env.CFO_PACK_FROM || 'Margyn <reports@margynlabs.com>';
   const r = await fetchImpl('https://api.resend.com/emails', {
@@ -224,7 +225,7 @@ async function runCron(deps, opts = {}) {
       const mail = buildEmail({ company, period, snap, prev, link: packLink(period), recipientName: r.name });
       const row = { user_id: p.id, report: 'cfo_pack', period, kind: 'scheduled', recipient_email: r.email, recipient_name: r.name || null, provider: 'resend' };
       try {
-        const id = await sendViaResend(deps.fetch, { to: r.email, ...mail });
+        const id = await require('./sendGuard').runAsAccount(p.id, () => sendViaResend(deps.fetch, { to: r.email, ...mail }));
         out.sent++;
         await logDelivery(deps.insertRows, { ...row, status: 'sent', provider_message_id: id });
       } catch (e) {
@@ -257,7 +258,7 @@ async function sendTest(deps, { user, period }) {
   mail.subject = '[Test] ' + mail.subject;
   const row = { user_id: user.id, report: 'cfo_pack', period: per, kind: 'test', recipient_email: String(user.email).toLowerCase(), provider: 'resend' };
   try {
-    const id = await sendViaResend(deps.fetch, { to: user.email, ...mail });
+    const id = await sendViaResend(deps.fetch, { to: user.email, ...mail });   // to the signed-in person themself
     await logDelivery(deps.insertRows, { ...row, status: 'sent', provider_message_id: id });
     return { status: 200, body: { ok: true, to: user.email, period: per } };
   } catch (e) {

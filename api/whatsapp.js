@@ -35,8 +35,15 @@ const deliveries = require('./_lib/waDeliveries');
 const booksTools = require('./_lib/booksTools');
 const booksEngine = require('./_lib/booksEngine');
 const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
+const sendGuard = require('./_lib/sendGuard');
 
-module.exports = async function handler(req, res) {
+// Every request runs in a send-guard context: once the account is known (resolveSender, matchChaseTarget),
+// an account with external sends off (a demo tenant) sends nothing, however deep the send is (sendGuard.js).
+module.exports = function handler(req, res) {
+  return sendGuard.inRequest(() => route(req, res));
+};
+
+async function route(req, res) {
   const action = (req.query && req.query.action) || '';
 
   if (action === 'webhook' && req.method === 'GET') return handleWebhookVerify(req, res);
@@ -47,7 +54,7 @@ module.exports = async function handler(req, res) {
   if (action === 'cron-watch' && req.method === 'GET') return handleWatchCron(req, res);
 
   res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing, cron-chase.' });
-};
+}
 
 // Raw body needed for webhook signature verification — see verifyInboundRequest.
 module.exports.config = { api: { bodyParser: false } };
@@ -548,6 +555,12 @@ function normalizePhone(phone) {
  * Returns { profileId, member, perms } or null for an unknown number.
  */
 async function resolveSender(from) {
+  const out = await findSender(from);
+  if (out) await sendGuard.markAccount(out.profileId);
+  return out;
+}
+
+async function findSender(from) {
   const phone = normalizePhone(from);
   if (!phone) return null;
   const enc = encodeURIComponent(phone);
@@ -722,7 +735,7 @@ async function handleCron(req, res, kind) {
       // touching anything above it.
       if (!paramsByAccount.has(profile.id)) paramsByAccount.set(profile.id, await getBriefingParams(profile.id, kind));
       const params = paramsByAccount.get(profile.id);
-      const result = await bsp.sendTemplate({ to: profile.phone, templateId, params });
+      const result = await sendGuard.runAsAccount(profile.id, () => bsp.sendTemplate({ to: profile.phone, templateId, params }));
 
       if (!result.ok) {
         failed.push({ userId: profile.id, who: profile.who, reason: result.error });
@@ -772,6 +785,7 @@ async function matchChaseTarget(fromPhone) {
       `select=*&contact_phone=eq.${encodeURIComponent(phone)}` +
         `&state=not.in.(opted_out,resolved_paid)&order=updated_at.desc&limit=1`
     );
+    if (rows[0]) await sendGuard.markAccount(rows[0].user_id);
     return rows[0] || null;
   } catch (err) {
     console.error('chase: matchChaseTarget failed', err.message);
@@ -1003,7 +1017,7 @@ async function handleChaseCron(req, res) {
         status = 'skipped';
         error = `Template ${msg.templateName} has no configured id (WHATSAPP_TEMPLATE_${msg.templateName.toUpperCase()})`;
       } else {
-        const result = await bsp.sendTemplate({ to: target.contact_phone, templateId: msg.templateId, params: msg.params });
+        const result = await sendGuard.runAsAccount(dep.user_id, () => bsp.sendTemplate({ to: target.contact_phone, templateId: msg.templateId, params: msg.params }));
         if (!result.ok) { status = 'failed'; error = result.error; failed++; }
         else {
           waMessageId = result.messageId || null; sent++; budget--;

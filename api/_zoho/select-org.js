@@ -24,6 +24,13 @@ const {
   ZohoAuthError
 } = require('../_lib/zohoClient');
 const { syncZohoForUser } = require('./sync');
+const { track } = require('../_lib/track');
+
+// Ops funnel event (api/_lib/eventSchema.js). Flags and a closed error code
+// only: never the organization id or name.
+function orgSelectedEvent(userId, ok, errorCode, extra) {
+  return track(userId, 'zoho_org_selected', Object.assign({ ok, error_code: errorCode }, extra || {}));
+}
 
 async function loadPendingOrg(userId, orgRef) {
   const rows = await selectRows(
@@ -106,6 +113,7 @@ async function handler(req, res) {
 
   const org = await loadPendingOrg(user.id, orgRef);
   if (!org) {
+    await orgSelectedEvent(user.id, false, 'org_not_found');
     res.status(404).json({ error: 'Connection not found' });
     return;
   }
@@ -120,12 +128,14 @@ async function handler(req, res) {
   try {
     organizations = await fetchOrganizations(org);
   } catch (err) {
+    await orgSelectedEvent(user.id, false, err instanceof ZohoAuthError ? 'needs_reauth' : 'org_verify_failed');
     res.status(502).json({ error: 'Could not verify the organization with Zoho' });
     return;
   }
 
   const match = organizations.find((o) => o.organization_id === chosenId);
   if (!match) {
+    await orgSelectedEvent(user.id, false, 'org_not_on_account');
     res.status(400).json({ error: 'That organization is not available on this Zoho account' });
     return;
   }
@@ -146,6 +156,7 @@ async function handler(req, res) {
     `&status=in.(active,pending_org_selection,needs_reauth)&limit=1`
   );
   if (duplicate.length > 0 && duplicate[0].id !== org.id) {
+    await orgSelectedEvent(user.id, false, 'org_already_connected');
     res.status(409).json({ error: 'That organization is already connected to Margyn' });
     return;
   }
@@ -163,6 +174,7 @@ async function handler(req, res) {
       connector_disconnected_at: null
     });
   } catch (err) {
+    await orgSelectedEvent(user.id, false, 'activate_failed');
     res.status(500).json({ error: 'Could not activate the connection' });
     return;
   }
@@ -195,6 +207,10 @@ async function handler(req, res) {
   } catch (err) {
     backfillResult = { status: 'error', message: err.message };
   }
+  await orgSelectedEvent(user.id, true, 'none', {
+    multi_currency: isMultiCurrency,
+    backfill_ok: !(backfillResult && backfillResult.status === 'error')
+  });
 
   res.status(200).json({
     status: 'active',

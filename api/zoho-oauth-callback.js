@@ -28,6 +28,14 @@ const {
   listOrganizations,
   ZohoAuthError
 } = require('./_lib/zohoClient');
+const { track } = require('./_lib/track');
+
+// Ops funnel event (api/_lib/eventSchema.js): ok + a closed error code + a
+// count. Never the org names, never Zoho's raw error text.
+function callbackEvent(userId, ok, errorCode, orgCount) {
+  if (!userId) return Promise.resolve();
+  return track(userId, 'zoho_callback', { ok, error_code: errorCode, org_count: orgCount || 0 });
+}
 
 const PENDING_ORG_SENTINEL = '__pending__';
 
@@ -39,7 +47,12 @@ function escapeHtml(s) {
 
 function page(title, message, payload) {
   const appOrigin = process.env.APP_ORIGIN || '';
-  const data = JSON.stringify(payload || {});
+  // Escaped for an inline <script>: `reason` echoes the ?error= query param and
+  // org names come from Zoho, so a raw "</script>" would end the script block
+  // (reflected XSS on the app origin). \u003c etc. parse back to the same JSON.
+  const data = JSON.stringify(payload || {})
+    .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>
@@ -88,6 +101,8 @@ module.exports = async (req, res) => {
   const zohoError = req.query && req.query.error;
 
   if (zohoError) {
+    const c = verifyState(state);
+    await callbackEvent(c && c.uid, false, /access_denied/i.test(String(zohoError)) ? 'user_cancelled' : 'unexpected');
     send(res, 400, page('Connection cancelled',
       'Zoho reported: ' + zohoError + '. You can close this window and try again.',
       { ok: false, reason: String(zohoError) }));
@@ -96,7 +111,10 @@ module.exports = async (req, res) => {
 
   const claims = verifyState(state);
   if (!claims || !claims.uid) {
-    // Expired (>10 min), tampered, or replayed state.
+    // Expired (>30 min, STATE_TTL_MS in zohoClient.js) or tampered state.
+    // A replay inside the window is not blocked, but it can only hand this
+    // same uid a Zoho grant: the state is HMAC-bound to the uid, and Zoho's
+    // code is single-use with a 2-minute life.
     send(res, 400, page('Connection link expired',
       'This connection link is no longer valid. Start again from Margyn > Connectors > Zoho Books.',
       { ok: false, reason: 'invalid_state' }));
@@ -117,6 +135,7 @@ module.exports = async (req, res) => {
   });
 
   if (!code) {
+    await callbackEvent(userId, false, 'missing_code');
     send(res, 400, page('Something went wrong',
       'Zoho did not return an authorization code. Please try connecting again.',
       { ok: false, reason: 'missing_code' }));
@@ -140,6 +159,7 @@ module.exports = async (req, res) => {
       status: 'error',
       errorMessage: err instanceof ZohoAuthError ? err.message : 'Token exchange failed'
     });
+    await callbackEvent(userId, false, 'token_exchange_failed');
     send(res, 400, page('Could not complete the connection',
       'The Zoho authorization expired before it could be used. This usually means the approval screen was left open too long. Please try again.',
       { ok: false, reason: 'token_exchange_failed' }));
@@ -176,6 +196,7 @@ module.exports = async (req, res) => {
       orgRef = inserted[0].id;
     }
   } catch (err) {
+    await callbackEvent(userId, false, 'db_write_failed');
     send(res, 500, page('Could not save the connection',
       'Margyn could not record this connection. Please try again.',
       { ok: false, reason: 'db_write_failed' }));
@@ -190,6 +211,7 @@ module.exports = async (req, res) => {
       userId, connectorType: 'zoho_books', operation: 'oauth_callback',
       status: 'error', errorMessage: 'Vault write failed'
     });
+    await callbackEvent(userId, false, 'vault_write_failed');
     send(res, 500, page('Could not secure the connection',
       'Margyn could not securely store the Zoho authorization. Please try again.',
       { ok: false, reason: 'vault_write_failed' }));
@@ -205,6 +227,7 @@ module.exports = async (req, res) => {
       userId, connectorType: 'zoho_books', operation: 'oauth_callback',
       status: 'error', errorMessage: 'Could not list organizations'
     });
+    await callbackEvent(userId, false, 'org_list_failed');
     send(res, 502, page('Could not read your organizations',
       'Margyn connected to Zoho but could not list your Books organizations. Please try again.',
       { ok: false, reason: 'org_list_failed', org_ref: orgRef }));
@@ -216,6 +239,7 @@ module.exports = async (req, res) => {
       userId, connectorType: 'zoho_books', operation: 'oauth_callback',
       status: 'error', errorMessage: 'no_books_organization'
     });
+    await callbackEvent(userId, false, 'no_books_organization', 0);
     send(res, 200, page('No Zoho Books organization found',
       'This Zoho login does not have access to any Zoho Books organization. If you use other Zoho apps but not Books, you will need a Zoho Books subscription (the free plan works) before connecting.',
       { ok: false, reason: 'no_books_organization', org_ref: orgRef }));
@@ -226,6 +250,7 @@ module.exports = async (req, res) => {
     userId, connectorType: 'zoho_books', operation: 'oauth_callback',
     status: 'success', recordsSynced: orgs.length
   });
+  await callbackEvent(userId, true, 'none', orgs.length);
 
   // ---- 6. Hand back to app.html. Activation is NOT complete: the org
   //         picker must be answered explicitly before any sync runs.

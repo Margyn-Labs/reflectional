@@ -35,6 +35,7 @@ const {
   updateRows,
   setConnectorStatus
 } = require('../_lib/supabaseRest');
+const { checkOneBooks } = require('../_lib/booksSource');
 // Only posted moves are open: a draft or cancelled move owes nothing (moneyModel.js).
 const { ODOO_OPEN } = require('../_lib/moneyModel');
 
@@ -448,6 +449,10 @@ async function handleConnect(req, res) {
   if (!db)      return json(res, 400, { error: 'missing_db', message: 'Enter your Odoo database name.' });
   if (!login)   return json(res, 400, { error: 'missing_login', message: 'Enter the Odoo user login (email).' });
   if (!apiKey)  return json(res, 400, { error: 'missing_api_key', message: 'Paste an Odoo API key (or the account password on Odoo below v14).' });
+
+  // One books system per business (booksSource.js).
+  const refused = await checkOneBooks(user.id, 'odoo');
+  if (refused) return json(res, refused.status, refused.body);
 
   // 1. Verify credentials
   let uid;

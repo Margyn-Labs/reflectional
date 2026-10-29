@@ -23,6 +23,13 @@
  *                                                             (see api/_lib/cfoPack.js)
  *   GET|POST /api/ops?action=team-*            (user JWT)     team logins: whoami, list, invite, revoke,
  *                                                             update, remove, join (see api/_lib/team.js)
+ *   GET  /api/ops?action=investor-tenants      (ops allowlist) investor tenants + funnel: invite, first login,
+ *                                                             preview watched, connect started, org picked,
+ *                                                             first sync (api/_lib/investorFunnel.js)
+ *   GET  /api/ops?action=investor-timeline&ref=<ref> (ops allowlist) one investor's timeline
+ *   PUT  /api/ops?action=investor-tenant       (ops allowlist) { ref, user_id|null }: register an invite /
+ *                                                             link a preview ref to a login (ops_investor_tenants)
+ *   GET  /api/ops?action=event-schema          (ops allowlist) the event + property allowlist (eventSchema.js)
  *
  * AUTH
  *   - track: the partner user's own Supabase JWT (Authorization: Bearer ...).
@@ -53,6 +60,8 @@ const { track, ALLOWED_NAMES } = require('./_lib/track');
 const waitlist = require('./_lib/waitlist');
 const previewView = require('./_lib/previewView');
 const cfoPack = require('./_lib/cfoPack');
+const { EVENT_SCHEMA } = require('./_lib/eventSchema');
+const investorFunnel = require('./_lib/investorFunnel');
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -545,6 +554,70 @@ async function loadOpsMetrics() {
 }
 
 /* ------------------------------------------------------------------ */
+/* investor tenants — funnel + timeline (2026-10-29-ops-investor-funnel.sql) */
+/* ------------------------------------------------------------------ */
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FUNNEL_EVENTS = ['app_open', 'zoho_connect_started', 'zoho_callback', 'zoho_org_selected', 'zoho_sync', 'zoho_gstr2b_sync'];
+const ZOHO_LOG_OPS = ['oauth_start', 'oauth_callback', 'select_org', 'sync_all', 'backfill_all', 'sync_gstr2b'];
+
+// Signup + last sign-in time only (GoTrue admin, service role). Never the email
+// or phone: the funnel needs "have they logged in", not who they are.
+async function loadAuthTimes(ids) {
+  const out = {};
+  await Promise.all(ids.filter((id) => UUID_RE.test(id)).map(async (id) => {
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`, {
+        headers: { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` }
+      });
+      if (!r.ok) return;
+      const u = await r.json();
+      out[id] = { created_at: u.created_at || null, last_sign_in_at: u.last_sign_in_at || null };
+    } catch (err) {
+      console.error('loadAuthTimes failed:', err && err.message);
+    }
+  }));
+  return out;
+}
+
+async function loadInvestorTenants() {
+  // null (not []) when the table isn't there yet, so the UI can say "run the migration".
+  return selectRows('ops_investor_tenants', 'select=ref,user_id,invited_at&order=invited_at.desc&limit=500').catch(() => null);
+}
+
+async function loadInvestorRows(userIds, { ref, allEvents } = {}) {
+  const ids = userIds.filter((id) => UUID_RE.test(id));
+  const inIds = `in.(${ids.join(',')})`;
+  const evNames = allEvents ? '' : `&name=in.(${FUNNEL_EVENTS.join(',')})`;
+  const [views, events, logs, users] = await Promise.all([
+    selectRows('preview_views', `select=ref,event,country,created_at${ref ? '&ref=eq.' + encodeURIComponent(ref) : ''}&order=created_at.desc&limit=5000`).catch(() => []),
+    ids.length ? selectRows('product_events', `select=user_id,name,props,at&user_id=${inIds}${evNames}&order=at.desc&limit=5000`).catch(() => []) : [],
+    ids.length ? selectRows('connector_logs', `select=user_id,connector_type,operation,status,error_message,records_synced,created_at&user_id=${inIds}&connector_type=eq.zoho_books&operation=in.(${ZOHO_LOG_OPS.join(',')})&order=created_at.desc&limit=5000`).catch(() => []) : [],
+    loadAuthTimes(ids)
+  ]);
+  return { views, events, logs, users };
+}
+
+async function buildInvestorTenantsView() {
+  const tenants = await loadInvestorTenants();
+  const list = tenants || [];
+  const data = await loadInvestorRows(list.map((x) => x.user_id).filter(Boolean));
+  return Object.assign(investorFunnel.buildInvestorTenants(Object.assign({ tenants: list }, data)), {
+    tenants_table: tenants !== null,
+    generated_at: new Date().toISOString()
+  });
+}
+
+async function buildInvestorTimelineView(refRaw) {
+  const ref = investorFunnel.cleanRef(refRaw);
+  if (!ref) return null;
+  const rows = await selectRows('ops_investor_tenants', `select=ref,user_id,invited_at&ref=eq.${encodeURIComponent(ref)}&limit=1`).catch(() => []);
+  const tenant = rows[0] || { ref, user_id: null, invited_at: null };
+  const data = await loadInvestorRows(tenant.user_id ? [tenant.user_id] : [], { ref, allEvents: true });
+  return investorFunnel.buildInvestorTimeline(tenant, data);
+}
+
+/* ------------------------------------------------------------------ */
 /* handler                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -661,6 +734,38 @@ module.exports = async (req, res) => {
         { onConflict: 'user_id', merge: true }
       );
       res.status(200).json({ ok: true, note: saved[0] || { user_id: userId, note } });
+      return;
+    }
+
+    if (action === 'investor-tenants' && req.method === 'GET') {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(await buildInvestorTenantsView());
+      return;
+    }
+
+    if (action === 'investor-timeline' && req.method === 'GET') {
+      const out = await buildInvestorTimelineView(req.query.ref);
+      if (!out) { res.status(400).json({ error: 'ref required' }); return; }
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(out);
+      return;
+    }
+
+    if (action === 'investor-tenant' && req.method === 'PUT') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const ref = investorFunnel.cleanRef(body.ref);
+      if (!ref || ref === 'direct') { res.status(400).json({ error: 'ref required (a-z 0-9 _ -)' }); return; }
+      const userId = body.user_id ? String(body.user_id).trim() : null;
+      if (userId && !UUID_RE.test(userId)) { res.status(400).json({ error: 'user_id must be a Margyn login id (uuid)' }); return; }
+      const row = { ref, user_id: userId, updated_at: new Date().toISOString(), updated_by: gate.by };
+      if (body.invited_at && !isNaN(Date.parse(body.invited_at))) row.invited_at = new Date(body.invited_at).toISOString();
+      const saved = await insertRows('ops_investor_tenants', [row], { onConflict: 'ref', merge: true });
+      res.status(200).json({ ok: true, tenant: saved[0] || row });
+      return;
+    }
+
+    if (action === 'event-schema' && req.method === 'GET') {
+      res.status(200).json({ events: EVENT_SCHEMA });
       return;
     }
 

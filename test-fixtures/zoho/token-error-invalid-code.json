@@ -1,0 +1,4 @@
+{
+  "_note": "Zoho answers HTTP 200 with this body for a reused/expired auth code AND for a revoked refresh token.",
+  "error": "invalid_code"
+}

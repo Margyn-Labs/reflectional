@@ -21,6 +21,7 @@ const {
   logConnectorEvent
 } = require('./_lib/supabaseRest');
 const { track } = require('./_lib/track');
+const { gstr2bValidated } = require('./_lib/gstr2bGate');
 const { randomUUID } = require('crypto');
 const { matchPayments } = require('./_lib/reconcileMatcher');
 const {
@@ -575,7 +576,8 @@ async function loadGatewayRefunds(userId) {
 
 /** The books tool has already reconciled GSTR-2B — surface its at-risk rows. */
 async function loadItcRisks(orgRef) {
-  if (!orgRef) return [];
+  // Fail closed: rows from an unvalidated GSTR-2B endpoint are not evidence.
+  if (!orgRef || !gstr2bValidated()) return [];
   const [recon, bills] = await Promise.all([
     selectRows('zoho_gstr2b_reconciliation', `select=bill_ref,bill_id,vendor_gstin,vendor_name,filing_period,match_status,itc_at_risk_amount&org_ref=eq.${orgRef}&order=filing_period.desc&limit=1000`).catch(() => []),
     selectRows('zoho_bills', `select=id,bill_number,bill_date,vendor_name&org_ref=eq.${orgRef}&limit=2000`).catch(() => [])

@@ -28,6 +28,7 @@
  */
 
 const crypto = require('crypto');
+const { sendsBlocked, accountSendsOff } = require('./sendGuard');
 const { ROLES, ROLE_LABEL, PERMISSIONS, effectivePermissions, cleanOverrides } = require('./teamAccess');
 
 const INVITE_DAYS = 7;
@@ -249,7 +250,8 @@ async function invite(deps, c, b) {
   const names = await companyNames(deps, [c.accountId]);
   const company = names[c.accountId] || 'a business';
   let emailed = false;
-  if (deps.sendEmail && process.env.RESEND_API_KEY) {
+  // A demo tenant's invites are previewed, never emailed (sendGuard.js).
+  if (deps.sendEmail && process.env.RESEND_API_KEY && !sendsBlocked() && !(await accountSendsOff(c.accountId))) {
     try {
       await deps.sendEmail({
         to: email,

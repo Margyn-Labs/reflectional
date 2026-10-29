@@ -400,7 +400,12 @@ async function settled(userId, waitMs, now) {
 }
 const SETTLE_POLL_MS = 15000;
 
+/** One account's update, in that account's send-guard context (a demo tenant sends nothing: sendGuard.js). */
 async function watchAccount(userId, opts) {
+  return require('./sendGuard').runAsAccount(userId, () => watchAccountInner(userId, opts));
+}
+
+async function watchAccountInner(userId, opts) {
   const o = opts || {};
   const slot = o.slot === 'manual' || !o.slot || !(INTRADAY.has(o.slot) || o.slot === 'evening' || o.slot === 'morning') ? 'morning' : o.slot;
   // Never read the books in the middle of a Tally sync: the morning and evening wait up to two and a half minutes

@@ -203,4 +203,64 @@ function tallyCompleteness(book, ctx, opts) {
   };
 }
 
-module.exports = { tallyCompleteness };
+/**
+ * The same four stages for Zoho Books. Pure.
+ * z: { book, ctx, remote: { invoices, bills } (Zoho's own counts from the sweep's full listing, with when),
+ *      stored: { invoices, bills, customer_payments, vendor_payments, postings, pnl_accounts, open_invoices, open_bills },
+ *      lastSync, sweptAt }
+ */
+function zohoCompleteness(z, opts) {
+  const o = opts || {};
+  const now = o.now ? new Date(o.now) : new Date();
+  const book = z.book || {}, remote = z.remote || {}, st = z.stored || {};
+  const fmt = (n) => num(n).toLocaleString('en-IN');
+  const checks = [];
+
+  /* ---- 1 → 2: Zoho's own counts against what is stored ---- */
+  for (const [key, label, noun] of [['invoices', 'Invoices: Zoho Books → Margyn', 'invoices'], ['bills', 'Bills: Zoho Books → Margyn', 'bills']]) {
+    const r = remote[key];
+    if (r == null) { checks.push(check(key + '_sent', label, 'warn', `Zoho’s own count of ${noun} isn’t in yet. It is taken on the first sync and weekly after that.`)); continue; }
+    const s = num(st[key]);
+    // Stored can be below Zoho's count only by documents older than 12 months that are closed: nothing owed.
+    checks.push(check(key + '_sent', label, s >= r ? 'ok' : 'info',
+      s >= r ? `All ${fmt(r)} ${noun} Zoho holds are in Margyn.`
+        : `Zoho holds ${fmt(r)} ${noun}; Margyn has ${fmt(s)}: every one from the last 12 months and every one still open. The other ${fmt(r - s)} are older and settled, so nothing owed is missing.`,
+      { zoho: r, stored: s }));
+  }
+
+  /* ---- 2 → 3: everything stored is read ---- */
+  checks.push(check('read', 'Everything stored is read', book.truncated ? 'warn' : 'ok',
+    book.truncated ? 'Some rows were over the reading limit, so the oldest were left out of the figures.'
+      : `All ${fmt(st.invoices)} invoices, ${fmt(st.bills)} bills, ${fmt(num(st.customer_payments) + num(st.vendor_payments))} payments and ${fmt(st.postings)} account postings are read.`));
+
+  /* ---- 3 → 4: used in the figures ---- */
+  if (num(st.invoices) + num(st.bills) > 0 && !num(st.postings)) {
+    checks.push(check('pnl', 'Profit and loss postings', 'warn',
+      'Invoices and bills are in, but Zoho hasn’t sent the account postings the profit and loss is built from. Reconnect Zoho Books (Organisations and sources) so Margyn can read the chart of accounts.'));
+  } else if (num(st.postings)) {
+    checks.push(check('pnl', 'Profit and loss postings', 'ok',
+      `${fmt(st.postings)} postings across ${fmt(st.pnl_accounts)} accounts: sales, costs and other income add up the way Zoho’s own Profit and Loss does.`));
+  }
+  const openInv = num(st.open_invoices), openBill = num(st.open_bills);
+  const bills = book.bills || [];
+  const used = { receivable: bills.filter((b) => b.direction === 'receivable').length, payable: bills.filter((b) => b.direction === 'payable').length };
+  checks.push(check('open_items', 'Open invoices and bills in receivables and payables', used.receivable === openInv && used.payable === openBill ? 'ok' : 'warn',
+    used.receivable === openInv && used.payable === openBill
+      ? `All ${fmt(openInv)} open invoices and ${fmt(openBill)} open bills are counted (void and draft left out, as Zoho does).`
+      : `${fmt(used.receivable)} of ${fmt(openInv)} open invoices and ${fmt(used.payable)} of ${fmt(openBill)} open bills are counted.`,
+    { open_invoices: openInv, open_bills: openBill }));
+  if (z.sweptAt) {
+    const days = Math.floor((now - new Date(z.sweptAt)) / 86400000);
+    checks.push(check('swept', 'Deleted or missed in Zoho', days > 8 ? 'warn' : 'info',
+      `Margyn last compared every invoice and bill with Zoho ${days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'}: anything deleted in Zoho is closed here, anything open that was missed is added. Runs weekly.`));
+  }
+
+  const worst = checks.some((c) => c.status === 'warn') ? 'warn' : 'ok';
+  return {
+    source: 'zoho', company: book.company || null, last_sync: z.lastSync || book.lastSync || null, status: worst,
+    counts: { invoices: num(st.invoices), bills: num(st.bills), postings: num(st.postings) },
+    checks, months: [], excluded: []
+  };
+}
+
+module.exports = { tallyCompleteness, zohoCompleteness };
