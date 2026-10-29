@@ -754,7 +754,9 @@ async function toolGetInvoiceStatus(input, ctx) {
 
   // 1. Connected accounting source (Zoho Books), if any.
   try {
-    const orgs = await selectRows('zoho_organizations', `select=id&user_id=eq.${ctx.profileId}`);
+    // The connected org only: a reconnect makes a new org row and the old one keeps its invoices, so every
+    // invoice came back once per connection ever made (three on MARGYN DEMO, two of them stale).
+    const orgs = await selectRows('zoho_organizations', `select=id&user_id=eq.${ctx.profileId}&status=in.(active,needs_reauth)&order=connected_at.desc&limit=1`);
     if (orgs.length) {
       const orgIds = orgs.map((o) => o.id).join(',');
       const rows = await selectRows(

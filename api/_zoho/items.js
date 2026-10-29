@@ -5,7 +5,8 @@
  * once on its own (GET /invoices/{id} ...), and again only when Zoho says it changed. On the Free plan that's
  * 1,000 calls a day for everything, so the reads are a queue worked inside a budget:
  *   budget = plan daily cap − calls already spent today − 200 kept for the nightly money sync,
- *   newest first (this financial year first), at most 240 s of the function's 300 s, 700 ms apart, one at a time.
+ *   newest first (this financial year first), at most 240 s of the function's 300 s, READERS at a time with call
+ *   starts at least 650 ms apart (~90 a minute, under Zoho's 100 a minute and 5 at once on Free).
  * A 429 stops the queue for the run; what's left is read next run. Void, draft and deleted documents lose their
  * lines. The item master (GET /items, 1 call per 200 items) gives names, units and a fallback purchase rate.
  *
@@ -26,7 +27,8 @@ const {
 
 const RESERVE_CALLS = 200;          // kept for the nightly money sync
 const TIME_LIMIT_MS = 240 * 1000;   // of the 300 s function limit
-const DETAIL_DELAY_MS = 700;
+const DETAIL_GAP_MS = 650;          // between call starts across all readers: ~90 a minute
+const READERS = 3;                  // documents read at once (Zoho allows 5 concurrent on Free, 10 on paid)
 const BACKFILL_MONTHS = 12;
 const DEAD = /^(draft|void|deleted_at_source|deleted)$/i;
 
@@ -215,7 +217,8 @@ async function syncItemLines(session, org, userId, opts) {
   const deadline = o.deadline || startedAt + TIME_LIMIT_MS;
   const cap = dailyCapFor(org.plan_type);
   const usedBefore = o.usedBefore != null ? o.usedBefore : await callsUsedToday(org.id, startedAt);
-  const left = () => cap - usedBefore - session.callCount() - RESERVE_CALLS;
+  let inflight = 0;   // reads started but not yet counted by the session
+  const left = () => cap - usedBefore - session.callCount() - inflight - RESERVE_CALLS;
   const out = { items: 0, documents_read: 0, lines: 0, dropped: 0, pending: 0, stopped: null, unavailable: [], budget_at_start: left() };
 
   if (left() <= 0) { out.stopped = 'budget'; return out; }
@@ -243,32 +246,43 @@ async function syncItemLines(session, org, userId, opts) {
 
     const skip = new Set(out.unavailable);
     const queue = queueOrder(state.filter((s) => needsRead(s) && !skip.has(s.doc_type)), startedAt);
-    let i = 0;
-    for (; i < queue.length; i++) {
-      const s = queue[i];
-      if (skip.has(s.doc_type)) continue;
-      if (left() <= 0) { out.stopped = 'budget'; break; }
-      if (Date.now() >= deadline) { out.stopped = 'time'; break; }
-      const d = DOCS[s.doc_type];
-      let doc = null;
-      try {
-        const data = await session.apiGet(d.path + encodeURIComponent(s.doc_id), {}, { failFast429: true });
-        doc = data && data[d.key];
-      } catch (e) {
-        if (e instanceof ZohoRateLimited) { out.stopped = 'rate_limited'; break; }
-        if (e instanceof ZohoModuleUnavailable && /code 57/.test(e.message)) { skip.add(s.doc_type); out.unavailable.push(s.doc_type); continue; }
-        if (e instanceof ZohoAuthError && (s.doc_type === 'creditnote' || s.doc_type === 'vendorcredit')) { skip.add(s.doc_type); out.unavailable.push(s.doc_type); continue; }
-        if (!(e instanceof ZohoModuleUnavailable)) throw e;
-        doc = null;   // 404: gone from Zoho, so its lines go too
+    // READERS documents at once, call starts spaced DETAIL_GAP_MS apart. A stop (budget, time, 429) lets the
+    // reads already in flight finish; whatever wasn't taken stays queued for the next run.
+    let next = 0, nextStart = 0, fatal = null;
+    const taken = new Set();
+    const reader = async () => {
+      while (!out.stopped && !fatal && next < queue.length) {
+        const s = queue[next++];
+        if (skip.has(s.doc_type)) continue;
+        if (left() <= 0) { out.stopped = 'budget'; break; }
+        if (Date.now() >= deadline) { out.stopped = 'time'; break; }
+        inflight++;
+        const wait = nextStart - Date.now();
+        nextStart = Math.max(Date.now(), nextStart) + DETAIL_GAP_MS;
+        if (wait > 0) await sleep(wait);
+        taken.add(s);
+        const d = DOCS[s.doc_type];
+        let doc = null;
+        try {
+          const data = await session.apiGet(d.path + encodeURIComponent(s.doc_id), {}, { failFast429: true }).finally(() => { inflight--; });
+          doc = data && data[d.key];
+        } catch (e) {
+          if (e instanceof ZohoRateLimited) { out.stopped = 'rate_limited'; taken.delete(s); break; }
+          if (e instanceof ZohoModuleUnavailable && /code 57/.test(e.message)) { if (!skip.has(s.doc_type)) { skip.add(s.doc_type); out.unavailable.push(s.doc_type); } continue; }
+          if (e instanceof ZohoAuthError && (s.doc_type === 'creditnote' || s.doc_type === 'vendorcredit')) { if (!skip.has(s.doc_type)) { skip.add(s.doc_type); out.unavailable.push(s.doc_type); } continue; }
+          if (!(e instanceof ZohoModuleUnavailable)) { fatal = e; taken.delete(s); break; }
+          doc = null;   // 404: gone from Zoho, so its lines go too
+        }
+        const rows = doc && !DEAD.test(String(doc.status || '')) ? documentLines(doc, s.doc_type, org.id) : [];
+        await replaceLines(org.id, s.doc_type, s.doc_id, rows, s.doc_last_modified);
+        out.documents_read++;
+        out.lines += rows.length;
+        if (!doc) out.dropped++;
       }
-      const rows = doc && !DEAD.test(String(doc.status || '')) ? documentLines(doc, s.doc_type, org.id) : [];
-      await replaceLines(org.id, s.doc_type, s.doc_id, rows, s.doc_last_modified);
-      out.documents_read++;
-      out.lines += rows.length;
-      if (!doc) out.dropped++;
-      await sleep(DETAIL_DELAY_MS);
-    }
-    out.pending = queue.slice(i).filter((s) => !skip.has(s.doc_type)).length;
+    };
+    await Promise.all(Array.from({ length: READERS }, reader));
+    if (fatal) throw fatal;
+    out.pending = queue.filter((s) => !taken.has(s) && !skip.has(s.doc_type)).length;
     if (!out.stopped && out.pending === 0) out.stopped = 'done';
     await logConnectorEvent({ userId, connectorType: 'zoho_books', operation: 'sync_item_lines', status: 'success',
       recordsSynced: out.lines, syncDurationMs: Date.now() - startedAt,
@@ -281,6 +295,43 @@ async function syncItemLines(session, org, userId, opts) {
     await logConnectorEvent({ userId, connectorType: 'zoho_books', operation: 'sync_item_lines', status: 'error', errorMessage: err.message });
   }
   return out;
+}
+
+/**
+ * Can this connection read Zoho's Sales by Item report? (HANDOFF-ZOHO-DEMO-READY-2026-10-30.md, Task 1 fix 0.)
+ * The report answers on /api/v3 in the web session but has no public spec, so whether an OAuth token may call it,
+ * and on which scope, is unknown. One call for this month, at most weekly until it works, never again after:
+ * zoho_sync_state 'probe:salesbyitem' = success (with the number of items it returned) or error. Nothing reads the
+ * figures yet; if it works, a year of item totals is about 24 calls instead of one per document. Never throws, and a
+ * refusal here never marks the connection for reconnect.
+ */
+const PROBE_MODULE = 'probe:salesbyitem';
+const PROBE_EVERY_MS = 7 * 24 * 3600 * 1000;
+async function probeItemReports(session, org, nowMs) {
+  const now = nowMs || Date.now();
+  try {
+    const rows = await selectRows('zoho_sync_state', `select=last_run_at,last_run_status&org_ref=eq.${org.id}&module=eq.${encodeURIComponent(PROBE_MODULE)}&limit=1`);
+    const r = rows[0];
+    if (r && (r.last_run_status === 'success' || now - new Date(r.last_run_at).getTime() < PROBE_EVERY_MS)) return null;
+  } catch (e) { return null; }
+  const ist = new Date(now + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+  let status = 'error', count = null, note = null;
+  try {
+    const data = await session.apiGet('books/v3/reports/salesbyitem', { from_date: ist.slice(0, 8) + '01', to_date: ist }, { failFast429: true });
+    const list = data && (data.sales || data.salesbyitem || data.items || (Array.isArray(data.reports) ? data.reports : null));
+    status = 'success';
+    count = Array.isArray(list) ? list.length : 0;
+    note = Object.keys(data || {}).filter((k) => k !== 'code' && k !== 'message').slice(0, 6).join(',');   // response shape, for the follow-up build
+  } catch (e) {
+    note = String(e.message || e).slice(0, 120);
+  }
+  try {
+    const at = new Date(now).toISOString();
+    await insertRows('zoho_sync_state', [{ org_ref: org.id, module: PROBE_MODULE, last_synced_at: at, last_run_at: at, last_run_status: status, remote_count: count }],
+      { onConflict: 'org_ref,module', merge: true });
+  } catch (e) { /* the probe is only information */ }
+  console.log(`[zoho] Sales by Item report via OAuth: ${status}${note ? ' (' + note + ')' : ''}`);
+  return { status, count, note };
 }
 
 /** How far the item lines have got, for the app and the books layer. */
@@ -315,6 +366,6 @@ async function handleFillNow(req, res) {
 }
 
 module.exports = {
-  syncItemLines, handleFillNow, documentLines, mapItem, queueOrder, needsRead, progressFrom, callsUsedToday, addCallsToday,
-  RESERVE_CALLS, TIME_LIMIT_MS
+  syncItemLines, handleFillNow, probeItemReports, documentLines, mapItem, queueOrder, needsRead, progressFrom, callsUsedToday, addCallsToday,
+  RESERVE_CALLS, TIME_LIMIT_MS, READERS
 };

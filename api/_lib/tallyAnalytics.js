@@ -1457,8 +1457,12 @@ function computeAnalytics(input) {
   const headlines = [];
   // A month whose running costs aren't booked yet would read as a jump in margin, so compare only complete months.
   const closed = pnl.filter((r) => !r.provisional && !r.partial_start && !r.costs_incomplete && r.net_sales > 0);
-  const unbooked = pnl.filter((r) => r.costs_incomplete).slice(-1)[0];
-  if (unbooked) headlines.push(`${monthLabel(unbooked.month)} looks unfinished in Tally: running costs are ₹${Math.round(unbooked.opex).toLocaleString('en-IN')} against a usual ₹${Math.round(unbooked.typical_opex).toLocaleString('en-IN')}, so its profit will fall once salaries and other costs are booked.`);
+  // Only a recent month is news (its costs may still be booked); one from a year ago is old history, not an alert
+  // ("Nov 2025 looks unfinished" on a Zoho book in Oct 2026). Named after the books system it came from.
+  const recentFrom = (() => { const [y, m] = String(currentMonth).split('-').map(Number); return new Date(Date.UTC(y, m - 1 - 3, 1)).toISOString().slice(0, 7); })();
+  const unbooked = pnl.filter((r) => r.costs_incomplete && r.month >= recentFrom).slice(-1)[0];
+  const bookName = ({ tally: 'Tally', zoho: 'Zoho Books', odoo: 'Odoo' })[input.source || 'tally'] || 'your books';
+  if (unbooked) headlines.push(`${monthLabel(unbooked.month)} looks unfinished in ${bookName}: running costs are ₹${Math.round(unbooked.opex).toLocaleString('en-IN')} against a usual ₹${Math.round(unbooked.typical_opex).toLocaleString('en-IN')}, so its profit will fall once salaries and other costs are booked.`);
   if (closed.length >= 2) {
     const a = closed[closed.length - 2], b = closed[closed.length - 1];
     if (a.gross_margin_pct_pre_stock != null && b.gross_margin_pct_pre_stock != null) {

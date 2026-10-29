@@ -44,6 +44,7 @@ const INSIGHT_KINDS = new Set(['insight_slow', 'insight_late_share', 'insight_sh
 const FOLLOW_UP_KINDS = new Set(['overdue_total', 'late', 'short_paid', 'slipping', 'newly_overdue', 'quiet', 'gst_due', 'stale', 'unbooked', 'duplicate', 'below_cost', 'unit_mismatch', 'expense_jump']);
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const SRC = (ctx) => (ctx && ctx.source_name) || 'Tally';
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const isoDay = (dt) => dt.toISOString().slice(0, 10);
 const nice = (s) => E.niceName(s);
@@ -248,7 +249,7 @@ function whyNow(x, slot) {
     case 'unbooked': return 'Until the month is fully booked, its profit looks better than it is and any decision on it is off.';
     case 'sales_trend': return 'It\'s a clear move away from your usual month, more than 15%.';
     case 'below_cost': return 'Every one of these sales loses money, and it repeats with each order until the price changes.';
-    case 'unit_mismatch': return 'A gap this big is almost always a unit set up wrong in Tally, which throws off cost and margin for the item.';
+    case 'unit_mismatch': return 'A gap this big is almost always a unit set up wrong in the books, which throws off cost and margin for the item.';
     case 'gst_due': return slot === 'evening' ? 'It comes out of the same cash as supplier payments, so it\'s worth keeping aside now.' : 'It\'s a fixed date with a late fee, and it comes out of the same cash as supplier payments.';
     case 'duplicate': return 'Same party, same day, same amount: a ten-second check now saves a messy correction later.';
     default: return null;
@@ -636,7 +637,11 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   // Tally gone quiet during a working day: every pulse depends on it.
   const nowMs = Date.parse(snap.at), syncMs = Date.parse(ctx.lastSync || '');
   const dow = new Date(nowMs + 5.5 * 3600000).getUTCDay();
-  if (!Number.isNaN(syncMs) && dow !== 0 && nowMs - syncMs > 2 * 3600000 && nowMs - syncMs < 26 * 3600000) {
+  // Tally only: it syncs through the day from the shop's PC. Zoho Books and Odoo are read once a night, so a few
+  // hours since the last sync is normal there (every Zoho pulse said "Is the Tally PC on?", 30 Oct 2026); a missed
+  // night shows as the morning's stale point instead.
+  const pcBooks = !ctx.source || ctx.source === 'tally';
+  if (pcBooks && !Number.isNaN(syncMs) && dow !== 0 && nowMs - syncMs > 2 * 3600000 && nowMs - syncMs < 26 * 3600000) {
     const l = say('sync_gap', `⚠️ Tally hasn't synced since ${istStamp(ctx.lastSync)}. Is the Tally PC on with Tally open? Until it syncs, today's entries don't reach me.`);
     if (l) { bad.push(l); important = true; }
   }
@@ -716,9 +721,9 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
       if (mv.now >= 1 && now) open++;
       return;
     }
-    if (!now) { fu.push(`${n} ✅ ${name ? name + ': ' : ''}sorted. ${p.kind === 'stale' ? 'Tally is syncing again.' : 'It no longer shows in the books.'}`); return; }
+    if (!now) { fu.push(`${n} ✅ ${name ? name + ': ' : ''}sorted. ${p.kind === 'stale' ? SRC(ctx) + ' is syncing again.' : 'It no longer shows in the books.'}`); return; }
     open++;
-    if (p.kind === 'stale') { fu.push(`${n} ⏳ Tally still hasn't synced. Everything above is from before that.`); return; }
+    if (p.kind === 'stale') { fu.push(`${n} ⏳ ${SRC(ctx)} still hasn't synced. Everything above is from before that.`); return; }
     if (p.kind === 'gst_due') { fu.push(`${n} ⏳ ${now.title} Still to pay.`); return; }
     if (pk) {
       const pr = promiseFor(p.party);

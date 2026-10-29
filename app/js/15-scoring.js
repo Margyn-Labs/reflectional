@@ -529,6 +529,17 @@ function confidenceSummary(provenance){
     (labels.length < 6 ? ' GST input credit isn’t measured yet, so it isn’t in the score.' : '') };
 }
 
+/* Which source each figure came from, and which sources disagree. A source disconnected (a Tally test connection,
+   30 Oct 2026) barely moves the figures when another source already supplied them, so without this the last reading
+   kept "Estimate from Tally books" and "Sources disagree: Tally ₹0" on Home for good. */
+function provenanceDiffers(provenance, conflicts, latest){
+  if(!latest) return false;
+  // Entries with no source (gst_leak marked unmeasured after this check) are left out, or every load would write.
+  const srcOf = p => Object.keys(p || {}).filter(k => p[k] && p[k].source).sort().map(k => k + ':' + p[k].source).join('|');
+  const confOf = c => (Array.isArray(c) ? c : []).map(x => (x.field || '') + ':' + Object.keys(x.values || {}).sort().join(',')).sort().join('|');
+  return srcOf(provenance) !== srcOf(latest.input_provenance) || confOf(conflicts) !== confOf(latest.source_conflicts);
+}
+
 /* ---------- write a resolved snapshot when the picture actually changes ---------- */
 function inputsMateriallyDiffer(inputs, latest){
   if(!latest) return true;
@@ -575,7 +586,7 @@ async function resolveAndSaveSnapshot(){
   const liveBasis = scoringBasisLive(), prevBasis = latest && latest.vitals ? vitalBasisOf(latest) : undefined;
   const useBasis = Object.keys(liveBasis).length || !prevBasis ? liveBasis
     : ['runningCosts', 'grossProfit', 'odHeadroom', 'odDrawn'].reduce((o, k) => { if(prevBasis[k] != null) o[k] = prevBasis[k]; return o; }, {});
-  if(snapshots[0] && latest === snapshots[0] && !inputsMateriallyDiffer(inputs, latest) && !basisDiffers(useBasis, prevBasis)) return false;
+  if(snapshots[0] && latest === snapshots[0] && !inputsMateriallyDiffer(inputs, latest) && !basisDiffers(useBasis, prevBasis) && !provenanceDiffers(provenance, conflicts, latest)) return false;
   inputs.scoringBasis = useBasis;
 
   // Burn drives three divisions in computeVitals; never let a connector hand

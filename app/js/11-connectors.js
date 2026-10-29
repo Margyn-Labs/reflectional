@@ -396,7 +396,10 @@ function renderTallyTab(){
   const d = tallyData;
 
   if(!d || !d.connected){
-    notConn.classList.remove('hidden');
+    // "Tally isn't connected" only where Tally could be connected: with Zoho Books or Odoo keeping the books a second
+    // system is refused (one books system per business), so it showed an empty "Tally books" tab (30 Oct 2026).
+    const otherBooks = (typeof zohoConnected !== 'undefined' && zohoConnected) || (typeof odooConnected !== 'undefined' && odooConnected);
+    notConn.classList.toggle('hidden', !!otherBooks);
     content.classList.add('hidden');
     tallyOverdueCount = 0; renderBooksBadge();
     return;
@@ -1105,15 +1108,22 @@ async function mgLoadDataCheck(force){
   } catch(e){ console.error('[margyn] data check:', e.message); mgDataCheck = { error:true }; }
   finally { mgDataCheckBusy = false; mgRenderDataCheck(); }
 }
-/* Tally or Zoho Books: the same check, each against its own system's counts. */
+/* Tally or Zoho Books: the same check, each against its own system's counts. The server checks the account's
+   books system; until it answers, the name comes from the Margin answer when it's in, so an account with Zoho
+   books and a stale Tally connection never reads "Checking your Tally data". */
 function mgDataCheckSource(){
-  if(typeof tallyConnected !== 'undefined' && tallyConnected) return 'Tally';
-  if(typeof zohoConnected !== 'undefined' && zohoConnected) return 'Zoho Books';
+  const t = typeof tallyConnected !== 'undefined' && tallyConnected, z = typeof zohoConnected !== 'undefined' && zohoConnected;
+  if(t && z){
+    const n = typeof mgMar !== 'undefined' && mgMar && mgMar.books_source_name;
+    return n === 'Zoho Books' || n === 'Tally' ? n : 'your books';
+  }
+  if(t) return 'Tally';
+  if(z) return 'Zoho Books';
   return null;
 }
 function mgRenderDataCheck(){
   const host = document.getElementById('mgDataCheck'); if(!host) return;
-  const src = mgDataCheckSource();
+  const src = mgDataCheck && mgDataCheck.source === 'zoho' ? 'Zoho Books' : mgDataCheck && mgDataCheck.source === 'tally' ? 'Tally' : mgDataCheckSource();
   if(!src){ host.innerHTML = ''; return; }
   const head = '<div class="rd-section-label">Is all your data in? <span class="rd-note">What ' + src + ' holds, against what Margyn stored, read and uses</span></div>';
   const d = mgDataCheck;
@@ -1128,7 +1138,7 @@ function mgRenderDataCheck(){
   const when = d.source === 'zoho' ? (d.last_sync ? 'Zoho Books last synced ' + fmtDate(d.last_sync) : '') : (d.reported_at ? 'Tally agent last reported ' + fmtDate(d.reported_at) : '');
   const c = d.counts || null;
   const countLine = !c ? '' : d.source === 'zoho'
-    ? (c.invoices || 0).toLocaleString('en-IN') + ' invoices · ' + (c.bills || 0).toLocaleString('en-IN') + ' bills · ' + (c.postings || 0).toLocaleString('en-IN') + ' postings'
+    ? (c.invoices || 0).toLocaleString('en-IN') + ' invoices · ' + (c.bills || 0).toLocaleString('en-IN') + ' bills · ' + (c.postings || 0).toLocaleString('en-IN') + ' postings' + (c.contacts ? ' · ' + c.contacts.toLocaleString('en-IN') + ' contacts' : '') + (c.items ? ' · ' + c.items.toLocaleString('en-IN') + ' items' : '')
     : (c.vouchers || 0).toLocaleString('en-IN') + ' vouchers · ' + (c.ledgers || 0).toLocaleString('en-IN') + ' ledgers · ' + (c.bills || 0).toLocaleString('en-IN') + ' open bills';
   host.innerHTML = head + '<div class="rd-card" style="padding:12px 20px;">' +
     '<div class="mg-muted" style="font-size:12px;margin-bottom:6px;">' + escapeHtml([d.company, when, countLine].filter(Boolean).join(' · ')) +

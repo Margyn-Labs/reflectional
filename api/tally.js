@@ -571,21 +571,34 @@ async function zohoCompletenessFor(userId) {
   if (!org) return null;
   const o = encodeURIComponent(org.id);
   const count = (t, extra) => selectRows(t, `select=org_ref&org_ref=eq.${o}${extra || ''}&order=org_ref.asc&limit=100000`).then((r) => r.length).catch(() => 0);
-  const [book, inv, bil, cp, vp, postings, openInv, openBill, state] = await Promise.all([
-    loadBooks(userId).catch(() => ({})),
+  const [book, inv, bil, cp, vp, postings, openInv, openBill, state, banks, items, lineState, parties] = await Promise.all([
+    loadBooks(userId, { source: 'zoho' }).catch(() => ({})),
     count('zoho_invoices'), count('zoho_bills'), count('zoho_customer_payments'), count('zoho_vendor_payments'),
     selectRows('zoho_journal_entries', `select=account_ref&org_ref=eq.${o}&order=id.asc&limit=100000`).catch(() => []),
     count('zoho_invoices', '&balance=gt.0&' + require('./_lib/moneyModel').ZOHO_OPEN),
     count('zoho_bills', '&balance=gt.0&' + require('./_lib/moneyModel').ZOHO_OPEN),
-    selectRows('zoho_sync_state', `select=module,last_synced_at,remote_count&org_ref=eq.${o}`).catch(() => [])
+    selectRows('zoho_sync_state', `select=module,last_synced_at,remote_count&org_ref=eq.${o}`).catch(() => []),
+    count('zoho_bank_accounts'),
+    count('zoho_items').catch(() => null),
+    selectRows('zoho_line_state', `select=doc_type,doc_date,status,doc_last_modified,read_modified,lines_read_at&org_ref=eq.${o}&order=id.asc&limit=200000`).catch(() => null),
+    selectRows('ledger_parties', `select=phone,email&user_id=eq.${encodeURIComponent(userId)}&external_refs->>zoho_contact_id=not.is.null&limit=20000`).catch(() => [])
   ]);
   const rc = (m) => { const r = state.find((x) => x.module === 'count:' + m); return r && r.remote_count != null ? Number(r.remote_count) : null; };
   const swept = state.find((x) => x.module === 'deleted_sweep');
+  const lineDocs = lineState ? require('./_zoho/items').progressFrom(lineState) : null;
+  if (lineDocs) {
+    const byType = {};
+    for (const s of lineState) byType[s.doc_type] = (byType[s.doc_type] || 0) + 1;
+    lineDocs.creditnotes = byType.creditnote || 0;
+    lineDocs.vendorcredits = byType.vendorcredit || 0;
+  }
   return zohoCompleteness({
     book: book && book.source === 'zoho' ? book : {},
-    remote: { invoices: rc('invoices'), bills: rc('bills') },
+    remote: { invoices: rc('invoices'), bills: rc('bills'), contacts: rc('contacts'), items: rc('items') },
     stored: { invoices: inv, bills: bil, customer_payments: cp, vendor_payments: vp, postings: postings.length,
-      pnl_accounts: new Set(postings.map((p) => p.account_ref)).size, open_invoices: openInv, open_bills: openBill },
+      pnl_accounts: new Set(postings.map((p) => p.account_ref)).size, open_invoices: openInv, open_bills: openBill,
+      bank_accounts: banks, items, contacts: parties.length, contacts_with_phone: parties.filter((p) => p.phone).length },
+    lines: lineDocs,
     lastSync: org.last_synced_at || null, sweptAt: swept ? swept.last_synced_at : null
   });
 }
@@ -596,7 +609,10 @@ async function handleCompleteness(req, res) {
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
   try {
-    const book = await loadTallyBook(user.id);
+    // The check follows the account's books system (dataLayer/books.js choosePrimary): a stale Tally test
+    // connection on a Zoho account (MARGYN DEMO, 30 Oct 2026) had it check Tally while every screen read Zoho.
+    const primary = await loadBooks(user.id).catch(() => null);
+    const book = primary && primary.connected && primary.source !== 'tally' ? { connected: false } : await loadTallyBook(user.id);
     if (!book.connected) {
       // Zoho Books: the same check, against Zoho's own counts (dataCompleteness.zohoCompleteness).
       const z = await zohoCompletenessFor(user.id);

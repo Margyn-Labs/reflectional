@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-31-zoho-data-check', date:'31 Oct 2026', title:'“Is all your data in?” for every part of Zoho Books',
+    items:[
+      { t:'The data check covers all of Zoho Books', what:'For Zoho Books the check now lists every part Margyn reads: invoices and bills against Zoho’s own counts, payments, account postings, bank accounts, customers and suppliers (and how many have a phone number for reminders), items, item lines and returns. It also says plainly what Margyn doesn’t read from Zoho and why that doesn’t change your figures.',
+        how:'<b>Organisations and sources</b> → <b>Is all your data in?</b>', act:'connectors' },
+      { t:'Item lines fill in faster', what:'Margyn now reads three Zoho documents at a time, still inside Zoho’s limits and your daily allowance, so item history fills in sooner.',
+        how:'<b>Organisations and sources</b> → <b>Zoho Books</b> → <b>Fill now</b>.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-10-30-zoho-items', date:'30 Oct 2026', title:'Products and item margins from Zoho Books',
     items:[
       { t:'Item-level figures for Zoho Books', what:'Margyn now reads the items on each Zoho Books invoice, bill, credit note and vendor credit, so everything it does with Tally items works for Zoho too: what sold, price, cost and margin per product, items sold below cost, a customer’s and a supplier’s top items, and finding entries by item. Returns are taken off.',

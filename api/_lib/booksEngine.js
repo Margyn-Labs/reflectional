@@ -625,7 +625,7 @@ function moneyOwed(ctx, args) {
       note: 'Commission agents, staff and the owner\'s family are kept under creditors in the books. They are in the total but not in "overdue", which counts trade suppliers only.' };
   }
   const veryOld = parties.filter((g) => g.oldest > 365);
-  if (veryOld.length) out.over_a_year_old = { amount: inr(bills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0)), names: veryOld.slice(0, 6).map((g) => g.party + ' (' + g.oldest + ' days)'), note: 'Bills this old are usually disputed, short-paid or already settled but not knocked off in Tally. Worth a review: chase, settle, or write off.' };
+  if (veryOld.length) out.over_a_year_old = { amount: inr(bills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0)), names: veryOld.slice(0, 6).map((g) => g.party + ' (' + g.oldest + ' days)'), note: `Bills this old are usually disputed, short-paid or already settled but not knocked off in ${SRC(ctx)}. Worth a review: chase, settle, or write off.` };
   if (dir === 'receivable') {
     if (wc.dso_days != null) out.days_to_get_paid = Math.round(wc.dso_days) + ' days on average (last 90 days of sales)';
     const d = dailySales90(ctx);
@@ -1013,7 +1013,14 @@ function insights(ctx) {
   // Sync freshness first: everything else depends on it.
   if (ctx.lastSync) {
     const hrs = (ctx.now - new Date(ctx.lastSync)) / 3600000;
-    if (hrs > 26) push({ key: 'stale:' + String(ctx.lastSync).slice(0, 10), kind: 'stale', severity: 'high', title: `${SRC(ctx)} hasn't synced since ${dayStr(new Date(new Date(ctx.lastSync).getTime() + 5.5 * 3600000), true)}.`, detail: 'Is the Tally PC switched on with Tally and the Margyn agent running? Until it syncs, new sales, receipts and payments are missing here.', action: 'Switch on the Tally PC and open Tally.', ask: 'When did Tally last sync?' });
+    // Tally syncs from a PC that has to be on; Zoho Books and Odoo are read from the cloud every night, so a gap
+    // there means the connection, not a PC (a Zoho owner was told to switch on the Tally PC, 30 Oct 2026).
+    const pc = !ctx.source || ctx.source === 'tally';
+    if (hrs > 26) push({ key: 'stale:' + String(ctx.lastSync).slice(0, 10), kind: 'stale', severity: 'high', title: `${SRC(ctx)} hasn't synced since ${dayStr(new Date(new Date(ctx.lastSync).getTime() + 5.5 * 3600000), true)}.`,
+      detail: pc ? 'Is the Tally PC switched on with Tally and the Margyn agent running? Until it syncs, new sales, receipts and payments are missing here.'
+        : `Margyn reads ${SRC(ctx)} every night, and last night's read didn't come through. Until it does, new sales, receipts and payments are missing here.`,
+      action: pc ? 'Switch on the Tally PC and open Tally.' : `Open Organisations and sources and press Sync now on ${SRC(ctx)}; reconnect it if it asks.`,
+      ask: `When did ${SRC(ctx)} last sync?` });
   }
 
   // Overdue money, split the way an accountant would: "slipping" (1-30 days past due, usually a reminder) is not
