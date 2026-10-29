@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-30-chase-zoho-preview', date:'30 Oct 2026', title:'Payment reminders for Zoho Books customers, with a word-for-word preview',
+    items:[
+      { t:'Payment Chase works from your Zoho Books', what:'Margyn now reads your customers’ phone numbers and emails from Zoho Books, so Payment Chase can remind the customers on your Zoho invoices: one reminder per customer for everything they owe. A number you typed into Margyn is never overwritten.',
+        how:'<b>Automations</b> → <b>Payment Chase</b> → <b>Configure</b>: <b>Customers from your books</b> is on for new setups. Numbers arrive with the next Zoho sync.', act:'agents' },
+      { t:'See each reminder before it goes out', what:'The Chasing tab shows every customer’s next WhatsApp reminder, word for word, and when it goes out. On an account set not to send (a demo), each one is marked <b>Preview: not sent</b> and nothing reaches your customers.',
+        how:'<b>Automations</b> → <b>Chasing</b> → <b>What goes out next</b>.', act:'agents' }
+    ]
+  },
+  {
     id:'2026-10-27-honest-updates', date:'27 Oct 2026', title:'Steadier WhatsApp updates, and suppliers apart from commission and family',
     items:[
       { t:'Updates wait for Tally to finish syncing', what:'Margyn no longer reads your books while Tally is halfway through a sync, so an update can’t say late money fell and then rose again an hour later. If a sync is running, the update waits for it or holds until the next one.',

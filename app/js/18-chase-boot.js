@@ -45,7 +45,21 @@ function chaseFormHtml(cfg){
     '<div class="agent-fieldset"><span class="agent-fs-label">Which receivables</span>' +
       '<select id="chaseInclude"><option value="overdue_only"' + (c.auto_include !== 'all_open' ? ' selected' : '') + '>Overdue only (plus the pre-due heads-up)</option>' +
       '<option value="all_open"' + (c.auto_include === 'all_open' ? ' selected' : '') + '>All open receivables</option></select></div>' +
+    chaseBooksFieldHtml(cfg) +
     '<div class="agent-ref-note">First contact goes out as a pre-approved WhatsApp utility template &ldquo;on behalf of ' + escapeHtml((currentProfile && currentProfile.company_name) || 'your business') + '&rdquo;. Customer numbers are read from your Customers &amp; Invoicing parties &mdash; a receivable with no matching party phone is listed but not messaged.</div>';
+}
+// Customers from the books (Tally / Zoho Books / Odoo) as well as receivables typed into Margyn: include_connectors.
+// A new deployment (cfg null) starts with it on when books are connected; an existing one shows what it has.
+function chaseBooksName(){
+  try { return zohoConnected ? 'Zoho Books' : tallyConnected ? 'Tally' : odooConnected ? 'Odoo' : 'your books'; } catch(e){ return 'your books'; }
+}
+function chaseBooksFieldHtml(cfg){
+  const books = typeof mgBooksConnected === 'function' && mgBooksConnected();
+  const on = cfg ? cfg.include_connectors === true : books;
+  return '<div class="agent-fieldset"><span class="agent-fs-label">Customers from your books</span>' +
+    '<select id="chaseBooks"><option value="1"' + (on ? ' selected' : '') + '>Chase customers from ' + escapeHtml(chaseBooksName()) + ' too</option>' +
+    '<option value="0"' + (on ? '' : ' selected') + '>Only receivables typed into Margyn</option></select>' +
+    '<div class="hint" style="margin-top:6px;">One reminder per customer for everything they owe. Numbers come from the customer’s phone in your books, or one you add on Customers.</div></div>';
 }
 function chaseWireSegs(){
   document.querySelectorAll('#agentContent .agent-seg[data-cseg]').forEach(seg => {
@@ -67,6 +81,7 @@ function chaseReadForm(prevCfg){
     max_chases: Math.max(1, Math.min(8, parseInt(document.getElementById('chaseMax').value, 10) || 4)),
     min_amount: Math.max(0, parseInt(document.getElementById('chaseMinAmt').value, 10) || 0),
     auto_include: document.getElementById('chaseInclude').value,
+    include_connectors: (document.getElementById('chaseBooks') || {}).value === '1',
     updated_from: 'agents_tab'
   });
 }
@@ -116,6 +131,7 @@ async function persistChase(mode){
       if(error) throw error;
     }
     note.className = 'note ok'; note.textContent = 'Saved.';
+    if(typeof mgChasePrevLoad === 'function') mgChasePrevLoad(true);
     setTimeout(() => { closeAgentModal(); renderAgents(); }, 800);
   } catch(err){ note.className = 'note bad'; note.textContent = err.message || 'Could not save.'; }
 }
@@ -229,7 +245,8 @@ async function openChaseTimeline(t){
     chases = cRes.data || []; replies = rRes.data || [];
   } catch(e){ console.error('[margyn] openChaseTimeline:', e); }
   const items = []
-    .concat(chases.map(c => ({ ts: c.created_at, dir: 'out', head: 'Chase ' + c.chase_number + ' · ' + (c.escalation_tier || '').replace('_',' ') + (c.status !== 'sent' ? ' · ' + c.status : ''), body: c.message_body })))
+    .concat(chases.map(c => { const pv = c.wa_message_id === 'preview-not-sent' || /^preview:/.test(String(c.error || ''));
+      return { ts: c.created_at, dir: pv ? 'preview' : 'out', head: 'Chase ' + c.chase_number + ' · ' + (c.escalation_tier || '').replace('_',' ') + (pv ? ' · Preview: not sent' : c.status !== 'sent' ? ' · ' + c.status : ''), body: c.message_body }; }))
     .concat(replies.map(r => ({ ts: r.created_at, dir: 'in', head: 'Reply · ' + r.intent.replace('_',' ') + (r.promise_date ? ' (by ' + r.promise_date + ')' : ''), body: r.reply_text || '' })))
     .sort((a,b) => new Date(a.ts) - new Date(b.ts));
   const state = '<div class="hint" style="margin-bottom:10px;">Current: <strong>' + (t.state || '').replace('_',' ') + '</strong>' +
@@ -237,7 +254,7 @@ async function openChaseTimeline(t){
     (t.promise_to_pay_date ? ' · promised ' + t.promise_to_pay_date : '') + '</div>';
   const body = items.length ? items.map(it =>
     '<div style="padding:8px 0; border-bottom:1px solid var(--border);">' +
-      '<div style="font-size:12px; color:var(--text-2);">' + fmtDay(it.ts) + ' · ' + (it.dir === 'out' ? 'Margyn → customer' : 'customer → Margyn') + '</div>' +
+      '<div style="font-size:12px; color:var(--text-2);">' + fmtDay(it.ts) + ' · ' + (it.dir === 'preview' ? 'Drafted for the customer, not sent' : it.dir === 'out' ? 'Margyn → customer' : 'customer → Margyn') + '</div>' +
       '<div style="font-size:12px; font-weight:600; margin:2px 0;">' + escapeHtml(it.head) + '</div>' +
       (it.body ? '<div style="font-size:12px; color:var(--text-1);">' + escapeHtml(it.body) + '</div>' : '') +
     '</div>').join('') : '<div class="hint">No messages yet.</div>';

@@ -155,6 +155,36 @@ document.addEventListener('submit', e => {
 
 /* ---------- Automations: Roster, Chasing, Update log ---------- */
 const MGA_STATE = { active:['pos', 'Chasing'], paused_promise:['warn', 'Promised to pay'], disputed:['neg', 'Disputed'], escalated_human:['warn', 'Needs you'], resolved_paid:['pos', 'Paid'], resolved_manual:['', 'Closed'], opted_out:['', 'Opted out'], stopped:['', 'Reminders off'] };
+// "What goes out next" (2026-10-29): each customer's next reminder, drafted by the server exactly as the 10:30 am run
+// would send it (POST /api/whatsapp?action=chase-preview, which never sends). On an account with external sends off
+// (an investor demo), every reminder is a preview: shown here as "Preview: not sent".
+let mgChasePrev = null, mgChasePrevAt = 0, mgChasePrevBusy = false;
+function mgChasePrevLoad(force){
+  if(mgChasePrevBusy || (!force && Date.now() - mgChasePrevAt < 5 * 60000) || typeof mgBHFetch !== 'function') return;
+  mgChasePrevBusy = true;
+  mgBHFetch('/api/whatsapp?action=chase-preview', { method:'POST' })
+    .then(d => { mgChasePrev = d; mgChasePrevAt = Date.now(); mgAutoPanels.at = 0; })
+    .catch(() => { mgChasePrev = mgChasePrev || { error:true }; mgChasePrevAt = Date.now(); })
+    .then(() => { mgChasePrevBusy = false; if(mgCurrentView === 'agents') mgAutoPanels(); });
+}
+function mgChasePrevHtml(){
+  const d = mgChasePrev; if(!d || d.error || !d.deployed) return '';
+  const off = !!d.sends_off, list = (d.previews || []).filter(p => !p.last);
+  const tierName = { pre_due:'Before due', due:'Due', overdue_1:'Overdue', overdue_2:'Second overdue', final:'Final' };
+  const when = p => !p.has_phone ? 'No WhatsApp number yet' : off ? 'Preview: not sent' : p.next_chase_at ? 'Goes out ' + fmtDay(p.next_chase_at) + ' at the 10:30 am run' : 'Waiting';
+  const rows = list.slice(0, 25).map(p => '<div class="mg-li" style="align-items:flex-start"><div style="min-width:0"><div class="mg-li-t">' + escapeHtml(p.party) + ' · ' + escapeHtml(fmtINR(p.amount)) + '</div>' +
+    '<div class="mg-li-s">Reminder ' + p.chase_number + ' · ' + escapeHtml(tierName[p.tier] || p.tier) + (p.invoice_ref ? ' · ' + escapeHtml(p.invoice_ref) : '') + '</div>' +
+    '<div style="margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--g50, rgba(0,0,0,.04));font-size:13px;line-height:1.45">' + escapeHtml(p.body) + '</div></div>' +
+    '<span class="mg-bdg ' + (!p.has_phone ? 'warn' : off ? '' : 'pos') + '" style="white-space:nowrap">' + escapeHtml(when(p)) + '</span></div>').join('');
+  const sub = off
+    ? 'External sends are off for this account, so Margyn drafts each reminder and sends nothing to your customers. This is exactly what each customer would get on WhatsApp.'
+    : 'Each customer’s next WhatsApp reminder, word for word. Nothing has gone out yet.';
+  const src = d.include_books ? 'Customers come from your books and from receivables typed into Margyn.' : 'Only receivables typed into Margyn are chased. Turn on “Customers from your books” in Payment Chase settings to include your books.';
+  return '<div class="mg-panel"><div class="mg-panel-h"><h2>What goes out next</h2>' + (off ? '<span class="mg-bdg">Preview: not sent</span>' : '<span class="mg-aside">' + list.length + ' reminder' + (list.length === 1 ? '' : 's') + '</span>') + '</div><div class="mg-panel-b">' +
+    '<p class="mg-fine" style="margin:0 0 6px">' + escapeHtml(sub) + ' ' + escapeHtml(src) + '</p>' +
+    (rows || '<p class="mg-fine" style="margin:0">No reminder is due. Customers appear here as their invoices go past due.</p>') +
+    (list.length > 25 ? '<p class="mg-fine" style="margin:8px 0 0">And ' + (list.length - 25) + ' more.</p>' : '') + '</div></div>';
+}
 function mgAutoOpen(){ try { return (chaseTargets || []).filter(t => ['active', 'paused_promise', 'disputed', 'escalated_human'].includes(t.state)); } catch(e){ return []; } }
 // Reminders on or off for one customer. A customer who replied STOP (opted out), paid, or is in your hands has no switch.
 function mgAutoSwitch(t){
@@ -196,16 +226,19 @@ function mgAutoPanels(){
     Promise.resolve(loadChaseTargets()).then(() => { mgAutoPanels.at = Date.now(); }).catch(() => {}).then(() => { mgAutoPanels.busy = false; if(mgCurrentView === 'agents') mgAutoPanels(); });
   }
   const loading = !mgAutoPanels.at;
+  if(st === 'active') mgChasePrevLoad();
+  const prevOff = !!(mgChasePrev && mgChasePrev.sends_off);
   const all = (typeof chaseTargets !== 'undefined' && chaseTargets) || [], open = mgAutoOpen();
   const paid = all.filter(t => t.state === 'resolved_paid');
   const when = iso => iso ? fmtDay(iso) : '—';
   ch.innerHTML = (typeof mgSum === 'function' ? mgSum([['Being chased', String(open.length)], ['Outstanding', fmtINR(open.reduce((a, t) => a + (Number(t.amount) || 0), 0), 'tile')], ['Paid after a reminder', String(paid.length), paid.length ? 'pos' : ''],
-      ['Payment reminders', st === 'active' ? 'On' : st === 'paused' ? 'Paused' : 'Off']]) : '') +
+      ['Payment reminders', st === 'active' ? (prevOff ? 'Preview only' : 'On') : st === 'paused' ? 'Paused' : 'Off']]) : '') +
     (all.length ? '<div class="mg-panel mg-gridwrap mg-bleed"><table class="mg-grid comfy"><thead><tr><th>Customer</th><th>Status</th><th class="r">Amount (₹)</th><th>Last reminder</th><th>Next reminder</th><th>Reminders</th></tr></thead><tbody>' +
       all.slice().sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0)).map(t => { const s = MGA_STATE[t.state] || ['', String(t.state || '').replace(/_/g, ' ')];
-        return '<tr><td>' + (typeof mgWho === 'function' ? mgWho(t.party_name || 'A customer') : escapeHtml(t.party_name || '')) + '</td><td><span class="mg-bdg ' + s[0] + '">' + escapeHtml(s[1]) + '</span></td><td class="r">' + (t.amount != null ? mgNum(t.amount) : '') + '</td><td>' + escapeHtml(when(t.last_chase_at)) + '</td><td>' + escapeHtml(['active'].includes(t.state) ? when(t.next_chase_at) : '—') + '</td><td>' + mgAutoSwitch(t) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+        return '<tr><td>' + (typeof mgWho === 'function' ? mgWho(t.party_name || 'A customer') : escapeHtml(t.party_name || '')) + '</td><td><span class="mg-bdg ' + s[0] + '">' + escapeHtml(s[1]) + '</span></td><td class="r">' + (t.amount != null ? mgNum(t.amount) : '') + '</td><td>' + escapeHtml(when(t.last_chase_at) + (prevOff && t.last_chase_at ? ' (preview, not sent)' : '')) + '</td><td>' + escapeHtml(['active'].includes(t.state) ? when(t.next_chase_at) : '—') + '</td><td>' + mgAutoSwitch(t) + '</td></tr>'; }).join('') + '</tbody></table></div>'
       : loading ? '<div class="mg-panel mg-empty-panel"><p>Loading who is being chased…</p></div>'
-      : '<div class="mg-panel mg-empty-panel"><h2>Nobody is being chased</h2><p>' + (st === 'active' ? 'Payment reminders are on. Customers appear here as their invoices go past due.' : 'Payment reminders on WhatsApp are off. Turn them on from the Roster tab and overdue customers appear here.') + '</p></div>');
+      : '<div class="mg-panel mg-empty-panel"><h2>Nobody is being chased</h2><p>' + (st === 'active' ? 'Payment reminders are on. Customers appear here as their invoices go past due.' : 'Payment reminders on WhatsApp are off. Turn them on from the Roster tab and overdue customers appear here.') + '</p></div>') +
+    (st === 'active' ? mgChasePrevHtml() : '');
   // Update log: what Margyn sent on WhatsApp, run by run (the Conversations page's own log)
   const w = typeof mgHub !== 'undefined' && mgHub ? mgHub.watch : null;
   const runs = w && typeof mgHubRunsHtml === 'function' ? mgHubRunsHtml(w) : '';
