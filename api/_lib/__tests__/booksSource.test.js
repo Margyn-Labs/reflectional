@@ -25,6 +25,13 @@ const B = require('../booksSource');
   check('Zoho needing re-authorisation: reconnecting Zoho is allowed', (await B.checkOneBooks('u2', 'zoho')) === null);
   check('Zoho needing re-authorisation still counts: Tally refused', (await B.checkOneBooks('u2', 'tally')).body.connected === 'zoho');
   check('another account is unaffected', (await B.checkOneBooks('u3', 'tally')) === null);
+  // An account that already had two (a test account): disconnecting and reconnecting Zoho still works.
+  DB.tally_installs.push({ user_id: 'u4', status: 'active' });
+  DB.zoho_organizations.push({ user_id: 'u4', status: 'disconnected' });
+  check('Zoho used before: reconnecting after a disconnect is allowed beside Tally', (await B.checkOneBooks('u4', 'zoho')) === null);
+  check('but a third system is still refused', (await B.checkOneBooks('u4', 'odoo')).status === 409);
+  DB.tally_installs.push({ user_id: 'u5', status: 'revoked' });
+  check('an old, revoked Tally does not block a new Zoho', (await B.checkOneBooks('u5', 'zoho')) === null);
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;
 })();
