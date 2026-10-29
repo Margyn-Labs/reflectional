@@ -275,6 +275,8 @@ async function syncItemLines(session, org, userId, opts) {
       errorMessage: out.stopped && out.stopped !== 'done' ? `stopped: ${out.stopped}; ${out.pending} documents left` : null });
   } catch (err) {
     if (err instanceof ZohoAuthError) throw err;
+    // Deployed before sql/2026-10-30-zoho-items.sql ran: skip quietly, so the nightly sync isn't marked partial.
+    if (/zoho_(items|document_lines|line_state)/.test(String(err.message)) && /does not exist|schema cache|42P01|PGRST205/i.test(String(err.message))) { out.stopped = 'not_migrated'; return out; }
     out.error = err.message;
     await logConnectorEvent({ userId, connectorType: 'zoho_books', operation: 'sync_item_lines', status: 'error', errorMessage: err.message });
   }

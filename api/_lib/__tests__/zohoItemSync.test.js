@@ -211,6 +211,15 @@ const run = (W, extra) => items.syncItemLines(createSession(W.org()), W.org(), '
       check('fill now needs a signed-in owner', r3.statusCode === 401);
     }
 
+    console.log('# deployed before the SQL ran: skipped quietly');
+    {
+      const M = world();
+      const realHandle = M.db.handle.bind(M.db);
+      M.db.handle = async (url, init) => (/rest\/v1\/zoho_items/.test(url) ? H.json(404, { code: 'PGRST205', message: "Could not find the table 'public.zoho_items' in the schema cache" }) : realHandle(url, init));
+      const out = await run(M);
+      check('no error, nothing read, sync stays clean', out.stopped === 'not_migrated' && !out.error && details(M.zoho).length === 0, out);
+    }
+
     console.log('# progress');
     {
       const p = items.progressFrom([{ status: 'sent', doc_date: '2026-10-01', lines_read_at: 'x', read_modified: '2026-10-01T00:00:00Z', doc_last_modified: '2026-10-01T00:00:00Z' },
