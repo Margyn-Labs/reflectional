@@ -1213,7 +1213,7 @@ function computeAnalytics(input) {
       const overallCost = {};
       for (const a of Object.values(items)) overallCost[a.item] = a.cost_qty > 0 ? a.cost_value / a.cost_qty : null;
       const at = (item, mk) => itemMonth[item + '|' + mk] || { sq: 0, sv: 0, pq: 0, pv: 0 };
-      let price = 0, cost = 0, volume = 0, m0tot = 0, m1tot = 0;
+      let price = 0, cost = 0, volume = 0, m0tot = 0, m1tot = 0, priced = 0;
       for (const item of Object.keys(items)) {
         const a0 = at(item, m0), a1 = at(item, m1);
         if (a0.sq <= 0 && a1.sq <= 0) continue;
@@ -1225,8 +1225,11 @@ function computeAnalytics(input) {
         const q0 = a0.sq, q1 = a1.sq;
         price += q1 * (p1 - p0); cost += -q1 * (c1 - c0); volume += (q1 - q0) * (p0 - c0);
         m0tot += q0 * (p0 - c0); m1tot += q1 * (p1 - c1);
+        priced++;
       }
-      margin_bridge = { from_month: m0, to_month: m1, margin_from: r2(m0tot), margin_to: r2(m1tot), price_effect: r2(price), cost_effect: r2(cost), volume_mix_effect: r2(volume) };
+      // No item sold in those months has a purchase cost (Zoho sales-only items, 30 Oct 2026): there is no bridge,
+      // not one of all zeros ("Item margin moved ₹0 … selling price 0, purchase cost 0").
+      if (priced) margin_bridge = { from_month: m0, to_month: m1, margin_from: r2(m0tot), margin_to: r2(m1tot), price_effect: r2(price), cost_effect: r2(cost), volume_mix_effect: r2(volume) };
     }
   }
 

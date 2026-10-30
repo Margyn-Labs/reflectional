@@ -39,7 +39,7 @@ function contactToLedger(c) {
 
 /**
  * Read every contact (paged, capped) and fill the party master.
- * session = zohoClient.createSession(org). Returns { read, inserted, updated } or { error }.
+ * session = zohoClient.createSession(org). Returns { read, with_details, inserted, updated } or { error }.
  */
 async function syncZohoPartyContacts(session, userId, deps) {
   const d = Object.assign({ selectRows, writePartyPlan, pause: PAGE_PAUSE_MS }, deps || {});
@@ -54,11 +54,12 @@ async function syncZohoPartyContacts(session, userId, deps) {
       if (!(data && data.page_context && data.page_context.has_more_page) || !batch.length) break;
       if (d.pause) await sleep(d.pause);
     }
-    if (!ledgers.length) return { read, inserted: 0, updated: 0 };
+    // with_details: contacts Zoho has a phone, email or GSTIN for, the only ones the party master can save.
+    if (!ledgers.length) return { read, with_details: 0, inserted: 0, updated: 0 };
     const parties = await d.selectRows('ledger_parties',
       `select=id,name,type,phone,email,gstin,address,state,pincode,pan,external_refs&user_id=eq.${userId}&limit=5000`);
     const plan = planPartyWrites(ledgers, parties, userId, { source: 'zoho', refKey: 'zoho_contact_id' });
-    return Object.assign({ read }, await d.writePartyPlan(userId, plan));
+    return Object.assign({ read, with_details: ledgers.length }, await d.writePartyPlan(userId, plan));
   } catch (e) {
     console.error('[zohoParties] contact sync failed:', e.message);
     return { error: e.message };

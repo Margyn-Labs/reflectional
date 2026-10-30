@@ -52,7 +52,11 @@ function lwSince(iso){
   return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago';
 }
 
-/* Calls the app makes, named by the job they do. First match wins. */
+/* /api/tally answers for every books system (status, analytics), so name the account's own: a Zoho
+   account never reads "Read Tally". */
+function lwBooksName(){ try { return (typeof mgDataCheckSource === 'function' && mgDataCheckSource()) || 'your books'; } catch(e){ return 'your books'; } }
+const lwText = t => typeof t === 'function' ? t() : t;
+/* Calls the app makes, named by the job they do. First match wins. Text may be a function, read when the call runs. */
 const LW_CALLS = [
   [/\/api\/reconcile\?action=summary/, 'payments', 'Checking payments against invoices', 'Checked payments against invoices'],
   [/\/api\/reconcile\?action=position/, 'books', 'Working out who owes what across your books', 'Worked out who owes what'],
@@ -66,8 +70,8 @@ const LW_CALLS = [
   [/\/api\/tally\?action=books-check-set/, 'books', 'Updating your books check', 'Updated your books check'],
   [/\/api\/tally\?action=books-check/, 'books', 'Checking your books for things to fix', 'Checked your books'],
   [/\/api\/tally\?action=completeness/, 'books', 'Checking every entry in your books reached Margyn', 'Checked your books data is complete'],
-  [/\/api\/tally\?action=analytics/, 'books', 'Working out margins from Tally', 'Worked out margins'],
-  [/\/api\/tally\?action=(status|summary)/, 'books', 'Reading Tally', 'Read Tally'],
+  [/\/api\/tally\?action=analytics/, 'books', () => 'Working out margins from ' + lwBooksName(), 'Worked out margins'],
+  [/\/api\/tally\?action=(status|summary)/, 'books', () => 'Reading ' + lwBooksName(), () => 'Read ' + lwBooksName()],
   [/\/api\/zoho\?action=vitals/, 'books', 'Reading Zoho Books', 'Read Zoho Books'],
   [/\/api\/zoho\?action=sync/, 'books', 'Syncing Zoho Books', 'Synced Zoho Books'],
   [/\/api\/zoho\?action=odoo-sync/, 'books', 'Syncing Odoo', 'Synced Odoo'],
@@ -87,11 +91,12 @@ const LW_CALLS = [
     const rule = LW_CALLS.find(r => r[0].test(url));
     const p = base(input, init);
     if(!rule) return p;
-    const a = lwAdd({ job:rule[1], text:rule[2] + '…', state:'running', at:new Date().toISOString() });
+    const doing = lwText(rule[2]), done = lwText(rule[3]);
+    const a = lwAdd({ job:rule[1], text:doing + '…', state:'running', at:new Date().toISOString() });
     // A call that finishes in a blink still shows for 1.5 s, so you see what Margyn just did.
     const t0 = Date.now();
     const settle = (ok, text) => setTimeout(() => { a.state = ok ? 'done' : 'error'; a.text = text; a.end = new Date().toISOString(); lwChanged(); }, Math.max(0, 1500 - (Date.now() - t0)));
-    p.then(r => settle(r.ok, r.ok ? rule[3] : rule[2] + ': it didn’t answer (' + r.status + ')'), () => settle(false, rule[2] + ': couldn’t reach it'));
+    p.then(r => settle(r.ok, r.ok ? done : doing + ': it didn’t answer (' + r.status + ')'), () => settle(false, doing + ': couldn’t reach it'));
     return p;
   };
 })();

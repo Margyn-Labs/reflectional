@@ -676,6 +676,7 @@ async function syncZohoForUser(userId, mode, opts) {
   const contacts = await require('../_lib/zohoParties').syncZohoPartyContacts(session, userId);
   if (!contacts.error && (contacts.inserted || contacts.updated)) results.contacts_to_parties = contacts.inserted + contacts.updated;
   if (!contacts.error && contacts.read != null) await setRemoteCount(org.id, 'contacts', contacts.read);
+  if (!contacts.error && contacts.with_details != null) await setRemoteCount(org.id, 'contacts_with_details', contacts.with_details);
 
   // Item lines (items.js): read invoice, bill, credit note and vendor credit details inside today's call budget,
   // newest first, keeping 200 calls spare. Resumes where it stopped on the next run.

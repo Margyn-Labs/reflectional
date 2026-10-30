@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-31-zoho-wording', date:'31 Oct 2026', title:'Zoho Books accounts read as Zoho Books everywhere',
+    items:[
+      { t:'Your books system, named right', what:'On a Zoho Books account the CFO pack’s profit and loss note, the “What I’m working on” list on Home and the Ledger no longer mention Tally. The CFO pack’s GST section says when no GSTR-2B has come from Zoho yet, instead of asking you to connect Zoho.',
+        how:'Open <b>CFO pack</b> or <b>Ledger</b>.', act:'cfopack' },
+      { t:'Customers and suppliers counted the way Zoho keeps them', what:'“Is all your data in?” now counts Zoho’s own customers and suppliers. It checks that every one with a phone, email or GSTIN is saved in Margyn, and says the rest show from their invoices and bills, so it no longer warns about contacts that have nothing to save.',
+        how:'<b>Organisations and sources</b> → <b>Is all your data in?</b>', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-10-31-zoho-data-check', date:'31 Oct 2026', title:'“Is all your data in?” for every part of Zoho Books',
     items:[
       { t:'The data check covers all of Zoho Books', what:'For Zoho Books the check now lists every part Margyn reads: invoices and bills against Zoho’s own counts, payments, account postings, bank accounts, customers and suppliers (and how many have a phone number for reminders), items, item lines and returns. It also says plainly what Margyn doesn’t read from Zoho and why that doesn’t change your figures.',
