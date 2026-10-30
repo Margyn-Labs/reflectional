@@ -24,7 +24,7 @@ const ORG = { id: 'org-1', user_id: 'u-1', status: 'active' };
 const fakeRest = {
   SUPABASE_URL: 'https://test.supabase.co',
   async selectRows(table, qs) {
-    if (table === 'zoho_organizations') return /backfill_completed_at/.test(qs) ? [{ backfill_completed_at: '2026-10-01T00:00:00Z' }] : [ORG];
+    if (table === 'zoho_organizations') return /backfill_completed_at/.test(qs) ? [{ backfill_completed_at: '2026-10-01T00:00:00Z', last_synced_at: /last_synced_at/.test(qs) ? '2026-10-29T21:17:07Z' : undefined }] : [ORG];
     if (table === 'zoho_sync_state') return DB.zoho_sync_state.filter((r) => qs.indexOf('org_ref=eq.' + r.org_ref) !== -1 && /module=eq\.gstr2b/.test(qs));
     return [];
   },
@@ -117,6 +117,7 @@ function fakeRes() {
   check('vitals 200', res.code === 200, res.body);
   check('vitals: no flag -> gst_leakage null even though SQL said 0 and state says success', res.body.gst_leakage === null, res.body.gst_leakage);
   check('vitals: gstr2b.available false', res.body.gstr2b && res.body.gstr2b.available === false && res.body.gstr2b.reason === 'not_validated');
+  check('vitals: says when Zoho last synced (chat said "no successful sync on record", 30 Oct)', res.body.last_synced_at === '2026-10-29T21:17:07Z', res.body.last_synced_at);
   check('vitals: briefing hints carry no ITC line', !res.body.briefing_hints.lines.some((l) => /input tax credit/i.test(l)), res.body.briefing_hints.lines);
 
   process.env.ZOHO_GSTR2B_VALIDATED = '1';

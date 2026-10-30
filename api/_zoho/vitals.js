@@ -220,14 +220,16 @@ async function handler(req, res) {
   // `undefined` here regardless of what sync.js had actually set on the
   // org row: the banner could never clear even after a clean sync. Pull
   // it straight from zoho_organizations and merge it in.
-  let backfillCompletedAt = null;
+  let backfillCompletedAt = null, lastSyncedAt = null;
   if (v.org_ref) {
     try {
       const orgs = await selectRows(
         'zoho_organizations',
-        `select=backfill_completed_at&id=eq.${v.org_ref}&user_id=eq.${user.id}&limit=1`
+        `select=backfill_completed_at,last_synced_at&id=eq.${v.org_ref}&user_id=eq.${user.id}&limit=1`
       );
       backfillCompletedAt = orgs[0] ? orgs[0].backfill_completed_at : null;
+      // when the books last came in: Home's source line, and chat/voice get_sources ("no successful sync on record", 30 Oct 2026)
+      lastSyncedAt = orgs[0] ? orgs[0].last_synced_at || null : null;
     } catch (err) {
       console.error('Failed to read backfill_completed_at:', err.message);
     }
@@ -290,6 +292,7 @@ async function handler(req, res) {
   res.status(200).json({
     ...v,
     backfill_completed_at: backfillCompletedAt,
+    last_synced_at: lastSyncedAt,
     item_lines: itemLines,
     receivables_list: receivablesList,
     payables_list: payablesList,
