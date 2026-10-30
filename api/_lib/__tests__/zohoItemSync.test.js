@@ -57,7 +57,7 @@ function world({ plan = 'free', usedToday = 0, creditScope = true } = {}) {
     { org_ref: ORG, bill_id: 'B2', bill_number: 'SUP-2', bill_date: thisFy(10, 2), status: 'open', last_modified_time: '2026-10-02T10:00:00Z' });
   if (creditScope) zoho.collection('books/v3/creditnotes', 'creditnotes', [{ creditnote_id: 'CN1', creditnote_number: 'CN-1', date: thisFy(10, 15), status: 'open', last_modified_time: zt('2026-10-15T10:00:00Z') }]);
   else zoho.route('books/v3/creditnotes', () => H.json(401, { code: 57, message: 'You are not authorized to perform this operation' }));
-  zoho.collection('books/v3/vendorcredits', 'vendorcredits', [{ vendor_credit_id: 'VC1', vendor_credit_number: 'DN-1', date: thisFy(10, 16), status: 'open', last_modified_time: zt('2026-10-16T10:00:00Z') }]);
+  zoho.collection('books/v3/vendorcredits', 'vendor_credits', [{ vendor_credit_id: 'VC1', vendor_credit_number: 'DN-1', date: thisFy(10, 16), status: 'open', last_modified_time: zt('2026-10-16T10:00:00Z') }]);
 
   const line = (id, item, qty, rate, extra) => Object.assign({ line_item_id: id, item_id: item, name: item, quantity: qty, unit: 'box', rate, bcy_rate: rate, item_total: qty * rate, tax_percentage: 0, discount_amount: 0 }, extra || {});
   const docs = {
@@ -123,7 +123,9 @@ const run = (W, extra) => items.syncItemLines(createSession(W.org()), W.org(), '
       // 650, 1300, ... 5200 (a millisecond or two of real time comes off).
       const gaps = timers.delays.filter((d) => d >= 600).sort((a, b) => a - b);
       check('reads paced: call starts 650 ms apart across the readers', gaps.length === 8 && gaps.every((d, k) => Math.abs(d - 650 * (k + 1)) <= 10), timers.delays);
-      check('reads three at a time', items.READERS === 3);
+      check('reads 4 at a time on Free, 8 on paid (Zoho allows 5 / 10 at once)', items.readersFor({ plan_type: 'free' }) === 4 && items.readersFor({ plan_type: 'Professional' }) === 8 && items.readersFor({}) === 4);
+      const writes = W.db.log.filter((l) => /^(POST|PATCH|DELETE) zoho_(document_lines|line_state)/.test(l)).length;
+      check('saves batched: a handful of database writes for 9 documents, not 3 each', writes <= 8, W.db.log.filter((l) => /^(POST|PATCH|DELETE) zoho_(document_lines|line_state)/.test(l)));
       check('no network strays', W.strays.length === 0, W.strays);
     }
 

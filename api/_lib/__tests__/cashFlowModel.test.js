@@ -234,6 +234,22 @@ const owed3 = E.moneyOwed(ctx3, { direction: 'payable' });
 check('Margyn\'s answer keeps them out of overdue and names them', owed3.owed_besides_suppliers && owed3.owed_besides_suppliers.total === E.inr(300000) &&
   owed3.overdue.startsWith(E.inr(60000)) && owed3.largest.every((p) => !/AGENT|Asha|HUF|NITA/i.test(p.vendor) || p.overdue === E.inr(0)), owed3);
 
+// ---------- Zoho Books / Odoo: a payment settles an invoice that was actually paid, not the oldest open one ----------
+{
+  // INV-1 (1 Jan, still fully open today) and INV-2 (1 Sep), one ₹100 payment on 21 Sep. Zoho says INV-1 is open, so
+  // the payment was INV-2's: 20 days, not 263. Tally keeps plain FIFO (its bill lists can miss knocked-off bills).
+  const rows = [
+    { dt: new Date(D('2026-01-01')), number: 'INV-1', lines: [{ bucket: 'debtor', ledger: 'Cust', amount: -100 }] },
+    { dt: new Date(D('2026-09-01')), number: 'INV-2', lines: [{ bucket: 'debtor', ledger: 'Cust', amount: -100 }] },
+    { dt: new Date(D('2026-09-21')), number: 'R-1', lines: [{ bucket: 'debtor', ledger: 'Cust', amount: 100 }, { bucket: 'bank', ledger: 'Bank', amount: -100 }] }
+  ];
+  const mk = (source) => ({ book: { source }, ledgers: [], cls: () => 'debtor', rows, billsAsInTally: [{ direction: 'receivable', party_name: 'Cust', bill_ref: 'INV-1', closing_balance: 100 }] });
+  const z = CF.customerHabits(mk('zoho'), Infinity).parties.get('cust');
+  check('Zoho: the payment is matched to the invoice that was paid (20 days), the unpaid one stays open', z.samples.length === 1 && z.samples[0].v === 20 && z.open.length === 1 && z.open[0].ref === 'INV-1', z);
+  const t = CF.customerHabits(mk('tally'), Infinity).parties.get('cust');
+  check('Tally: unchanged, oldest first (263 days)', t.samples.length === 1 && t.samples[0].v === 263 && t.open[0].ref === 'INV-2', t);
+}
+
 // ---------- doubtful + accuracy ----------
 const old = CF.forecast(ctx, { asOfMs: today, opening: 0, openItems: [{ party: 'Alpha', amt: 100000, ageDays: 500 }] });
 check('a 500-day-old invoice is left out as doubtful', old.drivers.doubtful.amount === 100000);

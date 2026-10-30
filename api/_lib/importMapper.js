@@ -319,7 +319,8 @@ function xDate(v) {
 /**
  * Rows of a Zoho export (arrays, header first) → documents with their lines, grouped by document number, in file
  * order. Pure. Rows without an item (free-text lines) are dropped, as the API path drops them.
- * → { doc_type, documents: [{ number, id, date, status, exchange_rate, is_inclusive_tax, discount, lines: [...] }], rows, skipped }
+ * → { doc_type, documents: [{ number, id, date, status, exchange_rate, is_inclusive_tax, discount, lines: [...] }], rows, skipped, free }
+ * (free = lines with no item, booked straight to an account)
  */
 function parseZohoExport(rows) {
   const all = Array.isArray(rows) ? rows : [];
@@ -329,7 +330,7 @@ function parseZohoExport(rows) {
   const get = (r, k) => (c[k] == null ? null : r[c[k]]);
   const str = (v) => (v == null ? '' : String(v).trim());
   const byNum = new Map();
-  let used = 0, skipped = 0;
+  let used = 0, skipped = 0, free = 0;
   for (const r of all.slice(hdrAt + 1)) {
     if (!Array.isArray(r)) continue;
     const number = str(get(r, 'number'));
@@ -343,12 +344,16 @@ function parseZohoExport(rows) {
         exchange_rate: xNum(get(r, 'exchange_rate')) || 1, is_inclusive_tax: xBool(get(r, 'inclusive')),
         discount: (discAmt || discPct) ? { amount: discAmt, percent: discPct, type: str(get(r, 'discount_type')).toLowerCase() || null,
           before_tax: c.discount_before_tax == null ? true : xBool(get(r, 'discount_before_tax')) } : null,
-        lines: []
+        lines: [], free_total: 0
       };
       byNum.set(number, d);
     }
     const name = str(get(r, 'item_name')), itemId = str(get(r, 'item_id'));
     const qty = xNum(get(r, 'qty'));
+    // A line booked straight to an account (rent, freight, "Return / discount") has text in Item Name but no
+    // Product ID. When the file has that column, such a line is not an item: drop it, as the API path does, but keep
+    // its amount, which shares a document discount with the item lines (items.documentLines).
+    if (c.item_id != null && !itemId) { d.free_total = (d.free_total || 0) + (xNum(get(r, 'item_total')) || 0); free++; continue; }
     if ((!name && !itemId) || qty == null) { skipped++; continue; }
     const rate = xNum(get(r, 'rate'));
     let total = xNum(get(r, 'item_total'));
@@ -358,7 +363,7 @@ function parseZohoExport(rows) {
       qty, rate, item_total: total, tax_pct: xNum(get(r, 'tax_pct')), unit: str(get(r, 'unit')) || null, location: str(get(r, 'location')) || null });
     used++;
   }
-  return { doc_type, documents: [...byNum.values()], rows: used, skipped };
+  return { doc_type, documents: [...byNum.values()], rows: used, skipped, free };
 }
 
 module.exports = {

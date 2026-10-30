@@ -559,6 +559,9 @@ async function mgrGreet(){
   } else {
     html += '<p>I’m Margyn. I watch your numbers, chase who owes you, read what you forward me and tell you when something needs you. Ask me anything, or press Talk.</p>';
   }
+  // No books connected yet: Margyn leads the setup instead of waiting to be asked (mgrSetup below).
+  const setup = mgrNeedsBooks();
+  if(setup) html += mgrSetupHtml();
   html += dec.length
     ? '<p><b>' + dec.length + ' thing' + (dec.length === 1 ? ' needs' : 's need') + ' your OK.</b> The biggest: ' + escapeHtml(dec[0].t.replace(/[.\s]+$/, '')) + (dec[0].amt && !/₹/.test(dec[0].t) ? ' (' + escapeHtml(fmtINR(dec[0].amt, 'tile')) + ')' : '') + '.</p>'
     : '<p>Nothing is waiting on you right now.</p>';
@@ -580,7 +583,54 @@ async function mgrGreet(){
   // Closed panel or a small screen: say hello in the bubble instead.
   if(!mgrIsOpen()) mgrBubble({ key:'greet', text:(mgrName ? 'Hey ' + mgrName : 'Hey') + (since ? ', welcome back.' : '.') + (dec.length ? ' ' + dec.length + ' thing' + (dec.length === 1 ? ' needs' : 's need') + ' your OK.' : ''), acts:[{ label:'Open Margyn', run:() => mgrOpen(true) }] }, true);
   if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home') mgRenderOwn('home');
+  if(setup){ mgrOpen(); if(typeof mgGo === 'function') mgGo('sources'); }
   setTimeout(mgrCheckNudges, 20000);
+}
+
+/* ---------- setup: Margyn leads a new account ----------
+   An account with no books connected: Margyn opens Organisations and sources itself and offers to connect. Zoho
+   Books opens its connect window straight away; the owner's one click is Accept on Zoho's own page (only they can
+   give that permission). Once connected, Margyn says what's in, when item details will be complete, and opens
+   Home. Tally and Odoo go to their card, which explains the agent / key. */
+function mgrNeedsBooks(){
+  const t = typeof tallyConnected !== 'undefined' && tallyConnected, z = typeof zohoConnected !== 'undefined' && zohoConnected, o = typeof odooConnected !== 'undefined' && odooConnected;
+  const installs = typeof tallyInstalls !== 'undefined' && (tallyInstalls || []).length;
+  return !t && !z && !o && !installs;
+}
+function mgrSetupHtml(){
+  return '<p><b>Let’s get your books in.</b> I’ve opened <b>Organisations and sources</b>. Which do you keep your accounts in? I’ll start it for you; it reads only, and changes nothing in your books.</p>' +
+    '<div class="mgr-acts"><button type="button" class="mgr-chip on" data-mgr-setup="zoho">Zoho Books</button><button type="button" class="mgr-chip" data-mgr-setup="tally">Tally</button><button type="button" class="mgr-chip" data-mgr-setup="odoo">Odoo</button></div>';
+}
+function mgrSetupStart(kind){
+  if(typeof mgGo === 'function') mgGo('sources');
+  if(kind === 'zoho' && typeof openZohoModal === 'function'){
+    openZohoModal();
+    mgrLine('margyn', 'I’ve opened Zoho Books. Press Continue to Zoho, sign in if Zoho asks, and press Accept: that permission is yours to give. Then pick your organisation and I’ll take it from there.');
+    return;
+  }
+  const card = document.getElementById(kind === 'tally' ? 'tallyStatus' : 'odooStatus');
+  if(card) card.scrollIntoView({ behavior:'smooth', block:'center' });
+  mgrLine('margyn', kind === 'tally'
+    ? 'Tally is read by a small Margyn agent on the computer that runs Tally. The Tally card shows how to install it; once it pairs, I’ll pick it up.'
+    : 'Odoo connects with your Odoo address and an API key. The Odoo card has the steps; once it’s in, I’ll pick it up.');
+}
+/* Called by the Zoho connect flow (11-connectors.js confirmZohoOrg) once the organisation is chosen and read. */
+function mgrSetupConnected(kind){
+  if(kind !== 'zoho' || typeof zohoVitals === 'undefined' || !zohoVitals) return;
+  mgrOpen();
+  const v = zohoVitals, il = v.item_lines;
+  const name = v.organization_name || 'your organisation';
+  let items = '';
+  if(il && il.documents){
+    items = il.pending > 0
+      ? ' Item details (which products, how many) come one document at a time from Zoho: ' + Number(il.read).toLocaleString('en-IN') + ' of ' + Number(il.documents).toLocaleString('en-IN') + ' so far' + (typeof zohoEtaText === 'function' ? zohoEtaText(il.eta).replace(/^ · /, ', ') : '') + '. I keep reading on my own; nothing to do.'
+      : ' Item details are all in too.';
+  }
+  mgrHtmlLine('<p><b>Zoho Books is connected: ' + escapeHtml(name) + '.</b> Your sales, profit, cash and who owes what are in, the same figures as Zoho’s own reports.' + escapeHtml(items) + '</p>' +
+    '<div class="mgr-acts"><button type="button" class="mgr-chip on" data-go-page="home">Show me my business</button>' +
+    '<button type="button" class="mgr-chip" data-mgr-ask="Who should I chase first, and why?">Who should I chase first?</button></div>', 'greet');
+  mgStatus('Margyn connected Zoho Books', true);
+  setTimeout(() => { if(typeof mgGo === 'function' && typeof mgCurrentView !== 'undefined' && /^(sources|connectors)$/.test(mgCurrentView)) mgGo('home'); }, 6000);
 }
 function mgrMarkSeen(){ if(currentUser) lsSet(MGR_SEEN_KEY + currentUser.id, new Date().toISOString()); }
 
@@ -916,6 +966,7 @@ function mgrDeskTop(o){
     const a = e.target.closest('[data-mgr-ask]'); if(a){ e.preventDefault(); mgrAsk(a.dataset.mgrAsk); return; }
     if(e.target.closest('[data-mgr-talk]')){ mgrOpen(); if(!(typeof vxActive !== 'undefined' && vxActive)) openRealtimeOverlay(); return; }
     if(e.target.closest('[data-mgr-wn]')){ if(typeof mgWhatsNew === 'function') mgWhatsNew(true); return; }
+    const su = e.target.closest('[data-mgr-setup]'); if(su){ e.preventDefault(); mgrSetupStart(su.dataset.mgrSetup); return; }
   });
   document.addEventListener('submit', e => {
     const nf = e.target.closest('[data-mgr-name]');

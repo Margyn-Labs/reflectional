@@ -27,7 +27,7 @@ const MG_TABS = {
   margin:[
     ['overview', 'Overview', ['What stands out', 'Month by month']],
     ['customers', 'Customers', ['Customers, after the cost of waiting']],
-    ['items', 'Items', ['Margin by item']],
+    ['items', 'Items', ['Margin by item', 'Sales and purchases by item']],
     ['costs', 'Where the money goes', ['Where the money goes']],
     ['working-capital', 'Working capital', ['Owed to you']],
     ['gst', 'GST estimate', ['GST estimate from your books']],

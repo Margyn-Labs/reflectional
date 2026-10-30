@@ -32,7 +32,7 @@ const TOOLS = [
   },
   {
     name: 'books_breakdown',
-    description: 'Break one figure down by month, day, customer, vendor, ledger, item or branch, with filters. Use for "sales by month", "top customers", "biggest vendors", "where is my money going" (expenses by ledger), "commission / freight / salary by month" (measure ledger + ledger name), "sales by branch", "best-selling items", "margin by customer", "which customers bought less in September". Measures: sales (before GST, after returns), sales_including_gst, returns, purchases, expenses (running + direct costs), running_costs, direct_costs, receipts (money in from customers), payments (money paid out), gst (output less input), ledger (any one ledger, needs ledger), quantity_sold, margin (item margin, needs item lines).',
+    description: 'Break one figure down by month, day, customer, vendor, ledger, item or branch, with filters. Use for "sales by month", "top customers", "biggest vendors", "where is my money going" (expenses by ledger), "commission / freight / salary by month" (measure ledger + ledger name), "sales by branch", "best-selling items", "purchases by item" (measure purchases, by item), "how many units of X did we buy each month" (measure quantity_bought, item X), "margin by customer", "which customers bought less in September". Measures: sales (before GST, after returns), sales_including_gst, returns, purchases, expenses (running + direct costs), running_costs, direct_costs, receipts (money in from customers), payments (money paid out), gst (output less input), ledger (any one ledger, needs ledger), quantity_sold, margin (item margin, needs item lines).',
     input_schema: {
       type: 'object',
       properties: {

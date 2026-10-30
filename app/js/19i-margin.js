@@ -127,6 +127,49 @@ function mgMarPanel(title, aside, body){
 }
 function mgMarNote(t){ return '<div class="mg-panel-b"><p class="mg-muted">' + escapeHtml(t) + '</p></div>'; }
 
+/* Sales and purchases by item, a month or the whole year: the layout of Zoho's "Sales by Item" and "Purchases by
+   Item" reports, from the server's items_by_month (tallyAnalytics). Returns are already taken off. */
+let mgMarIbmMonth = '';   // '' = this financial year
+function mgMarIbmRows(d){
+  const all = d.items_by_month || [];
+  const pick = all.filter(r => !mgMarIbmMonth || r.month === mgMarIbmMonth);
+  const by = new Map();
+  pick.forEach(r => {
+    const a = by.get(r.item) || { item:r.item, unit:r.unit, sq:0, sv:0, bq:0, bv:0 };
+    a.sq += r.sold_qty; a.sv += r.sold_value; a.bq += r.bought_qty; a.bv += r.bought_value; by.set(r.item, a);
+  });
+  return [...by.values()].sort((x, y) => y.sv - x.sv || y.bv - x.bv);
+}
+function mgMarIbmPanel(d){
+  const all = d.items_by_month || [];
+  if(!d.items_available || !all.length) return '';
+  const months = [...new Set(all.map(r => r.month))].sort().reverse();
+  if(mgMarIbmMonth && !months.includes(mgMarIbmMonth)) mgMarIbmMonth = '';
+  const rows = mgMarIbmRows(d);
+  const tot = rows.reduce((t, r) => ({ sv:t.sv + r.sv, bv:t.bv + r.bv }), { sv:0, bv:0 });
+  const qty = (n, u) => mgNum(n) + (u ? ' <span class="mg-muted">' + escapeHtml(String(u).toLowerCase()) + '</span>' : '');
+  const avg = (v, q) => q > 0 ? mgNum(Math.round(v / q * 100) / 100) : '—';
+  const sel = '<div class="mg-panel-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><label class="mg-muted" style="display:inline;margin:0">Period</label><select data-mar-ibm style="width:auto;min-width:200px;margin:0">' +
+    '<option value="">This financial year</option>' + months.map(m => '<option value="' + m + '"' + (m === mgMarIbmMonth ? ' selected' : '') + '>' + escapeHtml(mgMarMonth(m)) + '</option>').join('') +
+    '</select>' + mgBtn('Download', 'data-mar-ibm-csv') + '</div>';
+  // Item totals vs the profit and loss for the same months: the gap is sales or returns entered without an item
+  // (MARGYN DEMO, Oct: ₹69,439 of "Return / discount" credit notes). Said, not hidden.
+  const inSel = (k) => (mgMarIbmMonth ? k === mgMarIbmMonth : months.includes(k));
+  const pnlSales = (d.pnl || []).filter(p => inSel(p.month)).reduce((t, p) => t + (p.net_sales || 0), 0);
+  const gap = Math.round(tot.sv - pnlSales);
+  const gapNote = (d.pnl || []).some(p => inSel(p.month)) && Math.abs(gap) >= 1
+    ? ' Items add up to ' + fmtINR(tot.sv) + ' of sales; your profit and loss shows ' + fmtINR(pnlSales) + ' for the same period. The ' + fmtINR(Math.abs(gap)) + ' difference is ' +
+      (gap > 0 ? 'returns or discounts' : 'sales') + ' entered without naming an item, so no item report can place ' + (gap > 0 ? 'them' : 'it') + '.' : '';
+  const body = '<table class="mg-grid"><thead><tr><th>Item</th><th class="r">Qty sold</th><th class="r">Sales (₹)</th><th class="r">Average price (₹)</th>' +
+    '<th class="r">Qty bought</th><th class="r">Purchases (₹)</th><th class="r">Average cost (₹)</th></tr></thead><tbody>' +
+    rows.map(r => '<tr><td>' + escapeHtml(r.item) + '</td><td class="r">' + qty(r.sq, r.unit) + '</td><td class="r">' + mgNum(r.sv) + '</td><td class="r">' + avg(r.sv, r.sq) + '</td>' +
+      '<td class="r">' + (r.bq || r.bv ? qty(r.bq, r.unit) : '—') + '</td><td class="r">' + (r.bv ? mgNum(r.bv) : '—') + '</td><td class="r">' + avg(r.bv, r.bq) + '</td></tr>').join('') +
+    '</tbody><tfoot><tr><td>Total</td><td></td><td class="r">' + mgNum(tot.sv) + '</td><td></td><td></td><td class="r">' + mgNum(tot.bv) + '</td><td></td></tr></tfoot></table>';
+  return mgMarPanel('Sales and purchases by item', mgMarIbmMonth ? mgMarMonth(mgMarIbmMonth) : 'This financial year, month by month', sel + body +
+    mgMarNote('Before GST. Returns and credit notes are taken off sales, vendor credits and debit notes off purchases' +
+      (/zoho/i.test(mgBooksName()) ? ', the way Zoho Books’ own Sales by Item and Purchases by Item reports count them.' : '.') + gapNote));
+}
+
 /* Two books systems connected: one is read everywhere, the other shown beside it, never added (dataLayer/books.js). */
 function mgMarComparePanel(d){
   const c = d.books_compare || [];
@@ -273,6 +316,7 @@ function mgRenderMargin(){
     mgMarPanel('Month by month', 'Before stock movement', '<table class="mg-grid"><thead><tr><th>Month</th><th class="r">Net sales (₹)</th><th class="r">Cost of goods (₹)</th><th class="r">Gross profit (₹)</th><th class="r">Gross %</th><th class="r">Running cost (₹)</th><th class="r">Net profit (₹)</th><th class="r">Net %</th></tr></thead><tbody>' + (pnlRows || '<tr><td colspan="8" class="mg-muted">No vouchers yet.</td></tr>') + '</tbody></table>' +
       mgMarNote('Sales here exclude GST. Gross profit is sales less purchases and direct costs in each month. Stock movement is only known for the whole period, so it isn’t spread across months. Orders and delivery notes are left out because they don’t move money.')) +
     itemsPanel +
+    mgMarIbmPanel(d) +
     mgMarKitsPanel(d) +
     mgMarBranchPanel(d) +
     (d.concentration ? '<div class="mg-tiles four">' + mgMarConcentration(d) + '</div>' : '') +
@@ -293,6 +337,12 @@ MG_OWN_RENDER.margin = mgRenderMargin;
 document.addEventListener('click', async e => {
   if(e.target.closest('[data-mar-refresh]')){ mgLoadMargin(true).then(() => mgRenderMargin()); return; }
   const go = e.target.closest('[data-mar-go]'); if(go && typeof mgGo === 'function'){ mgGo(go.getAttribute('data-mar-go')); return; }
+  if(e.target.closest('[data-mar-ibm-csv]') && mgMar){
+    const rows = mgMarIbmRows(mgMar);
+    mgCsv('margyn-sales-purchases-by-item' + (mgMarIbmMonth ? '-' + mgMarIbmMonth : '') + '.csv', ['Item', 'Unit', 'Qty sold', 'Sales (INR)', 'Qty bought', 'Purchases (INR)'],
+      rows.map(r => [r.item, r.unit || '', Math.round(r.sq * 100) / 100, Math.round(r.sv * 100) / 100, Math.round(r.bq * 100) / 100, Math.round(r.bv * 100) / 100]));
+    return;
+  }
   if(e.target.closest('#marExport')){
     const host = document.getElementById('view-margin');
     if(host && host.__csv) mgCsv('margyn-margin.csv', host.__csv[0], host.__csv[1]);
@@ -309,6 +359,7 @@ document.addEventListener('click', async e => {
   } catch(err){ btn.disabled = false; toast(err.message || 'Couldn’t save that.', { kind:'bad' }); }
 });
 document.addEventListener('change', e => {
+  const m = e.target.closest('[data-mar-ibm]'); if(m){ mgMarIbmMonth = m.value; mgRenderMargin(); return; }
   const s = e.target.closest('[data-mar-company]'); if(!s) return;
   mgMarCompany = s.value; mgMar = null; mgLoadMargin(true).then(() => mgRenderMargin());
 });

@@ -383,7 +383,7 @@ function summary(ctx, args) {
 
 /* ---------------- 2. break a figure down ---------------- */
 
-const MEASURES = ['sales', 'sales_including_gst', 'returns', 'purchases', 'expenses', 'running_costs', 'direct_costs', 'receipts', 'payments', 'gst', 'ledger', 'quantity_sold', 'margin'];
+const MEASURES = ['sales', 'sales_including_gst', 'returns', 'purchases', 'expenses', 'running_costs', 'direct_costs', 'receipts', 'payments', 'gst', 'ledger', 'quantity_sold', 'quantity_bought', 'margin'];
 const GROUPS = ['month', 'day', 'customer', 'vendor', 'party', 'ledger', 'item', 'branch', 'voucher_type'];
 
 function breakdown(ctx, args) {
@@ -398,7 +398,9 @@ function breakdown(ctx, args) {
   const fItem = a.item ? matcher(a.item) : null;
   const fBranch = a.branch ? matcher(a.branch) : null;
   if (measure === 'ledger' && !fLedger) return { error: 'Say which ledger: measure "ledger" needs ledger, e.g. "commission", "freight", "salary".' };
-  const itemLevel = by === 'item' || measure === 'quantity_sold' || measure === 'margin' || !!fItem;
+  const itemLevel = by === 'item' || measure === 'quantity_sold' || measure === 'quantity_bought' || measure === 'margin' || !!fItem;
+  // Purchases by item (Zoho's "Purchases by Item"): bills and purchase vouchers, less debit notes / vendor credits.
+  const buySide = measure === 'purchases' || measure === 'quantity_bought';
 
   const groups = new Map();
   const add = (key, amount, count) => {
@@ -424,14 +426,14 @@ function breakdown(ctx, args) {
     if (fParty && !fParty(r.party)) continue;
     if (fBranch && !fBranch(r.branch || 'Main')) continue;
     if (itemLevel) {
-      const sign = r.kind === 'credit_note' ? -1 : r.kind === 'sales' ? 1 : 0;
+      const sign = buySide ? (r.kind === 'debit_note' ? -1 : r.kind === 'purchase' ? 1 : 0) : (r.kind === 'credit_note' ? -1 : r.kind === 'sales' ? 1 : 0);
       if (!sign) continue;
       for (const it of r.items) {
         if (fItem && !fItem(it.item)) continue;
         const val = it.abs_amount != null ? num(it.abs_amount) : Math.abs(num(it.amount));
         const qty = num(it.qty);
         let v;
-        if (measure === 'quantity_sold') v = sign * qty;
+        if (measure === 'quantity_sold' || measure === 'quantity_bought') v = sign * qty;
         else if (measure === 'margin') {
           const c = ctx.unitCost(it.item);
           if (c.cost == null) { costMissing += sign * val; continue; }
@@ -482,7 +484,7 @@ function breakdown(ctx, args) {
   else list.sort((x, y) => (a.order === 'asc' ? x.value - y.value : y.value - x.value));
   const shown = (by === 'month' || by === 'day') ? list.slice(-Math.max(top, by === 'month' ? 12 : top)) : list.slice(0, top);
   const rest = list.filter((g) => !shown.includes(g));
-  const unit = measure === 'quantity_sold' ? (v) => Math.round(v).toLocaleString('en-IN') + ' units' : inr;
+  const unit = measure === 'quantity_sold' || measure === 'quantity_bought' ? (v) => Math.round(v).toLocaleString('en-IN') + ' units' : inr;
   const out = {
     source: sourceLine(ctx),
     measure, by: a.by || by, period: per.label,
@@ -491,9 +493,9 @@ function breakdown(ctx, args) {
     rows: shown.map((g) => ({
       name: by === 'month' ? monthLabel(g.name) : by === 'day' ? dayStr(new Date(g.name + 'T00:00:00Z')) : g.name,
       amount: unit(g.value),
-      share: measure === 'quantity_sold' || !total ? undefined : pctStr(pctOf(g.value, total)),
+      share: measure === 'quantity_sold' || measure === 'quantity_bought' || !total ? undefined : pctStr(pctOf(g.value, total)),
       entries: g.count,
-      rupees: measure === 'quantity_sold' ? undefined : Math.round(g.value)
+      rupees: measure === 'quantity_sold' || measure === 'quantity_bought' ? undefined : Math.round(g.value)
     })),
     groups_found: list.length
   };

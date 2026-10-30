@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-item-report', date:'1 Nov 2026', title:'Sales and purchases by item, month by month',
+    items:[
+      { t:'Sales and purchases by item', what:'A new table on Margin: each item’s quantity and value sold and bought, for the whole year or one month, with average price and cost. Returns come off sales and vendor credits off purchases, so on Zoho Books it matches Zoho’s own Sales by Item and Purchases by Item reports.',
+        how:'Open <b>Margin</b> → <b>Sales and purchases by item</b>, pick a month, and press <b>Download</b> for a spreadsheet. Or ask Margyn “What did I buy by item last month?”', act:'margin' },
+      { t:'Zoho Books items arrive faster after you connect', what:'Margyn now reads up to 8 Zoho documents at a time on paid plans (4 on Free) and saves them in batches, so item figures fill in about three times faster, still inside Zoho’s limits. Vendor credits are now read too, and bills with expense lines no longer wait.',
+        how:'Nothing to do: connect Zoho Books and it fills by itself. <b>Organisations and sources</b> → <b>Zoho Books</b> shows how far it has got.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-11-01-zoho-items-fast', date:'1 Nov 2026', title:'Zoho Books item figures in minutes, on any plan',
     items:[
       { t:'Drop Zoho’s own export into Import', what:'Export Invoices, Bills, Credit Notes and Vendor Credits from Zoho Books and drop each file into Import. Margyn spots Zoho’s export, skips the AI reading and adds every item line to the documents it already has from Zoho, so a whole year of item sales, costs and margins is in within minutes, on any Zoho plan. Nothing is written to Zoho, and later edits in Zoho still come in on their own.',

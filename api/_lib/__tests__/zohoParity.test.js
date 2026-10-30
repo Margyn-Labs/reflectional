@@ -255,6 +255,16 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     const an2 = (bk) => A.computeAnalytics({ ledgers: bk.ledgers, vouchers: bk.vouchers, bills: bk.bills, overrides: {}, balance_convention: bk.balance_convention, itemMaster: bk.item_master || [] });
     const ia = an2(apiBook), ib = an2(expBook);
     check('Margin item table: export = API', JSON.stringify(ia.items) === JSON.stringify(ib.items) && (ia.items || []).length === 3, { api: ia.items, exp: ib.items });
+    // Sales / Purchases by Item, month by month (Margin page panel): the months add up to the year's item table, and
+    // chat's breakdown gives the same figures, purchases net of vendor credits (tied to Zoho's reports live, 30 Oct).
+    const ibm = ia.items_by_month || [];
+    const sumSold = (item) => ibm.filter((r) => r.item === item).reduce((t, r) => t + r.sold_value, 0);
+    check('items by month: sold value per item adds up to the Margin item table', ibm.length > 0 && (ia.items || []).every((i) => Math.abs(sumSold(i.item) - i.sold_value) < 0.01), { ibm, items: ia.items });
+    check('items by month: export = API', JSON.stringify(ibm) === JSON.stringify(ib.items_by_month || []));
+    const ctxA = E.prepare(apiBook, {});
+    const chatBuy = E.breakdown(ctxA, { measure: 'purchases', by: 'item', period: 'this_fy', top: 50 });
+    const bought = (item) => ibm.filter((r) => r.item === item).reduce((t, r) => t + r.bought_value, 0);
+    check('chat purchases by item = the panel (purchases, not sales)', (chatBuy.rows || []).length > 0 && (chatBuy.rows || []).every((g) => Math.abs(g.rupees - Math.round(bought(g.name))) <= 1), { chat: chatBuy.rows, ibm });
     check('no reconcile note on the export lines either', !expBook.notes.some((n) => /item lines that differ/.test(n)), expBook.notes);
   }
   const cnVouchers = zBook.vouchers.filter((v) => v.voucher_type === 'Credit Note' && v.items);
@@ -324,7 +334,8 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     lines: { documents: 1053, read: 220, pending: 833, complete_after: '2026-09-14', creditnotes: 12, vendorcredits: 4 } });
   const il = filling.checks.find((c) => c.key === 'item_lines');
   check('completeness: item lines filling in says N of N and the date figures are complete after', il && il.status === 'info' && /220 of 1,053/.test(il.detail) && /2026-09-14/.test(il.detail), il);
-  check('completeness: while filling, points to the Zoho export for item figures in minutes', /export Invoices, Bills, Credit Notes and Vendor Credits from Zoho Books and drop the files into Import/.test(il.detail), il.detail);
+  // Varad, 30 Oct: connecting must be enough; never send the owner to a manual export.
+  check('completeness: while filling, says Margyn keeps reading on its own and what a paid plan allows, never a manual export', /keeps reading on its own until they are all in; nothing to do/.test(il.detail) && /Professional 5,000/.test(il.detail) && !/export|Import/.test(il.detail), il.detail);
   check('completeness: credit notes and vendor credits counted', /12 credit notes and 4 vendor credits/.test(filling.checks.find((c) => c.key === 'returns').detail));
 
   console.log(`\n${pass} passed, ${fail} failed`);

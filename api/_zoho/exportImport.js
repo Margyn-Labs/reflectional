@@ -14,7 +14,7 @@
  * Nothing is written to Zoho.
  */
 
-const { selectRows, insertRows, updateRows, deleteRows, getUserFromRequest, logConnectorEvent } = require('../_lib/supabaseRest');
+const { selectRows, insertRows, deleteRows, getUserFromRequest, logConnectorEvent } = require('../_lib/supabaseRest');
 const { parseZohoExport } = require('../_lib/importMapper');
 const { documentLines, needsRead } = require('./items');
 
@@ -40,6 +40,8 @@ function exportDocToApi(doc, docType, docId, itemIdFor) {
       rate: l.rate, item_total: l.item_total, tax_percentage: l.tax_pct, location_name: l.location
     });
   });
+  // Lines with no item (account lines): no row of their own, but their amount shares a document discount.
+  if (doc.free_total) lineItems.push({ line_item_id: `x-${docId}-free`, item_id: '', item_total: doc.free_total });
   const api = { [ID_FIELD[docType]]: docId, date: doc.date, status: doc.status, exchange_rate: doc.exchange_rate || 1, is_inclusive_tax: !!doc.is_inclusive_tax, line_items: lineItems };
   const d = doc.discount;
   if (d && d.before_tax !== false && (!d.type || /entity|transaction/.test(d.type))) {
@@ -86,7 +88,7 @@ async function importExportRows(org, rows) {
     const id = String(type === 'invoice' ? m.invoice_id : m.bill_id);
     if (known.has(id)) continue;
     known.set(id, { doc_type: type, doc_id: id, doc_number: type === 'invoice' ? m.invoice_number : m.bill_number, doc_date: type === 'invoice' ? m.invoice_date : m.bill_date,
-      status: m.status || null, doc_last_modified: iso(m.last_modified_time), lines_read_at: null, read_modified: null, fresh: true });
+      status: m.status || null, doc_last_modified: iso(m.last_modified_time), lines_read_at: null, read_modified: null });
   }
   const byNumber = new Map();
   for (const k of known.values()) if (k.doc_number) byNumber.set(norm(k.doc_number), k);
@@ -94,6 +96,7 @@ async function importExportRows(org, rows) {
 
   const out = { doc_type: type, documents: parsed.documents.length, matched: 0, written: 0, lines: 0, already_read: 0, not_found: 0, dead: 0, unknown_items: 0, left_for_api: 0, not_found_numbers: [] };
   const now = new Date().toISOString();
+  const done = [];   // { s, lines }: written below in a few batched calls, not three calls per document
   for (const doc of parsed.documents) {
     const s = (doc.id && known.get(String(doc.id))) || byNumber.get(norm(doc.number));
     if (!s) { out.not_found++; if (out.not_found_numbers.length < 10) out.not_found_numbers.push(doc.number); continue; }
@@ -108,19 +111,22 @@ async function importExportRows(org, rows) {
     // (05/10/2026 is 5 Oct in India, 10 May in the US), Margyn's comes from the API.
     api.date = s.doc_date || doc.date;
     const lines = documentLines(api, type, o).map((l) => Object.assign(l, { doc_date: l.doc_date || s.doc_date || null }));
-    await deleteRows('zoho_document_lines', `org_ref=eq.${o}&doc_type=eq.${type}&doc_id=eq.${encodeURIComponent(s.doc_id)}`);
-    if (lines.length) await insertRows('zoho_document_lines', lines, { onConflict: 'org_ref,doc_type,line_item_id', merge: true });
-    // Read at the version Margyn knows: a later edit in Zoho moves doc_last_modified and the queue reads it again.
-    const mark = { lines_read_at: now, read_modified: s.doc_last_modified || now, line_count: lines.length };
-    if (s.fresh) {
-      await insertRows('zoho_line_state', [{ org_ref: o, doc_type: type, doc_id: s.doc_id, doc_number: s.doc_number || null, doc_date: s.doc_date || null,
-        status: s.status || null, doc_last_modified: s.doc_last_modified || null, ...mark }], { onConflict: 'org_ref,doc_type,doc_id', merge: true });
-    } else {
-      await updateRows('zoho_line_state', `org_ref=eq.${o}&doc_type=eq.${type}&doc_id=eq.${encodeURIComponent(s.doc_id)}`, mark);
-    }
+    done.push({ s, lines });
     out.written++;
     out.lines += lines.length;
   }
+  // A year of invoices is hundreds of documents: one call each would outrun the function's time limit (seen live,
+  // 30 Oct: ~85 documents a minute). Old lines go first, then the new lines, then the queue marks, each batched.
+  for (let i = 0; i < done.length; i += 100) {
+    const ids = done.slice(i, i + 100).map((d) => encodeURIComponent(d.s.doc_id)).join(',');
+    await deleteRows('zoho_document_lines', `org_ref=eq.${o}&doc_type=eq.${type}&doc_id=in.(${ids})`);
+  }
+  const allLines = done.flatMap((d) => d.lines);
+  for (let i = 0; i < allLines.length; i += 500) await insertRows('zoho_document_lines', allLines.slice(i, i + 500), { onConflict: 'org_ref,doc_type,line_item_id', merge: true });
+  // Read at the version Margyn knows: a later edit in Zoho moves doc_last_modified and the queue reads it again.
+  const marks = done.map(({ s, lines }) => ({ org_ref: o, doc_type: type, doc_id: s.doc_id, doc_number: s.doc_number || null, doc_date: s.doc_date || null,
+    status: s.status || null, doc_last_modified: s.doc_last_modified || null, lines_read_at: now, read_modified: s.doc_last_modified || now, line_count: lines.length }));
+  for (let i = 0; i < marks.length; i += 500) await insertRows('zoho_line_state', marks.slice(i, i + 500), { onConflict: 'org_ref,doc_type,doc_id', merge: true });
   return out;
 }
 
