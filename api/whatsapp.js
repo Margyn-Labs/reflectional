@@ -36,6 +36,7 @@ const booksTools = require('./_lib/booksTools');
 const booksEngine = require('./_lib/booksEngine');
 const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
 const sendGuard = require('./_lib/sendGuard');
+const onboard = require('./_lib/onboardText');
 
 // Every request runs in a send-guard context: once the account is known (resolveSender, matchChaseTarget),
 // an account with external sends off (a demo tenant) sends nothing, however deep the send is (sendGuard.js).
@@ -429,6 +430,20 @@ async function handleConversationalInbound(res, textEvent) {
     matches = sender ? [{ id: sender.profileId }] : [];
   } catch (err) {
     console.error('whatsapp webhook: profile lookup failed', err.message);
+    return;
+  }
+
+  // "onboard": where setup stands and the link that starts the next step (_lib/onboardText.js). Rules, no AI.
+  // A number on no account gets only the sign-up link.
+  if (onboard.isOnboardText(textEvent.text) && (!matches.length || sender.perms.ask)) {
+    try {
+      const facts = matches.length ? await onboard.onboardFacts(matches[0].id) : { known: false };
+      await bsp.sendText({ to: textEvent.from, text: onboard.onboardReply(facts) });
+      if (matches.length) { track(matches[0].id, 'whatsapp_inbound', { kind: 'onboard' }); touchMember(sender.member); }
+    } catch (err) {
+      console.error('whatsapp webhook: onboard reply failed', err.message);
+    }
+    if (!res.headersSent) res.status(200).json({ received: true, onboard: true });
     return;
   }
 
