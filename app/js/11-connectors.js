@@ -669,7 +669,7 @@ function renderZohoStatus(){
     // More than a night to go: the owner can have it all in minutes from Zoho's own export, or ask Zoho for a raise.
     const slow = !needsReauth && il && il.pending > 0 && il.eta && il.eta.when === 'days';
     const tipHtml = slow
-      ? '<div class="lr-meta" id="zohoFastTip">Have a lot of history? Export Invoices, Bills, Credit Notes and Vendor Credits from Zoho and drop the files into <a href="#" id="zohoTipImport">Import</a>: item figures are complete in minutes. Or <a href="#" id="zohoTipEmail">ask Zoho for a short limit raise</a>.</div>'
+      ? '<div class="lr-meta" id="zohoFastTip">Margyn keeps reading on its own, as fast as Zoho’s daily limit on your plan allows. To have it sooner, <a href="#" id="zohoTipEmail">ask Zoho for a short limit raise</a>.</div>'
       : '';
     host.innerHTML =
       '<div class="ledger-row"><div class="lr-main">' +
@@ -686,7 +686,6 @@ function renderZohoStatus(){
     const s = document.getElementById('zohoSyncBtn'); if(s) s.addEventListener('click', syncZohoNow);
     const f = document.getElementById('zohoFillBtn'); if(f) f.addEventListener('click', fillZohoItemsNow);
     const r = document.getElementById('zohoReconnectBtn'); if(r) r.addEventListener('click', openZohoModal);
-    const ti = document.getElementById('zohoTipImport'); if(ti) ti.addEventListener('click', e => { e.preventDefault(); if(typeof mgGo === 'function') mgGo('calculate'); });
     const te = document.getElementById('zohoTipEmail'); if(te) te.addEventListener('click', e => { e.preventDefault(); zohoLimitEmailDialog(); });
     document.getElementById('zohoDisconnectBtn').addEventListener('click', disconnectZoho);
   } else {
@@ -816,6 +815,7 @@ async function confirmZohoOrg(){
     document.getElementById('zohoOverlay').classList.add('hidden');
     zohoPendingOrgRef = null; zohoChosenOrgId = null;
     await loadZohoVitals();
+    if(typeof mgrSetupConnected === 'function') mgrSetupConnected('zoho');   // 25-margyn.js: Margyn takes it from here
     if(out.multi_currency_detected){
       toast('Non-INR base currency', { kind:'info', ms:6000, sub:'Those records stay out of your vitals until currency conversion lands.' });
     }

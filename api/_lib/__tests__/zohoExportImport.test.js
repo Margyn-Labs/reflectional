@@ -50,7 +50,7 @@ function world({ plan = 'free', usedToday = 0, headers } = {}) {
   }
   db.t('zoho_bills').push({ org_ref: ORG, bill_id: 'B1', bill_number: 'SUP-1', bill_date: '2026-09-01', status: 'paid', last_modified_time: '2026-09-01T10:00:00Z' });
   zoho.collection('books/v3/creditnotes', 'creditnotes', [{ creditnote_id: 'CN1', creditnote_number: 'CN-00001', date: '2026-10-15', status: 'open', last_modified_time: '2026-10-15T10:00:00+0000' }]);
-  zoho.collection('books/v3/vendorcredits', 'vendorcredits', []);
+  zoho.collection('books/v3/vendorcredits', 'vendor_credits', []);
   const line = (id, item, qty, rate, extra) => Object.assign({ line_item_id: id, item_id: item, name: item, quantity: qty, unit: 'box', rate, bcy_rate: rate, item_total: qty * rate, tax_percentage: 0 }, extra || {});
   const docs = {
     'invoices/I1': { invoice: { invoice_id: 'I1', date: '2026-10-05', status: 'sent', exchange_rate: 1, line_items: [line('L11', 'IT1', 10, 120), line('L12', 'IT2', 100, 10)] } },
@@ -70,17 +70,19 @@ function world({ plan = 'free', usedToday = 0, headers } = {}) {
 }
 
 // The same documents, as Zoho's export writes them: one row per line, the document's fields repeated, Indian dates.
+// As in the real export (MARGYN DEMO, 30 Oct 2026), every item line carries its Product ID; an account line (freight,
+// rent) has text in Item Name and no Product ID.
 const INV_HEADER = ['Invoice Date', 'Invoice ID', 'Invoice Number', 'Invoice Status', 'Customer Name', 'Exchange Rate', 'Is Inclusive Tax', 'Discount Type', 'Is Discount Before Tax',
   'Entity Discount Percent', 'Entity Discount Amount', 'Item Name', 'SKU', 'Product ID', 'Quantity', 'Usage unit', 'Item Price', 'Item Tax %', 'Item Total', 'Total'];
 const invoiceExport = () => [
   INV_HEADER,
-  ['05/10/2026', '', 'INV-1', 'Sent', 'Alpha', '1', 'false', '', '', '', '', 'Gauze Swab 10cm', 'GZ-10', '', '10', 'box', '120.00', '0', '1,200.00', '2200'],
-  ['05/10/2026', '', 'INV-1', 'Sent', 'Alpha', '1', 'false', '', '', '', '', 'Surgical Mask', '', '', '100', 'pcs', '10.00', '0', '1000', '2200'],
-  ['20/10/2026', '', 'INV-2', 'Paid', 'Beta', '1', 'true', 'entity_level', 'true', '10', '', 'gauze swab 10CM', '', '', '5', 'box', '118', '18', '590', '890'],
-  ['20/10/2026', '', 'INV-2', 'Paid', 'Beta', '1', 'true', 'entity_level', 'true', '10', '', '', '', '', '', '', '', '', '', '890'],   // free-text freight line, no item
+  ['05/10/2026', '', 'INV-1', 'Sent', 'Alpha', '1', 'false', '', '', '', '', 'Gauze Swab 10cm', 'GZ-10', 'IT1', '10', 'box', '120.00', '0', '1,200.00', '2200'],
+  ['05/10/2026', '', 'INV-1', 'Sent', 'Alpha', '1', 'false', '', '', '', '', 'Surgical Mask', '', 'IT2', '100', 'pcs', '10.00', '0', '1000', '2200'],
+  ['20/10/2026', '', 'INV-2', 'Paid', 'Beta', '1', 'true', 'entity_level', 'true', '10', '', 'gauze swab 10CM', '', 'IT1', '5', 'box', '118', '18', '590', '890'],
+  ['20/10/2026', '', 'INV-2', 'Paid', 'Beta', '1', 'true', 'entity_level', 'true', '10', '', 'Freight', '', '', '1', '', '300', '', '300', '890'],   // account line: text, no Product ID
   ['01/06/2026', '', 'INV-3', 'Sent', 'Gamma', '1', 'false', '', '', '', '', 'Hand Rub 500ml', '', 'IT3', '4', 'btl', '250', '0', '₹1,000.00', '1000'],
-  ['09/09/2026', '', 'INV-9', 'Void', 'Delta', '1', 'false', '', '', '', '', 'Surgical Mask', '', '', '1', 'pcs', '10', '0', '10', '10'],
-  ['01/01/2026', '', 'INV-404', 'Sent', 'Nobody', '1', 'false', '', '', '', '', 'Surgical Mask', '', '', '1', 'pcs', '10', '0', '10', '10']
+  ['09/09/2026', '', 'INV-9', 'Void', 'Delta', '1', 'false', '', '', '', '', 'Surgical Mask', '', 'IT2', '1', 'pcs', '10', '0', '10', '10'],
+  ['01/01/2026', '', 'INV-404', 'Sent', 'Nobody', '1', 'false', '', '', '', '', 'Surgical Mask', '', 'IT2', '1', 'pcs', '10', '0', '10', '10']
 ];
 const billExport = () => [
   ['Bill Date', 'Bill Number', 'Bill Status', 'Vendor Name', 'Item Name', 'SKU', 'Quantity', 'Rate', 'Item Total'],
@@ -118,7 +120,7 @@ const details = (zoho) => zoho.calls.filter((c) => /books\/v3\/(invoices|bills|c
       check('header found below a title row', p && p.doc_type === 'invoice');
       check('five documents, in file order', p.documents.map((d) => d.number).join() === 'INV-1,INV-2,INV-3,INV-9,INV-404', p.documents.map((d) => d.number));
       check('INV-1 has two lines, ₹ and commas read', p.documents[0].lines.length === 2 && p.documents[0].lines[0].item_total === 1200 && p.documents[2].lines[0].item_total === 1000, p.documents[0].lines);
-      check('free-text line dropped', p.documents[1].lines.length === 1 && p.skipped === 1, p.documents[1]);
+      check('account line (text, no Product ID) dropped, its amount kept for the discount', p.documents[1].lines.length === 1 && p.free === 1 && p.documents[1].free_total === 300, p.documents[1]);
       check('inclusive tax and document discount carried', p.documents[1].is_inclusive_tax === true && p.documents[1].discount && p.documents[1].discount.percent === 10, p.documents[1]);
       check('Indian date read day first', p.documents[0].date === '2026-10-05', p.documents[0].date);
       const noTotal = parseZohoExport([['Invoice Number', 'Item Name', 'Quantity', 'Item Price'], ['INV-1', 'Gauze Swab 10cm', '3', '120']]);
@@ -164,6 +166,47 @@ const details = (zoho) => zoho.calls.filter((c) => /books\/v3\/(invoices|bills|c
       check('importing the same file again changes nothing already read', again.written === 0 && again.already_read === 3, again);
     }
 
+    console.log('# the real export files (MARGYN DEMO, 30 Oct 2026): headers, item lines, account lines');
+    {
+      const R = H.fixture('export-real-2026-10-30.json');
+      const P = {};
+      for (const [k, t] of [['Invoice', 'invoice'], ['Bill', 'bill'], ['Credit_Note', 'creditnote'], ['Vendor_Credits', 'vendorcredit']]) {
+        P[t] = parseZohoExport(R[k]);
+        check(`${k}: Zoho's real header read as ${t}`, P[t] && P[t].doc_type === t, P[t] && P[t].doc_type);
+      }
+      const doc = (t, n) => P[t].documents.find((d) => d.number === n);
+      check('invoice item line: Product ID, quantity, Item Total, ISO date', doc('invoice', 'INV-00888').lines[0].item_id === '4097757000000269968' &&
+        doc('invoice', 'INV-00888').lines[0].qty === 63 && doc('invoice', 'INV-00888').lines[0].item_total === 13860 && doc('invoice', 'INV-00888').date === '2026-10-24', doc('invoice', 'INV-00888'));
+      check('invoice with only an account line: no item lines', doc('invoice', 'INV-000001').lines.length === 0 && doc('invoice', 'INV-000001').free_total === 100000);
+      check('bill account line ("Seed line", Rent Expense) is not an item', doc('bill', 'SEED-B-0001').lines.length === 0 && P.bill.free === 1, P.bill);
+      check('bill with two item lines (Rate column)', doc('bill', 'APX-ITM-1001').lines.map((l) => l.qty + '×' + l.rate).join() === '300×140,400×95', doc('bill', 'APX-ITM-1001').lines);
+      check('credit note "Return / discount" lines are not items; the item one is', doc('creditnote', 'CN-00001').lines.length === 0 && doc('creditnote', 'CN-00009').lines[0].qty === 10);
+      check('credit notes: Zoho leaves CreditNotes ID blank, so they match by number', P.creditnote.documents.every((d) => !d.id));
+      check('vendor credit read (Vendor Credit ID / Number)', doc('vendorcredit', 'APX-DN-1001').id === '4097757000000273220' && doc('vendorcredit', 'APX-DN-1001').lines[0].item_total === 4750);
+
+      // Margyn holds these documents, none read yet; the import must read every one, item-less ones with 0 lines.
+      const db = new H.FakeDb();
+      H.installFetch(db, new H.FakeZoho());
+      const org = { id: 'org-real', user_id: 'user-1', status: 'active' };
+      db.t('zoho_organizations').push(org);
+      for (const [id, name] of [['4097757000000245766', 'Goods'], ['4097757000000245744', 'Consulting'], ['4097757000000269968', 'Gauze Swab 10cm'], ['4097757000000269977', 'Surgical Mask 3-ply']]) db.t('zoho_items').push({ org_ref: 'org-real', item_id: id, name });
+      for (const [t, d] of Object.entries(P)) for (const x of d.documents) {
+        db.t('zoho_line_state').push({ org_ref: 'org-real', doc_type: t, doc_id: x.id || 'cn-' + x.number, doc_number: x.number, doc_date: x.date, status: x.status, doc_last_modified: '2026-10-29T10:00:00Z', lines_read_at: null, read_modified: null });
+      }
+      const outs = {};
+      const writes = {};
+      for (const [k] of [['Invoice'], ['Bill'], ['Credit_Note'], ['Vendor_Credits']]) {
+        const before = db.log.length;
+        outs[k] = await exp.importExportRows(org, R[k]);
+        writes[k] = db.log.slice(before).filter((l) => !/^GET /.test(l)).length;
+      }
+      check('writes are batched, not three calls per document (a year of invoices must fit in one function run)', writes.Invoice <= 3 && writes.Bill <= 3, writes);
+      check('real invoices: every live one read, the void skipped, nothing left for the API', outs.Invoice.written === 4 && outs.Invoice.dead === 1 && outs.Invoice.left_for_api === 0 && outs.Invoice.unknown_items === 0, outs.Invoice);
+      check('real bills: the rent bill read with 0 lines, not left for the API', outs.Bill.written === 2 && outs.Bill.left_for_api === 0 && outs.Bill.lines === 2, outs.Bill);
+      check('real credit notes and vendor credit: all read', outs.Credit_Note.written === 3 && outs.Credit_Note.lines === 1 && outs.Vendor_Credits.written === 1 && outs.Vendor_Credits.lines === 1, [outs.Credit_Note, outs.Vendor_Credits]);
+      check('every real document marked read', db.t('zoho_line_state').filter((s) => !/void/.test(s.status)).every((s) => s.lines_read_at));
+    }
+
     console.log('# Import page endpoint');
     {
       const W = world();
@@ -175,7 +218,8 @@ const details = (zoho) => zoho.calls.filter((c) => /books\/v3\/(invoices|bills|c
       await exp.handler({ method: 'POST', headers: { authorization: 'Bearer jwt-user-1' }, body: { rows: invoiceExport() } }, res);
       check('signed-in owner: lines written', res.statusCode === 200 && res.body.written === 3 && W.db.t('zoho_document_lines').length === 4, res.body);
       Object.assign(W.db.t('zoho_line_state').find((s) => s.doc_id === 'I1'), { lines_read_at: null, read_modified: null });   // not read yet
-      const renamed = invoiceExport().map((r, i) => (i === 2 ? r.map((v, k) => (k === 11 ? 'Mask (old name)' : v)) : r));
+      // An item created in Zoho after Margyn last read the item list: a Product ID and name Margyn doesn't have.
+      const renamed = invoiceExport().map((r, i) => (i === 2 ? r.map((v, k) => (k === 11 ? 'Mask (new item)' : k === 13 ? 'IT99' : v)) : r));
       const r1 = await exp.importExportRows(W.org(), renamed);
       const st1 = W.db.t('zoho_line_state').find((s) => s.doc_id === 'I1');
       check('a line with an item Margyn doesn\'t know: that document stays with the API queue', r1.left_for_api === 1 && r1.unknown_items === 1 && items.needsRead(st1), { r1, st1 });
@@ -213,7 +257,7 @@ const details = (zoho) => zoho.calls.filter((c) => /books\/v3\/(invoices|bills|c
     {
       const eta = items.fillEta;
       check('nothing left', eta({ pending: 0, cap: 1000, usedToday: 0 }).when === 'done');
-      check('Professional, 3,000 documents, fresh day: today, about 36 minutes', JSON.stringify(eta({ pending: 3000, cap: 5000, usedToday: 300 })) === JSON.stringify({ when: 'today', minutes: 36 }), eta({ pending: 3000, cap: 5000, usedToday: 300 }));
+      check('Professional, 3,000 documents, fresh day: today, about 40 minutes', JSON.stringify(eta({ pending: 3000, cap: 5000, usedToday: 300 })) === JSON.stringify({ when: 'today', minutes: 40 }), eta({ pending: 3000, cap: 5000, usedToday: 300 }));
       check('fits in today but no fill running (a lost hop, or none started): by tomorrow morning, never a stuck "minutes"', eta({ pending: 3000, cap: 5000, usedToday: 300, running: false }).when === 'tomorrow_morning');
       check('Standard, 2,500 documents after today\'s 1,800 used: tomorrow morning', eta({ pending: 1700, cap: 2000, usedToday: 1800 }).when === 'tomorrow_morning', eta({ pending: 1700, cap: 2000, usedToday: 1800 }));
       check('Free, 1,053 documents with 526 read and today spent: 1 night', eta({ pending: 527, cap: 1000, usedToday: 800 }).when === 'tomorrow_morning');

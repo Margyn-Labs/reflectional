@@ -175,12 +175,24 @@ function positionHistory(ctx) {
 /**
  * FIFO: each customer's receipts and credits settle their oldest open invoices first (and each supplier's
  * payments their oldest bills, with bucket 'creditor').
+ * Zoho Books and Odoo keep each invoice's own balance, so an invoice still unpaid today took no payment: there,
+ * receipts settle only what was actually paid, oldest first (`keep` = what is still open today). Plain FIFO put
+ * MARGYN DEMO's payments for new invoices against year-old unpaid ones: "a typical invoice is paid in 333 days"
+ * when Zoho's paid invoices took 25 (30 Oct 2026). Tally's bill lists can miss knocked-off bills (billTieOut.js),
+ * so Tally stays plain FIFO.
  * Only entries on or before `cutMs` are used, so the same function rebuilds the past (for self-checks).
  * Returns { parties: Map key -> { name, open:[{ms|null, amt}], samples:[{v:days, w:amt}], lastReceiptMs }, pool:[{v,w}] }.
  */
 function partyHabits(ctx, cutMs, bucket) {
   const want = bucket || 'debtor', sg = want === 'creditor' ? -1 : 1;   // a supplier's bill is a credit
   const debitPos = balanceSign(ctx);
+  const openToday = new Map();   // invoice / bill number -> still open today (Zoho Books, Odoo)
+  if (/^(zoho|odoo)$/.test(String((ctx.book && ctx.book.source) || ''))) {
+    for (const b of ctx.billsAsInTally || ctx.bills || []) {
+      if (!b.bill_ref || b.advance || (want === 'creditor') !== (b.direction === 'payable')) continue;
+      openToday.set(String(b.bill_ref), (openToday.get(String(b.bill_ref)) || 0) + Math.abs(num(b.closing_balance)));
+    }
+  }
   const parties = new Map();
   const P = (name) => {
     const k = keyOf(name);
@@ -203,15 +215,17 @@ function partyHabits(ctx, cutMs, bucket) {
       if (amount < 0) {   // they owe more / we owe more (an invoice or a bill)
         let amt = -amount;
         if (p.advance > 0) { const use = Math.min(p.advance, amt); p.advance -= use; amt -= use; if (cashIn === false && use > 0) p.samples.push({ v: 0, w: use, at: ms }); }
-        if (amt > 0.5) p.open.push({ ms, amt, ref: r.number || null });
+        if (amt > 0.5) p.open.push({ ms, amt, ref: r.number || null, keep: Math.min(amt, openToday.get(String(r.number)) || 0) });
       } else if (amount > 0) {   // settled (or a credit/debit note, a write-off)
         let amt = amount;
         if (cashIn) p.lastReceiptMs = ms;
-        while (amt > 0.5 && p.open.length) {
-          const inv = p.open[0], use = Math.min(inv.amt, amt);
+        while (amt > 0.5) {
+          const i = p.open.findIndex((x) => x.amt - (x.keep || 0) > 0.5);
+          if (i < 0) break;
+          const inv = p.open[i], use = Math.min(inv.amt - (inv.keep || 0), amt);
           if (cashIn && inv.ms != null) p.samples.push({ v: Math.max(0, Math.round((ms - inv.ms) / DAY)), w: use, at: ms });
           inv.amt -= use; amt -= use;
-          if (inv.amt <= 0.5) p.open.shift();
+          if (inv.amt <= 0.5) p.open.splice(i, 1);
         }
         if (amt > 0.5) p.advance += amt;
       }

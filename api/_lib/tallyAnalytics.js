@@ -1482,6 +1482,16 @@ function computeAnalytics(input) {
   // Items sold below cost are reported once, with the loss, in "what else your books say" (booksEngine insights):
   // this list is capped at 15 and counted likely unit mix-ups, so the two counts disagreed (15 vs 13).
 
+  // Sales and purchases by item, month by month, this financial year: Zoho's "Sales by Item" / "Purchases by Item"
+  // layout. Returns and credit notes come off sales, debit notes / vendor credits off purchases, as Zoho nets them.
+  // Values before tax, base currency (the same lines as the Margin item table).
+  const ibmFrom = fyFrom == null ? null : monthKey(new Date(fyFrom));
+  const itemsByMonth = itemsAvailable ? Object.values(itemMonth)
+    .filter((m) => (!ibmFrom || m.month >= ibmFrom) && (m.sq || m.sv || m.pq || m.pv))
+    .map((m) => ({ item: m.item, unit: (items[m.item] || {}).unit || null, month: m.month, sold_qty: r2(m.sq), sold_value: r2(m.sv), bought_qty: r2(m.pq), bought_value: r2(m.pv) }))
+    .sort((x, y) => x.month.localeCompare(y.month) || String(x.item).localeCompare(String(y.item)))
+    .slice(0, 5000) : [];
+
   return {
     provenance: 'signal',
     basis: `${fromTally ? 'Tally ledgers, vouchers and bills' : (SOURCE_NAMES[input.source] || 'Your books') + ' invoices, bills and accounts'}. One source; not yet corroborated by bank or GST. Sales figures exclude GST.`,
@@ -1498,7 +1508,7 @@ function computeAnalytics(input) {
       // Whether Tally's balances already left them out (asOfToday's tie-out guard): 'kept' = not backed out again.
       guard: { decision: today.guard.decision, checked: today.guard.checked, with_future: today.guard.with_future || 0, to_today: today.guard.to_today || 0 }
     } : null,
-    items: itemRows.slice(0, 100), margin_bridge,
+    items: itemRows.slice(0, 100), margin_bridge, items_by_month: itemsByMonth,
     leaks, gst_estimate: gst, quality, questions, headlines,
     assumptions: { credit_rate_annual: creditRate, margin_window: 'period', dso_window_days: 90 }
   };

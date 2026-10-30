@@ -28,7 +28,13 @@ const {
 const RESERVE_CALLS = 200;          // kept for the nightly money sync
 const TIME_LIMIT_MS = 240 * 1000;   // of the 300 s function limit
 const DETAIL_GAP_MS = 650;          // between call starts across all readers: ~90 a minute
-const READERS = 3;                  // documents read at once (Zoho allows 5 concurrent on Free, 10 on paid)
+// Documents read at once. Zoho allows 5 calls at once on Free and 10 on paid plans; one or two are left for anything
+// else. Zoho answers a document in ~0.5 s, so 3 readers that also waited on the database read ~25 a minute live
+// (30 Oct 2026); with the writes batched (WRITE_BATCH) the readers keep up with the per-minute pace.
+const READERS = { free: 4, paid: 8 };
+const readersFor = (org) => (dailyCapFor(org && org.plan_type) > 1000 ? READERS.paid : READERS.free);
+const WRITE_BATCH = 25;             // documents saved together: 3 database calls per batch, not per document
+const FLUSH_MS = 15 * 1000;         // reads stop this long before the deadline so the last batch is saved
 const BACKFILL_MONTHS = 12;
 const DEAD = /^(draft|void|deleted_at_source|deleted)$/i;
 
@@ -36,7 +42,9 @@ const DOCS = {
   invoice: { path: 'books/v3/invoices/', key: 'invoice' },
   bill: { path: 'books/v3/bills/', key: 'bill' },
   creditnote: { path: 'books/v3/creditnotes/', key: 'creditnote', list: 'books/v3/creditnotes', listKey: 'creditnotes', idField: 'creditnote_id', numField: 'creditnote_number', cursor: 'creditnotes' },
-  vendorcredit: { path: 'books/v3/vendorcredits/', key: 'vendor_credit', list: 'books/v3/vendorcredits', listKey: 'vendorcredits', idField: 'vendor_credit_id', numField: 'vendor_credit_number', cursor: 'vendorcredits' }
+  vendorcredit: { path: 'books/v3/vendorcredits/', key: 'vendor_credit', list: 'books/v3/vendorcredits', listKey: 'vendor_credits', idField: 'vendor_credit_id', numField: 'vendor_credit_number', cursor: 'vendor_credits' }
+  // Zoho's list key is vendor_credits (checked live 30 Oct 2026). Until then the list read as empty and the old
+  // 'vendorcredits' cursor moved past real documents, so the cursor is new: the first run reads 12 months back.
 };
 
 const r2 = (n) => Math.round(toNumber(n) * 100) / 100;
@@ -178,7 +186,7 @@ async function rememberLimit(orgRef, session) {
 
 /* -------------------------------------------------------------------- ETA */
 
-const DOCS_PER_MINUTE = 85;        // READERS at DETAIL_GAP_MS, less list calls
+const DOCS_PER_MINUTE = 75;        // measured: ~76 a minute over a 4-minute run with Zoho answering in 2 s (30 Oct)
 const NIGHTLY_MONEY_CALLS = 60;    // a typical delta money sync; the 200 reserve covers bigger nights
 const FILL_ACTIVE_MS = 10 * 60 * 1000;   // calls recorded this recently: a fill is running (each run is ~4 min)
 
@@ -260,11 +268,21 @@ async function refreshState(session, orgRef, out) {
   return [...byKey.values()];
 }
 
-async function replaceLines(orgRef, type, docId, rows, readModified) {
-  await deleteRows('zoho_document_lines', `org_ref=eq.${orgRef}&doc_type=eq.${type}&doc_id=eq.${encodeURIComponent(docId)}`);
-  if (rows.length) await insertRows('zoho_document_lines', rows, { onConflict: 'org_ref,doc_type,line_item_id', merge: true });
-  await updateRows('zoho_line_state', `org_ref=eq.${orgRef}&doc_type=eq.${type}&doc_id=eq.${encodeURIComponent(docId)}`,
-    { lines_read_at: new Date().toISOString(), read_modified: readModified || new Date().toISOString(), line_count: rows.length });
+/** Save read documents together: their old lines out, new lines in, each marked read. batch: [{ s, rows }]. */
+async function saveBatch(orgRef, batch) {
+  const now = new Date().toISOString();
+  const byType = new Map();
+  for (const b of batch) { if (!byType.has(b.s.doc_type)) byType.set(b.s.doc_type, []); byType.get(b.s.doc_type).push(b); }
+  for (const [type, list] of byType) {
+    for (let i = 0; i < list.length; i += 100) {
+      const ids = list.slice(i, i + 100).map((b) => encodeURIComponent(b.s.doc_id)).join(',');
+      await deleteRows('zoho_document_lines', `org_ref=eq.${orgRef}&doc_type=eq.${type}&doc_id=in.(${ids})`);
+    }
+  }
+  const rows = batch.flatMap((b) => b.rows);
+  for (let i = 0; i < rows.length; i += 500) await insertRows('zoho_document_lines', rows.slice(i, i + 500), { onConflict: 'org_ref,doc_type,line_item_id', merge: true });
+  const marks = batch.map((b) => ({ org_ref: orgRef, doc_type: b.s.doc_type, doc_id: String(b.s.doc_id), lines_read_at: now, read_modified: b.s.doc_last_modified || now, line_count: b.rows.length }));
+  for (let i = 0; i < marks.length; i += 500) await insertRows('zoho_line_state', marks.slice(i, i + 500), { onConflict: 'org_ref,doc_type,doc_id', merge: true });
 }
 
 /**
@@ -303,10 +321,11 @@ async function syncItemLines(session, org, userId, opts) {
 
     const state = await refreshState(session, org.id, out);
 
-    // Void, draft and deleted documents: drop their lines, nothing to read.
+    // Void, draft and deleted documents: drop their lines, nothing to read (saved with the first batch below).
+    const deadDocs = [];
     for (const s of state) {
       if (!DEAD.test(String(s.status || '')) || (s.lines_read_at && !s.line_count)) continue;
-      await replaceLines(org.id, s.doc_type, s.doc_id, [], s.doc_last_modified);
+      deadDocs.push({ s, rows: [] });
       out.dropped++;
     }
 
@@ -316,16 +335,22 @@ async function syncItemLines(session, org, userId, opts) {
     // reads already in flight finish; whatever wasn't taken stays queued for the next run.
     let next = 0, nextStart = 0, fatal = null;
     const taken = new Set();
+    // Read documents wait here and are saved WRITE_BATCH at a time, one save after another, while reading goes on.
+    let buffer = deadDocs, saving = Promise.resolve();
+    const save = (batch) => { saving = saving.then(() => saveBatch(org.id, batch)); saving.catch(() => {}); };
+    const readUntil = deadline - FLUSH_MS;
     const reader = async () => {
       while (!out.stopped && !fatal && next < queue.length) {
         const s = queue[next++];
         if (skip.has(s.doc_type)) continue;
         if (left() <= 0) { out.stopped = 'budget'; break; }
-        if (Date.now() >= deadline) { out.stopped = 'time'; break; }
+        if (Date.now() >= readUntil) { out.stopped = 'time'; break; }
         inflight++;
         const wait = nextStart - Date.now();
         nextStart = Math.max(Date.now(), nextStart) + DETAIL_GAP_MS;
         if (wait > 0) await sleep(wait);
+        // Check again after the pause: Zoho's own count may have arrived meanwhile (this read is in `inflight`).
+        if (left() < 0) { inflight--; out.stopped = out.stopped || 'budget'; break; }
         taken.add(s);
         const d = DOCS[s.doc_type];
         let doc = null;
@@ -340,13 +365,16 @@ async function syncItemLines(session, org, userId, opts) {
           doc = null;   // 404: gone from Zoho, so its lines go too
         }
         const rows = doc && !DEAD.test(String(doc.status || '')) ? documentLines(doc, s.doc_type, org.id) : [];
-        await replaceLines(org.id, s.doc_type, s.doc_id, rows, s.doc_last_modified);
+        buffer.push({ s, rows });
+        if (buffer.length >= WRITE_BATCH) save(buffer.splice(0));
         out.documents_read++;
         out.lines += rows.length;
         if (!doc) out.dropped++;
       }
     };
-    await Promise.all(Array.from({ length: READERS }, reader));
+    await Promise.all(Array.from({ length: readersFor(org) }, reader));
+    if (buffer.length) save(buffer.splice(0));
+    await saving;   // a failed save throws here: those documents stay unread and are read again next run
     await rememberLimit(org.id, session);
     if (fatal) throw fatal;
     out.pending = queue.filter((s) => !taken.has(s) && !skip.has(s.doc_type)).length;
@@ -517,5 +545,5 @@ async function handleFillChain(req, res) {
 module.exports = {
   handleFillChain, triggerFillChain, fillEta, dailyCap, lastCallsAt, CHAIN_MAX_HOPS, FILL_ACTIVE_MS,
   syncItemLines, handleFillNow, probeItemReports, documentLines, mapItem, queueOrder, needsRead, progressFrom, callsUsedToday, addCallsToday,
-  RESERVE_CALLS, TIME_LIMIT_MS, READERS
+  RESERVE_CALLS, TIME_LIMIT_MS, READERS, readersFor, WRITE_BATCH
 };
