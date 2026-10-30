@@ -45,6 +45,8 @@ const FOLLOW_UP_KINDS = new Set(['overdue_total', 'late', 'short_paid', 'slippin
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const SRC = (ctx) => (ctx && ctx.source_name) || 'Tally';
+// "Tally books", but "Zoho Books", never "Zoho Books books".
+const booksOf = (name) => { const n = name || 'Tally'; return /books$/i.test(n) ? n : n + ' books'; };
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const isoDay = (dt) => dt.toISOString().slice(0, 10);
 const nice = (s) => E.niceName(s);
@@ -383,7 +385,7 @@ function mix(candidates, max) {
 function greetingName(firstName) { return firstName ? ' ' + firstName : ''; }
 function asOfLine(ctx) {
   const s = istStamp(ctx.lastSync);
-  return s ? `Your ${ctx.source_name || 'Tally'} books as of ${s}.` : `From your ${ctx.source_name || 'Tally'} books.`;
+  return s ? `Your ${booksOf(ctx.source_name)} as of ${s}.` : `From your ${booksOf(ctx.source_name)}.`;
 }
 function previewTag(o) { return o.preview ? `[Preview for ${o.company || 'this account'}. They have not been sent this.]\n\n` : ''; }
 function fit(sections, foot) {
@@ -761,5 +763,5 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
 
 module.exports = {
   snapshot, comparable, movement, deepInsights, mix, morning, pulse, evening, usualDay, weekReview, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
-  istDay, istStamp, RECEIVABLE_KINDS, INSIGHT_KINDS, FOLLOW_UP_KINDS, MAX_POINTS
+  istDay, istStamp, booksOf, RECEIVABLE_KINDS, INSIGHT_KINDS, FOLLOW_UP_KINDS, MAX_POINTS
 };

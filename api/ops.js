@@ -559,7 +559,7 @@ async function loadOpsMetrics() {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FUNNEL_EVENTS = ['app_open', 'zoho_connect_started', 'zoho_callback', 'zoho_org_selected', 'zoho_sync', 'zoho_gstr2b_sync'];
-const ZOHO_LOG_OPS = ['oauth_start', 'oauth_callback', 'select_org', 'sync_all', 'backfill_all', 'sync_gstr2b'];
+const ZOHO_LOG_OPS = ['oauth_start', 'oauth_callback', 'select_org', 'sync_all', 'backfill_all', 'sync_gstr2b', 'sync_item_lines', 'import_export_lines'];
 
 // Signup + last sign-in time only (GoTrue admin, service role). Never the email
 // or phone: the funnel needs "have they logged in", not who they are.

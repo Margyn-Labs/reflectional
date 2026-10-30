@@ -153,6 +153,16 @@ function deepKeys(o, out = []) {
   p = await call('investor-tenant', { method: 'PUT', body: { ref: 'direct' } });
   check('"direct" cannot be registered', p.code === 400);
 
+  console.log('item-line fill runs on the timeline, counts only');
+  {
+    const tl = F.buildInvestorTimeline({ ref: 'x', user_id: U1 }, { logs: [
+      { user_id: U1, connector_type: 'zoho_books', operation: 'sync_item_lines', status: 'success', records_synced: 812, error_message: 'stopped: time; 400 documents left', created_at: '2026-11-02T05:00:00Z' },
+      { user_id: U1, connector_type: 'zoho_books', operation: 'import_export_lines', status: 'success', records_synced: 2104, error_message: null, created_at: '2026-11-02T05:10:00Z' }] });
+    const fill = tl.timeline.find((x) => x.label === 'zoho_sync_item_lines'), imp = tl.timeline.find((x) => x.label === 'zoho_import_export_lines');
+    check('fill and export-import runs shown with their line counts', fill && fill.detail.rows_synced === 812 && imp && imp.detail.rows_synced === 2104, tl.timeline);
+    check('no message text from them', !deepKeys(tl.timeline).some((k) => DISALLOWED.test(k)) && !JSON.stringify(tl.timeline).includes('documents left'), tl.timeline);
+  }
+
   console.log('event-schema');
   const s = await call('event-schema');
   check('schema exposed to the founder', s.code === 200 && s.body.events && s.body.events.zoho_sync);

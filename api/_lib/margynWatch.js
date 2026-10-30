@@ -186,7 +186,7 @@ function pointLine(x) {
 function compose(items, { company, slot, preview, firstName, lastSync, ctxLines, sourceName }) {
   const asOf = istStamp(lastSync);
   const head = (preview ? `[Preview for ${shortCompany(company)}. They have not been sent this.]\n\n` : '') +
-    `${greeting(slot)}${firstName ? ' ' + firstName : ''}.` + (asOf ? ` Your ${sourceName || 'Tally'} books as of ${asOf}:` : ` From your ${sourceName || 'Tally'} books:`);
+    `${greeting(slot)}${firstName ? ' ' + firstName : ''}.` + (asOf ? ` Your ${brief.booksOf(sourceName)} as of ${asOf}:` : ` From your ${brief.booksOf(sourceName)}:`);
   const ctxBlock = (ctxLines || []).length ? '\n\n' + ctxLines.join('\n') : '';
   const body = items.length
     ? '\n\n' + (items.length === 1 ? 'One thing needs you:' : `${items.length} things need you:`) + '\n\n' + items.map((x, i) => `${i + 1}. ${pointLine(x)}`).join('\n\n')

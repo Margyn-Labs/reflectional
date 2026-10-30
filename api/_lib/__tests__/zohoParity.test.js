@@ -218,8 +218,63 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
   const partial = zohoToBook(Object.assign({}, rows, { lines: db.zoho_document_lines, lineProgress: { documents: 6, read: 4, pending: 2, complete_after: '2026-07-01' } }));
   const pc = E.products(E.prepare(partial, {}), {});
   check('still filling: the products answer says which dates are whole', /4 of 6 documents read, newest first\), so item figures are complete only after/.test(pc.coverage_note || ''), pc.coverage_note);
+  console.log('# Zoho export import (fix a): same products answer and Margin item table as the API lines');
+  {
+    const { parseZohoExport } = require('../importMapper');
+    const ex = require('../../_zoho/exportImport');
+    const HDR = { invoice: ['Invoice Date', 'Invoice Number', 'Item Name', 'Quantity', 'Usage unit', 'Item Price', 'Item Total'], bill: ['Bill Date', 'Bill Number', 'Item Name', 'Quantity', 'Usage unit', 'Rate', 'Item Total'],
+      creditnote: ['Credit Note Date', 'Credit Note Number', 'Invoice Number', 'Item Name', 'Quantity', 'Usage unit', 'Item Price', 'Item Total'], vendorcredit: ['Vendor Credit Date', 'Vendor Credit Number', 'Item Name', 'Quantity', 'Usage unit', 'Rate', 'Item Total'] };
+    const NUM = { I1: 'INV-1', I2: 'INV-2', I4: 'INV-4', B1: 'SUP-1', CN1: 'CN-00001', VC1: 'DN-00001' };
+    const ID = { invoice: 'invoice_id', bill: 'bill_id', creditnote: 'creditnote_id', vendorcredit: 'vendor_credit_id' };
+    const ddmm = (iso) => iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4);
+    const match = ex.itemMatcher(Z.items.map((i) => ({ item_id: i.item_id, name: i.name })));
+    const expLines = [];
+    for (const type of Object.keys(HDR)) {
+      const docs = Z.details.filter(([t]) => t === type).map(([, d]) => d);
+      const file = [HDR[type]].concat(...docs.map((d) => d.line_items.map((l) => {
+        const name = Z.items.find((i) => i.item_id === l.item_id).name;   // the export names the item, it has no id column here
+        return type === 'creditnote' ? [ddmm(d.date), NUM[d[ID[type]]], 'INV-1', name, l.quantity, l.unit, l.rate, l.item_total]
+          : [ddmm(d.date), NUM[d[ID[type]]], name, l.quantity, l.unit, l.rate, l.item_total];
+      })));
+      const parsed = parseZohoExport(file);
+      for (const doc of parsed.documents) {
+        const docId = Object.keys(NUM).find((k) => NUM[k] === doc.number);
+        const { api, unknown } = ex.exportDocToApi(doc, type, docId, match);
+        check(`export ${doc.number}: every item recognised`, unknown === 0);
+        api.date = (Z.details.find(([, d]) => d[ID[type]] === docId) || [])[1].date;
+        expLines.push(...zitems.documentLines(api, type, ORG));
+      }
+    }
+    const apiBook = zohoToBook(Object.assign({}, rows, { lines: db.zoho_document_lines }));
+    const expBook = zohoToBook(Object.assign({}, rows, { lines: expLines }));
+    const strip = (x) => JSON.parse(JSON.stringify(x));
+    for (const args of [{}, { sort: 'below_cost' }, { name: 'gauze' }]) {
+      const a = strip(E.products(E.prepare(apiBook, {}), args)), b = strip(E.products(E.prepare(expBook, {}), args));
+      check('products ' + JSON.stringify(args) + ': export = API', JSON.stringify(a) === JSON.stringify(b), { api: a, exp: b });
+    }
+    const an2 = (bk) => A.computeAnalytics({ ledgers: bk.ledgers, vouchers: bk.vouchers, bills: bk.bills, overrides: {}, balance_convention: bk.balance_convention, itemMaster: bk.item_master || [] });
+    const ia = an2(apiBook), ib = an2(expBook);
+    check('Margin item table: export = API', JSON.stringify(ia.items) === JSON.stringify(ib.items) && (ia.items || []).length === 3, { api: ia.items, exp: ib.items });
+    check('no reconcile note on the export lines either', !expBook.notes.some((n) => /item lines that differ/.test(n)), expBook.notes);
+  }
   const cnVouchers = zBook.vouchers.filter((v) => v.voucher_type === 'Credit Note' && v.items);
   check('credit note lines sit on one Credit Note voucher with Tally\'s signs', cnVouchers.length === 1 && cnVouchers[0].items[0].amount === -5000 && cnVouchers[0].items[0].abs_amount === 5000 && cnVouchers[0].items[0].godown === 'Main Godown', cnVouchers);
+
+  console.log('# Margyn Watch WhatsApp updates (morning, 12:30, 3 pm, 5 pm, evening): Zoho = Tally, figure for figure');
+  {
+    const Wt = require('../margynWatch');
+    const NOWW = new Date('2026-10-29T03:30:00Z');   // 9 am IST
+    for (const slot of ['morning', 'noon', 'afternoon', 'late', 'evening']) {
+      const z = await Wt.watchAccount(ZU, { slot, previewOnly: true, mode: 'on', now: NOWW });
+      const tt = await Wt.watchAccount(TU, { slot, previewOnly: true, mode: 'on', now: NOWW });
+      check(slot + ': Zoho-only account gets an update run (not skipped)', z && !z.skipped && !z.error, z);
+      check(slot + ': Zoho text never says Tally', !/Tally/.test(z.text || ''), z.text);
+      check(slot + ': Zoho text = Tally text (books name aside)', neutral(z.text || '') === neutral(tt.text || ''), { z: z.text, t: tt.text });
+    }
+    const mz = await Wt.watchAccount(ZU, { slot: 'morning', previewOnly: true, mode: 'on', now: NOWW });
+    check('"Your Zoho Books as of", never "Zoho Books books"', /Your Zoho Books as of/.test(mz.text || '') && !/Books books/.test(mz.text || ''), (mz.text || '').slice(0, 80));
+    check('morning names Zoho Books and carries the bank balance (₹1.85 L)', /Zoho Books/.test(mz.text || '') && /1\.85 L/.test(mz.text || ''), mz.text);
+  }
 
   console.log('# Zoho answers name Zoho Books, never Tally');
   // how_its_calculated explains every source by design ("Tally: ...; Zoho Books: ..."), so it is left out.
@@ -269,6 +324,7 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     lines: { documents: 1053, read: 220, pending: 833, complete_after: '2026-09-14', creditnotes: 12, vendorcredits: 4 } });
   const il = filling.checks.find((c) => c.key === 'item_lines');
   check('completeness: item lines filling in says N of N and the date figures are complete after', il && il.status === 'info' && /220 of 1,053/.test(il.detail) && /2026-09-14/.test(il.detail), il);
+  check('completeness: while filling, points to the Zoho export for item figures in minutes', /export Invoices, Bills, Credit Notes and Vendor Credits from Zoho Books and drop the files into Import/.test(il.detail), il.detail);
   check('completeness: credit notes and vendor credits counted', /12 credit notes and 4 vendor credits/.test(filling.checks.find((c) => c.key === 'returns').detail));
 
   console.log(`\n${pass} passed, ${fail} failed`);

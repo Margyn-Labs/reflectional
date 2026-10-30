@@ -18,6 +18,7 @@
 const { selectRows } = require('../_lib/supabaseRest');
 const { syncZohoForUser, handleAuthFailure } = require('./sync');
 const { ZohoAuthError } = require('../_lib/zohoClient');
+const { triggerFillChain } = require('./items');
 
 async function notifyFailures(failed) {
   const webhook = process.env.ALERT_EMAIL_WEBHOOK;
@@ -100,12 +101,18 @@ async function handler(req, res) {
 
   await notifyFailures(failed);
 
+  // Item lines left and allowance to spare (a paid plan's first night, or a big Free book): keep filling in
+  // follow-on runs instead of waiting for tomorrow night (_zoho/items.js handleFillChain).
+  let fillChain = false;
+  try { fillChain = await triggerFillChain(1); } catch (err) { /* the next night carries on */ }
+
   res.status(200).json({
     orgs_synced: succeeded,
     partial,
     failed: failed.length,
     failed_users: failed,
     total_orgs: userIds.length,
+    fill_chain: fillChain,
     duration_ms: Date.now() - startedAt,
     timestamp: new Date().toISOString()
   });

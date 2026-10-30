@@ -16,6 +16,16 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-zoho-items-fast', date:'1 Nov 2026', title:'Zoho Books item figures in minutes, on any plan',
+    items:[
+      { t:'Drop Zoho’s own export into Import', what:'Export Invoices, Bills, Credit Notes and Vendor Credits from Zoho Books and drop each file into Import. Margyn spots Zoho’s export, skips the AI reading and adds every item line to the documents it already has from Zoho, so a whole year of item sales, costs and margins is in within minutes, on any Zoho plan. Nothing is written to Zoho, and later edits in Zoho still come in on their own.',
+        how:'In Zoho Books: <b>Sales → Invoices → ⋯ → Export</b> (CSV, all invoices); the same for Bills, Credit Notes and Vendor Credits. In Margyn: <b>Import</b> → drop the file → <b>Add item lines from this export</b>.', act:'calculate' },
+      { t:'Paid Zoho plans fill on the first night', what:'On Standard, Professional and Premium, Margyn now uses your whole daily Zoho allowance (keeping a margin for the nightly sync) straight after you connect and again overnight, instead of one short run a night. The Zoho Books card says when it will be done: “in about 20 minutes”, “by tomorrow morning” or “in about 3 days”.',
+        how:'<b>Organisations and sources</b> → <b>Zoho Books</b>. If it says days, use the export above, or ask Zoho for a short limit raise with the ready-made email on the card.', act:'connectors' },
+      { t:'Updates read “Your Zoho Books”', what:'Margyn’s WhatsApp updates on a Zoho account now open “Your Zoho Books as of …”, not “Zoho Books books”.', how:'Nothing to do.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-10-31-zoho-wording', date:'31 Oct 2026', title:'Zoho Books accounts read as Zoho Books everywhere',
     items:[
       { t:'Your books system, named right', what:'On a Zoho Books account the CFO pack’s profit and loss note, the “What I’m working on” list on Home and the Ledger no longer mention Tally. The CFO pack’s GST section says when no GSTR-2B has come from Zoho yet, instead of asking you to connect Zoho.',

@@ -281,7 +281,8 @@ function zohoCompleteness(z, opts) {
     checks.push(check('item_lines', 'Item lines on invoices, bills and returns', done ? 'ok' : 'info',
       done ? `Item lines are in for all ${fmt(L.documents)} documents, so item sales, purchases and margins are complete.`
         : `Item lines are in for ${fmt(L.read)} of ${fmt(L.documents)} documents. Zoho sends lines one document at a time and caps calls each day, so the rest arrive over the next nights` +
-          (L.complete_after ? `; item figures are complete only after ${L.complete_after}.` : '.'),
+          (L.complete_after ? `; item figures are complete only after ${L.complete_after}.` : '.') +
+          ' To have them all in minutes, export Invoices, Bills, Credit Notes and Vendor Credits from Zoho Books and drop the files into Import.',
       { read: L.read, documents: L.documents }));
     checks.push(check('returns', 'Credit notes and vendor credits', 'ok',
       `${fmt(L.creditnotes)} credit notes and ${fmt(L.vendorcredits)} vendor credits. Their amounts reach the profit and loss through the account postings; their item lines count as returns.`));

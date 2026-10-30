@@ -600,6 +600,57 @@ async function loadZohoVitals(){
   renderZohoStatus();
   renderZohoBooksTab();
 }
+/* "done by" for the item-line fill (api/_zoho/items.js fillEta). */
+function zohoEtaText(eta){
+  if(!eta) return '';
+  if(eta.when === 'today') return ' · done in about ' + (eta.minutes <= 1 ? 'a minute' : eta.minutes + ' minutes');
+  if(eta.when === 'tomorrow_morning') return ' · done by tomorrow morning';
+  if(eta.when === 'days') return ' · done in about ' + eta.days + ' days at Zoho’s daily limit';
+  return '';
+}
+/* Fix 0b: the email to Zoho support asking for a short, temporary API limit raise for the first fill. Margyn
+   sends nothing: the owner copies it into their own email to support@zohobooks.com. */
+function zohoLimitEmailText(v){
+  const il = (v && v.item_lines) || {};
+  const pending = Number(il.pending || 0);
+  const perDay = Math.max(5000, Math.ceil((pending + 1000) / 1000) * 1000);
+  const orgId = il.organization_id || (v && v.organization_id) || '<your organisation ID>';
+  const orgName = (v && v.organization_name) || '<your organisation name>';
+  return 'To: support@zohobooks.com\n' +
+    'Subject: Temporary API limit increase for organisation ' + orgId + '\n\n' +
+    'Hello Zoho Books team,\n\n' +
+    'Please raise the daily API call limit for our organisation for a short time.\n\n' +
+    'Organisation: ' + orgName + '\n' +
+    'Organisation ID: ' + orgId + '\n' +
+    (il.plan ? 'Plan: ' + il.plan + '\n' : '') +
+    'Requested limit: ' + perDay.toLocaleString('en-IN') + ' calls a day\n' +
+    'For how long: 7 days (temporary, then back to our normal limit)\n\n' +
+    'Why: we have connected Zoho Books to Margyn, a finance app, with read-only access. Its first sync reads the item lines of each past invoice, bill, credit note and vendor credit once (one API call per document, about ' + pending.toLocaleString('en-IN') + ' documents). After that it only reads documents that change, which takes a few calls a day.\n\n' +
+    'Margyn only reads. It never creates, changes or deletes anything in our books.\n\n' +
+    'Thank you.\n';
+}
+function zohoLimitEmailDialog(){
+  const text = zohoLimitEmailText(zohoVitals);
+  const prevFocus = document.activeElement;
+  const scrim = document.createElement('div');
+  scrim.className = 'mg-dialog-scrim';
+  scrim.innerHTML = '<div class="mg-dialog" role="dialog" aria-modal="true" aria-labelledby="zohoMailTitle" style="width:min(560px,100%);">' +
+    '<h3 id="zohoMailTitle">Ask Zoho for a short limit raise</h3>' +
+    '<p>Zoho raises the daily limit on request, often for a few days. Copy this into an email from your own address to support@zohobooks.com. Margyn sends nothing itself.</p>' +
+    '<textarea readonly class="mono" style="width:100%;height:280px;margin-top:12px;font-size:12px;line-height:1.45;padding:10px;border:1px solid var(--g200);border-radius:var(--r-ctl);background:var(--g25);resize:vertical;">' + escapeHtml(text) + '</textarea>' +
+    '<div class="mg-foot"><button class="mg-btn mg-dlg-cancel" type="button">Close</button><button class="mg-btn primary" type="button" data-zm-copy>Copy</button></div></div>';
+  document.body.appendChild(scrim);
+  const done = () => { document.removeEventListener('keydown', onKey, true); scrim.remove(); if(prevFocus && prevFocus.focus) prevFocus.focus(); };
+  const onKey = e => { if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); done(); } };
+  document.addEventListener('keydown', onKey, true);
+  scrim.addEventListener('click', e => {
+    if(e.target === scrim || e.target.closest('.mg-dlg-cancel')) return done();
+    if(e.target.closest('[data-zm-copy]')){
+      try { navigator.clipboard.writeText(text); e.target.textContent = 'Copied'; } catch(err){ scrim.querySelector('textarea').select(); }
+    }
+  });
+  scrim.querySelector('[data-zm-copy]').focus();
+}
 function renderZohoStatus(){
   const host = document.getElementById('zohoStatus'); if(!host) return;
   if(zohoConnected && zohoVitals){
@@ -613,13 +664,18 @@ function renderZohoStatus(){
     // Item lines fill in newest first, one Zoho call per document (a few nights on the Free plan).
     const il = zohoVitals.item_lines;
     const itemMeta = !needsReauth && il && il.documents
-      ? (il.pending > 0 ? 'Item lines: ' + Number(il.read).toLocaleString('en-IN') + ' of ' + Number(il.documents).toLocaleString('en-IN') + ' documents read, newest first' : 'Item lines: all ' + Number(il.documents).toLocaleString('en-IN') + ' documents read')
+      ? (il.pending > 0 ? 'Item lines: ' + Number(il.read).toLocaleString('en-IN') + ' of ' + Number(il.documents).toLocaleString('en-IN') + ' documents read, newest first' + zohoEtaText(il.eta) : 'Item lines: all ' + Number(il.documents).toLocaleString('en-IN') + ' documents read')
+      : '';
+    // More than a night to go: the owner can have it all in minutes from Zoho's own export, or ask Zoho for a raise.
+    const slow = !needsReauth && il && il.pending > 0 && il.eta && il.eta.when === 'days';
+    const tipHtml = slow
+      ? '<div class="lr-meta" id="zohoFastTip">Have a lot of history? Export Invoices, Bills, Credit Notes and Vendor Credits from Zoho and drop the files into <a href="#" id="zohoTipImport">Import</a>: item figures are complete in minutes. Or <a href="#" id="zohoTipEmail">ask Zoho for a short limit raise</a>.</div>'
       : '';
     host.innerHTML =
       '<div class="ledger-row"><div class="lr-main">' +
         '<div class="lr-party">Zoho Books</div>' +
         '<div class="lr-meta">' + meta + '</div>' +
-        (itemMeta ? '<div class="lr-meta" id="zohoItemMeta">' + escapeHtml(itemMeta) + '</div>' : '') +
+        (itemMeta ? '<div class="lr-meta" id="zohoItemMeta">' + escapeHtml(itemMeta) + '</div>' : '') + tipHtml +
       '</div><span class="lr-tag ' + (needsReauth ? 'bad' : 'ok') + '">' + (needsReauth ? 'Reconnect' : 'Connected') + '</span>' +
       '<div class="lr-actions">' +
         (needsReauth ? '<button class="lr-btn" id="zohoReconnectBtn">Reconnect</button>'
@@ -630,6 +686,8 @@ function renderZohoStatus(){
     const s = document.getElementById('zohoSyncBtn'); if(s) s.addEventListener('click', syncZohoNow);
     const f = document.getElementById('zohoFillBtn'); if(f) f.addEventListener('click', fillZohoItemsNow);
     const r = document.getElementById('zohoReconnectBtn'); if(r) r.addEventListener('click', openZohoModal);
+    const ti = document.getElementById('zohoTipImport'); if(ti) ti.addEventListener('click', e => { e.preventDefault(); if(typeof mgGo === 'function') mgGo('calculate'); });
+    const te = document.getElementById('zohoTipEmail'); if(te) te.addEventListener('click', e => { e.preventDefault(); zohoLimitEmailDialog(); });
     document.getElementById('zohoDisconnectBtn').addEventListener('click', disconnectZoho);
   } else {
     host.innerHTML =

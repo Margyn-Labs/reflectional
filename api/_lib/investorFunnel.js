@@ -34,7 +34,8 @@ const STEP_LABEL = {
 };
 const WATCH_EVENTS = new Set(['play', 'half', 'end']);
 const PREVIEW_DEPTH = { open: 1, play: 2, half: 3, end: 4 };
-const ZOHO_OPS = new Set(['oauth_start', 'oauth_callback', 'select_org', 'sync_all', 'backfill_all', 'sync_gstr2b']);
+// sync_item_lines / import_export_lines: item-line fill runs (API queue, Zoho export import), as counts only.
+const ZOHO_OPS = new Set(['oauth_start', 'oauth_callback', 'select_org', 'sync_all', 'backfill_all', 'sync_gstr2b', 'sync_item_lines', 'import_export_lines']);
 
 const t = (x) => (x ? new Date(x).getTime() : NaN);
 function earliest(list) {
