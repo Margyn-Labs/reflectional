@@ -214,6 +214,7 @@ const details = (zoho) => zoho.calls.filter((c) => /books\/v3\/(invoices|bills|c
       const eta = items.fillEta;
       check('nothing left', eta({ pending: 0, cap: 1000, usedToday: 0 }).when === 'done');
       check('Professional, 3,000 documents, fresh day: today, about 36 minutes', JSON.stringify(eta({ pending: 3000, cap: 5000, usedToday: 300 })) === JSON.stringify({ when: 'today', minutes: 36 }), eta({ pending: 3000, cap: 5000, usedToday: 300 }));
+      check('fits in today but no fill running (a lost hop, or none started): by tomorrow morning, never a stuck "minutes"', eta({ pending: 3000, cap: 5000, usedToday: 300, running: false }).when === 'tomorrow_morning');
       check('Standard, 2,500 documents after today\'s 1,800 used: tomorrow morning', eta({ pending: 1700, cap: 2000, usedToday: 1800 }).when === 'tomorrow_morning', eta({ pending: 1700, cap: 2000, usedToday: 1800 }));
       check('Free, 1,053 documents with 526 read and today spent: 1 night', eta({ pending: 527, cap: 1000, usedToday: 800 }).when === 'tomorrow_morning');
       const free = eta({ pending: 3000, cap: 1000, usedToday: 800 });
