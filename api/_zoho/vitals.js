@@ -293,7 +293,9 @@ async function handler(req, res) {
           const org = orgRows[0] || { id: v.org_ref, plan_type: null };
           const cap = await itemStep.dailyCap(org);
           const usedToday = await itemStep.callsUsedToday(v.org_ref, Date.now());
-          itemLines.eta = itemStep.fillEta({ pending: itemLines.pending, cap, usedToday });
+          const lastAt = await itemStep.lastCallsAt(v.org_ref);
+          const running = lastAt != null && Date.now() - lastAt < itemStep.FILL_ACTIVE_MS;
+          itemLines.eta = itemStep.fillEta({ pending: itemLines.pending, cap, usedToday, running });
           itemLines.daily_allowance = cap;
           itemLines.plan = org.plan_type || null;
           itemLines.organization_id = org.organization_id || null;   // for the limit-raise email

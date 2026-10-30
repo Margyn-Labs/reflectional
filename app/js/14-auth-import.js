@@ -161,7 +161,13 @@ function handleFile(file){
         nameEl.textContent = '✓ ' + file.name;
         document.getElementById('computeFromFile').disabled = false;
         document.getElementById('aiParseBtn').disabled = false;
-        uploadedZohoExport = mgFindZohoExport(uploadedWorkbook);
+        // A CSV is read again as UTF-8 text with no number parsing for the Zoho check: Zoho's 18-digit ids would
+        // lose digits as numbers, and item names in other scripts would be garbled read as bytes.
+        let zwb = uploadedWorkbook;
+        if(/\.csv$/i.test(file.name)){
+          try { zwb = XLSX.read(new TextDecoder('utf-8').decode(new Uint8Array(e.target.result)).replace(/^\uFEFF/, ''), { type:'string', raw:true }); } catch(err){ zwb = uploadedWorkbook; }
+        }
+        uploadedZohoExport = mgFindZohoExport(zwb);
         if(!uploadedZohoExport && file.size > MAX_IMPORT_BYTES){   // only a Zoho export may be bigger than 2 MB
           uploadedWorkbook = null; nameEl.textContent = 'That file is over 2 MB — trim or split it for now.';
           document.getElementById('computeFromFile').disabled = true; document.getElementById('aiParseBtn').disabled = true;

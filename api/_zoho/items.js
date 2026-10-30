@@ -133,6 +133,15 @@ async function callsUsedToday(orgRef, nowMs) {
   } catch (e) { return 0; }
 }
 
+/** When Margyn last spent Zoho calls for this connection (end of a sync, Fill now or follow-on run), ms or null. */
+async function lastCallsAt(orgRef) {
+  try {
+    const rows = await selectRows('zoho_sync_state', `select=last_synced_at&org_ref=eq.${orgRef}&module=eq.api_calls&limit=1`);
+    const t = rows[0] && rows[0].last_synced_at ? new Date(rows[0].last_synced_at).getTime() : NaN;
+    return Number.isFinite(t) ? t : null;
+  } catch (e) { return null; }
+}
+
 async function addCallsToday(orgRef, n, nowMs) {
   if (!n) return;
   try {
@@ -171,6 +180,7 @@ async function rememberLimit(orgRef, session) {
 
 const DOCS_PER_MINUTE = 85;        // READERS at DETAIL_GAP_MS, less list calls
 const NIGHTLY_MONEY_CALLS = 60;    // a typical delta money sync; the 200 reserve covers bigger nights
+const FILL_ACTIVE_MS = 10 * 60 * 1000;   // calls recorded this recently: a fill is running (each run is ~4 min)
 
 /**
  * When will the item lines be complete? Pure; the Zoho card shows it.
@@ -179,12 +189,15 @@ const NIGHTLY_MONEY_CALLS = 60;    // a typical delta money sync; the 200 reserv
  * → { when: 'done' } | { when: 'today', minutes } (fits in today's allowance: the follow-on fill runs it now)
  *   | { when: 'tomorrow_morning' } (fits in tonight's 2:30 am run plus its follow-ons) | { when: 'days', days }
  */
-function fillEta({ pending, cap, usedToday }) {
+function fillEta({ pending, cap, usedToday, running }) {
   const n = toNumber(pending);
   if (!(n > 0)) return { when: 'done' };
   const perDay = Math.max(1, toNumber(cap) - RESERVE_CALLS - NIGHTLY_MONEY_CALLS);
   const today = Math.max(0, toNumber(cap) - toNumber(usedToday) - RESERVE_CALLS);
-  if (n <= today) return { when: 'today', minutes: Math.max(1, Math.ceil(n / DOCS_PER_MINUTE)) };
+  // Minutes only while a fill is actually running (calls spent in the last FILL_ACTIVE_MS); otherwise the rest
+  // comes with tonight's run, however much of today's allowance is left.
+  if (n <= today && running !== false) return { when: 'today', minutes: Math.max(1, Math.ceil(n / DOCS_PER_MINUTE)) };
+  if (n <= today) return { when: 'tomorrow_morning' };
   const rest = n - today;
   if (rest <= perDay) return { when: 'tomorrow_morning' };
   return { when: 'days', days: 1 + Math.ceil((rest - perDay) / perDay) };
@@ -502,7 +515,7 @@ async function handleFillChain(req, res) {
 }
 
 module.exports = {
-  handleFillChain, triggerFillChain, fillEta, dailyCap, CHAIN_MAX_HOPS,
+  handleFillChain, triggerFillChain, fillEta, dailyCap, lastCallsAt, CHAIN_MAX_HOPS, FILL_ACTIVE_MS,
   syncItemLines, handleFillNow, probeItemReports, documentLines, mapItem, queueOrder, needsRead, progressFrom, callsUsedToday, addCallsToday,
   RESERVE_CALLS, TIME_LIMIT_MS, READERS
 };
