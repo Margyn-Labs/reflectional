@@ -1227,9 +1227,9 @@ function computeAnalytics(input) {
         m0tot += q0 * (p0 - c0); m1tot += q1 * (p1 - c1);
         priced++;
       }
-      // No item sold in those months has a purchase cost (Zoho sales-only items, 30 Oct 2026): there is no bridge,
-      // not one of all zeros ("Item margin moved ₹0 … selling price 0, purchase cost 0").
-      if (priced) margin_bridge = { from_month: m0, to_month: m1, margin_from: r2(m0tot), margin_to: r2(m1tot), price_effect: r2(price), cost_effect: r2(cost), volume_mix_effect: r2(volume) };
+      // Zoho/Odoo: when no item sold in those months has a purchase cost (Zoho sales-only items, 30 Oct 2026) there is
+      // no bridge, not one of all zeros ("Item margin moved ₹0 … selling price 0, purchase cost 0"). Tally unchanged.
+      if (priced || fromTally) margin_bridge = { from_month: m0, to_month: m1, margin_from: r2(m0tot), margin_to: r2(m1tot), price_effect: r2(price), cost_effect: r2(cost), volume_mix_effect: r2(volume) };
     }
   }
 
