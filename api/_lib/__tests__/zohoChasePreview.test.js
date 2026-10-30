@@ -59,7 +59,7 @@ const U = '22222222-2222-2222-2222-222222222222';
     let plan = null;
     const out = await syncZohoPartyContacts(session, U, { pause: 0, selectRows: async () => [], writePartyPlan: async (u, p) => { plan = p; return { inserted: p.inserts.length, updated: 0 }; } });
     assert.deepStrictEqual(calls, [['books/v3/contacts', '1'], ['books/v3/contacts', '2']]);
-    assert.deepStrictEqual(out, { read: 3, inserted: 2, updated: 0 });
+    assert.deepStrictEqual(out, { read: 3, with_details: 2, inserted: 2, updated: 0 }, 'with_details: the contacts the party master can save (data check)');
     assert.deepStrictEqual(plan.inserts.map((r) => r.name), ['A', 'B']);
   });
 

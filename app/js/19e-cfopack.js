@@ -69,6 +69,11 @@ function mgPackTallyPnl(k){
     // Running costs far below a usual month: not all booked yet, so profit and margin would be overstated.
     costs_incomplete:!!r.costs_incomplete, opex:Number(r.opex) || 0, typical_opex:r.typical_opex != null ? Number(r.typical_opex) : null };
 }
+/* The books system behind the P&L lines: the Margin answer names it (Tally, Zoho Books, Odoo). */
+function mgPackBooksName(){
+  const n = typeof mgMar !== 'undefined' && mgMar && mgMar.books_source_name;
+  return n ? n : 'your books';
+}
 function mgPackCfg(){
   const c = mgPrefGet('cfo_pack', {}) || {};
   return {
@@ -153,7 +158,7 @@ function mgPackDoc(k){
   // A month still in progress isn't comparable with a whole month: show both, no change.
   const plCmp = !!plP && !(tk && tk.pl_in_progress);
   const costsOpen = !!(tk && tk.costs_incomplete);   // spend, profit and margin not comparable either
-  const costsNote = costsOpen ? 'Running costs for ' + mgMonthLabel(k) + ' look incomplete (' + fmtINR(tk.opex, 'tile') + ' booked' + (tk.typical_opex ? ' against about ' + fmtINR(tk.typical_opex, 'tile') + ' in a usual month' : '') + '), so profit is overstated until they’re entered in Tally.' : '';
+  const costsNote = costsOpen ? 'Running costs for ' + mgMonthLabel(k) + ' look incomplete (' + fmtINR(tk.opex, 'tile') + ' booked' + (tk.typical_opex ? ' against about ' + fmtINR(tk.typical_opex, 'tile') + ' in a usual month' : '') + '), so profit is overstated until they’re entered in ' + mgPackBooksName() + '.' : '';
   const cfg = mgPackCfg(), on = new Set(cfg.sections);
   const org = mgOrgName(), month = mgMonthLabel(k);
   const today = fmtDay(new Date().toISOString());
@@ -188,7 +193,7 @@ function mgPackDoc(k){
     plRow('Total spend', plS.burn, plP && plP.burn, false, true),
     plRow('Net profit', plS.net_profit, plP && plP.net_profit, true, true),
     '<tr><td>Net margin</td><td class="r">' + (margin != null ? margin.toFixed(1) + '%' : '—') + '</td><td class="r">' + (marginP != null ? marginP.toFixed(1) + '%' : '—') + '</td><td class="r">' + (plCmp && margin != null && marginP != null ? (margin - marginP >= 0 ? '+' : '−') + Math.abs(margin - marginP).toFixed(1) + ' pts' : '—') + '</td><td class="r"></td></tr>'
-  ], 'pkPl') + '<div class="pk-note">' + (tk || tp ? 'Revenue, spend and profit are each month’s own figures from Tally’s books (sales before GST; spend is purchases, direct costs and running costs, before stock movement).' + (tk && tk.pl_in_progress ? ' ' + escapeHtml(month) + ' is still in progress.' : '') + (costsNote ? ' ' + escapeHtml(costsNote) : '') : 'Monthly revenue and spend as recorded in each month’s closing reading.') + ' Net profit = revenue − spend, plus any other income.</div>';
+  ], 'pkPl') + '<div class="pk-note">' + (tk || tp ? 'Revenue, spend and profit are each month’s own figures from ' + (mgPackBooksName() === 'Tally' ? 'Tally’s books' : mgPackBooksName()) + ' (sales before GST; spend is purchases, direct costs and running costs, before stock movement).' + (tk && tk.pl_in_progress ? ' ' + escapeHtml(month) + ' is still in progress.' : '') + (costsNote ? ' ' + escapeHtml(costsNote) : '') : 'Monthly revenue and spend as recorded in each month’s closing reading.') + ' Net profit = revenue − spend, plus any other income.</div>';
 
   // 3. cash
   const srcs = mgCashSources(), reconNow = (snapshots[0] && Number(snapshots[0].cash)) || 0;
@@ -260,7 +265,7 @@ function mgPackDoc(k){
     (g ? '<div class="pk-blk"><h3>GSTR-2B against Zoho Books, as of today</h3><div class="pk-note" style="margin:0 0 6px">Filing period ' + escapeHtml(g.filing_period || '') + ': ' + escapeHtml(fmtINR(g.total_leakage)) + ' of input credit at risk' +
       (g.leakage_pct != null ? ' (' + Number(g.leakage_pct).toFixed(1) + '% of ITC claimed)' : '') + ', ' + (g.vendors_not_filed || 0) + ' vendor' + (g.vendors_not_filed === 1 ? '' : 's') + ' not filed.</div>' +
       (vendors.length ? mgPackTable(['Vendor', 'GSTIN', 'At risk (₹)'], vendors.slice(0, 10).map(v => '<tr><td>' + escapeHtml(v.vendor_name || '—') + '</td><td class="pk-mono">' + escapeHtml(v.vendor_gstin || '') + '</td><td class="r">' + mgPackN(v.at_risk) + '</td></tr>'), 'pkGstVendors') : '') + '</div>'
-      : '<div class="pk-note">Vendor-level GSTR-2B matching needs Zoho Books connected.</div>');
+      : '<div class="pk-note">' + (typeof zohoConnected !== 'undefined' && zohoConnected ? 'No GSTR-2B has come in from Zoho Books yet, so there is no vendor-level matching to show. It needs a GST-registered organisation in Zoho.' : 'Vendor-level GSTR-2B matching needs Zoho Books connected.') + '</div>');
 
   // 7. Pulse
   const vit = (s.vitals || []).map(v => ({ label:mgVitalName(v.label), value:v.value, score:Number(v.score), pts:(Number(v.score) - 50) * vitalWeight(v.label, s.vitals) }));

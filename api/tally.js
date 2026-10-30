@@ -594,7 +594,7 @@ async function zohoCompletenessFor(userId) {
   }
   return zohoCompleteness({
     book: book && book.source === 'zoho' ? book : {},
-    remote: { invoices: rc('invoices'), bills: rc('bills'), contacts: rc('contacts'), items: rc('items') },
+    remote: { invoices: rc('invoices'), bills: rc('bills'), contacts: rc('contacts'), contacts_with_details: rc('contacts_with_details'), items: rc('items') },
     stored: { invoices: inv, bills: bil, customer_payments: cp, vendor_payments: vp, postings: postings.length,
       pnl_accounts: new Set(postings.map((p) => p.account_ref)).size, open_invoices: openInv, open_bills: openBill,
       bank_accounts: banks, items, contacts: parties.length, contacts_with_phone: parties.filter((p) => p.phone).length },

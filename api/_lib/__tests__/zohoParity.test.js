@@ -252,9 +252,17 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
   // Every module Margyn reads gets a row, and what it doesn't read is said plainly (30 Oct 2026).
   const keys = comp.checks.map((c) => c.key);
   check('completeness: banks, contacts and items each get a row', ['banks', 'contacts', 'items', 'not_read'].every((k) => keys.includes(k)), keys);
-  check('completeness: contacts row says how many have a phone (Chase needs it)', /1 have a phone number/.test(comp.checks.find((c) => c.key === 'contacts').detail));
+  check('completeness: contacts row says how many have a phone (Chase needs it)', /1 has a phone number/.test(comp.checks.find((c) => c.key === 'contacts').detail));
   const short = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2, contacts: 66 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1, bank_accounts: 1, contacts: 60 } });
   check('completeness: fewer contacts than Zoho holds is flagged', short.checks.some((c) => c.key === 'contacts' && c.status === 'warn' && /60 of the 66/.test(c.detail)));
+  // MARGYN DEMO, 30 Oct: 91 contacts, 1 with a phone; the check said "1 of the 91 are in Margyn" and warned,
+  // though the other 90 have nothing to save and show on Customers/Vendors from their invoices.
+  const demo = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2, contacts: 91, contacts_with_details: 1 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1, bank_accounts: 1, contacts: 1, contacts_with_phone: 1 } });
+  const dc = demo.checks.find((c) => c.key === 'contacts');
+  check('completeness: contacts with no details in Zoho are not called missing', dc.status === 'ok' && /all 1 with a phone, email or GSTIN are saved/.test(dc.detail) && /other 90 have no contact details/.test(dc.detail), dc);
+  check('completeness: header counts Zoho\'s contacts, not saved parties', demo.counts.contacts === 91, demo.counts);
+  const demoShort = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2, contacts: 91, contacts_with_details: 5 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1, bank_accounts: 1, contacts: 1 } });
+  check('completeness: a contact with details that isn\'t saved is still flagged', demoShort.checks.some((c) => c.key === 'contacts' && c.status === 'warn' && /1 of the 5 with a phone/.test(c.detail)));
   const noBank = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1 } });
   check('completeness: no bank accounts is flagged, not shown as fine', noBank.checks.some((c) => c.key === 'banks' && c.status === 'warn'));
   const filling = zohoCompleteness({ book: zb, remote: { invoices: 4, bills: 2 }, stored: { invoices: 4, bills: 2, postings: 3, open_invoices: 2, open_bills: 1, bank_accounts: 1 },

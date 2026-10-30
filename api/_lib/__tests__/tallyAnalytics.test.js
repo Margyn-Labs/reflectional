@@ -105,6 +105,16 @@ check('widget margin uses avg cost', w.est_margin === r(300000 - 260 * 650), w);
 check('item with no purchase flagged', g.flags.includes('no_purchase_cost_in_period') && b.questions.some((q) => q.kind === 'item_no_cost'), g);
 check('margin bridge decomposes exactly', b.margin_bridge && Math.abs((b.margin_bridge.margin_to - b.margin_bridge.margin_from) - (b.margin_bridge.price_effect + b.margin_bridge.cost_effect + b.margin_bridge.volume_mix_effect)) < 1, b.margin_bridge);
 function r(n) { return Math.round(n * 100) / 100; }
+// Items sold in both months but none with a purchase cost: no bridge at all, not "Item margin moved ₹0" (30 Oct 2026, Zoho).
+const costless = vouchers.map((v) => {
+  if (v.voucher_type === 'Sales' && v.voucher_number === '1') return Object.assign({}, v, { items: [{ item: 'Consulting', qty: 1, unit: 'Nos', rate: 100000, amount: 100000, abs_amount: 100000 }] });
+  if (v.voucher_type === 'Sales' && v.voucher_number === '2') return Object.assign({}, v, { items: [{ item: 'Consulting', qty: 2, unit: 'Nos', rate: 100000, amount: 200000, abs_amount: 200000 }] });
+  return v;
+});
+const nc = computeAnalytics({ ledgers, vouchers: costless, bills, now, source: 'zoho' });
+check('no margin bridge when no item sold has a cost (Zoho)', nc.items_available === true && nc.margin_bridge === null && !(nc.headlines || []).some((h) => /Item margin moved/.test(h)), { bridge: nc.margin_bridge, headlines: nc.headlines });
+const ncTally = computeAnalytics({ ledgers, vouchers: costless, bills, now });
+check('Tally accounts keep the margin bridge exactly as before', ncTally.margin_bridge && ncTally.margin_bridge.from_month === '2026-07', ncTally.margin_bridge);
 
 
 /* ---------- lessons from the connector build ---------- */

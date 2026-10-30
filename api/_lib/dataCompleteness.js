@@ -205,7 +205,7 @@ function tallyCompleteness(book, ctx, opts) {
 
 /**
  * The same four stages for Zoho Books. Pure.
- * z: { book, ctx, remote: { invoices, bills, contacts, items } (Zoho's own counts: the sweep's full listing, the
+ * z: { book, ctx, remote: { invoices, bills, contacts, contacts_with_details, items } (Zoho's own counts: the sweep's full listing, the
  *      contact and item reads),
  *      stored: { invoices, bills, customer_payments, vendor_payments, postings, pnl_accounts, open_invoices, open_bills,
  *        bank_accounts, items, contacts, contacts_with_phone },
@@ -258,9 +258,19 @@ function zohoCompleteness(z, opts) {
       : 'No bank accounts came from Zoho, so cash can’t be read from the books. Add your bank accounts under Banking in Zoho Books.'));
   if (remote.contacts != null || num(st.contacts)) {
     const rcn = remote.contacts, sc = num(st.contacts), ph = num(st.contacts_with_phone);
-    checks.push(check('contacts', 'Customers and suppliers', rcn == null || sc >= rcn ? 'ok' : 'warn',
-      (rcn == null ? `${fmt(sc)} customers and suppliers` : sc >= rcn ? `All ${fmt(rcn)} customers and suppliers in Zoho are in Margyn` : `${fmt(sc)} of the ${fmt(rcn)} customers and suppliers in Zoho are in Margyn`) +
-      `; ${fmt(ph)} have a phone number, which Payment Chase needs to send a reminder.`, { zoho: rcn, stored: sc }));
+    // A contact becomes a saved party only when Zoho has a phone, email or GSTIN for it (zohoParties.js); the rest
+    // show on Customers and Vendors from their invoices and bills. So, when the sync counted them, saved parties are
+    // checked against the contacts that have details, not against every contact (MARGYN DEMO: 91 contacts, 1 with a phone).
+    const rwd = remote.contacts_with_details;
+    const want = rwd != null ? rwd : rcn;
+    const ok = want == null || sc >= want;
+    const head = rwd != null && rcn != null
+      ? (ok ? `${fmt(rcn)} customers and suppliers in Zoho; all ${fmt(rwd)} with a phone, email or GSTIN are saved in Margyn`
+        : `${fmt(rcn)} customers and suppliers in Zoho; ${fmt(sc)} of the ${fmt(rwd)} with a phone, email or GSTIN are saved in Margyn`) +
+        (rcn > rwd ? `. The other ${fmt(rcn - rwd)} have no contact details in Zoho, so they show on Customers and Vendors from their invoices and bills` : '')
+      : (rcn == null ? `${fmt(sc)} customers and suppliers` : sc >= rcn ? `All ${fmt(rcn)} customers and suppliers in Zoho are in Margyn` : `${fmt(sc)} of the ${fmt(rcn)} customers and suppliers in Zoho are in Margyn`);
+    checks.push(check('contacts', 'Customers and suppliers', ok ? 'ok' : 'warn',
+      head + `; ${fmt(ph)} ${ph === 1 ? 'has' : 'have'} a phone number, which Payment Chase needs to send a reminder.`, { zoho: rcn, with_details: rwd, stored: sc }));
   }
   if (remote.items != null || num(st.items)) {
     checks.push(check('items', 'Items', 'ok', `${fmt(remote.items != null ? remote.items : st.items)} items, with names, units and purchase rates.`));
@@ -290,7 +300,9 @@ function zohoCompleteness(z, opts) {
   const worst = checks.some((c) => c.status === 'warn') ? 'warn' : 'ok';
   return {
     source: 'zoho', company: book.company || null, last_sync: z.lastSync || book.lastSync || null, status: worst,
-    counts: { invoices: num(st.invoices), bills: num(st.bills), postings: num(st.postings), contacts: num(st.contacts), items: num(st.items) },
+    counts: { invoices: num(st.invoices), bills: num(st.bills), postings: num(st.postings),
+      // Zoho's own contact count when the sync read it (saved parties are only those with contact details)
+      contacts: remote.contacts != null ? num(remote.contacts) : num(st.contacts), items: num(st.items) },
     checks, months: [], excluded: []
   };
 }

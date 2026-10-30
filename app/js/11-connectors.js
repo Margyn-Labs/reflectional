@@ -400,11 +400,14 @@ function renderTallyTab(){
     // system is refused (one books system per business), so it showed an empty "Tally books" tab (30 Oct 2026).
     const otherBooks = (typeof zohoConnected !== 'undefined' && zohoConnected) || (typeof odooConnected !== 'undefined' && odooConnected);
     notConn.classList.toggle('hidden', !!otherBooks);
+    // the "Straight from TallyPrime…" intro too, or it alone keeps the tab in the Ledger's bar
+    document.querySelectorAll('#booksTallyBlocks > .hint').forEach(h => h.classList.toggle('hidden', !!otherBooks));
     content.classList.add('hidden');
     tallyOverdueCount = 0; renderBooksBadge();
     return;
   }
   notConn.classList.add('hidden');
+  document.querySelectorAll('#booksTallyBlocks > .hint').forEach(h => h.classList.remove('hidden'));
   content.classList.remove('hidden');
 
   const b = d.bills || {}, v = d.vouchers || {}, led = d.ledgers || {};
