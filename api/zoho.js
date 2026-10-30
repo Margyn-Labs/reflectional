@@ -24,6 +24,10 @@
  *   POST      /api/zoho?action=sync          (was api/sync-zoho.js)
  *   POST      /api/zoho?action=fill-items    ("Fill now": read Zoho item lines with
  *                                              the rest of today's call budget, _zoho/items.js)
+ *   GET       /api/zoho?action=fill-chain    (follow-on item fill after connect and after the
+ *                                              nightly run, CRON_SECRET, _zoho/items.js)
+ *   POST      /api/zoho?action=import-export (item lines from Zoho's own export file, dropped
+ *                                              into Import; _zoho/exportImport.js)
  *   POST      /api/zoho?action=sync-gstr2b   (was api/sync-zoho-gstr2b.js)
  *   GET       /api/zoho?action=cron          (was api/cron-sync-zoho.js;
  *                                              internal Vercel Cron target,
@@ -57,6 +61,7 @@ const cron = require('./_zoho/cron');
 const cronGstr2b = require('./_zoho/cron-gstr2b');
 const odoo = require('./_odoo/odoo');
 const zohoItems = require('./_zoho/items');
+const zohoExportImport = require('./_zoho/exportImport');
 
 module.exports = async function handler(req, res) {
   var action = (req.query && req.query.action) || '';
@@ -73,12 +78,14 @@ module.exports = async function handler(req, res) {
   if (action === 'vitals') return vitals.handler(req, res);
   if (action === 'sync') return sync.handler(req, res);
   if (action === 'fill-items') return zohoItems.handleFillNow(req, res);
+  if (action === 'fill-chain') return zohoItems.handleFillChain(req, res);
+  if (action === 'import-export') return zohoExportImport.handler(req, res);
   if (action === 'sync-gstr2b') return syncGstr2b.handler(req, res);
   if (action === 'cron') return cron.handler(req, res);
   if (action === 'cron-gstr2b') return cronGstr2b.handler(req, res);
 
   res.status(400).json({
     error: 'unknown_action',
-    message: 'Expected ?action= one of oauth-start, select-org, disconnect, vitals, sync, fill-items, sync-gstr2b, cron, cron-gstr2b, odoo-connect, odoo-sync, odoo-status, odoo-disconnect, odoo-cron.'
+    message: 'Expected ?action= one of oauth-start, select-org, disconnect, vitals, sync, fill-items, fill-chain, import-export, sync-gstr2b, cron, cron-gstr2b, odoo-connect, odoo-sync, odoo-status, odoo-disconnect, odoo-cron.'
   });
 };

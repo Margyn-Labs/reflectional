@@ -405,6 +405,23 @@ function createSession(org) {
     return state.calls;
   }
 
+  // Zoho may send its own daily allowance on each answer (X-Rate-Limit-Limit / -Remaining). When it does, the item
+  // queue trusts it over the plan-name table: it is the real figure, trials and custom raises included.
+  function noteRateLimit(res) {
+    const h = res && res.headers && typeof res.headers.get === 'function' ? res.headers : null;
+    if (!h) return;
+    const limit = parseInt(h.get('x-rate-limit-limit'), 10);
+    const remaining = parseInt(h.get('x-rate-limit-remaining'), 10);
+    if (Number.isFinite(limit) && limit > 0 && Number.isFinite(remaining) && remaining >= 0) {
+      state.rateLimit = { limit, remaining, at: Date.now() };
+    }
+  }
+
+  /** Zoho's own daily allowance from the last answer that carried it, or null. */
+  function rateLimit() {
+    return state.rateLimit || null;
+  }
+
   /**
    * One authenticated Zoho API call.
    * `path` is relative, e.g. 'books/v3/invoices'. `organization_id` is
@@ -483,6 +500,7 @@ function createSession(org) {
       }
 
       if (!res.ok) throw new Error(`Zoho returned ${res.status} at ${path}`);
+      noteRateLimit(res);
       return res.json();
     }
     throw lastError || new Error('Zoho request failed after retries');
@@ -506,7 +524,7 @@ function createSession(org) {
     return out;
   }
 
-  return { apiGet, apiGetAll, getAccessToken, seed, callCount };
+  return { apiGet, apiGetAll, getAccessToken, seed, callCount, rateLimit };
 }
 
 // ---------------------------------------------------------- org helpers
@@ -568,8 +586,21 @@ async function markNeedsReauth(orgRef) {
   }
 }
 
+/**
+ * Daily call allowance for a Zoho plan name. Zoho's organizations list sends plan_name as shown on its pricing page,
+ * sometimes with extra words ("Standard (Annual)", "Professional Plan"), so the name is matched by keyword, the
+ * biggest plan first. Older names: "Basic" was the entry paid plan (Standard's allowance). Unknown names, and trials
+ * (whose allowance Zoho doesn't publish), get the Free allowance: safe, never over. When Zoho sends its own
+ * X-Rate-Limit headers, those win (session.rateLimit()).
+ */
 function dailyCapFor(planType) {
-  return DAILY_CAP_BY_PLAN[(planType || '').toLowerCase()] || 1000;
+  const p = String(planType || '').toLowerCase().trim();
+  if (DAILY_CAP_BY_PLAN[p]) return DAILY_CAP_BY_PLAN[p];
+  if (/trial/.test(p)) return 1000;
+  if (/ultimate|elite|premium|enterprise/.test(p)) return 10000;
+  if (/professional/.test(p)) return 5000;
+  if (/standard|basic/.test(p)) return 2000;
+  return 1000;
 }
 
 module.exports = {

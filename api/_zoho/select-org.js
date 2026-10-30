@@ -207,6 +207,11 @@ async function handler(req, res) {
   } catch (err) {
     backfillResult = { status: 'error', message: err.message };
   }
+  // The first sync reads item lines for what's left of its 300 s. Hand the rest to follow-on runs now, so a paid
+  // plan's whole history is in within the hour, not one run a night (_zoho/items.js handleFillChain).
+  if (!(backfillResult && backfillResult.status === 'error')) {
+    try { await require('./items').triggerFillChain(1, org.id); } catch (err) { /* the nightly run carries on */ }
+  }
   await orgSelectedEvent(user.id, true, 'none', {
     multi_currency: isMultiCurrency,
     backfill_ok: !(backfillResult && backfillResult.status === 'error')

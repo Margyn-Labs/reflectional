@@ -119,6 +119,8 @@ function prefillManualEntry(){
 let uploadedWorkbook = null;
 let uploadedDoc = null;               // { mime, base64, filename } for a PDF/image
 const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
+const MAX_WORKBOOK_BYTES = 25 * 1024 * 1024;   // read in the browser; only Zoho exports send every row
+let uploadedZohoExport = null;                 // { type, rows } when the file is Zoho Books' own export
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 dropzone.addEventListener('click', () => fileInput.click());
@@ -139,7 +141,8 @@ function importFileKind(name){
 }
 function handleFile(file){
   const nameEl = document.getElementById('fileName');
-  uploadedWorkbook = null; uploadedDoc = null;
+  uploadedWorkbook = null; uploadedDoc = null; uploadedZohoExport = null;
+  const aiBtn = document.getElementById('aiParseBtn'); if(aiBtn) aiBtn.textContent = 'Read this file with Margyn';
   document.getElementById('computeFromFile').disabled = true;
   document.getElementById('aiParseBtn').disabled = true;
   document.getElementById('noteAiParse').textContent = '';
@@ -147,7 +150,7 @@ function handleFile(file){
 
   const kind = importFileKind(file.name);
   if(kind === 'other'){ nameEl.textContent = 'Unsupported file — use .xlsx, .csv, .pdf, .png or .jpg'; return; }
-  if(file.size > MAX_IMPORT_BYTES){ nameEl.textContent = 'That file is over 2 MB — trim or split it for now.'; return; }
+  if(file.size > (kind === 'workbook' ? MAX_WORKBOOK_BYTES : MAX_IMPORT_BYTES)){ nameEl.textContent = kind === 'workbook' ? 'That file is over 25 MB — split it for now.' : 'That file is over 2 MB — trim or split it for now.'; return; }
 
   const reader = new FileReader();
   if(kind === 'workbook'){
@@ -158,6 +161,18 @@ function handleFile(file){
         nameEl.textContent = '✓ ' + file.name;
         document.getElementById('computeFromFile').disabled = false;
         document.getElementById('aiParseBtn').disabled = false;
+        uploadedZohoExport = mgFindZohoExport(uploadedWorkbook);
+        if(!uploadedZohoExport && file.size > MAX_IMPORT_BYTES){   // only a Zoho export may be bigger than 2 MB
+          uploadedWorkbook = null; nameEl.textContent = 'That file is over 2 MB — trim or split it for now.';
+          document.getElementById('computeFromFile').disabled = true; document.getElementById('aiParseBtn').disabled = true;
+          return;
+        }
+        if(uploadedZohoExport){
+          const docs = new Set(uploadedZohoExport.rows.slice(1).map(r => r && r[uploadedZohoExport.numberCol]).filter(Boolean)).size;
+          nameEl.textContent = '✓ ' + file.name + ' · Zoho Books ' + ZOHO_EXPORT_LABEL[uploadedZohoExport.type] + ' export, ' + docs.toLocaleString('en-IN') + ' documents';
+          document.getElementById('aiParseBtn').textContent = 'Add item lines from this export';
+          document.getElementById('computeFromFile').disabled = true;
+        }
       } catch(err){ nameEl.textContent = 'Could not read file: ' + err.message; uploadedWorkbook = null; }
     };
     reader.readAsArrayBuffer(file);
@@ -171,6 +186,56 @@ function handleFile(file){
     };
     reader.readAsDataURL(file);
   }
+}
+/* Zoho Books' own export (one row per line item). The server (api/_lib/importMapper.js detectZohoExport) is the
+   authority on the columns; this only spots the header so the page can offer the direct import. */
+const ZOHO_EXPORT_LABEL = { invoice:'invoices', bill:'bills', creditnote:'credit notes', vendorcredit:'vendor credits' };
+const ZOHO_EXPORT_NUMBER = { creditnote:['creditnotenumber','creditnoteno'], vendorcredit:['vendorcreditnumber','vendorcreditno','debitnotenumber'], bill:['billnumber','billno'], invoice:['invoicenumber','invoiceno'] };
+function mgFindZohoExport(wb){
+  const norm = h => String(h == null ? '' : h).toLowerCase().replace(/%/g, 'percent').replace(/[^a-z0-9]/g, '');
+  for(const name of (wb.SheetNames || []).slice(0, 4)){
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header:1, defval:null, blankrows:false });
+    for(let h = 0; h < Math.min(5, rows.length); h++){
+      const hdr = (rows[h] || []).map(norm);
+      const has = list => list.some(n => hdr.includes(n));
+      if(!has(['itemname','item','productname','productid','itemid']) || !has(['quantity','qty','itemquantity']) || !has(['itemtotal','lineitemtotal','itemamount','itemprice','rate','itemrate','price','unitprice'])) continue;
+      for(const [type, names] of Object.entries(ZOHO_EXPORT_NUMBER)){
+        const col = hdr.findIndex(x => names.includes(x));
+        if(col >= 0) return { type, numberCol: col, rows: rows.slice(h).map(r => (r || []).map(v => v instanceof Date ? v.toISOString() : v)) };
+      }
+    }
+  }
+  return null;
+}
+/* Send the rows in posts of whole documents (the server matches them to the documents Margyn holds). */
+async function importZohoExport(){
+  const btn = document.getElementById('aiParseBtn'); const note = document.getElementById('noteAiParse');
+  const ex = uploadedZohoExport; if(!ex) return;
+  if(typeof zohoConnected !== 'undefined' && !zohoConnected){ note.className = 'note bad'; note.textContent = 'Connect Zoho Books first (Organisations and sources), then drop this file again.'; return; }
+  btn.disabled = true; note.className = 'note'; note.textContent = 'Adding item lines…';
+  const header = ex.rows[0], body = ex.rows.slice(1);
+  const CHUNK = 15000, posts = [];
+  for(let i = 0; i < body.length;){
+    let j = Math.min(body.length, i + CHUNK);
+    while(j < body.length && j > i && body[j] && body[j - 1] && body[j][ex.numberCol] === body[j - 1][ex.numberCol]) j++;   // keep a document whole
+    posts.push([header].concat(body.slice(i, j))); i = j;
+  }
+  const sum = { written:0, lines:0, already_read:0, not_found:0, dead:0, unknown_items:0, matched:0, not_found_numbers:[] };
+  try {
+    for(let k = 0; k < posts.length; k++){
+      if(posts.length > 1) note.textContent = 'Adding item lines… part ' + (k + 1) + ' of ' + posts.length;
+      const out = await zohoApi('/api/zoho?action=import-export', { method:'POST', body: JSON.stringify({ rows: posts[k] }) });
+      for(const key of Object.keys(sum)) if(key === 'not_found_numbers') sum[key] = sum[key].concat(out[key] || []).slice(0, 10); else sum[key] += Number(out[key] || 0);
+    }
+    const fmt = n => Number(n || 0).toLocaleString('en-IN');
+    note.className = 'note ok';
+    note.textContent = 'Added ' + fmt(sum.lines) + ' item lines from ' + fmt(sum.written) + ' ' + ZOHO_EXPORT_LABEL[ex.type] + '.' +
+      (sum.already_read ? ' ' + fmt(sum.already_read) + ' were already in.' : '') +
+      (sum.not_found ? ' ' + fmt(sum.not_found) + ' aren’t in Margyn yet (' + sum.not_found_numbers.slice(0, 3).join(', ') + (sum.not_found > 3 ? '…' : '') + '): press Sync now on Zoho Books, then drop the file again.' : '') +
+      (sum.unknown_items ? ' ' + fmt(sum.unknown_items) + ' lines name an item Margyn doesn’t have from Zoho yet and were left out.' : '');
+    if(typeof loadZohoVitals === 'function') loadZohoVitals().catch(() => {});
+  } catch(e){ note.className = 'note bad'; note.textContent = 'Could not add the item lines: ' + e.message; }
+  finally { btn.disabled = false; }
 }
 /* Compact "skeleton" of a workbook — first rows of each sheet as raw
    arrays — small enough to send to the parser without shipping the whole
@@ -194,6 +259,7 @@ const IMPORT_TARGET_LABELS = {
 let _importProposal = null;
 
 document.getElementById('aiParseBtn').addEventListener('click', async () => {
+  if(uploadedZohoExport) return importZohoExport();
   const btn = document.getElementById('aiParseBtn'); const note = document.getElementById('noteAiParse');
   if(!uploadedWorkbook && !uploadedDoc){ note.className = 'note bad'; note.textContent = 'No file loaded.'; return; }
   btn.disabled = true; note.className = 'note'; note.textContent = 'Margyn is reading the file…';

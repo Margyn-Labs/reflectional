@@ -143,6 +143,53 @@ async function addCallsToday(orgRef, n, nowMs) {
   } catch (e) { console.error('Could not record Zoho calls used today'); }
 }
 
+// zoho_sync_state row module 'api_limit': remote_count = the daily allowance Zoho itself last reported.
+async function learnedLimit(orgRef) {
+  try {
+    const rows = await selectRows('zoho_sync_state', `select=remote_count&org_ref=eq.${orgRef}&module=eq.api_limit&limit=1`);
+    const n = rows[0] ? toNumber(rows[0].remote_count) : 0;
+    return n > 0 ? n : null;
+  } catch (e) { return null; }
+}
+
+/** Today's allowance: what Zoho last said it is, else the plan's published figure. */
+async function dailyCap(org) {
+  return (await learnedLimit(org.id)) || dailyCapFor(org.plan_type);
+}
+
+async function rememberLimit(orgRef, session) {
+  const rl = session && typeof session.rateLimit === 'function' ? session.rateLimit() : null;
+  if (!rl) return;
+  try {
+    const at = new Date().toISOString();
+    await insertRows('zoho_sync_state', [{ org_ref: orgRef, module: 'api_limit', last_synced_at: at, last_run_at: at, last_run_status: 'success', remote_count: rl.limit }],
+      { onConflict: 'org_ref,module', merge: true });
+  } catch (e) { /* only a hint for the next run */ }
+}
+
+/* -------------------------------------------------------------------- ETA */
+
+const DOCS_PER_MINUTE = 85;        // READERS at DETAIL_GAP_MS, less list calls
+const NIGHTLY_MONEY_CALLS = 60;    // a typical delta money sync; the 200 reserve covers bigger nights
+
+/**
+ * When will the item lines be complete? Pure; the Zoho card shows it.
+ *   pending   documents still to read
+ *   cap       daily allowance; usedToday calls spent today (IST)
+ * → { when: 'done' } | { when: 'today', minutes } (fits in today's allowance: the follow-on fill runs it now)
+ *   | { when: 'tomorrow_morning' } (fits in tonight's 2:30 am run plus its follow-ons) | { when: 'days', days }
+ */
+function fillEta({ pending, cap, usedToday }) {
+  const n = toNumber(pending);
+  if (!(n > 0)) return { when: 'done' };
+  const perDay = Math.max(1, toNumber(cap) - RESERVE_CALLS - NIGHTLY_MONEY_CALLS);
+  const today = Math.max(0, toNumber(cap) - toNumber(usedToday) - RESERVE_CALLS);
+  if (n <= today) return { when: 'today', minutes: Math.max(1, Math.ceil(n / DOCS_PER_MINUTE)) };
+  const rest = n - today;
+  if (rest <= perDay) return { when: 'tomorrow_morning' };
+  return { when: 'days', days: 1 + Math.ceil((rest - perDay) / perDay) };
+}
+
 /* ------------------------------------------------------------------- queue */
 
 async function upsertChunks(table, rows, conflict) {
@@ -215,10 +262,16 @@ async function syncItemLines(session, org, userId, opts) {
   const o = opts || {};
   const startedAt = Date.now();
   const deadline = o.deadline || startedAt + TIME_LIMIT_MS;
-  const cap = dailyCapFor(org.plan_type);
+  const cap = await dailyCap(org);
   const usedBefore = o.usedBefore != null ? o.usedBefore : await callsUsedToday(org.id, startedAt);
   let inflight = 0;   // reads started but not yet counted by the session
-  const left = () => cap - usedBefore - session.callCount() - inflight - RESERVE_CALLS;
+  // Our own ledger, or Zoho's count when its answers carry one (X-Rate-Limit-Remaining is the truth: it includes
+  // calls made outside Margyn, trials and any raise Zoho support granted).
+  const left = () => {
+    const rl = typeof session.rateLimit === 'function' ? session.rateLimit() : null;
+    if (rl) return rl.remaining - inflight - RESERVE_CALLS;
+    return cap - usedBefore - session.callCount() - inflight - RESERVE_CALLS;
+  };
   const out = { items: 0, documents_read: 0, lines: 0, dropped: 0, pending: 0, stopped: null, unavailable: [], budget_at_start: left() };
 
   if (left() <= 0) { out.stopped = 'budget'; return out; }
@@ -281,6 +334,7 @@ async function syncItemLines(session, org, userId, opts) {
       }
     };
     await Promise.all(Array.from({ length: READERS }, reader));
+    await rememberLimit(org.id, session);
     if (fatal) throw fatal;
     out.pending = queue.filter((s) => !taken.has(s) && !skip.has(s.doc_type)).length;
     if (!out.stopped && out.pending === 0) out.stopped = 'done';
@@ -365,7 +419,90 @@ async function handleFillNow(req, res) {
   }
 }
 
+/* ------------------------------------------------------- follow-on fill
+ * One function run reads about 370 documents (240 s at ~90 calls a minute: Zoho's per-minute limit, the same on
+ * every plan). A paid plan's day holds far more (Professional 5,000, Premium 10,000), and Vercel Hobby runs each
+ * cron once a day. So after the first sync at connect, after the nightly 2:30 am run, and after each of its own
+ * runs while documents and allowance are left, the fill calls itself again (GET /api/zoho?action=fill-chain,
+ * CRON_SECRET), at most CHAIN_MAX_HOPS times a night. The caller waits only for the request to be accepted. If a
+ * hop is ever lost, nothing breaks: the next night's run carries on. Every hop keeps the 200-call reserve.
+ */
+const CHAIN_MAX_HOPS = 48;           // 48 × ~370 ≈ 17,000 documents, more than Premium's 10,000 a day
+const CHAIN_HANDOFF_MS = 4000;       // how long a caller waits for the next hop to be accepted
+
+function chainOrigin() {
+  try { if (process.env.ZOHO_REDIRECT_URI) return new URL(process.env.ZOHO_REDIRECT_URI).origin; } catch (e) { /* fall through */ }
+  const prod = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return prod ? 'https://' + prod.replace(/^https?:\/\//, '') : null;
+}
+
+/** Start the next hop. Returns true when a request went out. orgRef limits the hop to one connection. */
+async function triggerFillChain(hop, orgRef) {
+  const origin = chainOrigin();
+  const secret = process.env.CRON_SECRET;
+  const n = Math.max(1, parseInt(hop, 10) || 1);
+  if (!origin || !secret || n > CHAIN_MAX_HOPS) return false;
+  const url = `${origin}/api/zoho?action=fill-chain&hop=${n}` + (orgRef ? `&org=${encodeURIComponent(orgRef)}` : '');
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), CHAIN_HANDOFF_MS) : null;
+  try {
+    await fetch(url, { method: 'GET', headers: { Authorization: `Bearer ${secret}` }, signal: ctrl ? ctrl.signal : undefined });
+  } catch (e) { /* aborted on purpose once handed off; the hop runs on its own */ }
+  finally { if (timer) clearTimeout(timer); }
+  return true;
+}
+
+/** Connections worth another hop: documents still to read and allowance above the reserve. DB only, no Zoho calls. */
+async function orgsToFill(orgRef, nowMs) {
+  const filter = orgRef ? `&id=eq.${encodeURIComponent(orgRef)}` : '';
+  const orgs = await selectRows('zoho_organizations', `select=*&status=eq.active${filter}&order=connected_at.desc&limit=500`);
+  const out = [];
+  for (const org of orgs) {
+    let state;
+    try { state = await selectRows('zoho_line_state', `select=doc_type,doc_date,status,doc_last_modified,read_modified,lines_read_at&org_ref=eq.${org.id}&order=id.asc&limit=200000`); }
+    catch (e) { continue; }
+    const p = progressFrom(state);
+    if (!(p.pending > 0)) continue;
+    const cap = await dailyCap(org);
+    if (cap - (await callsUsedToday(org.id, nowMs)) - RESERVE_CALLS <= 0) continue;
+    out.push(org);
+  }
+  return out;
+}
+
+/** GET /api/zoho?action=fill-chain&hop=N[&org=<org_ref>] — one follow-on fill run (CRON_SECRET). */
+async function handleFillChain(req, res) {
+  const expected = process.env.CRON_SECRET;
+  const auth = (req.headers && (req.headers.authorization || req.headers.Authorization)) || '';
+  const q = req.query || {};
+  if (!expected) { res.status(500).json({ error: 'CRON_SECRET not configured' }); return; }
+  if (auth !== `Bearer ${expected}` && q.cron_secret !== expected) { res.status(401).json({ error: 'Unauthorized' }); return; }
+  const hop = Math.max(1, parseInt(q.hop, 10) || 1);
+  const orgRef = q.org ? String(q.org) : null;
+  const startedAt = Date.now();
+  const deadline = startedAt + TIME_LIMIT_MS;
+  const ran = [];
+  let again = false;
+  let orgs = [];
+  try { orgs = await orgsToFill(orgRef, startedAt); } catch (e) { res.status(500).json({ error: 'Could not list connections' }); return; }
+  for (const org of orgs) {
+    if (Date.now() >= deadline - 10 * 1000) { again = true; break; }
+    const session = createSession(org);
+    const usedBefore = await callsUsedToday(org.id, Date.now());
+    let out;
+    try { out = await syncItemLines(session, org, org.user_id, { usedBefore, deadline }); }
+    catch (e) { out = { error: e instanceof ZohoAuthError ? 'needs_reauth' : 'failed' }; }
+    await addCallsToday(org.id, session.callCount(), startedAt);
+    ran.push({ org_ref: org.id, documents_read: out.documents_read || 0, pending: out.pending, stopped: out.stopped || null, error: out.error || null });
+    // Only time ran out (documents and allowance left, Zoho not pushing back): worth another hop.
+    if (!out.error && out.stopped === 'time' && out.pending > 0) again = true;
+  }
+  const next = again && hop < CHAIN_MAX_HOPS ? await triggerFillChain(hop + 1, orgRef) : false;
+  res.status(200).json({ hop, orgs: ran, next_hop: next ? hop + 1 : null, duration_ms: Date.now() - startedAt });
+}
+
 module.exports = {
+  handleFillChain, triggerFillChain, fillEta, dailyCap, CHAIN_MAX_HOPS,
   syncItemLines, handleFillNow, probeItemReports, documentLines, mapItem, queueOrder, needsRead, progressFrom, callsUsedToday, addCallsToday,
   RESERVE_CALLS, TIME_LIMIT_MS, READERS
 };

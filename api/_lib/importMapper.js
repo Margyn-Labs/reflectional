@@ -225,7 +225,146 @@ function normImportDate(v) {
   return m ? m[1] + '-' + m[2] + '-' + m[3] : null;
 }
 
+/* ============================================================================
+   ZOHO EXPORT SHAPE (2026-10-31, ZOHO-AUDIT-2026-10-31.md "fix a")
+   ----------------------------------------------------------------------------
+   Zoho Books' own export (Sales → Invoices → ⋯ → Export; Bills, Credit Notes,
+   Vendor Credits the same) is one row per line item. A file with that header
+   skips the AI mapping entirely: its rows become zoho_document_lines for the
+   documents Margyn already holds (api/_zoho/exportImport.js), so a year of item
+   figures arrives in minutes on any Zoho plan instead of one API call per
+   document. Columns follow Zoho's documented export/import field names;
+   matching is by normalised header (case, spaces and punctuation ignored, "%"
+   read as "percent"), so "Item Price" and "item_price" are the same column.
+   ============================================================================ */
+const normHeader = (h) => String(h == null ? '' : h).toLowerCase().replace(/%/g, 'percent').replace(/[^a-z0-9]/g, '');
+
+// Returns first: a credit note export can also carry the invoice it was applied to ("Invoice Number"), and a vendor
+// credit export the bill.
+const ZOHO_EXPORT_DOCS = {
+  creditnote: { number: ['creditnotenumber', 'creditnoteno'], id: ['creditnoteid', 'creditnotesid'], date: ['creditnotedate'], status: ['creditnotestatus'] },
+  vendorcredit: { number: ['vendorcreditnumber', 'vendorcreditno', 'debitnotenumber'], id: ['vendorcreditid', 'debitnoteid'], date: ['vendorcreditdate', 'debitnotedate'], status: ['vendorcreditstatus', 'debitnotestatus'] },
+  bill: { number: ['billnumber', 'billno'], id: ['billid'], date: ['billdate'], status: ['billstatus'] },
+  invoice: { number: ['invoicenumber', 'invoiceno'], id: ['invoiceid'], date: ['invoicedate'], status: ['invoicestatus'] }
+};
+const ZOHO_EXPORT_LINE = {
+  item_name: ['itemname', 'item', 'productname'],
+  item_id: ['productid', 'itemid'],
+  sku: ['sku', 'itemsku'],
+  line_item_id: ['lineitemid'],
+  qty: ['quantity', 'qty', 'itemquantity'],
+  rate: ['itemprice', 'rate', 'itemrate', 'price', 'unitprice'],
+  item_total: ['itemtotal', 'lineitemtotal', 'itemamount'],
+  tax_pct: ['itemtaxpercent', 'taxpercent', 'taxpercentage', 'itemtaxpercentage'],
+  inclusive: ['isinclusivetax', 'istaxinclusive', 'taxinclusive'],
+  exchange_rate: ['exchangerate'],
+  unit: ['usageunit', 'unit'],
+  location: ['locationname', 'warehousename', 'branchname'],
+  date: ['date'],
+  status: ['status'],
+  discount_type: ['discounttype'],
+  discount_before_tax: ['isdiscountbeforetax'],
+  entity_discount_amount: ['entitydiscountamount'],
+  entity_discount_percent: ['entitydiscountpercent']
+};
+
+function headerIndex(header) {
+  const idx = {};
+  (header || []).forEach((h, i) => { const k = normHeader(h); if (k && idx[k] == null) idx[k] = i; });
+  const pick = (names) => { for (const n of names) if (idx[n] != null) return idx[n]; return null; };
+  return { idx, pick };
+}
+
+/**
+ * Is this header row Zoho Books' own export? Returns { doc_type, columns } or null. Needs the document number,
+ * an item (name or Zoho's item id), the quantity and the line amount (or the price).
+ */
+function detectZohoExport(header) {
+  const { pick } = headerIndex(header);
+  for (const [type, d] of Object.entries(ZOHO_EXPORT_DOCS)) {
+    const number = pick(d.number);
+    if (number == null) continue;
+    const cols = { number, id: pick(d.id), doc_date: pick(d.date), doc_status: pick(d.status) };
+    for (const [k, names] of Object.entries(ZOHO_EXPORT_LINE)) cols[k] = pick(names);
+    if (cols.doc_date == null) cols.doc_date = cols.date;
+    if (cols.doc_status == null) cols.doc_status = cols.status;
+    if ((cols.item_name == null && cols.item_id == null) || cols.qty == null || (cols.item_total == null && cols.rate == null)) continue;
+    return { doc_type: type, columns: cols };
+  }
+  return null;
+}
+
+const xNum = (v) => {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  const t = String(v).replace(/[₹,\s]/g, '').replace(/^\((.*)\)$/, '-$1').replace(/%$/, '');
+  const n = Number(t);
+  return isFinite(n) ? n : null;
+};
+const xBool = (v) => /^(true|yes|y|1)$/i.test(String(v == null ? '' : v).trim());
+function xDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);   // Zoho India exports dd/MM/yyyy
+  if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  m = s.match(/^(\d{1,2})[ -]([A-Za-z]{3})[A-Za-z]*[ -,]*(\d{4})$/);          // 05 Oct 2026
+  if (m && MON[m[2].toLowerCase()]) return m[3] + '-' + String(MON[m[2].toLowerCase()]).padStart(2, '0') + '-' + m[1].padStart(2, '0');
+  return null;
+}
+
+/**
+ * Rows of a Zoho export (arrays, header first) → documents with their lines, grouped by document number, in file
+ * order. Pure. Rows without an item (free-text lines) are dropped, as the API path drops them.
+ * → { doc_type, documents: [{ number, id, date, status, exchange_rate, is_inclusive_tax, discount, lines: [...] }], rows, skipped }
+ */
+function parseZohoExport(rows) {
+  const all = Array.isArray(rows) ? rows : [];
+  const hdrAt = all.findIndex((r) => Array.isArray(r) && detectZohoExport(r));
+  if (hdrAt < 0) return null;
+  const { doc_type, columns: c } = detectZohoExport(all[hdrAt]);
+  const get = (r, k) => (c[k] == null ? null : r[c[k]]);
+  const str = (v) => (v == null ? '' : String(v).trim());
+  const byNum = new Map();
+  let used = 0, skipped = 0;
+  for (const r of all.slice(hdrAt + 1)) {
+    if (!Array.isArray(r)) continue;
+    const number = str(get(r, 'number'));
+    if (!number) { skipped++; continue; }
+    let d = byNum.get(number);
+    if (!d) {
+      const discAmt = xNum(get(r, 'entity_discount_amount'));
+      const discPct = xNum(get(r, 'entity_discount_percent'));
+      d = {
+        number, id: str(get(r, 'id')) || null, date: xDate(get(r, 'doc_date')), status: str(get(r, 'doc_status')).toLowerCase() || null,
+        exchange_rate: xNum(get(r, 'exchange_rate')) || 1, is_inclusive_tax: xBool(get(r, 'inclusive')),
+        discount: (discAmt || discPct) ? { amount: discAmt, percent: discPct, type: str(get(r, 'discount_type')).toLowerCase() || null,
+          before_tax: c.discount_before_tax == null ? true : xBool(get(r, 'discount_before_tax')) } : null,
+        lines: []
+      };
+      byNum.set(number, d);
+    }
+    const name = str(get(r, 'item_name')), itemId = str(get(r, 'item_id'));
+    const qty = xNum(get(r, 'qty'));
+    if ((!name && !itemId) || qty == null) { skipped++; continue; }
+    const rate = xNum(get(r, 'rate'));
+    let total = xNum(get(r, 'item_total'));
+    if (total == null && rate != null) total = Math.round(rate * qty * 100) / 100;
+    if (total == null) { skipped++; continue; }
+    d.lines.push({ item_name: name || null, item_id: itemId || null, sku: str(get(r, 'sku')) || null, line_item_id: str(get(r, 'line_item_id')) || null,
+      qty, rate, item_total: total, tax_pct: xNum(get(r, 'tax_pct')), unit: str(get(r, 'unit')) || null, location: str(get(r, 'location')) || null });
+    used++;
+  }
+  return { doc_type, documents: [...byNum.values()], rows: used, skipped };
+}
+
 module.exports = {
+  detectZohoExport,
+  parseZohoExport,
+  normHeader,
   runImportMapper,
   sanitizeProposal,
   normImportDate,

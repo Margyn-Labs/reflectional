@@ -284,7 +284,21 @@ async function handler(req, res) {
   if (v.org_ref) {
     try {
       const state = await selectRows('zoho_line_state', `select=doc_type,doc_date,status,doc_last_modified,read_modified,lines_read_at&org_ref=eq.${v.org_ref}&order=id.asc&limit=200000`);
-      if (state.length) itemLines = require('./items').progressFrom(state);
+      if (state.length) {
+        const itemStep = require('./items');
+        itemLines = itemStep.progressFrom(state);
+        // When the rest will be in: today's allowance left, then a night's (the Zoho card's "done by" line).
+        if (itemLines.pending > 0) {
+          const orgRows = await selectRows('zoho_organizations', `select=id,plan_type,organization_id&id=eq.${v.org_ref}&limit=1`).catch(() => []);
+          const org = orgRows[0] || { id: v.org_ref, plan_type: null };
+          const cap = await itemStep.dailyCap(org);
+          const usedToday = await itemStep.callsUsedToday(v.org_ref, Date.now());
+          itemLines.eta = itemStep.fillEta({ pending: itemLines.pending, cap, usedToday });
+          itemLines.daily_allowance = cap;
+          itemLines.plan = org.plan_type || null;
+          itemLines.organization_id = org.organization_id || null;   // for the limit-raise email
+        }
+      }
     } catch (err) { /* table not migrated yet */ }
   }
 

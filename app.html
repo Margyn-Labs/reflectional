@@ -482,6 +482,7 @@
         <div class="card">
           <h2>New sales invoice</h2>
           <div class="hint">GST-compliant. CGST/SGST or IGST is applied automatically based on same-state vs. interstate. Creating an invoice adds a matching sale entry to that customer's ledger.</div>
+          <div class="hint hidden" id="invBooksNote"></div>
           <div class="grid-2">
             <div><label>Customer</label><select id="invCustomer"></select></div>
             <div><label>Invoice number</label><input type="text" id="invNumber" class="mono"></div>
@@ -668,7 +669,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
           </div>
           <div class="dz-label">Click to choose a file, or drag it here</div>
-          <div class="dz-sub">.xlsx, .csv, .pdf, .png, .jpg — up to 2 MB</div>
+          <div class="dz-sub">.xlsx, .csv, .pdf, .png, .jpg — up to 2 MB (Zoho Books exports up to 25 MB)</div>
           <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg" />
           <div class="file-name" id="fileName"></div>
         </div>
