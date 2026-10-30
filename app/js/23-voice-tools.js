@@ -506,7 +506,7 @@ const VX_TOOLS = {
       top_items_by_margin_pct:(d.items || []).filter(i => i.est_margin_pct != null && i.sold_value >= 10000).sort((a, b) => b.est_margin_pct - a.est_margin_pct).slice(0, 5).map(i => ({ item:i.item, sales:vxInr(i.sold_value), margin_pct:i.est_margin_pct })),
       more:'For any product, customer, month or ledger detail, call the books tools (products, customer_or_vendor, books_breakdown).',
       latest_months:(d.pnl || []).slice(-3).map(r => ({ month:r.month, net_sales:vxInr(r.net_sales), gross_margin_pct:r.gross_margin_pct_pre_stock, in_progress:r.provisional })),
-      note:'Single source (Tally): call these signals. Gross margin is before stock movement unless stated.'
+      note:'Single source (' + ((d.books_source_name) || 'Tally') + '): call these signals. Gross margin is before stock movement unless stated.'
     });
   },
 

@@ -221,6 +221,9 @@ function timingPhrase(tier, dueDate) {
     return od >= 0 ? 'today' : `in ${-od} day${od === -1 ? '' : 's'}`;
   }
   if (od === null || od <= 0) return 'now due';
+  // The "due" templates read "is due {{4}}": a late invoice there is "is due and now 303 days overdue",
+  // not "is due 303 days overdue" (30 Oct 2026, first Zoho chase on MARGYN DEMO).
+  if (tier === 'due') return `and now ${od} day${od === 1 ? '' : 's'} overdue`;
   return `${od} day${od === 1 ? '' : 's'} overdue`;
 }
 
