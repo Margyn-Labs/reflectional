@@ -63,6 +63,15 @@ const U = '22222222-2222-2222-2222-222222222222';
     assert.deepStrictEqual(plan.inserts.map((r) => r.name), ['A', 'B']);
   });
 
+  await t('a late invoice on the "due" reminder reads "is due and now N days overdue"', () => {
+    const due = new Date(Date.now() - 303 * 86400000).toISOString().slice(0, 10);
+    const m = chase.buildChaseMessage({ tier: 'due', tonePreset: 'friendly', businessName: 'MARGYN DEMO', invoiceRef: 'INV-00035 + 11 more', amount: 489995, dueDate: due });
+    assert.ok(/is due and now 303 days overdue\./.test(m.body), m.body);
+    assert.ok(!/is due 303 days/.test(m.body), m.body);
+    const o1 = chase.buildChaseMessage({ tier: 'overdue_1', tonePreset: 'friendly', businessName: 'X', invoiceRef: 'A', amount: 1, dueDate: due });
+    assert.ok(/now 303 days overdue\./.test(o1.body), 'other tiers unchanged: ' + o1.body);
+  });
+
   await t('a failed contacts read never throws (the Zoho sync carries on)', async () => {
     const out = await syncZohoPartyContacts({ apiGet: async () => { throw new Error('boom'); } }, U, { pause: 0 });
     assert.strictEqual(out.error, 'boom');
