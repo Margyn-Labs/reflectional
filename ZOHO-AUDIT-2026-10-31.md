@@ -379,7 +379,7 @@ Read-only, in Varad's signed-in Chrome: MARGYN DEMO (app session) and Zoho org 6
 ### Left on the clock by #146
 | Check | Result |
 |---|---|
-| 3 pm daytime refresh before the Watch update | REFRESH_3PM |
+| 3 pm daytime refresh before the Watch update | ❌ **did not run.** The 3 pm update ran at 15:00:45 (quiet: "only the morning's points still open"), but no `refresh_money` row and Zoho's last read stayed 13:33. Cause: `runWatchAll` refreshed each Zoho account in turn, only if > 5 s of its 45 s slot was left after 30 s were kept back; the Tally account listed first used the slot waiting out its sync, so the refresh was silently skipped (same root cause as Round 6's 10:30 skip). **Fixed:** every Zoho/Odoo refresh now starts up front, alongside the Tally account's wait (Tally order and waits unchanged); test `zohoSafety` "a tight slot" fails on the old code, passes now. 5 pm is the first run with the fix |
 | Payments linked to their invoices | 86 of 168 customer payments read (85 by detail after Sync now + payment 168 from the list); 82 left; 0 of 24 supplier payments read yet (the customer list goes first). Each daytime refresh reads 25, tonight's run up to 150, so all 106 are read by tonight. Nothing wrong; it's the allowance working as built |
 | Tonight's 02:30 self-cleanup (dry run on the live rows) | Would empty **5385c7b8** (1,001 invoices, 60 bills, 167 + 24 payments, 3 banks, 9 sync rows) and **4c4748f4** (the same plus 1,244 postings, 67 accounts), and stamp **db7fafb2** (already empty). Never touches **e5a18507** (live: 1,001 invoices, 64 bills, 168 + 24 payments, 1,251 postings, 1,002 item lines). Code path re-read: only disconnected rows with a newer live row for the same Zoho org; Tally accounts skipped (MARGYN DEMO's Tally install is revoked; Mihir's is active, so skipped); snapshots never touched; child tables deleted first. Confirm after 02:30: connector_logs `cleanup_superseded` × 2 |
 
@@ -411,6 +411,7 @@ Voice uses the same server books tools (`realtimeDefs`) plus the same screen too
 |---|---|---|
 | 1 | WhatsApp: "I don't have a forecast" | `cash_and_loans` on Zoho/Odoo also carries `cash_forecast`: today, 1 / 4 / 13 weeks with ranges, lowest week, week by week, track record; built by `cashFlowModel.build` (the Cash page's own forecast). WhatsApp account prompt says to quote it |
 | 2 | "They owe ₹13 L" (= the >30-day part of ₹15.4 L) | Zoho/Odoo "late" points say "owes ₹15.4 L in all; ₹13 L of it is more than a month late"; the overdue-total action says "₹13 L more than a month late". Panel + WhatsApp prompts: give both, never the late part as what they owe |
+| 4 | 3 pm refresh skipped (see above) | refreshes start up front in `margynWatch.runWatchAll` |
 | 3 | "bill" for customer invoices | Zoho/Odoo points (late, short paid, newly overdue, old debts, call action) say "invoice"; panel + WhatsApp prompts: invoice for customers, bill only for suppliers |
 
 Tests: 60 of 60 files pass + `aiCost.test.mjs`; zohoParity 136 (new: forecast on Zoho = cashFlowModel's, Tally has none; Zoho "invoice" wording; Tally wording byte-for-byte as before).
