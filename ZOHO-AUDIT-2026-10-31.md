@@ -358,3 +358,60 @@ Built locally in Full repo, shipped as ONE PR (not merged; Varad approves). Live
 
 **SQL:** `sql/2026-11-01-zoho-parity.sql` (adds columns only). Runbook `DEPLOY-2026-11-01-zoho-parity.md`.
 **Not done / not verified live:** the refresh, links and cleanup run only after merge + SQL; the 429 drill can't be forced live without using up a day's allowance (covered by tests); GST/2B, multi-currency, TCS out of scope.
+
+### Round 8, live after merge (31 Oct 2026, 13:30–13:40 IST; PR #146 MERGED 517acdb, Varad ran the SQL)
+| Check | Result |
+|---|---|
+| New code live on www.margynlabs.com | ✅ |
+| Sync now on MARGYN DEMO | ✅ success; P&L 1,251 postings; payment links 85 read by detail; the rest are read in the daytime refreshes and tonight |
+| Payment 168 | ✅ linked from the list alone: INV-00762, ₹87,985.38 applied, ₹1,795.62 TDS |
+| Chat "Is INV-00762 paid?" | ✅ "₹87,985 on 31 Oct 2026 (payment 168) cleared INV-00762 (₹1,796 TDS withheld)", nothing still owed |
+| Chat receipts | ✅ each says what it cleared (INV-00762, INV-00522, INV-00005) |
+| Who owes most | ✅ "invoices" (Mehta Traders, 30 invoices, oldest 282 days late) |
+| Home cash | ✅ ₹25,55,559.38 = Zoho = live books cash |
+| Margin page | ✅ worked out 5.9 s, then served saved in 1.8 s |
+| Still to see | 12:30-style refresh_money rows at 15:00 / 17:00 today; cleanup_superseded (2 copies) after tonight's 02:30 run |
+
+## Round 9 (31 Oct 2026, 14:25–15:30 IST): what #146 left on the clock + "make the AI great" on Zoho
+
+Read-only, in Varad's signed-in Chrome: MARGYN DEMO (app session) and Zoho org 60082308675 (web session, GET only).
+
+### Left on the clock by #146
+| Check | Result |
+|---|---|
+| 3 pm daytime refresh before the Watch update | REFRESH_3PM |
+| Payments linked to their invoices | 86 of 168 customer payments read (85 by detail after Sync now + payment 168 from the list); 82 left; 0 of 24 supplier payments read yet (the customer list goes first). Each daytime refresh reads 25, tonight's run up to 150, so all 106 are read by tonight. Nothing wrong; it's the allowance working as built |
+| Tonight's 02:30 self-cleanup (dry run on the live rows) | Would empty **5385c7b8** (1,001 invoices, 60 bills, 167 + 24 payments, 3 banks, 9 sync rows) and **4c4748f4** (the same plus 1,244 postings, 67 accounts), and stamp **db7fafb2** (already empty). Never touches **e5a18507** (live: 1,001 invoices, 64 bills, 168 + 24 payments, 1,251 postings, 1,002 item lines). Code path re-read: only disconnected rows with a newer live row for the same Zoho org; Tally accounts skipped (MARGYN DEMO's Tally install is revoked; Mihir's is active, so skipped); snapshots never touched; child tables deleted first. Confirm after 02:30: connector_logs `cleanup_superseded` × 2 |
+
+### Margyn's answers vs Zoho itself (live, before this PR)
+Asked through the panel's own code path (real screen tools, not the stub) and through the non-panel path WhatsApp uses.
+
+| Question | Margyn said | Zoho truth | Verdict |
+|---|---|---|---|
+| How much cash do we have? | ₹25.6 L: HDFC ₹26.1 L, petty cash −₹50,000; flags petty cash negative | HDFC ₹26,05,559.38, Petty Cash −₹50,000 → ₹25,55,559 | ✅ |
+| Who owes us the most? | ₹3.98 Cr; Mehta ₹15.5 L (₹10.7 L overdue), Gupta ₹15.4 L (₹14.4 L), Bluecrate ₹14 L (₹12.6 L), Acme Retail ₹13.9 L, Kirana ₹13.4 L; 87% overdue | contacts total ₹3,97,58,183; Mehta 15,48,005 / 10,70,717; Gupta 15,38,915 / 14,37,796; Bluecrate 14,02,152 / 12,57,265; Acme 13,87,960; Kirana 13,39,493 | ✅ figures; ❌ "oldest **bill**" for customer invoices |
+| Who do we owe? | ₹66.3 L, 18 vendors, ₹56.9 L overdue; Beta Supplies ₹6.41 L, Gamma Supplies ₹6.07 L, Gamma Services ₹5.85 L, Apex ₹5.72 L, Beta Logistics ₹5.15 L; 3 bills ₹3.06 L due in 7 days, first Apex ₹1.26 L on 2 Nov | ₹66,29,298; 18 vendors; overdue ₹56,91,341; same top five; Apex 1,26,500 (2 Nov), Alpha 84,700 (6 Nov), Delta 94,435 (7 Nov) | ✅ |
+| Which invoices are overdue? | ₹3.46 Cr (86.9%), buckets, top five with oldest invoice days | ₹3,44,55,803 + VARAD PANDEY ₹1,00,000 = ₹3.46 Cr; Gupta INV-00124 286 d, Kirana INV-00590 331 d | ✅ (closing line said "bill-by-bill") |
+| Is INV-00762 paid? | Yes: ₹87,985 on 31 Oct (payment 168) + ₹1,796 TDS withheld | payment 168: 87,985.38 + 1,795.62 TDS | ✅ |
+| How much TDS? | Customers ₹1,796 (Advance Tax); you ₹1,000 (TDS Payable) | same | ✅ |
+| Gross margin this month? | 94.4%: GP ₹59.9 L on ₹63.4 L, purchases ₹3.52 L; profit ₹51.4 L | Zoho P&L Oct: income 63,43,117, COGS 3,52,385, GP 59,90,732, opex 8,53,870, net 51,36,862 | ✅ (says "before stock change") |
+| This month vs last? | Sales ₹63.4 L vs ₹47.4 L; profit ₹51.4 L vs ₹40.9 L; running costs ₹8.54 L vs ₹3.17 L; receipts ₹17.3 L vs ₹3.79 L | Sep: income 47,43,460, opex 3,17,021, net 40,89,174; Oct receipts 49 payments ₹17,26,328 | ✅ |
+| Cash in 4 weeks? (panel) | ₹27.1 L (₹27,12,032), floor ₹9.7 L never near, week 13 ₹73.7 L (₹54.1–93.2 L), off by ~₹5.4 L on the last 9 weeks | Cash page forecast: week 4 close 27,12,032 | ✅ |
+| Cash in 4 weeks? (WhatsApp path) | "I can't give you a firm 4-week number, because I don't have a forecast" + a 90-day trend | the forecast exists | ❌ missing tool → fixed |
+| What should I do today? | "Call Gupta Exports. They owe ₹13 L… oldest bill INV-00124"; "Bluecrate… owe ₹12.6 L" | Gupta owes 15,38,915; 13,00,525 of it is >30 days late. Bluecrate owes 14,02,152 | ❌ late part read as what they owe; "bill" → fixed |
+| Customer invoices due this week? | 15 worth ₹7.42 L incl. Rao Retail INV-00817 ₹47,566 due 30 Oct (1 day late) | 14 due 31 Oct–6 Nov = ₹6,94,814; + INV-00817 ₹47,566 = ₹7,42,380 | ✅ (overdue one labelled) ; ❌ "bills" |
+| Did Mehta pay anything in October? | No, still owes ₹15.5 L | 0 of 49 October payments from Mehta | ✅ |
+| Chase status? | On, friendly; 39 active, only Iyer Retail has a number (₹4.9 L); schedule −3/+3/+7/+14, stops at 4; 6 opted out; 7 stopped | as Round 6 (38 queued + Iyer) | ✅ ("overdue bills" → invoice) |
+| Explain receivables | ₹3.98 Cr = 41 customer amounts, Zoho only, never added across sources; ₹2,20,27,565 >90 days drives a 0 score | ✅ | ✅ ("each bill's due date") |
+
+Voice uses the same server books tools (`realtimeDefs`) plus the same screen tools as the panel (`get_cash` carries the forecast), so its answers follow the panel's. WhatsApp has the books tools but no screen: that's where the forecast was missing.
+
+### Fixed in this PR (Zoho Books / Odoo only; Tally answers unchanged, checked by zohoParity)
+| # | Gap | Fix |
+|---|---|---|
+| 1 | WhatsApp: "I don't have a forecast" | `cash_and_loans` on Zoho/Odoo also carries `cash_forecast`: today, 1 / 4 / 13 weeks with ranges, lowest week, week by week, track record; built by `cashFlowModel.build` (the Cash page's own forecast). WhatsApp account prompt says to quote it |
+| 2 | "They owe ₹13 L" (= the >30-day part of ₹15.4 L) | Zoho/Odoo "late" points say "owes ₹15.4 L in all; ₹13 L of it is more than a month late"; the overdue-total action says "₹13 L more than a month late". Panel + WhatsApp prompts: give both, never the late part as what they owe |
+| 3 | "bill" for customer invoices | Zoho/Odoo points (late, short paid, newly overdue, old debts, call action) say "invoice"; panel + WhatsApp prompts: invoice for customers, bill only for suppliers |
+
+Tests: 60 of 60 files pass + `aiCost.test.mjs`; zohoParity 136 (new: forecast on Zoho = cashFlowModel's, Tally has none; Zoho "invoice" wording; Tally wording byte-for-byte as before).
+Not changed: write-back stays off; GST / currency / TCS out of scope; safety drills wait for Varad's new account.

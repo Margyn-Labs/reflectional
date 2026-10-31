@@ -170,6 +170,27 @@ async function borrowLimits(userId) {
   } catch (e) { return {}; }
 }
 
+/* The learned 13-week cash forecast (cashFlowModel.build, the same one the Cash page and Margyn Watch use), in words. */
+async function forecastFor(ctx, userId) {
+  const CF = require('./cashFlowModel'), store = require('./forecastStore');
+  const [promises, pastRuns] = await Promise.all([store.promises(userId).catch(() => []), store.pastRuns(userId).catch(() => [])]);
+  const fc = CF.build(ctx, { promises, pastRuns });
+  if (!fc || !fc.weeks || !fc.weeks.length) return null;
+  const w = (n) => fc.weeks[Math.min(n, fc.weeks.length) - 1];
+  const low = fc.weeks.reduce((m, x) => (x.close < m.close ? x : m), fc.weeks[0]);
+  const sc = fc.self_check || {}, m4 = (sc.error_by_week || {})[4];
+  const range = (x) => E.inr(x.low) + ' to ' + E.inr(x.high);
+  return {
+    today: E.inr(fc.opening),
+    in_1_week: E.inr(w(1).close), in_4_weeks: E.inr(w(4).close), in_4_weeks_range: range(w(4)), in_13_weeks: E.inr(w(13).close), in_13_weeks_range: range(w(13)),
+    lowest_week: { week: low.n, ending: low.to, cash: E.inr(low.close) },
+    week_by_week: fc.weeks.map((x) => ({ week: x.n, ending: x.to, coming_in: E.inr(x.in), going_out: E.inr(x.out), cash_at_end: E.inr(x.close) })),
+    track_record: m4 && sc.runs ? `Checked on your last ${sc.runs} weeks, cash four weeks out was typically off by about ${E.inr(m4.typical_miss)}.` : 'Not enough past weeks yet to check how close it gets.',
+    how: (fc.notes || []).slice(0, 4),
+    note: 'Learned from how money actually moved in these books: each customer pays the way they have paid before, suppliers at your recent pace. Cash before loans, overdraft and transfers. Same forecast as the Cash page.'
+  };
+}
+
 /* Formulas aren't account data: no Tally needed, nobody's access limits them. */
 function howItsCalculated(input) {
   const i = input || {};
@@ -207,6 +228,13 @@ async function exec(name, input, userId, perms) {
     if (!ctx.rows.length) return { connected: true, note: ctx.source === 'tally' ? 'Tally is connected but no entries have synced yet. Is the Tally PC on with the Margyn agent running?' : ctx.source_name + ' is connected but no entries have synced yet.' };
     if (name === 'borrowing_history') return CFS.borrowingTool(ctx, input || {}, await borrowLimits(userId));
     if (name === 'books_health_check') { const BH = require('./booksHealth'); return BH.answer(ctx, (await BH.load(userId)).rows, perms); }
+    // Zoho Books / Odoo: the 13-week forecast the Cash page draws rides along with cash, so WhatsApp (no screen to
+    // read it from) answers "cash in 4 weeks" too, instead of "I don't have a forecast" (31 Oct 2026). Tally unchanged.
+    if (name === 'cash_and_loans' && !/^tally/i.test(ctx.source || 'tally')) {
+      const out = RUN[name](ctx, input || {});
+      try { const fc = await forecastFor(ctx, userId); if (fc) out.cash_forecast = fc; } catch (e) { /* cash still answers */ }
+      return out;
+    }
     return RUN[name](ctx, input || {});
   } catch (e) {
     console.error('[booksTools] ' + name + ' failed:', e.message);

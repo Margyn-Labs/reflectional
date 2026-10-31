@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-zoho-answers', date:'1 Nov 2026', title:'Clearer answers on Zoho Books',
+    items:[
+      { t:'Cash forecast on WhatsApp too', what:'Text Margyn “What will our cash be in 4 weeks?” and it answers from the same 13-week forecast as your Cash page, with its range and how close it has been before.',
+        how:'Send Margyn that question on WhatsApp, or ask it here.', act:'talk' },
+      { t:'“Invoice” for what customers owe', what:'On Zoho Books and Odoo, Margyn says invoice for what customers owe you and bill only for what you owe suppliers, in chat, WhatsApp and your daily updates.',
+        how:'Ask Margyn <b>What should I do today?</b>', act:'talk' },
+      { t:'Whole balance first, then the late part', what:'When Margyn tells you to call a customer, it says what they owe in all and how much of it is more than a month late, so the two numbers never get mixed up.',
+        how:'Ask Margyn <b>What should I do today?</b>', act:'talk' }
+    ]
+  },
+  {
     id:'2026-11-01-zoho-parity', date:'1 Nov 2026', title:'Zoho Books now works like Tally all day',
     items:[
       { t:'Fresh figures in every update', what:'Before each WhatsApp update (10:30, 12:30, 3 pm, 5 pm and the morning and evening ones) Margyn quickly reads your latest invoices, payments and bank balances from Zoho Books or Odoo, so the update is about today, not last night.',
