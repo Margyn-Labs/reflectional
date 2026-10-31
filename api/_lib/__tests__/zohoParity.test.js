@@ -360,6 +360,16 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     check('cash_and_loans: TDS deducted by customers and by you, from Zoho\'s balances', t2 && t2.deducted_by_customers.total === '₹1,796' && t2.deducted_by_you.total === '₹1,000', t2);
     const coa = sync._mapAccount({ account_id: 'T', account_name: 'TDS Receivable', account_type: 'other_current_asset', current_balance: 1795.62 }, ORG);
     check('sync: chart of accounts keeps Zoho\'s balance', coa.current_balance === 1795.62, coa);
+    // A ₹50,000 bill with 2% TDS: Zoho's total is ₹49,000. The ₹1,000 is TDS owed, never input GST.
+    const { zohoToBook } = require('../dataLayer/books');
+    const tb = zohoToBook({ org: { organization_name: 'T' },
+      accounts: [{ id: 'acc-X', account_id: 'X', account_name: 'Consultant Expense', account_type: 'expense' }, { id: 'acc-G', account_id: 'G', account_name: 'Office Supplies', account_type: 'expense' }],
+      journals: [{ account_ref: 'acc-X', transaction_id: 'BT:1', entry_date: '2026-10-31', debit: 50000, credit: 0 }, { account_ref: 'acc-G', transaction_id: 'BG:1', entry_date: '2026-10-30', debit: 100, credit: 0 }],
+      bills: [{ bill_id: 'BT', bill_number: 'TDS-1', vendor_name: 'Metro Services', total: 49000, balance: 49000, status: 'open', bill_date: '2026-10-31', due_date: '2026-11-15' },
+        { bill_id: 'BG', bill_number: 'GST-1', vendor_name: 'Paper Co', total: 118, balance: 118, status: 'open', bill_date: '2026-10-30', due_date: '2026-11-15' }] });
+    const led = (n) => tb.vouchers.find((v) => v.voucher_number === n).entries.filter((e) => !e.is_party && !/Expense|Supplies/.test(e.ledger));
+    check('TDS bill: the ₹1,000 shortfall is TDS held back, not input GST', JSON.stringify(led('TDS-1')) === JSON.stringify([{ ledger: 'TDS held back (Zoho bills)', amount: 1000, is_party: false }]), led('TDS-1'));
+    check('GST bill: the ₹18 on top is still input GST', JSON.stringify(led('GST-1')) === JSON.stringify([{ ledger: 'Input GST (Zoho bills)', amount: -18, is_party: false }]), led('GST-1'));
     check('sync: no balance from Zoho, no column sent', !('current_balance' in sync._mapAccount({ account_id: 'S', account_name: 'Sales', account_type: 'income' }, ORG)));
   }
 
