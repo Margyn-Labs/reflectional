@@ -337,8 +337,11 @@ function zohoToBook(z) {
    their Zoho balances, when the sync has them (current_balance). null = not known. */
 function zohoTds(accounts) {
   if (!accounts.some((a) => a.current_balance != null)) return null;   // column not there yet, or not filled by a sync
-  return accounts.filter((a) => /\b(tds|tcs)\b/i.test(a.account_name || '') && /asset|liabilit/i.test(a.account_type || ''))
-    .map((a) => ({ account: a.account_name, side: /asset/i.test(a.account_type) ? 'deducted_by_customers' : 'deducted_by_you', balance: r2(Math.abs(num(a.current_balance))) }));
+  // "Advance Tax" is where Zoho India puts tax a customer withheld on a payment by default (found live 31 Oct);
+  // it also holds advance tax the business paid itself, so it is named as such.
+  return accounts.filter((a) => /\b(tds|tcs)\b|tax deducted|advance tax/i.test(a.account_name || '') && /asset|liabilit/i.test(a.account_type || ''))
+    .map((a) => ({ account: a.account_name, side: /asset/i.test(a.account_type) ? 'deducted_by_customers' : 'deducted_by_you', balance: r2(Math.abs(num(a.current_balance))),
+      ...(/advance tax/i.test(a.account_name) ? { note: 'Zoho\'s default account for tax customers withheld when paying you; it also holds any advance tax you paid yourself.' } : {}) }));
 }
 
 async function loadZoho(userId) {

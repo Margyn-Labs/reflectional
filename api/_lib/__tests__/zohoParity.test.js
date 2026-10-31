@@ -370,6 +370,11 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     const led = (n) => tb.vouchers.find((v) => v.voucher_number === n).entries.filter((e) => !e.is_party && !/Expense|Supplies/.test(e.ledger));
     check('TDS bill: the ₹1,000 shortfall is TDS held back, not input GST', JSON.stringify(led('TDS-1')) === JSON.stringify([{ ledger: 'TDS held back (Zoho bills)', amount: 1000, is_party: false }]), led('TDS-1'));
     check('GST bill: the ₹18 on top is still input GST', JSON.stringify(led('GST-1')) === JSON.stringify([{ ledger: 'Input GST (Zoho bills)', amount: -18, is_party: false }]), led('GST-1'));
+    const { zohoToBook: z2b } = require('../dataLayer/books');
+    const adv = z2b({ org: {}, accounts: [{ id: 'a1', account_id: '1', account_name: 'Advance Tax', account_type: 'other_current_asset', current_balance: 1795.62 },
+      { id: 'a2', account_id: '2', account_name: 'TDS Receivable', account_type: 'other_current_asset', current_balance: 0 }, { id: 'a3', account_id: '3', account_name: 'TDS Payable', account_type: 'other_current_liability', current_balance: 1000 }] }).tds;
+    const advT = E.cashAndDebt(E.prepare(Object.assign({}, zBook, { tds: adv }), {})).tds;
+    check('TDS: Zoho\'s default Advance Tax account counts as tax customers withheld (live shape)', advT.deducted_by_customers.total === '₹1,796' && advT.deducted_by_you.total === '₹1,000' && /default account/.test(advT.deducted_by_customers.accounts.find((x) => x.account === 'Advance Tax').note), advT);
     check('sync: no balance from Zoho, no column sent', !('current_balance' in sync._mapAccount({ account_id: 'S', account_name: 'Sales', account_type: 'income' }, ORG)));
   }
 
