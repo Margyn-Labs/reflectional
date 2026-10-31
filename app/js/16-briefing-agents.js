@@ -54,6 +54,9 @@ const AGENT_VITALS = ['Cash Position','Receivables Aging','Payables Due (30d)','
 const WA_FREQ_LABELS = { opening:'Opening Bell only', closing:'Closing Bell only', both:'Both bells', none:'No Bells to this number', custom:'Custom schedule' };
 let agentDeployments = {};
 let agentStakeholders = [];
+// loadPeople() fills in whatsapp_bell on its own at start-up, so "is agentDeployments empty?"
+// can't tell whether the full list was read; this can.
+let agentDataLoaded = false;
 
 async function loadAgentData(){
   agentDeployments = {};
@@ -64,6 +67,7 @@ async function loadAgentData(){
   try {
     const { data } = await sbClient.from('agent_deployments').select('*').eq('user_id', currentUser.id);
     (data || []).forEach(r => { agentDeployments[r.agent_id] = r; });
+    agentDataLoaded = true;
   } catch(e){ console.error('[margyn] loadAgentData deployments:', e); }
   try {
     const { data } = await sbClient.from('business_stakeholders').select('*').eq('business_id', currentUser.id).order('created_at', { ascending:true });

@@ -599,7 +599,11 @@ async function runWatchAll(slot, opts) {
   } catch (e) { return { slot, error: 'could not list accounts with books' }; }
   const results = [];
   for (const u of users) {
-    if (Date.now() - started > budgetMs) { results.push({ user: u, skipped: 'out of time this run' }); continue; }
+    if (Date.now() - started > budgetMs) {
+      // Say so in the account's update log, or a skipped update looks like one that never ran.
+      await logRun(u, slot, { outcome: 'skipped', reason: 'Ran out of time this run; the next update carries on.' }).catch(() => {});
+      results.push({ user: u, skipped: 'out of time this run' }); continue;
+    }
     // A sync in progress may hold one account a little; never past this run's budget.
     try { results.push(await watchAccount(u, { slot, waitMs: Math.max(0, budgetMs - (Date.now() - started) - 20000) })); }
     catch (e) { results.push({ user: u, error: String(e.message || e).slice(0, 160) }); }

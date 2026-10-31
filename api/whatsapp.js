@@ -909,7 +909,9 @@ async function handleChaseCronAndWatch(req, res) {
   if (expected && (req.headers['authorization'] === `Bearer ${expected}` || req.query.cron_secret === expected)) {
     // Same once-a-day guard as the Bells: customer reminders must never go out twice because two clocks fired.
     if (!(await cronOnce.claim('whatsapp-chase'))) { res.status(200).json({ skipped: 'already ran today' }); return; }
-    try { await runWatchAll('midday', { budgetMs: 25000 }); }
+    // 120 s, not 25 s: books-only (Zoho/Odoo) accounts are listed after the Tally ones and were dropped every day
+    // once the Tally accounts used up 25 s. Reminders still have ~3 minutes of the 300 s function after this.
+    try { await runWatchAll('midday', { budgetMs: 120000 }); }
     catch (e) { console.error('[whatsapp] midday watch failed:', e.message); }
   }
   return handleChaseCron(req, res);
