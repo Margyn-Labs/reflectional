@@ -517,6 +517,8 @@ function createSession(org) {
       const data = await apiGet(path, { ...query, page: String(page), per_page: String(PER_PAGE) }, opts);
       const batch = data[collectionKey] || [];
       out.push(...batch);
+      // The first sync tells the app how far it has read ("Reading your invoices… 1,000 so far"). Never fails the read.
+      if (typeof opts.onPage === 'function') { try { await opts.onPage(out.length); } catch (e) { /* progress only */ } }
       const ctx = data.page_context || {};
       if (!ctx.has_more_page || batch.length === 0) break;
       await sleep(PAGE_DELAY_MS);

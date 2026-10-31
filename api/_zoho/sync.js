@@ -369,7 +369,10 @@ async function syncCollection(session, org, userId, spec, mode, results, errors,
   }
 
   try {
-    const raw = await session.apiGetAll(spec.path, spec.collectionKey, query, o.failFast429 ? { failFast429: true } : {});
+    const getOpts = o.failFast429 ? { failFast429: true } : {};
+    // The first read: how far each module has got, page by page, for the Margyn panel (vitals.js firstReadHandler).
+    if (isBackfill && !o.quiet) getOpts.onPage = (n) => setReading(org.id, spec.module, n, 'running');
+    const raw = await session.apiGetAll(spec.path, spec.collectionKey, query, getOpts);
     let rows = raw.map((r) => spec.map(r, org.id)).filter(Boolean);
     // A link the list doesn't carry (a customer payment's invoice) is left out rather than written as null, so
     // re-listing a payment never wipes what the detail read stored (linkPayments).
@@ -389,6 +392,7 @@ async function syncCollection(session, org, userId, spec, mode, results, errors,
 
     const watermark = maxWatermark(rows, 'last_modified_time') || new Date().toISOString();
     await setSyncCursor(org.id, spec.module, watermark, 'success');
+    if (isBackfill && !o.quiet) await setReading(org.id, spec.module, count, 'success');
 
     if (!o.quiet) await logConnectorEvent({
       userId, connectorType: 'zoho_books',
@@ -772,6 +776,19 @@ async function setRemoteCount(orgRef, moduleName, count) {
   }
 }
 
+/**
+ * The first read's progress ('reading:<module>' rows: remote_count = documents read so far, status running / success).
+ * Only the first (backfill) read writes it; the app's Margyn panel reads it while the connect is still running.
+ */
+async function setReading(orgRef, moduleName, n, status) {
+  try {
+    const at = new Date().toISOString();
+    await insertRows('zoho_sync_state', [{
+      org_ref: orgRef, module: 'reading:' + moduleName, last_synced_at: at, last_run_at: at, last_run_status: status, remote_count: n
+    }], { onConflict: 'org_ref,module', merge: true });
+  } catch (err) { /* progress only: the read itself carries on */ }
+}
+
 // -------------------------------------------------------------- core sync
 
 async function syncZohoForUser(userId, mode, opts) {
@@ -804,7 +821,12 @@ async function syncZohoForUser(userId, mode, opts) {
     await syncCollection(session, org, userId, spec, syncMode, results, errors, flags);
   }
 
-  if (!limited()) await syncJournalEntries(session, org, userId, syncMode, results, errors, flags);
+  const first = syncMode === 'backfill';
+  if (!limited()) {
+    if (first) await setReading(org.id, 'journals', 0, 'running');
+    await syncJournalEntries(session, org, userId, syncMode, results, errors, flags);
+    if (first) await setReading(org.id, 'journals', results.journals || 0, 'success');
+  }
 
   // Zoho said "too many calls": everything after this would wait out the same limit. Stop here; every module
   // keeps its cursor, so the next run (a daytime refresh or tonight's) carries on from the same point.
@@ -816,7 +838,9 @@ async function syncZohoForUser(userId, mode, opts) {
 
   // Customer and vendor phones/emails into the party master, where Payment Chase looks up numbers (zohoParties.js).
   // Best-effort: a failed read is logged there and never makes the books sync partial.
+  if (first) await setReading(org.id, 'contacts', 0, 'running');
   const contacts = await require('../_lib/zohoParties').syncZohoPartyContacts(session, userId);
+  if (first) await setReading(org.id, 'contacts', contacts.read || 0, 'success');
   if (!contacts.error && (contacts.inserted || contacts.updated)) results.contacts_to_parties = contacts.inserted + contacts.updated;
   if (!contacts.error && contacts.read != null) await setRemoteCount(org.id, 'contacts', contacts.read);
   if (!contacts.error && contacts.with_details != null) await setRemoteCount(org.id, 'contacts_with_details', contacts.with_details);

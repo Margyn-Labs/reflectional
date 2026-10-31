@@ -115,6 +115,9 @@ const TABLES = [
       check('invoice cursor = newest last_modified_time seen', cursorOf(db, 'invoices') === maxMod, [cursorOf(db, 'invoices'), maxMod]);
       check('backfill_completed_at + last_synced_at stamped', !!W.org().backfill_completed_at && !!W.org().last_synced_at);
       check('backfill runs the two-way sweep once and records Zoho\'s counts', !!cursorOf(db, 'deleted_sweep') && db.t('zoho_sync_state').some((r) => r.module === 'count:invoices' && r.remote_count === 450));
+      const reading = db.t('zoho_sync_state').filter((r) => /^reading:/.test(r.module));
+      const fr = require('../../_zoho/vitals').firstReadFrom({ status: 'active', organization_name: 'X', backfill_completed_at: 'x' }, reading);
+      check('first read: progress rows per module, all done, invoices counted (Margyn panel narration)', reading.some((r) => r.module === 'reading:invoices' && r.last_run_status === 'success' && r.remote_count > 0) && fr.done && fr.steps.every((x) => x.done) && fr.current === null, { reading, fr });
       check('mapped row: INR, sub_total = total - tax, dates trimmed', (() => { const x = db.t('zoho_invoices')[0]; return x.currency_code === 'INR' && Math.abs(x.sub_total - (240300 - 36655.93)) < 0.01 && x.invoice_date === '2026-09-01' && x.org_ref === 'org-1'; })(), db.t('zoho_invoices')[0]);
       check('one token refresh for the whole run', zoho.refreshCount === 1);
       check('no stray network', strays.length === 0, strays);

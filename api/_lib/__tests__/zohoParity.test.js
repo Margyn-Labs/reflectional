@@ -405,6 +405,22 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     check('attention: Zoho overdue total action names the invoice', !z2.find((x) => x.kind === 'overdue_total') || /oldest invoice/.test(z2.find((x) => x.kind === 'overdue_total').action || 'oldest invoice'), z2.map((x) => x.action));
   }
 
+  console.log('# opening read (sign-in): the first read and what changed since the last visit, same on both books');
+  {
+    const SINCE = '2026-10-15T04:30:00Z';
+    const z = await B.exec('opening_read', { since: SINCE }, ZU), tt = await B.exec('opening_read', { since: SINCE }, TU);
+    check('opening_read: answers on both books', z && !z.error && z.numbers && tt && !tt.error && tt.numbers, { z, tt });
+    const n = z.numbers, m = tt.numbers;
+    check('opening_read: same cash, owed, overdue and money in on Zoho and Tally', n.cash === m.cash && n.recv_total === m.recv_total && n.recv_overdue === m.recv_overdue && n.since.money_in === m.since.money_in, { n, m });
+    check('opening_read: cash is the bank balance (₹1.85 L)', z.cash === '₹1.85 L', z.cash);
+    check('opening_read: who owes most = Alpha Pharma ₹1 L, then Beta ₹20,000', n.top[0].party === 'Alpha Pharma Ltd' && n.top[0].owed === 100000 && n.top[1].party === 'Beta Traders' && n.top[1].owed === 20000, n.top);
+    check('opening_read: overdue is Beta Traders only', n.late.length === 1 && n.late[0].party === 'Beta Traders' && n.recv_overdue === 20000, n.late);
+    check('opening_read: since 15 Oct, ₹20,000 came in from Alpha Pharma (receipt of 20 Oct)', n.since.money_in === 20000 && n.since.paid[0].party === 'Alpha Pharma Ltd' && n.since.paid[0].on === '2026-10-20', n.since);
+    check('opening_read: nothing went overdue since 15 Oct (Beta was already late)', n.since.went_overdue === 0, n.since);
+    const none = await B.exec('opening_read', {}, ZU);
+    check('opening_read: without since, no "since" part', none && !none.since && !none.numbers.since, Object.keys(none));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;
 })();

@@ -28,6 +28,8 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
         const texts = JSON.parse(init.body).texts; window.__roman = (window.__roman || 0) + 1;
         return new Response(JSON.stringify({ texts:texts.map(t => MAP[t] || t) }), { status:200, headers:{ 'Content-Type':'application/json' } });
       }
+      // The sign-in read of the books (25b-margyn-start.js, ?action=books) isn't a chat turn.
+      if(/\/api\/ask-margyn\?action=books/.test(url)) return new Response(JSON.stringify({ connected:true, note:'stub' }), { status:200, headers:{ 'Content-Type':'application/json' } });
       if(/\/api\/ask-margyn/.test(url)){
         const body = JSON.parse(init.body);
         window.__askCalls.push(body);

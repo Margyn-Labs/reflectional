@@ -115,6 +115,11 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { top: { type: 'integer', description: 'How many (default 6).' } }, additionalProperties: false }
   },
   {
+    name: 'opening_read',
+    description: 'The first read of the books for the owner: cash today, who owes the most (top 5), what\'s overdue, bills falling due in the next 7 days, and with since (the owner\'s last visit, an ISO time) what changed since then: money that came in and from whom, invoices that went overdue, new sales entries. Use for "what changed since I was last here", "catch me up", "what did I miss", "give me the quick picture".',
+    input_schema: { type: 'object', properties: { since: { type: 'string', description: 'The last visit, ISO date-time. Omit for the picture as of today.' } }, additionalProperties: false }
+  },
+  {
     name: 'books_health_check',
     description: 'What\'s wrong in the books that the accountant should fix, from Margyn\'s daily books check: interest on an overdraft or loan filed as income, a month\'s running costs not booked, ledgers filed under the wrong group (an expense under Sales), cash in hand below zero, supplier or customer bills still open that the ledger shows as paid, customer balances with no bill behind them, suppliers not kept bill by bill, money owed for over a year (settle, chase or write off), and entries dated after today. Each with what to fix, the amount and since when; what the owner ignored is left out. Use for "what\'s wrong in my books", "is my Tally clean", "what should my accountant fix", "books health", "anything to clean up in the books", "why don\'t my Tally and Margyn match".',
     input_schema: { type: 'object', properties: {}, additionalProperties: false }
@@ -136,7 +141,8 @@ const RUN = {
   find_entries: E.findEntries,
   cash_and_loans: E.cashAndDebt,
   cash_flow_statement: CFS.cashFlowTool,
-  what_needs_attention: E.attention
+  what_needs_attention: E.attention,
+  opening_read: E.openingRead
   // books_health_check runs in exec (it reads what the owner ignored).
 };
 
@@ -259,6 +265,7 @@ const STEP_LABELS = {
   cash_flow_statement: 'Built the cash flow statement from your entries',
   borrowing_history: 'Traced your overdraft and loans day by day',
   what_needs_attention: 'Checked what needs your attention',
+  opening_read: 'Read what changed in your books',
   books_health_check: 'Ran the books health check',
   how_its_calculated: 'Looked up how that is worked out'
 };

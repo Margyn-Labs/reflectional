@@ -68,6 +68,27 @@
 .mgr-name div{ display:flex; gap:6px; }
 .mgr-name input{ flex:1; min-width:0; height:32px; border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 10px; font:500 var(--f13) var(--font-ui); }
 .mgr-name input:focus{ outline:none; border-color:var(--brand); }
+/* A new account's first minutes and the sign-in read (25b-margyn-start.js) */
+.mgo-q .mgr-b, .mgo-remind .mgr-b{ white-space:normal; }
+.mgo-prog{ margin-top:8px; padding:8px 10px; border:1px solid var(--g200); border-radius:var(--r-ctl); background:var(--g25); font:500 var(--f12)/1.45 var(--font-ui); color:var(--g900); }
+.mgo-prog .mgo-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--brand); margin-right:7px; vertical-align:1px; animation:mgrDot 1.2s infinite; }
+.mgo-prog.finished .mgo-dot{ animation:none; background:var(--g400, #9AA3A0); }
+.mgo-done{ color:var(--g600); margin-top:3px; }
+.mgo-done:empty{ display:none; }
+.mgo-ul{ margin:6px 0 0; padding-left:18px; }
+.mgo-ul li{ margin:3px 0; }
+.mgo-form{ margin-top:8px; }
+.mgo-ph{ display:flex; align-items:center; gap:8px; margin:5px 0; font-size:var(--f12); }
+.mgo-ph span{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.mgo-ph span i{ font-style:normal; font-weight:500; color:var(--g600); margin-left:4px; }
+.mgo-ph input{ width:150px; height:30px; border:1px solid var(--g200); border-radius:var(--r-ctl); padding:0 8px; font:500 var(--f12) var(--font-ui); }
+.mgo-ph input:focus{ outline:none; border-color:var(--brand); }
+.mgo-ph em{ font-style:normal; color:var(--g600); }
+.mgo-err{ color:var(--neg, #B3432E); font-size:var(--f12); margin-top:4px; }
+.mgo-err:empty{ display:none; }
+.mgo-wa{ margin:8px 0; padding:8px 10px; border-left:3px solid #25D366; background:var(--g25); border-radius:0 var(--r-ctl) var(--r-ctl) 0; font:500 var(--f12)/1.5 var(--font-ui); }
+.mgo-note{ color:var(--g600); font-size:var(--f12); }
+.mgo-q.answered .mgr-b, .mgo-remind.answered .mgr-b{ opacity:.75; }
 .mgr-nudge-msg .mgr-b{ background:var(--warn-50); border-color:#EEDFB5; border-left-color:var(--warn); white-space:normal; }
 .mgr-feed > .vx-card{ background:var(--g0); border-color:var(--g200); }
 .mgr-feed > .vx-card.vx-old{ background:var(--g25); }
