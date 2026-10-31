@@ -584,6 +584,7 @@ async function mgrGreet(){
   if(!mgrIsOpen()) mgrBubble({ key:'greet', text:(mgrName ? 'Hey ' + mgrName : 'Hey') + (since ? ', welcome back.' : '.') + (dec.length ? ' ' + dec.length + ' thing' + (dec.length === 1 ? ' needs' : 's need') + ' your OK.' : ''), acts:[{ label:'Open Margyn', run:() => mgrOpen(true) }] }, true);
   if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home') mgRenderOwn('home');
   if(setup){ mgrOpen(); if(typeof mgGo === 'function') mgGo('sources'); }
+  mgrSetupFromLink();
   setTimeout(mgrCheckNudges, 20000);
 }
 
@@ -613,6 +614,22 @@ function mgrSetupStart(kind){
   mgrLine('margyn', kind === 'tally'
     ? 'Tally is read by a small Margyn agent on the computer that runs Tally. The Tally card shows how to install it; once it pairs, I’ll pick it up.'
     : 'Odoo connects with your Odoo address and an API key. The Odoo card has the steps; once it’s in, I’ll pick it up.');
+}
+/* A setup link from WhatsApp ("onboard", api/_lib/onboardText.js): app.html?setup=zoho|tally|odoo starts that
+   connection on arrival. One books system per business: a link for a second one says so instead. */
+function mgrSetupFromLink(){
+  const m = /[?&]setup=(zoho|tally|odoo|start)\b/.exec(location.search);
+  if(!m) return;
+  try { history.replaceState(null, '', location.pathname + location.search.replace(/[?&]setup=[a-z]+/, '').replace(/^&/, '?') + location.hash); } catch(e){}
+  const kind = m[1];
+  if(kind === 'start') return;   // a new account: the greeting above already leads the setup
+  const on = { zoho: typeof zohoConnected !== 'undefined' && zohoConnected, tally: typeof tallyConnected !== 'undefined' && tallyConnected, odoo: typeof odooConnected !== 'undefined' && odooConnected };
+  const label = { zoho:'Zoho Books', tally:'Tally', odoo:'Odoo' };
+  mgrOpen();
+  if(on[kind]){ if(typeof mgGo === 'function') mgGo('sources'); mgrLine('margyn', label[kind] + ' is already connected. Its card on this page shows how far reading has got.'); return; }
+  const other = Object.keys(on).find(k => on[k]);
+  if(other){ if(typeof mgGo === 'function') mgGo('sources'); mgrLine('margyn', 'Margyn reads one books system per business, and ' + label[other] + ' is connected. To use ' + label[kind] + ' instead, disconnect ' + label[other] + ' here first.'); return; }
+  mgrSetupStart(kind);
 }
 /* Called by the Zoho connect flow (11-connectors.js confirmZohoOrg) once the organisation is chosen and read. */
 function mgrSetupConnected(kind){

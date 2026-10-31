@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-onboard', date:'1 Nov 2026', title:'Text “onboard” and Margyn sets you up',
+    items:[
+      { t:'Text “onboard” on WhatsApp', what:'Send “onboard” to Margyn’s WhatsApp number. Margyn replies with where your setup stands (books connected, how many item details are read and when the rest will be in, whether payment reminders are on) and the one link for the next step. Open a link and Margyn starts that connection on the page itself.',
+        how:'On WhatsApp, text <b>onboard</b> to Margyn. Tap the link it sends; for Zoho Books your only step is <b>Accept</b> on Zoho’s own page.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-11-01-item-report', date:'1 Nov 2026', title:'Sales and purchases by item, month by month',
     items:[
       { t:'Sales and purchases by item', what:'A new table on Margin: each item’s quantity and value sold and bought, for the whole year or one month, with average price and cost. Returns come off sales and vendor credits off purchases, so on Zoho Books it matches Zoho’s own Sales by Item and Purchases by Item reports.',
