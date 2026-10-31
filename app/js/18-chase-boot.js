@@ -166,7 +166,7 @@ async function renderChaseCold(){
   if(!card) return;
   if(ledgerActiveTab !== 'receivables'){ card.classList.add('hidden'); return; }
   if(!currentUser){ card.classList.add('hidden'); return; }
-  if(!Object.keys(agentDeployments).length){ try { await loadAgentData(); } catch(e){} }
+  if(!agentDataLoaded){ try { await loadAgentData(); } catch(e){} }
   if(!agentDeployments['chase_agent']){ card.classList.add('hidden'); return; }
   await loadChaseTargets();
   const cold = chaseTargets.filter(chaseIsCold)

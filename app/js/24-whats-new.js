@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-31-on-time', date:'31 Oct 2026', title:'Your 10:30 update now always comes',
+    items:[
+      { t:'10:30 update on every account', what:'The 10:30 WhatsApp update could be skipped on accounts whose books are in Zoho Books or Odoo. It now goes out on every account, and if an update is ever skipped, Conversations › Today’s updates says why.',
+        how:'Nothing to do. Look in <b>Conversations</b> › <b>Today’s updates</b> to see each update and when it went.', act:'conversations' },
+      { t:'Home shows payment reminders correctly', what:'Home could say payment reminders were Off while they were on. It now shows the real setting.',
+        how:'On <b>Home</b>, see <b>How I work</b> › <b>Payment reminders on WhatsApp</b>.', act:'home' }
+    ]
+  },
+  {
     id:'2026-11-01-onboard', date:'1 Nov 2026', title:'Text “onboard” and Margyn sets you up',
     items:[
       { t:'Text “onboard” on WhatsApp', what:'Send “onboard” to Margyn’s WhatsApp number. Margyn replies with where your setup stands (books connected, how many item details are read and when the rest will be in, whether payment reminders are on) and the one link for the next step. Open a link and Margyn starts that connection on the page itself.',

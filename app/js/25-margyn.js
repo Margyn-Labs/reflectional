@@ -540,7 +540,7 @@ async function mgrGreet(){
   const since = lsGet(key, '');
   mgrMarkSeen();
   // The desk and the greeting read who's being chased and which automations are on.
-  try { if(typeof loadAgentData === 'function' && !Object.keys(agentDeployments || {}).length) await loadAgentData(); } catch(e){}
+  try { if(typeof loadAgentData === 'function' && !agentDataLoaded) await loadAgentData(); } catch(e){}
   try { if(typeof loadChaseTargets === 'function') await loadChaseTargets(); } catch(e){}
   mgrName = await mgrResolveName();
   mgrAway = await mgrAwayFacts(since || null);
