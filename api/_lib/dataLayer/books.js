@@ -53,6 +53,11 @@ const ODOO_TAX_IN = 'Input tax (Odoo)';
 const ODOO_CASH = 'Bank and cash (Odoo)';
 
 async function pagedAll(table, query, max) { return tallyData.pagedAll(table, query, max); }
+/* What's left on a Zoho bill after its costs. GST adds to a bill (a debit: rest < 0, input credit); TDS held back
+   makes the bill smaller than its costs (a credit: rest > 0), so it's TDS owed to the government, not GST
+   (31 Oct: a ₹50,000 bill with 2% TDS showed ₹1,000 of "input GST"). Under ₹1 stays as before (rounding). */
+const ZOHO_TDS_BILLS = 'TDS held back (Zoho bills)';
+function zohoBillRestLedger(rest) { return rest >= 1 ? ZOHO_TDS_BILLS : 'Input GST (Zoho bills)'; }
 const safe = (p, fallback) => p.catch(() => fallback);
 
 /* ------------------------------------------------------------------ Zoho */
@@ -211,7 +216,7 @@ function zohoToBook(z) {
     const entries = v.lines.map((l) => ({ ledger: l.ledger, amount: l.amount, is_party: false }));
     for (const b of bankByDoc.get(d)) entries.push({ ledger: b.ledger, amount: r2(b.amount), is_party: false });
     const rest = r2(-entries.reduce((x, e) => x + e.amount, 0));   // tax on the expense, if any
-    if (Math.abs(rest) >= 0.01) { addLedger('Input GST (Zoho bills)', 'Duties & Taxes'); entries.push({ ledger: 'Input GST (Zoho bills)', amount: rest, is_party: false }); }
+    if (Math.abs(rest) >= 0.01) { const led = zohoBillRestLedger(rest); addLedger(led, 'Duties & Taxes'); entries.push({ ledger: led, amount: rest, is_party: false }); }
     const bankIn = bankByDoc.get(d).reduce((x, b) => x - b.amount, 0) > 0;   // bank debited: money came in
     vouchers.push({ voucher_type: bankIn ? 'Receipt' : 'Payment', voucher_number: v.number, tally_guid: 'zx:' + d, date: v.date, party_name: null,
       amount: Math.abs(bankByDoc.get(d).reduce((x, b) => x + b.amount, 0)), is_cancelled: false, entries, narration: null });
@@ -229,7 +234,7 @@ function zohoToBook(z) {
       let posted = 0;
       for (const l of lines) { entries.push({ ledger: l.ledger, amount: r2(l.amount), is_party: false }); posted += l.amount; }
       const rest = r2(-total - posted);   // costs are debits (negative); the rest of the bill is input GST and the like
-      if (Math.abs(rest) >= 0.01) entries.push({ ledger: ZOHO_GST_IN, amount: rest, is_party: false });
+      if (Math.abs(rest) >= 0.01) { const led = zohoBillRestLedger(rest); addLedger(led, 'Duties & Taxes'); entries.push({ ledger: led, amount: rest, is_party: false }); }
       const v = { voucher_type: 'Purchase', voucher_number: b.bill_number || null, tally_guid: 'zb:' + id, date: day(b.bill_date) || lines[0].date,
         party_name: party, amount: Math.abs(total), is_cancelled: false, entries, narration: null };
       const items = itemsFor('Purchase', 'bill:' + id, posted);
