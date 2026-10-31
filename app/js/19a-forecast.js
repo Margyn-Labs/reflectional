@@ -51,9 +51,9 @@ function mgFcData(){
   const revenue = Math.max(0, Number(s.revenue) || 0);
   const recvOpen = mgMoneyGroups('recv').reduce((t, g) => t + g.by[g.primary].rows.filter(r => !(r.days !== null && r.days < -90)).reduce((a, r) => a + r.amount, 0), 0);
   const cover = revenue > 0 ? recvOpen / (revenue * MG_WEEKLY) : 0;
-  // Opening cash: today's balance in the books when Tally is where cash comes from (19i-margin.js).
+  // Opening cash: today's balance in the books when Tally (or Zoho Books / Odoo) is where cash comes from (19i-margin.js).
   const prov = s.input_provenance && s.input_provenance.cash;
-  const live = prov && prov.source === 'tally' && typeof mgMar !== 'undefined' && mgMar && !mgMarCompany && mgMar.cash && mgMar.cash.total != null ? Number(mgMar.cash.total) : null;
+  const live = prov && (typeof mgLiveCashFrom === 'function' ? mgLiveCashFrom(prov) : prov.source === 'tally') && typeof mgMar !== 'undefined' && mgMar && !mgMarCompany && mgMar.cash && mgMar.cash.total != null ? Number(mgMar.cash.total) : null;
   // Floor: where this business's cash usually bottoms out (lowest tenth of the last 90 days, from the books).
   // Two weeks of spend (₹1.2 Cr at Care Hygiene, whose cash sits around ₹8 L on an overdraft) kept "below your
   // floor" on permanently, so it warned about nothing. Two weeks of spend stays the fallback without history.

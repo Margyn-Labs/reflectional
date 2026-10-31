@@ -676,18 +676,37 @@ async function handleDisconnect(req, res) {
   catch { return json(res, 500, { error: 'auth_check_failed' }); }
   if (!user) return json(res, 401, { error: 'unauthorized' });
 
+  const body = parseBody(req);
+  const at = new Date().toISOString();
+  let live = [];
   try {
+    live = await selectRows('connector_credentials', `select=id&user_id=eq.${user.id}&connector_type=eq.odoo&disconnected_at=is.null`);
     await updateRows(
       'connector_credentials',
       `user_id=eq.${user.id}&connector_type=eq.odoo&disconnected_at=is.null`,
-      { disconnected_at: new Date().toISOString(), key_secret: null }
+      { disconnected_at: at, key_secret: null }
     );
   } catch (e) {
     return json(res, 500, { error: 'disconnect_failed' });
   }
 
+  // The owner's choice: keep the invoices and bills Margyn copied (default) or remove them (selfCleanup.js).
+  if (body.remove_data === true) {
+    let removed = 0;
+    try {
+      const { removeOdooData } = require('../_lib/selfCleanup');
+      for (const c of live) removed += Object.values(await removeOdooData({ id: c.id, disconnected_at: at })).reduce((t, n) => t + (Number(n) || 0), 0);
+    } catch (e) {
+      return json(res, 200, { disconnected: true, data: 'kept', message: 'Disconnected, but Margyn could not remove the Odoo data it copied. It is still in Margyn; try Disconnect again to remove it.' });
+    }
+    await logRun({ userId: user.id, kind: 'disconnect', received: 0, upserted: 0, status: 'ok', error: `removed ${removed} synced rows` }).catch(() => {});
+    return json(res, 200, { disconnected: true, data: 'removed', removed_rows: removed,
+      message: 'Disconnected, and the Odoo data Margyn copied is removed. To fully revoke access, delete the API key inside Odoo under Account Security.' });
+  }
+
   return json(res, 200, {
     disconnected: true,
+    data: 'kept',
     message: 'Disconnected. Your already-synced Odoo data stays visible. To fully revoke access, delete the API key inside Odoo under Account Security.'
   });
 }
@@ -735,7 +754,34 @@ async function handleCron(req, res) {
   return json(res, 200, { ran_at: new Date().toISOString(), processed: results.length, results });
 }
 
+/* ------------------------------------------------------------------ */
+/* daytime refresh, before each WhatsApp update (margynWatch.runWatchAll) */
+/* ------------------------------------------------------------------ */
+/* Odoo has no daily call allowance and one sync is a handful of calls (open and recently changed moves + the
+   cash aggregate), so the same sync runs, inside the caller's deadline. Skipped when it ran in the last 20 min. */
+async function refreshOdoo(userId, opts) {
+  const o = opts || {};
+  let creds;
+  try {
+    creds = await selectRows('connector_credentials',
+      `select=id,user_id,odoo_base_url,odoo_db,odoo_login,key_secret,last_success_at&user_id=eq.${userId}&connector_type=eq.odoo&disconnected_at=is.null&order=created_at.desc&limit=1`);
+  } catch (e) { return { refreshed: false, reason: 'lookup_failed' }; }
+  const cred = creds[0];
+  if (!cred || !cred.key_secret) return { refreshed: false, reason: 'not_connected' };
+  const minAge = o.minAgeMs != null ? o.minAgeMs : 20 * 60 * 1000;
+  if (cred.last_success_at && Date.now() - Date.parse(cred.last_success_at) < minAge) return { refreshed: false, reason: 'fresh' };
+  try {
+    await runSync(cred, { deadlineMs: o.deadline || Date.now() + 25000 });
+    return { refreshed: true };
+  } catch (e) {
+    if (e.authFailed) await setConnectorStatus(userId, 'odoo', { needsReauth: true, lastErrorAt: new Date().toISOString(), lastErrorCode: 'auth_failed', lastSyncStatus: 'error' });
+    await logRun({ userId, credId: cred.id, kind: 'refresh', status: 'error', error: e.authFailed ? 'auth_failed' : e.message });
+    return { refreshed: false, reason: e.authFailed ? 'needs_reauth' : 'error' };
+  }
+}
+
 module.exports = {
+  refreshOdoo,
   sweepMissing,
   handleConnect,
   handleSync,

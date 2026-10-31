@@ -16,6 +16,19 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-zoho-parity', date:'1 Nov 2026', title:'Zoho Books now works like Tally all day',
+    items:[
+      { t:'Fresh figures in every update', what:'Before each WhatsApp update (10:30, 12:30, 3 pm, 5 pm and the morning and evening ones) Margyn quickly reads your latest invoices, payments and bank balances from Zoho Books or Odoo, so the update is about today, not last night.',
+        how:'Nothing to do. Open <b>Conversations</b> to see each update Margyn sent.', act:'history' },
+      { t:'Which invoice a payment cleared', what:'Margyn now knows which invoice each Zoho Books payment paid off, and any TDS the customer held back.',
+        how:'Ask Margyn <b>What did Bluecrate’s last payment clear?</b>', act:'talk' },
+      { t:'Cash on Home right after Sync now', what:'Press Sync now on Zoho Books or Odoo and Home, the forecast and Margyn’s answers show the balance just read, not last night’s.',
+        how:'Open <b>Organisations and sources</b>, press <b>Sync now</b>, then go to Home.', act:'connectors' },
+      { t:'Tidier, safer connections', what:'Margyn clears out old copies left by earlier reconnects, reconnects cleanly if Zoho stops its access, slows down if Zoho asks it to, and when you disconnect it asks whether to keep or remove the data it copied.',
+        how:'Open <b>Organisations and sources</b>.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-10-31-zoho-tds', date:'31 Oct 2026', title:'Ask about TDS, paid invoices and bills due this week',
     items:[
       { t:'TDS from Zoho Books', what:'Margyn now reads your TDS accounts in Zoho Books: what customers deducted when they paid you (claim it in your return) and what you held back from suppliers (deposit it by the 7th).',

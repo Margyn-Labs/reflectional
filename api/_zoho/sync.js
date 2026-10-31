@@ -50,7 +50,8 @@ const {
   toNumber,
   sleep,
   ZohoAuthError,
-  ZohoModuleUnavailable
+  ZohoModuleUnavailable,
+  ZohoRateLimited
 } = require('../_lib/zohoClient');
 const { track } = require('../_lib/track');
 
@@ -147,8 +148,26 @@ function mapCustomerPayment(p, orgRef) {
     amount: toNumber(p.amount),
     payment_date: toDateOnly(p.date) || toDateOnly(p.payment_date),
     payment_mode: p.payment_mode || null,
+    applied_numbers: paymentNumbers(p, 'customer'),
+    ...listLink(p),
     last_modified_time: p.last_modified_time ? new Date(p.last_modified_time).toISOString() : null,
     synced_at: new Date().toISOString()
+  };
+}
+
+/**
+ * A payment applied to ONE invoice, when the list row also says the tax withheld (Zoho's list does, found live
+ * 1 Nov: payment 168 → invoice_numbers "INV-00762", tax_amount_withheld 1795.62): the whole link is in the list,
+ * so no detail read is needed. Several invoices, or a list without the tax field: the detail read fills it.
+ */
+function listLink(p) {
+  const nums = String(p.invoice_numbers || '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (Array.isArray(p.invoices) || nums.length !== 1 || p.tax_amount_withheld === undefined) return {};
+  const tax = Math.round(toNumber(p.tax_amount_withheld) * 100) / 100;
+  return {
+    applied_to: [{ id: null, number: nums[0], amount: Math.round((toNumber(p.amount) - toNumber(p.unused_amount)) * 100) / 100, tax_withheld: tax }],
+    tax_withheld: tax,
+    links_read_at: new Date().toISOString()
   };
 }
 
@@ -164,9 +183,106 @@ function mapVendorPayment(p, orgRef) {
     amount: toNumber(p.amount),
     payment_date: toDateOnly(p.date) || toDateOnly(p.payment_date),
     payment_mode: p.payment_mode || null,
+    // The bill numbers the list already gives (2026-11-01-zoho-parity.sql). Amounts and TDS come from the detail read.
+    applied_numbers: paymentNumbers(p, 'vendor'),
     last_modified_time: p.last_modified_time ? new Date(p.last_modified_time).toISOString() : null,
     synced_at: new Date().toISOString()
   };
+}
+
+/* ------------------------------------------------------- payment -> invoice links */
+
+/**
+ * Which invoice (or bill) each payment cleared. Zoho's payments list carries only the numbers ("invoice_numbers":
+ * "INV-00762, INV-00763"); the detail carries each document with the amount applied and the tax the customer
+ * withheld (tax_amount_withheld, TDS). So the numbers are stored from the list at no cost, and the detail is read
+ * once per payment that is new or changed since it was last read, inside the day's allowance (linkPayments).
+ */
+function paymentNumbers(p, kind) {
+  const list = kind === 'vendor' ? p.bills : p.invoices;
+  const fromList = Array.isArray(list) ? list.map((x) => x[kind === 'vendor' ? 'bill_number' : 'invoice_number']).filter(Boolean) : [];
+  const text = kind === 'vendor' ? p.bill_numbers : p.invoice_numbers;
+  const nums = fromList.length ? fromList : String(text || '').split(',').map((x) => x.trim()).filter(Boolean);
+  return nums.length ? nums.join(', ') : null;
+}
+
+/** Pure: a payment detail -> [{ id, number, amount, tax_withheld }] for every document it was applied to. */
+function appliedFrom(p, kind) {
+  const list = kind === 'vendor' ? p.bills : p.invoices;
+  if (!Array.isArray(list)) return [];
+  const idF = kind === 'vendor' ? 'bill_id' : 'invoice_id', noF = kind === 'vendor' ? 'bill_number' : 'invoice_number';
+  return list.map((x) => ({
+    id: x[idF] ? String(x[idF]) : null,
+    number: x[noF] || null,
+    amount: x.amount_applied != null ? toNumber(x.amount_applied) : null,
+    tax_withheld: Math.round(toNumber(x.tax_amount_withheld) * 100) / 100
+  })).filter((x) => x.id || x.number);
+}
+
+const LINK_SPECS = [
+  { kind: 'customer', table: 'zoho_customer_payments', path: 'books/v3/customerpayments/', key: 'payment', ref: 'invoice_ref' },
+  { kind: 'vendor', table: 'zoho_vendor_payments', path: 'books/v3/vendorpayments/', key: 'vendorpayment', ref: 'bill_ref' }
+];
+const LINK_MAX_NIGHTLY = 150;   // detail reads per nightly run; the rest carry on in the daytime refreshes and next night
+const LINK_MAX_DAYTIME = 25;
+const LINK_DELAY_MS = 650;      // under Zoho's 100 calls a minute
+
+/** Payments whose detail hasn't been read since they last changed in Zoho, newest first. Pure. */
+function paymentsToLink(rows) {
+  return rows.filter((r) => !r.links_read_at || (r.last_modified_time && Date.parse(r.last_modified_time) > Date.parse(r.links_read_at)));
+}
+
+/**
+ * Read payment details (one call each) and store every document each payment was applied to, the amount and any
+ * tax withheld. At most `max` calls, stopping at `deadline` or at Zoho's first 429; what's left is read next run.
+ * → { read, pending, stopped?, skipped? }
+ */
+async function linkPayments(session, org, userId, opts) {
+  const o = opts || {};
+  let left = Math.max(0, Math.floor(o.max || 0));
+  const out = { read: 0, pending: 0 };
+  for (const s of LINK_SPECS) {
+    let rows;
+    try {
+      rows = await selectRows(s.table, `select=payment_id,payment_date,last_modified_time,links_read_at&org_ref=eq.${org.id}&order=payment_date.desc&limit=20000`);
+    } catch (e) {
+      out.skipped = 'links_read_at column missing (2026-11-01-zoho-parity.sql)';
+      return out;
+    }
+    const need = paymentsToLink(rows);
+    out.pending += need.length;
+    for (const r of need) {
+      if (left <= 0) { out.stopped = 'allowance'; break; }
+      if (o.deadline && Date.now() > o.deadline) { out.stopped = 'time'; break; }
+      let detail = null;
+      left--;
+      try {
+        detail = await session.apiGet(s.path + encodeURIComponent(r.payment_id), {}, { failFast429: true });
+      } catch (err) {
+        if (err instanceof ZohoAuthError) throw err;
+        if (err instanceof ZohoRateLimited) { out.stopped = 'rate_limit'; return out; }
+        if (!(err instanceof ZohoModuleUnavailable)) { out.errors = (out.errors || 0) + 1; continue; }
+        // Gone in Zoho (404): nothing to link. Marked read so it isn't asked for again.
+      }
+      const p = (detail && (detail[s.key] || detail.payment)) || {};
+      const applied = appliedFrom(p, s.kind);
+      const patch = {
+        applied_to: applied,
+        tax_withheld: Math.round(applied.reduce((t, x) => t + x.tax_withheld, 0) * 100) / 100,
+        links_read_at: new Date().toISOString()
+      };
+      if (applied[0] && applied[0].id) patch[s.ref] = applied[0].id;
+      if (applied.length) patch.applied_numbers = applied.map((x) => x.number).filter(Boolean).join(', ') || null;
+      try { await updateRows(s.table, `org_ref=eq.${org.id}&payment_id=eq.${encodeURIComponent(r.payment_id)}`, patch); }
+      catch (e) { out.skipped = 'could not store payment links'; return out; }
+      out.read++; out.pending--;
+      await sleep(LINK_DELAY_MS);
+    }
+  }
+  if (out.read) {
+    await logConnectorEvent({ userId, connectorType: 'zoho_books', operation: 'sync_payment_links', status: 'success', recordsSynced: out.read });
+  }
+  return out;
 }
 
 function mapBankAccount(a, orgRef) {
@@ -200,7 +316,7 @@ function mapAccount(a, orgRef) {
 
 // ----------------------------------------------------------------- upsert
 
-const OPTIONAL_COLUMNS = ['sub_total', 'party_ref', 'payment_number', 'entry_number', 'current_balance'];
+const OPTIONAL_COLUMNS = ['sub_total', 'party_ref', 'payment_number', 'entry_number', 'current_balance', 'applied_numbers', 'applied_to', 'tax_withheld', 'links_read_at'];
 
 async function upsert(table, rows, conflictColumns) {
   if (!rows.length) return 0;
@@ -237,7 +353,8 @@ function maxWatermark(rows, field) {
  * Sync one paginated collection module end to end. `spec` describes the
  * endpoint, the response key, the target table, and the row mapper.
  */
-async function syncCollection(session, org, userId, spec, mode, results, errors, flags) {
+async function syncCollection(session, org, userId, spec, mode, results, errors, flags, opts) {
+  const o = opts || {};
   const opStart = Date.now();
   const cursor = await getSyncCursor(org.id, spec.module);
   const { since, isBackfill } = windowFor(mode, cursor);
@@ -252,27 +369,43 @@ async function syncCollection(session, org, userId, spec, mode, results, errors,
   }
 
   try {
-    const raw = await session.apiGetAll(spec.path, spec.collectionKey, query);
-    const rows = raw.map((r) => spec.map(r, org.id)).filter(Boolean);
+    const raw = await session.apiGetAll(spec.path, spec.collectionKey, query, o.failFast429 ? { failFast429: true } : {});
+    let rows = raw.map((r) => spec.map(r, org.id)).filter(Boolean);
+    // A link the list doesn't carry (a customer payment's invoice) is left out rather than written as null, so
+    // re-listing a payment never wipes what the detail read stored (linkPayments).
+    if (spec.keepIfMissing) rows = rows.map((r) => { const c = Object.assign({}, r); for (const k of spec.keepIfMissing) if (c[k] == null) delete c[k]; return c; });
 
     // Multi-currency detection: excluded from vitals until conversion exists.
     if (spec.checksCurrency && rows.some((r) => r.currency_code && r.currency_code !== 'INR')) {
       if (flags.indexOf('multi_currency_detected') === -1) flags.push('multi_currency_detected');
     }
 
-    const count = await upsert(spec.table, rows, spec.conflict);
+    // One insert per set of columns (PostgREST wants every row of an insert to have the same keys).
+    const shapes = new Map();
+    for (const r of rows) { const k = Object.keys(r).sort().join(','); if (!shapes.has(k)) shapes.set(k, []); shapes.get(k).push(r); }
+    let count = 0;
+    for (const group of shapes.values()) count += await upsert(spec.table, group, spec.conflict);
     results[spec.module] = count;
 
     const watermark = maxWatermark(rows, 'last_modified_time') || new Date().toISOString();
     await setSyncCursor(org.id, spec.module, watermark, 'success');
 
-    await logConnectorEvent({
+    if (!o.quiet) await logConnectorEvent({
       userId, connectorType: 'zoho_books',
       operation: (isBackfill ? 'backfill_' : 'sync_') + spec.module,
       status: 'success', recordsSynced: count, syncDurationMs: Date.now() - opStart
     });
   } catch (err) {
     if (err instanceof ZohoAuthError) throw err;
+
+    if (err instanceof ZohoRateLimited) {
+      // Zoho asked to slow down (per-minute or daily limit). The cursor stays where it was, so the next run
+      // reads this module from the same point; the rest of this run is skipped (syncZohoForUser).
+      if (flags.indexOf('rate_limited') === -1) flags.push('rate_limited');
+      errors.push(`${spec.module}: rate_limited`);
+      await setSyncCursor(org.id, spec.module, cursor, 'rate_limited');
+      return;
+    }
 
     if (err instanceof ZohoModuleUnavailable) {
       // Free/Standard plan without bank feeds, or a module not enabled.
@@ -397,7 +530,7 @@ async function dropStalePostings(orgRef, accountRef, dateStart, rows) {
  * Books API. Validate field names against a sandbox org before pilot use
  * (flagged in DEPLOY.md).
  */
-async function syncJournalEntries(session, org, userId, mode, results, errors) {
+async function syncJournalEntries(session, org, userId, mode, results, errors, flags) {
   const opStart = Date.now();
   // Always the full 12 months, not a delta. Postings carry no modified time,
   // so a delta by date misses an invoice edited, backdated or deleted after
@@ -447,7 +580,7 @@ async function syncJournalEntries(session, org, userId, mode, results, errors) {
           txns = await session.apiGetAll('books/v3/chartofaccounts/accounttransactions', 'transactions', q);
         }
       } catch (err) {
-        if (err instanceof ZohoAuthError) throw err;
+        if (err instanceof ZohoAuthError || err instanceof ZohoRateLimited) throw err;
         if (err instanceof ZohoModuleUnavailable) { unavailable++; continue; }
         errors.push(`journals(${acct.account_id}): ${err.message}`);
         continue;
@@ -475,7 +608,9 @@ async function syncJournalEntries(session, org, userId, mode, results, errors) {
     });
   } catch (err) {
     if (err instanceof ZohoAuthError) throw err;
-    errors.push(`journals: ${err.message}`);
+    // Zoho asked to slow down: stop reading accounts (each would wait out the same limit) and carry on next run.
+    if (err instanceof ZohoRateLimited && flags && flags.indexOf('rate_limited') === -1) flags.push('rate_limited');
+    errors.push(`journals: ${err instanceof ZohoRateLimited ? 'rate_limited' : err.message}`);
     await logConnectorEvent({
       userId, connectorType: 'zoho_books', operation: 'sync_journals',
       status: 'error', errorMessage: err.message
@@ -506,12 +641,12 @@ const COLLECTION_SPECS = [
   {
     module: 'customerpayments', path: 'books/v3/customerpayments',
     collectionKey: 'customerpayments', table: 'zoho_customer_payments',
-    conflict: 'org_ref,payment_id', map: mapCustomerPayment, supportsLastModified: true
+    conflict: 'org_ref,payment_id', map: mapCustomerPayment, supportsLastModified: true, keepIfMissing: ['invoice_ref', 'applied_numbers', 'applied_to', 'tax_withheld', 'links_read_at']
   },
   {
     module: 'vendorpayments', path: 'books/v3/vendorpayments',
     collectionKey: 'vendorpayments', table: 'zoho_vendor_payments',
-    conflict: 'org_ref,payment_id', map: mapVendorPayment, supportsLastModified: true
+    conflict: 'org_ref,payment_id', map: mapVendorPayment, supportsLastModified: true, keepIfMissing: ['bill_ref', 'applied_numbers']
   },
   {
     module: 'bankaccounts', path: 'books/v3/bankaccounts',
@@ -663,11 +798,17 @@ async function syncZohoForUser(userId, mode, opts) {
   const errors = [];
   const flags = [];
 
+  const limited = () => flags.indexOf('rate_limited') !== -1;
   for (const spec of COLLECTION_SPECS) {
+    if (limited()) break;
     await syncCollection(session, org, userId, spec, syncMode, results, errors, flags);
   }
 
-  await syncJournalEntries(session, org, userId, syncMode, results, errors);
+  if (!limited()) await syncJournalEntries(session, org, userId, syncMode, results, errors, flags);
+
+  // Zoho said "too many calls": everything after this would wait out the same limit. Stop here; every module
+  // keeps its cursor, so the next run (a daytime refresh or tonight's) carries on from the same point.
+  if (limited()) return finishRateLimited(session, org, userId, syncMode, startedAt, results, errors);
 
   // Sweep both ways (deleted at source, open but never synced). Weekly; also right after the first sync,
   // which is when anything open but untouched for over 12 months would otherwise be missed.
@@ -684,7 +825,16 @@ async function syncZohoForUser(userId, mode, opts) {
   // newest first, keeping 200 calls spare. Resumes where it stopped on the next run.
   const itemStep = require('./items');
   const usedBefore = await itemStep.callsUsedToday(org.id, startedAt);
-  const itemLines = await itemStep.syncItemLines(session, org, userId, { usedBefore, deadline: (opts && opts.deadline) || startedAt + itemStep.TIME_LIMIT_MS });
+
+  // Which invoice each payment cleared (and the TDS withheld): one detail read per new or changed payment,
+  // inside the same allowance, before the item lines take the rest.
+  const runDeadline = (opts && opts.deadline) || startedAt + itemStep.TIME_LIMIT_MS;
+  const links = await linkPayments(session, org, userId, {
+    max: Math.min(LINK_MAX_NIGHTLY, await callsLeft(session, org, usedBefore)),
+    deadline: runDeadline - 60 * 1000
+  });
+  if (links.read) results.payment_links = links.read;
+  const itemLines = await itemStep.syncItemLines(session, org, userId, { usedBefore, deadline: runDeadline });
   if (itemLines.error) errors.push(`item_lines: ${itemLines.error}`);
   else if (itemLines.documents_read) results.item_documents = itemLines.documents_read;
   if (itemLines.items) await setRemoteCount(org.id, 'items', itemLines.items);
@@ -793,6 +943,105 @@ async function syncZohoForUser(userId, mode, opts) {
   };
 }
 
+/** Calls left today after the nightly reserve: Zoho's own count when its answers carry one, else Margyn's ledger. */
+async function callsLeft(session, org, usedBefore) {
+  const itemStep = require('./items');
+  const rl = typeof session.rateLimit === 'function' ? session.rateLimit() : null;
+  if (rl) return rl.remaining - itemStep.RESERVE_CALLS;
+  return (await itemStep.dailyCap(org)) - usedBefore - session.callCount() - itemStep.RESERVE_CALLS;
+}
+
+/** A run Zoho rate-limited: count the calls, say so in connector_logs, and leave every cursor for the next run. */
+async function finishRateLimited(session, org, userId, syncMode, startedAt, results, errors) {
+  const itemStep = require('./items');
+  const used = session.callCount();
+  await itemStep.addCallsToday(org.id, used, startedAt);
+  const totalSynced = Object.keys(results).reduce((sum, k) => sum + (results[k] || 0), 0);
+  await logConnectorEvent({
+    userId, connectorType: 'zoho_books', operation: syncMode === 'backfill' ? 'backfill_all' : 'sync_all',
+    status: totalSynced > 0 ? 'partial' : 'error',
+    errorMessage: 'rate_limited: Zoho asked Margyn to slow down; the rest is read on the next run. ' + errors.join('; '),
+    recordsSynced: totalSynced, syncDurationMs: Date.now() - startedAt
+  });
+  await syncEvent(userId, { ok: totalSynced > 0, status: totalSynced > 0 ? 'partial' : 'error', error_code: 'rate_limited', mode: syncMode,
+    rows_synced: totalSynced, modules_failed: 0, duration_s: Math.round((Date.now() - startedAt) / 1000) });
+  return { status: totalSynced > 0 ? 'partial' : 'error', mode: syncMode, org_ref: org.id, records_synced: totalSynced, breakdown: results,
+    rate_limited: true, message: 'Zoho asked Margyn to slow down. The rest is read on the next run.', api_calls_used: used, errors, duration_ms: Date.now() - startedAt };
+}
+
+/* ------------------------------------------------- daytime money refresh */
+
+const REFRESH_MIN_AGE_MS = 20 * 60 * 1000;   // synced this recently (Sync now, the last update): nothing to do
+const REFRESH_SPARE_CALLS = 250;              // never dips into the nightly sync's 200-call reserve
+
+/**
+ * Before each WhatsApp update (margynWatch.runWatchAll): a quick delta of the money only, so a Zoho account's
+ * 10:30 / 12:30 / 15:00 / 17:00 update isn't the 02:30 figures again. Invoices, bills, payments, bank accounts
+ * and the chart of accounts with balances (about 6–8 calls), plus a few payment links. No P&L postings re-read,
+ * no item lines, no sweep: those stay nightly. Inside today's allowance and the caller's deadline; Zoho's first
+ * 429 stops it (the cursors stay, the next run carries on). → { refreshed, reason?, calls?, breakdown? }
+ */
+async function refreshZohoMoney(userId, opts) {
+  const o = opts || {};
+  const started = Date.now();
+  const deadline = o.deadline || started + 30 * 1000;
+  let org;
+  try {
+    const orgs = await selectRows('zoho_organizations', `select=*&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`);
+    org = orgs[0];
+  } catch (e) { return { refreshed: false, reason: 'lookup_failed' }; }
+  if (!org) return { refreshed: false, reason: 'not_connected' };
+  if (!org.backfill_completed_at) return { refreshed: false, reason: 'first_sync_running' };
+  const minAge = o.minAgeMs != null ? o.minAgeMs : REFRESH_MIN_AGE_MS;
+  if (org.last_synced_at && started - Date.parse(org.last_synced_at) < minAge) return { refreshed: false, reason: 'fresh' };
+
+  const itemStep = require('./items');
+  const usedBefore = await itemStep.callsUsedToday(org.id, started);
+  if ((await itemStep.dailyCap(org)) - usedBefore < REFRESH_SPARE_CALLS) {
+    await logConnectorEvent({ userId, connectorType: 'zoho_books', operation: 'refresh_money', status: 'success', recordsSynced: 0,
+      errorMessage: 'skipped: today\'s Zoho allowance is nearly used; tonight\'s sync reads the day' });
+    return { refreshed: false, reason: 'allowance' };
+  }
+
+  const session = createSession(org);
+  const results = {}, errors = [], flags = [];
+  let complete = true;
+  try {
+    for (const spec of COLLECTION_SPECS) {
+      if (flags.indexOf('rate_limited') !== -1 || Date.now() > deadline) { complete = false; break; }
+      await syncCollection(session, org, userId, spec, 'delta', results, errors, flags, { failFast429: true, quiet: true });
+    }
+    if (complete && flags.indexOf('rate_limited') === -1 && Date.now() < deadline) {
+      const left = Math.min(LINK_MAX_DAYTIME, (await callsLeft(session, org, usedBefore)) - (REFRESH_SPARE_CALLS - itemStep.RESERVE_CALLS));
+      const links = await linkPayments(session, org, userId, { max: left, deadline });
+      if (links.read) results.payment_links = links.read;
+    }
+  } catch (err) {
+    if (err instanceof ZohoAuthError) {
+      await handleAuthFailure(userId, err.message);
+      return { refreshed: false, reason: 'needs_reauth' };
+    }
+    errors.push(err.message);
+  } finally {
+    await itemStep.addCallsToday(org.id, session.callCount(), started);
+  }
+
+  const ok = complete && errors.length === 0;
+  // Stamped only when every money module came in: the books' freshness (and the Margin page's saved answer) follow it.
+  if (ok) {
+    try { await updateRows('zoho_organizations', `id=eq.${org.id}`, { last_synced_at: new Date().toISOString() }); }
+    catch (e) { console.error('Failed to stamp zoho_organizations.last_synced_at'); }
+  }
+  const total = Object.keys(results).reduce((t, k) => t + (results[k] || 0), 0);
+  await logConnectorEvent({
+    userId, connectorType: 'zoho_books', operation: 'refresh_money',
+    status: ok ? 'success' : (total > 0 ? 'partial' : 'error'),
+    errorMessage: ok ? null : (flags.indexOf('rate_limited') !== -1 ? 'rate_limited: carries on next run' : (errors.join('; ') || 'out of time this run')),
+    recordsSynced: total, syncDurationMs: Date.now() - started
+  });
+  return { refreshed: ok, reason: ok ? undefined : (flags.indexOf('rate_limited') !== -1 ? 'rate_limited' : 'partial'), calls: session.callCount(), breakdown: results };
+}
+
 async function handleAuthFailure(userId, detail) {
   const orgs = await selectRows(
     'zoho_organizations',
@@ -842,7 +1091,7 @@ async function handler(req, res) {
 };
 
 module.exports = {
-  handler, syncZohoForUser, handleAuthFailure, journalRows,
+  handler, syncZohoForUser, refreshZohoMoney, handleAuthFailure, journalRows, linkPayments, appliedFrom, paymentsToLink, paymentNumbers,
   // mappers, for tests that build stored rows exactly as a sync would
   _mapInvoice: mapInvoice, _mapBill: mapBill, _mapCustomerPayment: mapCustomerPayment,
   _mapVendorPayment: mapVendorPayment, _mapBankAccount: mapBankAccount, _mapAccount: mapAccount

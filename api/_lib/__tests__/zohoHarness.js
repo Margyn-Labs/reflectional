@@ -83,6 +83,7 @@ class FakeDb {
       else if (v.startsWith('gt.')) { if (!(Number(val) > Number(v.slice(3)))) return false; }
       else if (v.startsWith('gte.')) { if (!(String(val) >= v.slice(4))) return false; }
       else if (v.startsWith('lte.')) { if (!(String(val) <= v.slice(4))) return false; }
+      else if (v.startsWith('lt.')) { if (!(String(val) < decodeURIComponent(v.slice(3)))) return false; }
       else if (v === 'is.null') { if (val != null) return false; }
       else throw new Error('FakeDb: unsupported filter ' + k + '=' + v);
     }
@@ -155,8 +156,11 @@ class FakeDb {
     }
     if (method === 'DELETE') {
       const keep = rows.filter((r) => !this.match(r, params));
+      const removed = rows.length - keep.length;
       this.tables[table] = keep;
-      return new Response(null, { status: 204 });
+      // Prefer: count=exact answers with how many rows went, as PostgREST does.
+      const counted = /count=exact/.test((init.headers && init.headers.Prefer) || '');
+      return new Response(null, { status: 204, headers: counted ? { 'Content-Range': '*/' + removed } : {} });
     }
     throw new Error('FakeDb: unsupported ' + method);
   }

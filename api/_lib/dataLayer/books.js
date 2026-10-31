@@ -290,13 +290,28 @@ function zohoToBook(z) {
     addLedger(name, parent, t === 'credit_card' ? -num(b.current_balance) : num(b.current_balance));
     if (parent !== 'Bank OD A/c' && (!primaryBank || b.is_primary)) primaryBank = name;
   }
+  // What each payment cleared: [{ ref, amount, tax_withheld }], from the payment's detail when it was read, else the
+  // numbers Zoho's list gives (amount unknown). Only on Zoho books; nothing else carries it.
+  const invNo = new Map(invoices.map((i) => [String(i.invoice_id), i.invoice_number || String(i.invoice_id)]));
+  const billNo = new Map(bills.map((b) => [String(b.bill_id), b.bill_number || String(b.bill_id)]));
+  const settlesOf = (p, nos) => {
+    const applied = Array.isArray(p.applied_to) ? p.applied_to : (typeof p.applied_to === 'string' ? (() => { try { return JSON.parse(p.applied_to); } catch (e) { return []; } })() : []);
+    if (applied.length) return applied.map((x) => ({ ref: x.number || nos.get(String(x.id)) || String(x.id), amount: x.amount != null ? r2(x.amount) : null, tax_withheld: r2(x.tax_withheld) }));
+    const listed = String(p.applied_numbers || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (listed.length) return listed.map((ref) => ({ ref, amount: null, tax_withheld: 0 }));
+    const one = p.invoice_ref || p.bill_ref;
+    return one ? [{ ref: nos.get(String(one)) || String(one), amount: null, tax_withheld: 0 }] : null;
+  };
   if (primaryBank) {
     for (const p of custPay) {
       if (!p.payment_date || !num(p.amount)) continue;
       const party = custName.get(String(p.customer_ref)) || 'Customer';
       addLedger(party, 'Sundry Debtors');
-      vouchers.push({ voucher_type: 'Receipt', voucher_number: p.payment_number || null, tally_guid: 'zcp:' + p.payment_id, date: day(p.payment_date), party_name: party, amount: num(p.amount), is_cancelled: false,
-        entries: [{ ledger: party, amount: r2(num(p.amount)), is_party: true }, { ledger: primaryBank, amount: -r2(num(p.amount)), is_party: false }], narration: p.payment_mode || null });
+      const v = { voucher_type: 'Receipt', voucher_number: p.payment_number || null, tally_guid: 'zcp:' + p.payment_id, date: day(p.payment_date), party_name: party, amount: num(p.amount), is_cancelled: false,
+        entries: [{ ledger: party, amount: r2(num(p.amount)), is_party: true }, { ledger: primaryBank, amount: -r2(num(p.amount)), is_party: false }], narration: p.payment_mode || null };
+      const settles = settlesOf(p, invNo);
+      if (settles) v.settles = settles;
+      vouchers.push(v);
     }
     const vendName = new Map();
     for (const b of bills) if (b.vendor_ref && b.vendor_name) vendName.set(String(b.vendor_ref), b.vendor_name);
@@ -304,8 +319,11 @@ function zohoToBook(z) {
       if (!p.payment_date || !num(p.amount)) continue;
       const party = vendName.get(String(p.vendor_ref)) || 'Vendor';
       addLedger(party, 'Sundry Creditors');
-      vouchers.push({ voucher_type: 'Payment', voucher_number: p.payment_number || null, tally_guid: 'zvp:' + p.payment_id, date: day(p.payment_date), party_name: party, amount: num(p.amount), is_cancelled: false,
-        entries: [{ ledger: party, amount: -r2(num(p.amount)), is_party: true }, { ledger: primaryBank, amount: r2(num(p.amount)), is_party: false }], narration: p.payment_mode || null });
+      const v = { voucher_type: 'Payment', voucher_number: p.payment_number || null, tally_guid: 'zvp:' + p.payment_id, date: day(p.payment_date), party_name: party, amount: num(p.amount), is_cancelled: false,
+        entries: [{ ledger: party, amount: -r2(num(p.amount)), is_party: true }, { ledger: primaryBank, amount: r2(num(p.amount)), is_party: false }], narration: p.payment_mode || null };
+      const settles = settlesOf(p, billNo);
+      if (settles) v.settles = settles;
+      vouchers.push(v);
     }
   }
 
@@ -356,9 +374,12 @@ async function loadZoho(userId) {
       .catch(() => pagedAll('zoho_journal_entries', `select=account_ref,transaction_id,entry_date,debit,credit&org_ref=eq.${o}&order=entry_date.asc,transaction_id.asc`, 60000)), { rows: [] }),
     safe(pagedAll('zoho_invoices', `select=*&org_ref=eq.${o}&order=invoice_date.asc,invoice_id.asc`, 20000), { rows: [] }),
     safe(pagedAll('zoho_bills', `select=*&org_ref=eq.${o}&order=bill_date.asc,bill_id.asc`, 20000), { rows: [] }),
-    safe(pagedAll('zoho_customer_payments', `select=payment_id,payment_number,customer_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000)
+    // Which invoice / bill each payment cleared (2026-11-01-zoho-parity.sql); without those columns, read as before.
+    safe(pagedAll('zoho_customer_payments', `select=payment_id,payment_number,customer_ref,amount,payment_date,payment_mode,invoice_ref,applied_numbers,applied_to,tax_withheld&org_ref=eq.${o}&order=payment_date.asc`, 20000)
+      .catch(() => pagedAll('zoho_customer_payments', `select=payment_id,payment_number,customer_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000))
       .catch(() => pagedAll('zoho_customer_payments', `select=payment_id,customer_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000)), { rows: [] }),
-    safe(pagedAll('zoho_vendor_payments', `select=payment_id,payment_number,vendor_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000)
+    safe(pagedAll('zoho_vendor_payments', `select=payment_id,payment_number,vendor_ref,amount,payment_date,payment_mode,bill_ref,applied_numbers,applied_to,tax_withheld&org_ref=eq.${o}&order=payment_date.asc`, 20000)
+      .catch(() => pagedAll('zoho_vendor_payments', `select=payment_id,payment_number,vendor_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000))
       .catch(() => pagedAll('zoho_vendor_payments', `select=payment_id,vendor_ref,amount,payment_date,payment_mode&org_ref=eq.${o}&order=payment_date.asc`, 20000)), { rows: [] }),
     safe(selectRows('zoho_bank_accounts', `select=account_id,bank_name,account_type,current_balance,is_primary&org_ref=eq.${o}`), []),
     safe(selectRows('tally_ledger_classes', `select=ledger_name,bucket&user_id=eq.${userId}&company_name=eq.${encodeURIComponent(org.organization_name || org.org_name || org.name || 'Zoho Books')}`), []),
@@ -458,13 +479,24 @@ function choosePrimary(books) {
 // Zoho and Odoo books are kept a few minutes per account, like tallyData does for Tally, so a conversation that asks
 // five questions reads them once. The same book object comes back, so callers can cache work on it (booksTools).
 const CACHE_MS = 5 * 60 * 1000;
-const _cache = new Map();   // userId|source -> { at, book }
+const _cache = new Map();   // userId|source -> { at, book, stamp }
+// When the connection last synced. A sync in another function (Sync now, the daytime refresh) makes the copy kept
+// here old: a new stamp reads the books again instead of serving a copy up to 5 minutes behind (31 Oct: Home said
+// ₹24.7 L after Sync now had ₹25.6 L).
+const STAMP = {
+  zoho: (userId) => selectRows('zoho_organizations', `select=id,last_synced_at&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`).then((r) => (r[0] ? r[0].id + '@' + (r[0].last_synced_at || '') : 'none')),
+  odoo: (userId) => selectRows('connector_credentials', `select=id,last_success_at&user_id=eq.${userId}&connector_type=eq.odoo&disconnected_at=is.null&order=created_at.desc&limit=1`).then((r) => (r[0] ? r[0].id + '@' + (r[0].last_success_at || '') : 'none'))
+};
 function cached(source, load) {
   return async (userId, o) => {
     const k = userId + '|' + source, hit = _cache.get(k);
-    if (!(o && o.fresh) && hit && Date.now() - hit.at < CACHE_MS) return hit.book;
+    const live = hit && Date.now() - hit.at < CACHE_MS;
+    // Not connected (every Tally-only account): kept as before, no extra read.
+    if (!(o && o.fresh) && live && !hit.book.connected) return hit.book;
+    const stamp = STAMP[source] ? await STAMP[source](userId).catch(() => null) : null;
+    if (!(o && o.fresh) && live && (stamp == null || hit.stamp == null || hit.stamp === stamp)) return hit.book;
     const book = await load(userId);
-    _cache.set(k, { at: Date.now(), book });
+    _cache.set(k, { at: Date.now(), book, stamp });
     while (_cache.size > 40) _cache.delete(_cache.keys().next().value);
     return book;
   };
@@ -516,4 +548,10 @@ function forgetBooks(userId) {
   for (const k of [..._cache.keys()]) if (k.startsWith(userId + '|')) _cache.delete(k);
 }
 
-module.exports = { loadBooks, forgetBooks, zohoToBook, odooToBook, choosePrimary, summarise, SOURCE_NAME, TRUST };
+/** When each cloud books connection last synced, for keys that must move with a sync (the Margin page's saved answer). */
+async function cloudStamps(userId) {
+  const [z, od] = await Promise.all([STAMP.zoho(userId).catch(() => null), STAMP.odoo(userId).catch(() => null)]);
+  return { zoho: z, odoo: od };
+}
+
+module.exports = { loadBooks, forgetBooks, zohoToBook, odooToBook, choosePrimary, summarise, cloudStamps, SOURCE_NAME, TRUST };

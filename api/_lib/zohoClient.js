@@ -511,10 +511,10 @@ function createSession(org) {
    * concurrent calls per org and parallelising inside one org's sync is the
    * fastest way to trip the limit.
    */
-  async function apiGetAll(path, collectionKey, query = {}) {
+  async function apiGetAll(path, collectionKey, query = {}, opts = {}) {
     const out = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const data = await apiGet(path, { ...query, page: String(page), per_page: String(PER_PAGE) });
+      const data = await apiGet(path, { ...query, page: String(page), per_page: String(PER_PAGE) }, opts);
       const batch = data[collectionKey] || [];
       out.push(...batch);
       const ctx = data.page_context || {};

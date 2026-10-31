@@ -62,6 +62,28 @@ async function mgMarginFresh(){
    Tally balances that still had future EMIs in them (₹4.38 L, real ₹13.8 L), so "vs prior" read +215%.
    Readings whose cash came from Tally take the books' end-of-day cash for their India date instead
    (the saved figure stays on the reading as _cash_saved). Other sources are left as saved. */
+/* Whose saved readings take today's cash from the books. Tally's always did; Zoho Books' and Odoo's too (2026-11-01),
+   when the Margin answer on hand is from that same source. Before, Home kept the 02:44 reading's cash after a Sync
+   now (31 Oct: ₹24.7 L shown, ₹25.6 L in Zoho). */
+function mgLiveCashFrom(prov){
+  if(!prov) return false;
+  if(prov.source === 'tally') return true;
+  return (prov.source === 'zoho' || prov.source === 'odoo') && typeof mgMar !== 'undefined' && !!mgMar && mgMar.books_source === prov.source;
+}
+/* After a Sync now (button, Margyn or voice) on Zoho Books or Odoo: this sync's Margin answer, then the reading,
+   then every page, so Home's cash, the forecast's opening and Margyn's context all show the books just read. */
+async function mgAfterBooksSync(){
+  try {
+    for(let i = 0; i < 60 && mgMarBusy; i++) await new Promise(r => setTimeout(r, 500));
+    await mgLoadMargin('fresh');
+    if(typeof resolveAndSaveSnapshot === 'function' && await resolveAndSaveSnapshot()){
+      snapshots = await loadSnapshots(); if(typeof mgApplySnapshotState === 'function') mgApplySnapshotState();
+      mgApplyCashHistory(snapshots);
+    }
+    if(typeof mgRenderAllViews === 'function') mgRenderAllViews();
+    if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && typeof MG_PAGES !== 'undefined' && MG_PAGES[mgCurrentView] && MG_PAGES[mgCurrentView].own) mgRenderOwn(mgCurrentView);
+  } catch(e){ console.error('[margyn] after sync:', e.message); }
+}
 function mgCashHistoryMap(){
   const h = mgMar && !mgMarCompany && mgMar.cash_history;   // another company's books don't describe this account's readings
   if(!h || !Array.isArray(h.points) || !h.points.length) return null;
@@ -74,7 +96,7 @@ function mgApplyCashHistory(list){
   let changed = false;
   list.forEach(s => {
     const prov = s && s.input_provenance && s.input_provenance.cash;
-    if(!prov || prov.source !== 'tally') return;
+    if(!mgLiveCashFrom(prov)) return;
     const v = by.get(mgIstDateKey(s.created_at));
     if(v == null || !isFinite(v)) return;
     if(s._cash_saved === undefined) s._cash_saved = s.cash;

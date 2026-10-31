@@ -5,12 +5,12 @@
  *   1. Revoke the refresh token at Zoho (formally invalidates it there).
  *   2. Purge the vault entry.
  *   3. Mark the org `disconnected` and stamp `connector_disconnected_at`.
- *      Historical synced rows are RETAINED — vitals history stays viewable.
- *      No cascading delete.
- *   4. Log the event to connector_logs.
+ *   4. The owner's choice for what Margyn already copied: kept (the default; vitals history stays viewable) or,
+ *      with remove_data, deleted (selfCleanup.removeZohoData, counts in connector_logs). The answer says which.
+ *   5. Log the event to connector_logs.
  *
- * Body: { org_ref?: uuid }  (defaults to the user's active org)
- * Response: 200 { status: "disconnected", revoked_at_zoho: boolean }
+ * Body: { org_ref?: uuid, remove_data?: boolean }  (defaults to the user's active org, data kept)
+ * Response: 200 { status: "disconnected", revoked_at_zoho: boolean, data: "kept" | "removed", removed_rows?, message }
  *
  * Step 3 happens even if step 1 fails — a Zoho-side outage must not leave
  * Margyn holding a live token it thinks is dead. Steps 2 and 3 are the ones
@@ -19,6 +19,7 @@
 
 const { getUserFromRequest, selectRows, updateRows, logConnectorEvent } = require('../_lib/supabaseRest');
 const { readRefreshToken, revokeRefreshToken, purgeRefreshToken } = require('../_lib/zohoClient');
+const { removeZohoData } = require('../_lib/selfCleanup');
 
 async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -96,19 +97,37 @@ async function handler(req, res) {
     return;
   }
 
+  // 4. The owner's choice: keep what was copied (default) or remove it.
+  let removed = null;
+  if (body.remove_data === true) {
+    try {
+      const counts = await removeZohoData(Object.assign({}, org, { status: 'disconnected' }));
+      removed = Object.values(counts).reduce((t, n) => t + (Number(n) || 0), 0);
+    } catch (err) {
+      await logConnectorEvent({ userId: user.id, connectorType: 'zoho_books', operation: 'disconnect_remove_data', status: 'error', errorMessage: 'could not remove the synced data' });
+      res.status(200).json({ status: 'disconnected', revoked_at_zoho: revoked, data: 'kept',
+        message: 'Zoho Books is disconnected, but Margyn could not remove the data it copied. It is still in Margyn; try Disconnect again to remove it.' });
+      return;
+    }
+  }
+
   await logConnectorEvent({
     userId: user.id,
     connectorType: 'zoho_books',
     operation: 'disconnect',
     status: 'success',
-    recordsSynced: 0,
-    errorMessage: revoked ? null : 'zoho_revocation_unconfirmed'
+    recordsSynced: removed || 0,
+    errorMessage: [revoked ? null : 'zoho_revocation_unconfirmed', removed != null ? `removed ${removed} synced rows` : 'data kept'].filter(Boolean).join('; ')
   });
 
   res.status(200).json({
     status: 'disconnected',
     revoked_at_zoho: revoked,
-    message: 'Zoho Books disconnected. Your historical data stays visible in Margyn.'
+    data: removed != null ? 'removed' : 'kept',
+    ...(removed != null ? { removed_rows: removed } : {}),
+    message: removed != null
+      ? 'Zoho Books disconnected and the data Margyn copied from it is removed. Customer and supplier contacts in your party list stay.'
+      : 'Zoho Books disconnected. Your historical data stays visible in Margyn.'
   });
 };
 

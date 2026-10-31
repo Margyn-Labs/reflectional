@@ -69,7 +69,8 @@ function mgSourceHealth(key){
       const t = cashfreeStatus && cashfreeStatus.last_success_at;
       return cashfreeStatus && cashfreeStatus.needs_reauth ? { on:true, text:'Reconnect needed', warn:true } : { on:true, text:ago(t) || 'Connected', warn:stale(t) }; }
     if(key === 'zoho'){ if(!zohoConnected) return { on:false, text:'Not connected' };
-      const t = zohoVitals && zohoVitals.last_synced_at; return { on:true, text:ago(t) || 'Connected', warn:stale(t) }; }
+      const t = zohoVitals && zohoVitals.last_synced_at;
+      return zohoVitals && zohoVitals.status === 'needs_reauth' ? { on:true, text:'Reconnect needed', warn:true } : { on:true, text:ago(t) || 'Connected', warn:stale(t) }; }
     if(key === 'tally'){ if(!tallyConnected) return { on:false, text:'Not connected' };
       const t = (tallyInstalls || []).map(i => i.last_sync_at).filter(Boolean).sort().pop(); return { on:true, text:ago(t) || 'Connected', warn:stale(t) }; }
     if(key === 'odoo'){ if(!odooConnected) return { on:false, text:'Not connected' };

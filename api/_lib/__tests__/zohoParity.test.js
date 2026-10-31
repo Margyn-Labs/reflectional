@@ -173,12 +173,18 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
   const flat = (x, p = '', o = {}) => { if (x && typeof x === 'object') { for (const k of Object.keys(x)) flat(x[k], p ? p + '.' + k : k, o); } else o[p] = x; return o; };
   const neutral = (v) => (typeof v === 'string' ? v.replace(/Zoho Books|Tally books|Tally/g, 'BOOKS').replace(/Acme \((Zoho|Tally|BOOKS)\)/g, 'Acme').replace(/last synced [^.]*/g, 'last synced') : v);
   for (const name of Object.keys(CALLS)) {
-    const a = flat(out.z[name]), b = flat(out.t[name]);
+    // Receivables on Zoho Books say "invoices" where Tally says "bills" (1 Nov): the same figures under the word
+    // Zoho uses, so the Zoho key is read back as Tally's before comparing. Every figure is still compared.
+    const asTallyWords = (k) => k.replace(/\.oldest_invoice_days_late$/, '.oldest_bill_days_late').replace(/(^|\.)open_invoices\.(\d+)\.invoice$/, '$1open_bills.$2.bill')
+      .replace(/(^|\.)open_invoices\./, '$1open_bills.').replace(/^(largest\.\d+)\.invoices$/, '$1.bills');
+    const a = Object.fromEntries(Object.entries(flat(out.z[name])).map(([k, v]) => [asTallyWords(k), k === 'source' && typeof v === 'string' ? v.replace(/ Invoice by invoice, as of the last sync\.$/, ' Bill-wise outstanding as of the last sync.') : v]));
+    const b = flat(out.t[name]);
     const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
     // cost_note is the one honest difference: Zoho Books has no production entries (no Manufacturing Journals).
     // Zoho-only extras (31 Oct): each document's own balance, bills due in 7 days, TDS balances and "no GST booked"
     // come from what Zoho keeps and Tally answers don't carry; Tally stays as it was. Checked on their own below.
-    const ZOHO_EXTRA = /(^|\.)(still_owed|due_next_7_days|tds|gst)(\.|$)|^gst_estimate\./;
+    // 1 Nov: which invoice a payment cleared (cleared, paid_by, recent_payments), from Zoho's payment detail.
+    const ZOHO_EXTRA = /(^|\.)(still_owed|due_next_7_days|tds|gst|cleared|paid_by|recent_payments)(\.|$)|^gst_estimate\./;
     const diff = keys.filter((k) => k !== 'cost_note' && !ZOHO_EXTRA.test(k) && JSON.stringify(neutral(a[k])) !== JSON.stringify(neutral(b[k])));
     check(name + ': Zoho answer = Tally answer', diff.length === 0, diff.map((k) => k + ' Z=' + JSON.stringify(a[k]) + ' T=' + JSON.stringify(b[k])));
   }

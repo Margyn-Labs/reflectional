@@ -217,6 +217,8 @@ function prepare(book, opts) {
       sales: 0, returns: 0, purchases: 0, direct: 0, opex: 0, direct_income: 0, other_income: 0, tax_out: 0, tax_in: 0,
       lines: [], items: Array.isArray(v.items) ? v.items.filter((it) => it && it.item) : []
     };
+    // Zoho Books: which invoices / bills a payment cleared, and any TDS withheld (dataLayer/books.js). Tally vouchers never carry it.
+    if (Array.isArray(v.settles) && v.settles.length) r.settles = v.settles;
     for (const e of imp ? entries.concat([imp]) : entries) {
       if (!e || !e.ledger) continue;
       const a = num(e.amount);
@@ -550,13 +552,39 @@ function findEntries(ctx, args) {
   // Tally answers are left exactly as they were.
   if (!isTallyBook(ctx)) {
     const open = new Map(ctx.bills.map((b) => [(b.direction === 'payable' ? 'p:' : 'r:') + norm(b.bill_ref), Math.abs(num(b.closing_balance))]));
+    const paidBy = paymentsByDocument(ctx);
     for (const [e, r] of out.entries.map((e, i) => [e, hits[i]])) {
+      if (r.settles) e.cleared = clearedLine(r);
       if (r.kind !== 'sales' && r.kind !== 'purchase') continue;
       const left = open.get((r.kind === 'purchase' ? 'p:' : 'r:') + norm(r.number));
       e.still_owed = left != null && left >= 1 ? inr(left) : 'nothing: paid or settled in full';
+      const by = paidBy.get((r.kind === 'purchase' ? 'p:' : 'r:') + norm(r.number));
+      if (by) e.paid_by = by.slice(-4).map((x) => x.line);
     }
   }
   return out;
+}
+
+/* Which invoices a Zoho payment cleared, in words: "cleared INV-00762 (₹1,796 TDS withheld)". */
+function clearedLine(r) {
+  const parts = (r.settles || []).map((x) => x.ref + (r.settles.length > 1 && x.amount != null ? ' ' + inr(x.amount) : '') + (x.tax_withheld >= 1 ? ' (' + inr(x.tax_withheld) + ' TDS withheld)' : ''));
+  return parts.length ? 'cleared ' + parts.join(', ') : undefined;
+}
+/** 'r:'|'p:' + document number -> [{ line: "₹87,985 on 31 Oct cleared INV-00762 (₹1,796 TDS withheld)" }], oldest first. */
+function paymentsByDocument(ctx) {
+  if (ctx._paidBy) return ctx._paidBy;
+  const m = new Map();
+  for (const r of ctx.rows) {
+    if (!r.settles || (r.kind !== 'receipt' && r.kind !== 'payment')) continue;
+    for (const x of r.settles) {
+      const k = (r.kind === 'payment' ? 'p:' : 'r:') + norm(x.ref);
+      const amt = x.amount != null ? x.amount : r.total;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push({ line: inr(amt) + ' on ' + dayStr(r.dt, true) + (r.number ? ' (payment ' + r.number + ')' : '') + ' cleared ' + x.ref + (x.tax_withheld >= 1 ? ' (' + inr(x.tax_withheld) + ' TDS withheld)' : '') });
+    }
+  }
+  ctx._paidBy = m;
+  return m;
 }
 /** Tally keeps bills apart from vouchers; Zoho Books and Odoo carry each document's balance. */
 const isTallyBook = (ctx) => /^tally/i.test(SRC(ctx));
@@ -649,6 +677,12 @@ function moneyOwed(ctx, args) {
   }
   const veryOld = parties.filter((g) => g.oldest > 365);
   if (veryOld.length) out.over_a_year_old = { amount: inr(bills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0)), names: veryOld.slice(0, 6).map((g) => g.party + ' (' + g.oldest + ' days)'), note: `Bills this old are usually disputed, short-paid or already settled but not knocked off in ${SRC(ctx)}. Worth a review: chase, settle, or write off.` };
+  // Zoho Books / Odoo call what customers owe invoices, not bills (31 Oct: "across 30 bills"). Tally unchanged.
+  if (dir === 'receivable' && !isTallyBook(ctx)) {
+    out.source = sourceLine(ctx) + ' Invoice by invoice, as of the last sync.';
+    out.largest = out.largest.map(({ oldest_bill_days_late, bills: n, ...g }) => Object.assign(g, { oldest_invoice_days_late: oldest_bill_days_late, invoices: n }));
+    if (out.over_a_year_old) out.over_a_year_old.note = out.over_a_year_old.note.replace(/^Bills this old/, 'Invoices this old');
+  }
   if (dir === 'receivable') {
     if (wc.dso_days != null) out.days_to_get_paid = Math.round(wc.dso_days) + ' days on average (last 90 days of sales)';
     const d = dailySales90(ctx);
@@ -739,6 +773,7 @@ function partyProfile(ctx, args) {
     const receipts = mine.filter((r) => r.kind === 'receipt');
     const lastRec = receipts[receipts.length - 1];
     const cust = (ctx.analytics.customers || []).find((c) => norm(c.party) === key);
+    const tallyBook = isTallyBook(ctx);
     out.owes_you = {
       total: inr(owed), overdue: inr(bills.filter((b) => b.late > 0).reduce((s, b) => s + b.amount, 0)),
       oldest_bill_days_late: bills.reduce((m, b) => Math.max(m, b.late), 0),
@@ -748,6 +783,18 @@ function partyProfile(ctx, args) {
       last_payment: lastRec ? { date: dayStr(lastRec.dt, true), amount: inr(lastRec.total) } : null,
       days_to_pay: cust && cust.dso_days != null ? Math.round(cust.dso_days) + ' days (last 90 days)' : null
     };
+    if (!tallyBook) {
+      // Zoho Books / Odoo: invoices, not bills, and which invoice each recent payment cleared. Tally unchanged.
+      const o = out.owes_you;
+      o.oldest_invoice_days_late = o.oldest_bill_days_late; delete o.oldest_bill_days_late;
+      o.open_invoices = o.open_bills.map(({ bill, ...b }) => Object.assign({ invoice: bill }, b)); delete o.open_bills;
+      if (lastRec && lastRec.settles) o.last_payment.cleared = clearedLine(lastRec);
+      const recent = receipts.filter((r) => r.settles).slice(-5).reverse();
+      if (recent.length) o.recent_payments = recent.map((r) => inr(r.total) + ' on ' + dayStr(r.dt, true) + ' ' + clearedLine(r));
+      // Re-ordered so the keys read in the same order as before, with the new names in place.
+      out.owes_you = { total: o.total, overdue: o.overdue, oldest_invoice_days_late: o.oldest_invoice_days_late, ageing: o.ageing, open_invoices: o.open_invoices,
+        paid_you_this_fy: o.paid_you_this_fy, last_payment: o.last_payment, ...(o.recent_payments ? { recent_payments: o.recent_payments } : {}), days_to_pay: o.days_to_pay };
+    }
   }
   if (purchases.length || ctx.bills.some((b) => b.direction === 'payable' && norm(b.party_name) === key)) {
     const t = sumRows(purchases.filter((r) => inPeriod(r, fy)));
@@ -771,6 +818,8 @@ function partyProfile(ctx, args) {
       paid_them_this_fy: inr(paid.filter((r) => inPeriod(r, fy)).reduce((s, r) => s + r.total, 0)),
       last_paid: lastPaid ? { date: dayStr(lastPaid.dt, true), amount: inr(lastPaid.total) } : null
     };
+    // Zoho Books: which bill the last payment cleared (Tally vouchers carry no link, so nothing changes there).
+    if (lastPaid && lastPaid.settles && out.as_vendor.last_paid) out.as_vendor.last_paid.cleared = clearedLine(lastPaid);
   }
   // Payments to someone who isn't a vendor on a bill (salary, commission agents, rent).
   if (!out.as_customer && !out.as_vendor) {

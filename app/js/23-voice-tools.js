@@ -458,8 +458,8 @@ const VX_TOOLS = {
 
   async sync_source({ source }){
     const run = {
-      zoho:    () => zohoConnected ? zohoApi('/api/zoho?action=sync', { method:'POST', body:JSON.stringify({ mode:'delta' }) }).then(() => loadZohoVitals()) : null,
-      odoo:    () => odooConnected ? zohoApi('/api/zoho?action=odoo-sync', { method:'POST', body:JSON.stringify({}) }).then(() => loadOdooStatus()) : null,
+      zoho:    () => zohoConnected ? zohoApi('/api/zoho?action=sync', { method:'POST', body:JSON.stringify({ mode:'delta' }) }).then(() => loadZohoVitals()).then(() => { if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync(); }) : null,
+      odoo:    () => odooConnected ? zohoApi('/api/zoho?action=odoo-sync', { method:'POST', body:JSON.stringify({}) }).then(() => loadOdooStatus()).then(() => { if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync(); }) : null,
       shopify: () => shopifyConnected ? shopifyApi('/api/shopify?action=sync', { method:'POST', body:JSON.stringify({}) }).then(() => loadShopifyStatus()) : null
     }[source];
     if(!run) return { synced:false, reason:'Only Zoho Books, Odoo and Shopify can be synced from here. Tally syncs from its desktop agent; Razorpay and Cashfree sync every night.' };
