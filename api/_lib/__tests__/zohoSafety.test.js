@@ -205,6 +205,13 @@ const payRow = (db) => db.t('zoho_customer_payments').find((r) => r.payment_id =
       sync.refreshZohoMoney = real;
       check('runWatchAll refreshes the Zoho-only account before its update', asked.includes('demo'), asked);
       check('runWatchAll never refreshes an account that has Tally', !asked.includes('mihir'), asked);
+      // 3 pm, 31 Oct: the Tally account listed first used the slot waiting out its sync, so the Zoho account's
+      // refresh found < 5 s left and silently never ran. Now every refresh starts up front, whatever the order.
+      asked.length = 0;
+      sync.refreshZohoMoney = async (u) => { asked.push(u); return { refreshed: false, reason: 'test' }; };
+      try { await require('../margynWatch').runWatchAll('afternoon', { budgetMs: 31000 }); } catch (e) { /* not under test */ }
+      sync.refreshZohoMoney = real;
+      check('runWatchAll: a tight slot (old code skipped it) still refreshes the Zoho account', asked.includes('demo') && !asked.includes('mihir'), asked);
     }
 
     // ------------------------------------------------ 4. drill: 429 mid nightly sync

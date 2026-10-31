@@ -279,7 +279,12 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   let retried = false;
   // Instructions (cached, the same for every business) + this account's half:
   // who is texting, their access, and the cross-channel memory.
-  const accountPart = `ACCOUNT\n- The business is ${companyName}.\n${senderLine(companyName, sender)}` + (canAct ? '' :
+  // Zoho Books / Odoo accounts (Tally accounts get exactly the prompt they had): invoice vs bill, and the forecast
+  // that rides on cash_and_loans, so "cash in 4 weeks" isn't "I don't have a forecast" (31 Oct 2026).
+  let cloudBooks = null;
+  try { const { ctx: bc } = await booksTools.contextFor(profileId); if (bc && !/^tally/i.test(bc.source || 'tally')) cloudBooks = bc.source_name || 'Zoho Books'; } catch (e) { /* the tools say so */ }
+  const accountPart = `ACCOUNT\n- The business is ${companyName}.\n${senderLine(companyName, sender)}` +
+    (cloudBooks ? `\n- Its books are in ${cloudBooks}. What customers owe are invoices; bills are what the business owes suppliers. Say "invoice" for customers. When a customer's whole balance and the late part are both given, say both, never the late part as what they owe.\n- Cash in the weeks ahead ("cash in 4 weeks", "will we run short", "next month's cash"): cash_and_loans carries the 13-week forecast (cash_forecast), the same one as the app's Cash page. Quote it with its range and track record; never say there is no forecast.` : '') + (canAct ? '' :
     '\n\nThis person has read-only access: you cannot propose any action for them. If they ask for a change (mark paid, approve, log an entry, chase someone), say their number is set up to ask questions only and the account owner can allow actions under Settings > People. Routing a message to someone is still fine.');
   // Memory across channels: the owner's latest voice call / in-app chat, so
   // "like I said on the call" works here too. Owner's number only (member

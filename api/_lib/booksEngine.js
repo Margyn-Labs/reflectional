@@ -1120,6 +1120,10 @@ function insights(ctx) {
   const late30 = recvBills.filter((b) => b.late > 30).reduce((s, b) => s + b.amount, 0);
   const slipping = recvBills.filter((b) => b.late > 0 && b.late <= 30).reduce((s, b) => s + b.amount, 0);
   const lateParties = lateRanking(recvBills, recentPay);
+  // Zoho Books / Odoo call what customers owe invoices, and a customer's line gives what they owe in all before the
+  // part that's a month late ("They owe ₹13 L" was the late part of ₹15.4 L, 31 Oct 2026). Tally wording unchanged.
+  const cloud = !isTallyBook(ctx), doc = cloud ? 'invoice' : 'bill';
+  const owedAll = new Map(recvParties.map((g) => [norm(g.party), g.total]));
   if (late30 >= M) {
     // Who to call first: late but not hopeless. A bill over a year old is old debt (its own point), not a phone call.
     const first = lateParties.find((g) => !g.paidRecently && g.oldest.late <= 365) || lateParties.find((g) => g.oldest.late <= 365);
@@ -1129,7 +1133,7 @@ function insights(ctx) {
       detail: (slipping >= M ? `Another ${inr(slipping)} went past due in the last 30 days; a reminder usually does it. ` : '') +
         (lateParties.length ? 'Most late: ' + lateParties.slice(0, 3).map((g) => `${niceName(g.party)} ${inr(g.late30)}`).join(', ') + '.' : '') +
         (daily > 0 ? ` Every 10 days faster collection frees about ${inr(daily * 10)}.` : ''),
-      action: first ? `Start with ${niceName(first.party)}: ${inr(first.late30)}, oldest bill ${first.oldest.late} days late.` : null,
+      action: first ? `Start with ${niceName(first.party)}: ${inr(first.late30)}${cloud ? ' more than a month late' : ''}, oldest ${doc} ${first.oldest.late} days late.` : null,
       ask: 'Who owes me the most, and how late are they?' });
   } else if (slipping >= 2 * M) {
     push({ key: 'slipping_total', kind: 'slipping', severity: 'low', impact: slipping,
@@ -1140,24 +1144,26 @@ function insights(ctx) {
   const veryOldAmt = recvBills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0);
   if (veryOldAmt >= M / 2) push({ key: 'old_debts', kind: 'old_debts', severity: 'low', impact: veryOldAmt,
     title: `${inr(veryOldAmt)} has been unpaid for over a year.`,
-    detail: veryOld.slice(0, 4).map((g) => `${niceName(g.party)} (${g.oldest} days)`).join(', ') + '. Bills this old are usually disputed, short-paid, or paid but never knocked off in ' + SRC(ctx) + '.',
-    action: 'Decide for each with your CA: chase, settle the difference, or write it off.', ask: 'Which bills are more than a year old?' });
+    detail: veryOld.slice(0, 4).map((g) => `${niceName(g.party)} (${g.oldest} days)`).join(', ') + `. ${cloud ? 'Invoices' : 'Bills'} this old are usually disputed, short-paid, or paid but never knocked off in ` + SRC(ctx) + '.',
+    action: 'Decide for each with your CA: chase, settle the difference, or write it off.', ask: `Which ${doc}s are more than a year old?` });
 
   // Customers more than a month late, ranked by money x how late (₹2.67 L at 212 days outranks ₹53 L at 11 days).
   // A customer who paid in the last week is not "chase them": what's left is usually a short payment.
   for (const g of lateParties.filter((x) => x.late30 >= M / 2 && x.oldest.late <= 365).slice(0, 3)) {
     const o = g.oldest, name = niceName(g.party);
-    const billTxt = `bill ${o.ref ? o.ref + ' ' : ''}(${inr(o.amount)}${o.date ? ', ' + dayStr(o.date) : ''})`;
+    const billTxt = `${doc} ${o.ref ? o.ref + ' ' : ''}(${inr(o.amount)}${o.date ? ', ' + dayStr(o.date) : ''})`;
     if (g.paidRecently) {
       push({ key: 'short:' + norm(g.party) + ':' + norm(o.ref), kind: 'short_paid', party: g.party, severity: 'low', impact: g.late30,
         title: `${name} paid ${inr(g.paidRecently.amount)} on ${dayStr(g.paidRecently.dt)}, but ${billTxt} is still open, ${o.late} days late.`,
         detail: 'Usually a short payment, a deduction, or a receipt not set against the right bill in ' + SRC(ctx) + '.',
-        action: `Ask your accountant to check ${o.ref ? 'bill ' + o.ref : 'that bill'} against their payment.`, ask: `Tell me about ${g.party}` });
+        action: `Ask your accountant to check ${o.ref ? doc + ' ' + o.ref : 'that ' + doc} against their payment.`, ask: `Tell me about ${g.party}` });
     } else {
       push({ key: 'late:' + norm(g.party), kind: 'late', party: g.party, severity: g.late30 >= 10 * M || o.late > 90 ? 'high' : 'medium', impact: g.late30, score: g.score,
-        title: `${name} owes ${inr(g.late30)} that's more than a month late; oldest is ${billTxt}, ${o.late} days.`,
+        title: cloud && owedAll.get(norm(g.party)) > g.late30 + 0.5
+          ? `${name} owes ${inr(owedAll.get(norm(g.party)))} in all; ${inr(g.late30)} of it is more than a month late. Oldest is ${billTxt}, ${o.late} days.`
+          : `${name} owes ${inr(g.late30)} that's more than a month late; oldest is ${billTxt}, ${o.late} days.`,
         detail: (g.slipping > 0 ? `Plus ${inr(g.slipping)} that went past due recently. ` : '') + (() => { const c = (an.customers || []).find((x) => norm(x.party) === norm(g.party)); return c && c.dso_days != null ? `They usually take about ${Math.round(c.dso_days)} days to pay.` : ''; })(),
-        action: `Call ${name} about ${o.ref ? 'bill ' + o.ref : 'the oldest bill'}.`, ask: `Tell me about ${g.party}` });
+        action: `Call ${name} about ${o.ref ? doc + ' ' + o.ref : 'the oldest ' + doc}.`, ask: `Tell me about ${g.party}` });
     }
   }
 
@@ -1300,7 +1306,7 @@ function insights(ctx) {
     if (g.amount < 2 * M || recentPay.has(norm(g.party))) continue;
     const n = g.refs.length;
     push({ key: 'newdue:' + norm(g.party) + ':' + g.refs.map(norm).sort().join(','), kind: 'newly_overdue', party: g.party, severity: 'low', impact: g.amount,
-      title: `${niceName(g.party)}: ${n === 1 ? 'a ' + inr(g.amount) + ' bill' : n + ' bills, ' + inr(g.amount) + ','} went past due this week.`,
+      title: `${niceName(g.party)}: ${n === 1 ? 'a ' + inr(g.amount) + ' ' + doc : n + ' ' + doc + 's, ' + inr(g.amount) + ','} went past due this week.`,
       detail: null, action: 'A polite reminder now is easier than a chase later.', ask: `Tell me about ${g.party}`, news: true });
   }
 

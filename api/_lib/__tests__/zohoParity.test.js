@@ -184,7 +184,8 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     // Zoho-only extras (31 Oct): each document's own balance, bills due in 7 days, TDS balances and "no GST booked"
     // come from what Zoho keeps and Tally answers don't carry; Tally stays as it was. Checked on their own below.
     // 1 Nov: which invoice a payment cleared (cleared, paid_by, recent_payments), from Zoho's payment detail.
-    const ZOHO_EXTRA = /(^|\.)(still_owed|due_next_7_days|tds|gst|cleared|paid_by|recent_payments)(\.|$)|^gst_estimate\./;
+    // 31 Oct (Round 9): the 13-week cash forecast rides along with cash on Zoho (WhatsApp has no Cash page to read).
+    const ZOHO_EXTRA = /(^|\.)(still_owed|due_next_7_days|tds|gst|cleared|paid_by|recent_payments|cash_forecast)(\.|$)|^gst_estimate\./;
     const diff = keys.filter((k) => k !== 'cost_note' && !ZOHO_EXTRA.test(k) && JSON.stringify(neutral(a[k])) !== JSON.stringify(neutral(b[k])));
     check(name + ': Zoho answer = Tally answer', diff.length === 0, diff.map((k) => k + ' Z=' + JSON.stringify(a[k]) + ' T=' + JSON.stringify(b[k])));
   }
@@ -382,6 +383,26 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     const advT = E.cashAndDebt(E.prepare(Object.assign({}, zBook, { tds: adv }), {})).tds;
     check('TDS: Zoho\'s default Advance Tax account counts as tax customers withheld (live shape)', advT.deducted_by_customers.total === '₹1,796' && advT.deducted_by_you.total === '₹1,000' && /default account/.test(advT.deducted_by_customers.accounts.find((x) => x.account === 'Advance Tax').note), advT);
     check('sync: no balance from Zoho, no column sent', !('current_balance' in sync._mapAccount({ account_id: 'S', account_name: 'Sales', account_type: 'income' }, ORG)));
+  }
+
+  console.log('# Round 9 (31 Oct): forecast on cash, invoice wording in "what needs attention"');
+  {
+    const zc = out.z.cash_and_loans.cash_forecast;
+    check('cash_and_loans: Zoho carries the 13-week forecast (today, 4 and 13 weeks, week by week)', zc && zc.today === '₹1.85 L' && zc.week_by_week.length === 13 && /Cash page/.test(zc.note) && zc.in_4_weeks, zc);
+    const CF = require('../cashFlowModel');
+    const { ctx } = await B.contextFor(ZU);
+    const fc = CF.build(ctx, { promises: [], pastRuns: [] });
+    check('cash_and_loans: the forecast is the Cash page\'s own (cashFlowModel.build)', zc.in_4_weeks === E.inr(fc.weeks[3].close) && zc.in_13_weeks === E.inr(fc.weeks[12].close), { zc, w4: fc.weeks[3] });
+    check('cash_and_loans: Tally answer has no forecast added (unchanged)', !('cash_forecast' in out.t.cash_and_loans), Object.keys(out.t.cash_and_loans));
+    // A customer far behind (Beta Traders, INV-2, ₹20,000, 92 days; small threshold so it is a point): Zoho says
+    // "invoice" and, when they owe more than the late part, the whole balance first. Tally exactly as before.
+    const { ctx: tctx } = await B.contextFor(TU);
+    const point = (c, src) => E.insights(Object.assign({}, c, { material: 5000 }, src ? { source: 'zoho', source_name: 'Zoho Books' } : {})).find((x) => x.kind === 'late');
+    const zt = point(tctx, true), tt = point(tctx, false);
+    check('attention: Zoho says invoice, never bill', zt && /oldest is invoice INV-2/.test(zt.title) && /Call Beta Traders about invoice INV-2/.test(zt.action), zt);
+    check('attention: Tally wording unchanged (bill)', tt && /^Beta Traders owes ₹20,000 that's more than a month late; oldest is bill INV-2/.test(tt.title) && /about bill INV-2\.$/.test(tt.action), tt);
+    const z2 = E.insights(Object.assign({}, tctx, { material: 5000, source: 'zoho', source_name: 'Zoho Books', analytics: tctx.analytics }));
+    check('attention: Zoho overdue total action names the invoice', !z2.find((x) => x.kind === 'overdue_total') || /oldest invoice/.test(z2.find((x) => x.kind === 'overdue_total').action || 'oldest invoice'), z2.map((x) => x.action));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -600,17 +600,24 @@ async function runWatchAll(slot, opts) {
     cloud = { zoho: new Set(more[0].map((r) => r.user_id)), odoo: new Set(more[1].map((r) => r.user_id)) };
   } catch (e) { return { slot, error: 'could not list accounts with books' }; }
   const results = [];
+  // Zoho Books and Odoo are read nightly; Tally sends all day. So a Zoho / Odoo account's money is read again before
+  // its update, or 10:30 repeats 02:30's figures. Started for every such account at once, before the loop: waiting
+  // in turn, a Tally account ahead in the list used the budget waiting out its sync and the refresh never ran
+  // (3 pm, 31 Oct 2026). Never on an account with Tally (its books are already live); the Tally waits are unchanged.
+  const refreshing = new Map();
+  if (!o.noRefresh) {
+    const deadline = started + Math.max(5000, Math.min(25000, budgetMs - 20000));
+    for (const u of users) {
+      if (tally.has(u) || !(cloud.zoho.has(u) || cloud.odoo.has(u)) || refreshing.size >= 25) continue;
+      refreshing.set(u, refreshBooks(u, { zoho: cloud.zoho.has(u), odoo: cloud.odoo.has(u), deadline }));
+    }
+  }
   for (const u of users) {
+    if (refreshing.has(u)) await refreshing.get(u);
     if (Date.now() - started > budgetMs) {
       // Say so in the account's update log, or a skipped update looks like one that never ran.
       await logRun(u, slot, { outcome: 'skipped', reason: 'Ran out of time this run; the next update carries on.' }).catch(() => {});
       results.push({ user: u, skipped: 'out of time this run' }); continue;
-    }
-    // Zoho Books and Odoo are read nightly; Tally sends all day. So before a Zoho / Odoo account's update, a quick
-    // money refresh, or 10:30 repeats 02:30's figures. Never on an account with Tally (its books are already live).
-    if (!tally.has(u) && (cloud.zoho.has(u) || cloud.odoo.has(u)) && !o.noRefresh) {
-      const left = budgetMs - (Date.now() - started) - 30000;
-      if (left > 5000) await refreshBooks(u, { zoho: cloud.zoho.has(u), odoo: cloud.odoo.has(u), deadline: Date.now() + Math.min(25000, left) });
     }
     // A sync in progress may hold one account a little; never past this run's budget.
     try { results.push(await watchAccount(u, { slot, waitMs: Math.max(0, budgetMs - (Date.now() - started) - 20000) })); }
