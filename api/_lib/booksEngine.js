@@ -535,7 +535,7 @@ function findEntries(ctx, args) {
   const count = hits.length, total = hits.reduce((s, r) => s + r.total, 0);
   hits = a.sort === 'largest' ? hits.sort((x, y) => y.total - x.total) : hits.sort((x, y) => y.dt - x.dt);
   const limit = Math.max(1, Math.min(30, parseInt(a.limit, 10) || 12));
-  return {
+  const out = {
     source: sourceLine(ctx), period: per.label,
     found: count, total_of_found: inr(total),
     entries: hits.slice(0, limit).map((r) => ({
@@ -545,7 +545,21 @@ function findEntries(ctx, args) {
     })),
     showing: count > limit ? `${a.sort === 'largest' ? 'largest' : 'latest'} ${limit} of ${count}` : 'all'
   };
+  // Zoho Books / Odoo keep each document's own balance, so say what is still owed on each invoice and bill.
+  // Without it the model saw an invoice and a payment and guessed "still unpaid" (31 Oct, INV-00762 paid with TDS).
+  // Tally answers are left exactly as they were.
+  if (!isTallyBook(ctx)) {
+    const open = new Map(ctx.bills.map((b) => [(b.direction === 'payable' ? 'p:' : 'r:') + norm(b.bill_ref), Math.abs(num(b.closing_balance))]));
+    for (const [e, r] of out.entries.map((e, i) => [e, hits[i]])) {
+      if (r.kind !== 'sales' && r.kind !== 'purchase') continue;
+      const left = open.get((r.kind === 'purchase' ? 'p:' : 'r:') + norm(r.number));
+      e.still_owed = left != null && left >= 1 ? inr(left) : 'nothing: paid or settled in full';
+    }
+  }
+  return out;
 }
+/** Tally keeps bills apart from vouchers; Zoho Books and Odoo carry each document's balance. */
+const isTallyBook = (ctx) => /^tally/i.test(SRC(ctx));
 
 /* ---------------- bills: who owes what ---------------- */
 
@@ -625,6 +639,13 @@ function moneyOwed(ctx, args) {
     for (const b of nonTrade) by.set(b.kind, (by.get(b.kind) || 0) + b.amount);
     out.owed_besides_suppliers = { total: inr(nonTrade.reduce((s, b) => s + b.amount, 0)), by_kind: [...by.entries()].map(([k, v]) => ({ what: L[k] || k, amount: inr(v) })),
       note: 'Commission agents, staff and the owner\'s family are kept under creditors in the books. They are in the total but not in "overdue", which counts trade suppliers only.' };
+  }
+  if (!isTallyBook(ctx)) {
+    // "Which bills are due this week?": the bills themselves, not only the total (Zoho Books / Odoo; Tally unchanged).
+    const t = ctx.today.getTime(), week = bills.filter((b) => b.due && b.due.getTime() >= t - 86400000 && b.due.getTime() <= t + 7 * 86400000)
+      .sort((x, y) => x.due - y.due);
+    out.due_next_7_days = { total: inr(week.reduce((s, b) => s + b.amount, 0)), count: week.length,
+      list: week.slice(0, 15).map((b) => ({ [dir === 'payable' ? 'vendor' : 'customer']: b.party, number: b.ref, due: dayStr(b.due, true), amount: inr(b.amount) })) };
   }
   const veryOld = parties.filter((g) => g.oldest > 365);
   if (veryOld.length) out.over_a_year_old = { amount: inr(bills.filter((b) => b.late > 365).reduce((s, b) => s + b.amount, 0)), names: veryOld.slice(0, 6).map((g) => g.party + ' (' + g.oldest + ' days)'), note: `Bills this old are usually disputed, short-paid or already settled but not knocked off in ${SRC(ctx)}. Worth a review: chase, settle, or write off.` };
@@ -950,6 +971,25 @@ function cashAndDebt(ctx) {
     const [y, m] = lastGst.month.split('-').map(Number);
     const due = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 20));
     out.gst_estimate = { month: monthLabel(lastGst.month), output_tax: inr(lastGst.output_tax), input_tax: inr(lastGst.input_tax), net_payable: inr(lastGst.net_payable_estimate), usual_due_date: dayStr(due, true), note: `Estimate from the tax ledgers in ${SRC(ctx)}, not the GST portal. Your CA files the actual return.` };
+  }
+  if (!isTallyBook(ctx)) {
+    // Zoho Books / Odoo with no GST on any entry this year: say so, never "GST payable ₹0" (31 Oct: the test org isn't GST-registered).
+    const fyGst = (an.gst_estimate || []).filter((g) => g.month >= isoDay(fy.from).slice(0, 7));
+    if (!fyGst.some((g) => Math.abs(num(g.output_tax)) >= 1 || Math.abs(num(g.input_tax)) >= 1)) {
+      delete out.gst_estimate;
+      out.gst = `No GST is booked in ${SRC(ctx)} this financial year (output and input tax are both ₹0), so GST may not be set up there. Margyn can't estimate GST payable; don't read this as ₹0 due.`;
+    }
+    // TDS / TCS: balance-sheet accounts, read from the books system's own balances.
+    const tds = ctx.book && ctx.book.tds;
+    if (tds) {
+      const side = (k) => tds.filter((t) => t.side === k);
+      const sum = (xs) => xs.reduce((s, t) => s + t.balance, 0);
+      out.tds = {
+        deducted_by_customers: { total: inr(sum(side('deducted_by_customers'))), accounts: side('deducted_by_customers').map((t) => ({ account: t.account, balance: inr(t.balance) })), note: 'Customers paid you less and deposited this as tax for you: claim it against your income tax (check it shows in Form 26AS).' },
+        deducted_by_you: { total: inr(sum(side('deducted_by_you'))), accounts: side('deducted_by_you').map((t) => ({ account: t.account, balance: inr(t.balance) })), note: 'You held this back from suppliers and must deposit it with the government by the 7th of the next month.' },
+        source: `Balances of the TDS/TCS accounts in ${SRC(ctx)} as of the last sync.`
+      };
+    }
   }
   const later = (ctx.future || []).filter((v) => !v.is_cancelled && (v.entries || []).some((e) => e && ['bank', 'cash', 'bank_od'].includes(ctx.cls(e.ledger))));
   if (later.length) {

@@ -325,7 +325,15 @@ function zohoToBook(z) {
   return { connected: true, source: 'zoho', source_name: SOURCE_NAME.zoho, balance_convention: 'opposite', company, companies: [company], chosen: [], lastSync,
     edition: null, agentVersion: null, diagnostics: null,
     ledgers: [...ledgers.values()], vouchers, bills: openBills, truncated: !!z.truncated, overrides: z.overrides || {}, aiPlaced: new Set(), syncRuns: [], notes,
-    item_master: itemMaster, item_coverage: prog, no_production_entries: true };
+    item_master: itemMaster, item_coverage: prog, no_production_entries: true, tds: zohoTds(accounts) };
+}
+
+/* TDS / TCS sit in balance-sheet accounts ("TDS Receivable", "TDS Payable"), which have no postings in the book:
+   their Zoho balances, when the sync has them (current_balance). null = not known. */
+function zohoTds(accounts) {
+  if (!accounts.some((a) => a.current_balance != null)) return null;   // column not there yet, or not filled by a sync
+  return accounts.filter((a) => /\b(tds|tcs)\b/i.test(a.account_name || '') && /asset|liabilit/i.test(a.account_type || ''))
+    .map((a) => ({ account: a.account_name, side: /asset/i.test(a.account_type) ? 'deducted_by_customers' : 'deducted_by_you', balance: r2(Math.abs(num(a.current_balance))) }));
 }
 
 async function loadZoho(userId) {
@@ -334,7 +342,8 @@ async function loadZoho(userId) {
   if (!org) return { connected: false };
   const o = encodeURIComponent(org.id);
   const [A, J, I, B, CP, VP, BK, OV, L, IT, LS] = await Promise.all([
-    safe(pagedAll('zoho_chart_of_accounts', `select=id,account_id,account_name,account_type&org_ref=eq.${o}&order=id.asc`, 5000), { rows: [] }),
+    safe(pagedAll('zoho_chart_of_accounts', `select=id,account_id,account_name,account_type,current_balance&org_ref=eq.${o}&order=id.asc`, 5000)
+      .catch(() => pagedAll('zoho_chart_of_accounts', `select=id,account_id,account_name,account_type&org_ref=eq.${o}&order=id.asc`, 5000)), { rows: [] }),
     safe(pagedAll('zoho_journal_entries', `select=account_ref,transaction_id,entry_date,debit,credit,party_ref,entry_number&org_ref=eq.${o}&order=entry_date.asc,transaction_id.asc`, 60000)
       .catch(() => pagedAll('zoho_journal_entries', `select=account_ref,transaction_id,entry_date,debit,credit&org_ref=eq.${o}&order=entry_date.asc,transaction_id.asc`, 60000)), { rows: [] }),
     safe(pagedAll('zoho_invoices', `select=*&org_ref=eq.${o}&order=invoice_date.asc,invoice_id.asc`, 20000), { rows: [] }),

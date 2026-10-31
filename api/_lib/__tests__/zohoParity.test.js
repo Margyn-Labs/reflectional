@@ -176,7 +176,10 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     const a = flat(out.z[name]), b = flat(out.t[name]);
     const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
     // cost_note is the one honest difference: Zoho Books has no production entries (no Manufacturing Journals).
-    const diff = keys.filter((k) => k !== 'cost_note' && JSON.stringify(neutral(a[k])) !== JSON.stringify(neutral(b[k])));
+    // Zoho-only extras (31 Oct): each document's own balance, bills due in 7 days, TDS balances and "no GST booked"
+    // come from what Zoho keeps and Tally answers don't carry; Tally stays as it was. Checked on their own below.
+    const ZOHO_EXTRA = /(^|\.)(still_owed|due_next_7_days|tds|gst)(\.|$)|^gst_estimate\./;
+    const diff = keys.filter((k) => k !== 'cost_note' && !ZOHO_EXTRA.test(k) && JSON.stringify(neutral(a[k])) !== JSON.stringify(neutral(b[k])));
     check(name + ': Zoho answer = Tally answer', diff.length === 0, diff.map((k) => k + ' Z=' + JSON.stringify(a[k]) + ' T=' + JSON.stringify(b[k])));
   }
 
@@ -337,6 +340,28 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
   // Varad, 30 Oct: connecting must be enough; never send the owner to a manual export.
   check('completeness: while filling, says Margyn keeps reading on its own and what a paid plan allows, never a manual export', /keeps reading on its own until they are all in; nothing to do/.test(il.detail) && /Professional 5,000/.test(il.detail) && !/export|Import/.test(il.detail), il.detail);
   check('completeness: credit notes and vendor credits counted', /12 credit notes and 4 vendor credits/.test(filling.checks.find((c) => c.key === 'returns').detail));
+
+  console.log('# Zoho-only extras (31 Oct live chat check): still owed, due this week, TDS, no GST');
+  {
+    const zc = E.prepare(zBook, {}), tc = E.prepare(tBook, {});
+    const paid = E.findEntries(zc, { number: 'INV-4' }).entries[0], open = E.findEntries(zc, { number: 'INV-1' }).entries[0];
+    check('find_entries: a paid Zoho invoice says nothing is still owed', paid && /paid or settled in full/.test(paid.still_owed), paid);
+    check('find_entries: an open Zoho invoice says what is still owed', open && open.still_owed === '₹1 L', open);
+    check('find_entries: Tally entries carry no still_owed (unchanged)', E.findEntries(tc, { number: 'INV-4' }).entries.every((e) => !('still_owed' in e)));
+    const due = E.moneyOwed(zc, { direction: 'receivable' }).due_next_7_days;
+    check('money_owed: lists what falls due in the next 7 days on Zoho', due && due.count === 1 && due.list[0].number === 'INV-1', due);
+    check('money_owed: Tally answer unchanged (no due_next_7_days)', !('due_next_7_days' in E.moneyOwed(tc, { direction: 'receivable' })));
+    const zcash = E.cashAndDebt(zc), tcash = E.cashAndDebt(tc);
+    check('cash_and_loans: Zoho with no GST booked says GST can\'t be estimated, not ₹0 due', !zcash.gst_estimate && /can't estimate GST payable/.test(zcash.gst), zcash.gst);
+    check('cash_and_loans: Tally GST estimate unchanged', tcash.gst_estimate && tcash.gst_estimate.net_payable === '₹0' && !('gst' in tcash) && !('tds' in tcash), tcash);
+    check('cash_and_loans: no TDS section when Zoho balances aren\'t synced yet', !('tds' in zcash));
+    const withTds = Object.assign({}, zBook, { tds: [{ account: 'TDS Receivable', side: 'deducted_by_customers', balance: 1795.62 }, { account: 'TDS Payable', side: 'deducted_by_you', balance: 1000 }] });
+    const t2 = E.cashAndDebt(E.prepare(withTds, {})).tds;
+    check('cash_and_loans: TDS deducted by customers and by you, from Zoho\'s balances', t2 && t2.deducted_by_customers.total === '₹1,796' && t2.deducted_by_you.total === '₹1,000', t2);
+    const coa = sync._mapAccount({ account_id: 'T', account_name: 'TDS Receivable', account_type: 'other_current_asset', current_balance: 1795.62 }, ORG);
+    check('sync: chart of accounts keeps Zoho\'s balance', coa.current_balance === 1795.62, coa);
+    check('sync: no balance from Zoho, no column sent', !('current_balance' in sync._mapAccount({ account_id: 'S', account_name: 'Sales', account_type: 'income' }, ORG)));
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail) process.exitCode = 1;

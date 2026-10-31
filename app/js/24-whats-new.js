@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-10-31-zoho-tds', date:'31 Oct 2026', title:'Ask about TDS, paid invoices and bills due this week',
+    items:[
+      { t:'TDS from Zoho Books', what:'Margyn now reads your TDS accounts in Zoho Books: what customers deducted when they paid you (claim it in your return) and what you held back from suppliers (deposit it by the 7th).',
+        how:'Ask Margyn <b>How much TDS do we have?</b>', act:'talk' },
+      { t:'Is this invoice paid?', what:'Ask about any Zoho Books invoice or bill and Margyn says what is still owed on it, even when the customer paid less because they deducted TDS.',
+        how:'Ask <b>Did Bluecrate pay INV-00762?</b> or <b>Which bills are due this week?</b>', act:'talk' },
+      { t:'GST when it isn’t set up', what:'If no GST is booked in Zoho Books, Margyn says so instead of showing GST payable as ₹0.',
+        how:'Ask <b>What is our GST payable?</b>', act:'talk' }
+    ]
+  },
+  {
     id:'2026-10-31-on-time', date:'31 Oct 2026', title:'Your 10:30 update now always comes',
     items:[
       { t:'10:30 update on every account', what:'The 10:30 WhatsApp update could be skipped on accounts whose books are in Zoho Books or Odoo. It now goes out on every account, and if an update is ever skipped, Conversations › Today’s updates says why.',
