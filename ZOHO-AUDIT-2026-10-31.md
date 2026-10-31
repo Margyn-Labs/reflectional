@@ -291,3 +291,70 @@ Tested with Zoho's **real** export files (MARGYN DEMO org 60082308675, exported 
 **Files (local):** `api/_lib/importMapper.js`, `api/_zoho/exportImport.js`, `api/_zoho/items.js`, `api/_lib/tallyAnalytics.js`, `api/_lib/booksEngine.js`, `api/_lib/booksTools.js`, `api/_lib/cashFlowModel.js`, `api/_lib/dataCompleteness.js`, `app/js/19i-margin.js`, `app/js/32-tabs.js`, `app/js/25-margyn.js`, `app/js/11-connectors.js`, `app/js/24-whats-new.js`; tests `zohoExportImport`, `zohoItemSync`, `zohoParity`, `cashFlowModel`; fixture `test-fixtures/zoho/export-real-2026-10-30.json`. No SQL. Mihir/Tally: the only shared logic touched (`cashFlowModel` matching) is Zoho/Odoo-only; Tally test proves it unchanged.
 
 **Still open:** (a) prove the follow-on fill in the 31 Oct 02:30 run (`connector_logs` `sync_item_lines`, several entries minutes apart); (b) ship one PR on Varad's OK; after deploy, Sync now on MARGYN DEMO and check the vendor credit and all 1,054 documents read; (c) WhatsApp "onboard" text flow not built; (d) live WhatsApp checks on a Zoho-only account need sends, not run.
+
+### Round 5, live checks (31 Oct 2026, 02:15–03:05 IST, after PR #140 merged)
+| Check | Result |
+|---|---|
+| Nightly 02:30 run on the new code (ran 02:44 IST, Vercel Hobby runs within the hour) | ✅ money sync + item lines 94 docs in one run; every document read: invoices 1,001, bills 63, credit notes 9, vendor credit 1, pending 0. No follow-on hop needed (nothing left) |
+| Vendor credit APX-DN-1001 | ✅ listed under `vendor_credits`, read 02:46 IST, 1 line |
+| Margin › Sales and purchases by item, live, fresh page load | ✅ 30 / 30 item × month cells = Zoho Sales by Item + Purchases by Item; Surgical Mask Oct bought 350 / ₹33,250 |
+| WhatsApp "onboard" | Built, PR #141 open (not merged); link handling run on the live page |
+| Still open | Chase test on Iyer Retail fires 31 Oct 10:30 IST (check after); live WhatsApp send of "onboard" needs a real message after #141 merges; TDS/TCS not testable without writing to Zoho |
+
+---
+
+## Round 6 (31 Oct 2026, 10:45–11:20 IST): full end-to-end check + Sanjay chase
+
+Read-only, in Varad's signed-in Chrome: MARGYN DEMO (app + its own API) and Zoho org 60082308675.
+
+| Check | Result |
+|---|---|
+| Zoho changed since last night's read? | ✅ No. The newest edit in Zoho is the Iyer Retail contact (30 Oct 16:54 IST); last night's 02:44 read is current |
+| Nightly syncs (Zoho, Razorpay, reconcile) | ✅ every run `success` |
+| Receivables | ✅ ₹3,98,47,964 Zoho = Margyn |
+| Payables | ✅ ₹65,80,298 Zoho = Margyn |
+| Cash | ✅ HDFC ₹25,17,574 − petty cash ₹50,000 = ₹24,67,574 = Margyn ₹24.7 L |
+| Iyer Retail in Margyn | ✅ ₹4,89,995 owed = Zoho; phone +91 9833325560 = Zoho |
+| Chase preview | ✅ 38 customers queued, exactly 1 with a phone (Iyer Retail), template ready, other numbers opted out |
+| **Sanjay chase** | ✅ **sent 11:09:58 IST** to 919833325560, template `chase_due_friendly`, Gupshup id c7323f04…; Channel health "Delivering", 0 failed. Next reminder 3 Nov. Text: "Hi, a gentle nudge from MARGYN DEMO — invoice INV-00035 + 11 more for ₹4,89,995 is due and now 304 days overdue…" |
+| 10:30 sent at 11:09 | ❌ Vercel Hobby runs crons anywhere in the hour; the on-time Supabase pg_cron script (planned 4 Oct in `cronOnce.js`) was never written → `sql/2026-10-31-on-time-crons.sql` + `DEPLOY-2026-10-31-on-time-updates.md` (Varad runs it) |
+| 10:30 Watch update on MARGYN DEMO | ❌ skipped silently 30 + 31 Oct: 25 s budget used up by Tally accounts listed first → 120 s + skip logged (PR #142) |
+| Home "Payment reminders: Off" while Chase active | ❌ `loadPeople` filled `agentDeployments` with the Bell, so `chase_agent` never loaded → `agentDataLoaded` flag (PR #142) |
+| Not verified | handset delivery receipt (wa_deliveries is server-only); Sanjay to confirm the message arrived |
+
+## Round 7 (31 Oct 2026, 11:30–12:30 IST): TDS / GST / currencies on the free org + Margyn chat test
+
+**Seeded in Zoho (test org, on Varad's ask):** bill TDS-TEST-001, Metro Services, ₹50,000 consulting with 2% TDS (₹1,000) → ₹49,000 owed; payment 168 from Bluecrate Exports on INV-00762: ₹87,985.38 to HDFC + ₹1,795.62 TDS withheld (API: `invoices[].tax_amount_withheld`; top-level is rejected) → invoice paid.
+
+| What | Free org | Result |
+|---|---|---|
+| TDS | ✅ allowed (6 TDS rates already on) | Seeded both sides |
+| Other currencies | ❌ "Your current plan does not support creating Contacts with any currency other than your organizations base currency" (3048) | Needs a paid plan or trial |
+| GST | ❌ needs a real GSTIN; Margyn won't type a tax ID | Varad's step if wanted |
+
+**After Sync now, Margyn = Zoho exactly:** AR ₹3,97,58,183; AP ₹66,29,298; cash ₹25,55,559.38; Oct P&L opex ₹8,53,870, net ₹51,36,862.
+
+**Chat, 10 questions (live):** right: cash, who owes most, Oct profit, top items, Hinglish spend, ₹10 L supplier question. Wrong/weak → fixed in PR #143: INV-00762 "still unpaid"; "no TDS"; bills due this week (total only); GST "₹0". Minor, not fixed: receivables called "bills"; Home/summary cash ₹24.7 L stays on the 02:44 reading after a manual Sync now (₹25.6 L live); "less -₹50,000" double minus.
+
+**After #143 merged (94f30da, live):** "Did Bluecrate pay INV-00762?" → "Yes… settled in full" ✅; "bills due this week" → lists Apex ₹1.26 L (2 Nov), Alpha ₹84,700 (6 Nov), Delta ₹94,435 (7 Nov) ✅; TDS waits for the SQL + Sync now (expected); GST still "₹0" ❌ → cause: a bill's shortfall (TDS) was booked as "Input GST (Zoho bills)" (₹1,000 in Oct). Fix PR #144 (TDS held back ≠ GST), open, awaiting Varad's merge OK.
+**#144 MERGED + LIVE (30e411f):** GST answer now: "I can't give you a GST payable figure yet. Your Zoho Books shows no GST booked this financial year…" ✅
+
+**On-time clock live (Varad ran the SQL, 6 jobs active):** 12:30 update sent at **12:30:46 IST** (was ~13:20 on Vercel alone). TDS Payable ₹1,000 synced ✅; customer TDS went to Zoho's default **Advance Tax** account (₹1,795.62), so it read ₹0 → PR #145 (count Advance Tax), open.
+**#145 MERGED + LIVE (90852a4):** "How much TDS do we have?" → customers deducted ₹1,796 (Advance Tax, claim via 26AS); you deducted ₹1,000 (TDS Payable, deposit by 7 Nov) ✅ = Zoho.
+
+## Round 8 (31 Oct 2026, 12:45–13:30 IST): Zoho ↔ Tally parity gaps, self-cleanup, safety drills
+
+Built locally in Full repo, shipped as ONE PR (not merged; Varad approves). Live checks read-only in Varad's Chrome (Zoho org 60082308675 web session, MARGYN DEMO app session). Tests: **60 of 60 files pass** (+ `aiCost.test.mjs`), new `zohoSafety` (72 checks) and `zohoMarginSaved` (7); `tools/ui-margyn-test.js` and `tools/ui-live-test.js` ALL PASS on port 5188. **Tally answers byte-identical**: every chat tool's Tally answer from main (90852a4) vs this PR, same books → identical (12,493 bytes).
+
+| # | Gap | Live finding | Fix |
+|---|---|---|---|
+| 1 | Daytime Zoho figures | Zoho read only at 02:30, so 10:30–17:00 updates repeated the night's figures | Before each update, Zoho/Odoo-only accounts get a quick money refresh (invoices, bills, payments, banks, chart with balances; ~7 calls), skipped if synced <20 min ago or <250 calls left today; stops at Zoho's first 429; never on an account with an active Tally install |
+| 2 | Which payment cleared which invoice | Payment 168 list row: `invoice_numbers` "INV-00762" + top-level `tax_amount_withheld` 1,795.62 (all 168 payments single-invoice); detail `invoices[]`: INV-00762, applied ₹87,985.38, TDS ₹1,795.62 | Single-invoice payments linked from the list for free; others get one detail read (≤150 nightly, ≤25 per daytime refresh). Chat: "₹87,985 on 31 Oct 2026 (payment 168) cleared INV-00762 (₹1,796 TDS withheld)" |
+| 3 | Home cash after Sync now | `mgMar.cash.total` = Zoho ₹25,55,559.38; Zoho cash history = every saved reading's cash for 29–30 Oct (₹24,67,574) to the rupee | Home / forecast opening / chat use the books' live cash on Zoho/Odoo too (Tally rule unchanged); Sync now reloads Margin + reading |
+| 4 | Margin saved answer Tally-only | — | Saved per account for Zoho/Odoo too, keyed on the connection's `last_synced_at` (any sync makes it stale) |
+| 5 | "bills" for receivables | — | Zoho/Odoo receivables: `invoices`, `oldest_invoice_days_late`, `open_invoices`; payables and Tally unchanged |
+| 6 | Self-cleanup | MARGYN DEMO has **4** zoho_organizations rows: e5a18507 active (1,001 invoices), 5385c7b8 + 4c4748f4 disconnected (1,001 each), db7fafb2 disconnected (0). Tally install: revoked | `selfCleanup.js`: on connect/reconnect and nightly, removes the copies of disconnected rows superseded by a newer live row for the same Zoho org (Odoo same); expires their waiting proposals; drops resolved repeatable findings >400 days. Never Tally accounts, the live copy, or snapshots. Counts → `connector_logs` |
+| 7 | Safety drills | Code read: reconnect after needs_reauth answered **409 "already connected"** (owner could never reconnect); a 429 during P&L postings retried every account | Reconnect moves the new grant onto the existing connection (data, cursors and item lines kept); 429 stops the run, cursors kept, resumes next run; disconnect asks keep/remove and says which. `DRILLS-ZOHO-SAFETY.md` |
+
+**SQL:** `sql/2026-11-01-zoho-parity.sql` (adds columns only). Runbook `DEPLOY-2026-11-01-zoho-parity.md`.
+**Not done / not verified live:** the refresh, links and cleanup run only after merge + SQL; the 429 drill can't be forced live without using up a day's allowance (covered by tests); GST/2B, multi-currency, TCS out of scope.

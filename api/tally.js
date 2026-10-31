@@ -50,7 +50,7 @@ const { archiveRaw, pagedAll, loadTallyBook, bookKey, readSaved, writeSaved } = 
 const { syncTallyPartyContacts, cleanContact } = require('./_lib/tallyParties');
 const { tallyCompleteness, zohoCompleteness } = require('./_lib/dataCompleteness');
 // The Books category in one place (Tally, Zoho Books, Odoo): the analytics read whichever keeps the books.
-const { loadBooks, forgetBooks } = require('./_lib/dataLayer/books');
+const { loadBooks, forgetBooks, cloudStamps } = require('./_lib/dataLayer/books');
 const { checkOneBooks } = require('./_lib/booksSource');
 const { buildInsights, prepare: prepareBooks } = require('./_lib/booksEngine');
 const cashFlow = require('./_lib/cashFlowModel');
@@ -377,9 +377,27 @@ function savedAnalyticsPath(userId, q) {
 }
 async function analyticsKey(userId, q) {
   const [bk, prom] = await Promise.all([bookKey(userId, q.company).catch(() => null), forecastStore.promises(userId).catch(() => [])]);
-  if (!bk) return null;
+  if (!bk) return cloudAnalyticsKey(userId, q, prom);
   // ANSWER_VERSION: bump when the sums change, so an answer saved by older code is worked out again.
   return sha256(JSON.stringify([bk.key, prom, String(q.credit_rate || ''), istDay(), ANSWER_VERSION]));
+}
+/* Zoho Books / Odoo (2026-11-01): the same saved answer, keyed on when the connection last synced (a Sync now, the
+ * nightly run or a daytime refresh moves it), the ledger placements, the promises, the rate and the India date.
+ * null when no cloud books are connected (nothing saved, exactly as before). */
+async function cloudAnalyticsKey(userId, q, prom) {
+  if (q.company) return null;
+  const st = await cloudStamps(userId);
+  if (!st.zoho && !st.odoo) return null;
+  if ((st.zoho || 'none') === 'none' && (st.odoo || 'none') === 'none') return null;
+  const O = await selectRows('tally_ledger_classes', `select=company_name,ledger_name,bucket,set_by&user_id=eq.${userId}&order=ledger_name.asc`).catch(() => []);
+  return sha256(JSON.stringify(['cloud', st.zoho, st.odoo, O.map((x) => [x.company_name, x.ledger_name, x.bucket, !x.set_by]), prom, String(q.credit_rate || ''), istDay(), ANSWER_VERSION]));
+}
+/** A saved answer this account may be served: Tally's (as before), or one from Zoho Books / Odoo alone. */
+function savedSourceOk(body) {
+  if (!body || !body.connected) return false;
+  const others = body.books_sources || [];
+  if (body.books_source === 'tally') return !others.some((x) => x.source !== 'tally');
+  return (body.books_source === 'zoho' || body.books_source === 'odoo') && !others.some((x) => x.source === 'tally');
 }
 function servedSaved(body) {
   const b = Object.assign({}, body);
@@ -398,7 +416,7 @@ async function handleAnalytics(req, res) {
   const savedPath = savedAnalyticsPath(user.id, q);
   const [aKey, saved] = await Promise.all([analyticsKey(user.id, q).catch(() => null), readSaved(savedPath)]);
   sw.mark('saved');
-  const savedOk = saved && saved.body && saved.body.connected && saved.body.books_source === 'tally' && !(saved.body.books_sources || []).some((x) => x.source !== 'tally');
+  const savedOk = saved && savedSourceOk(saved.body);
   if (savedOk && aKey && q.fresh !== '1') {
     if (saved.key === aKey) { sw.header(res, 'answer;desc="saved"'); return json(res, 200, servedSaved(saved.body)); }
     // Last sync's answer now; the page asks for this sync's straight after.
@@ -550,7 +568,7 @@ async function handleAnalytics(req, res) {
   // A placement Margyn just made changes the book next time (it is read with the book), so this is never kept past it.
   if (!placedNow) _analyticsDone.set(book, { k: doneKey, body });
   // Saved for every instance. A placement Margyn just made changes the key, so the next call works it out again.
-  if (aKey && !placedNow && body.books_source === 'tally') {
+  if (aKey && !placedNow && savedSourceOk(body)) {
     const prefix = user.id + '|' + (company || '') + '|', ai_asked = {};
     for (const [k, at] of AI_ASKED) if (k.startsWith(prefix) && Date.now() - at < AI_ASK_AGAIN_MS) ai_asked[k.slice(prefix.length)] = at;
     await writeSaved(savedPath, { key: aKey, at: new Date().toISOString(), body, ai_asked });

@@ -19,10 +19,13 @@
 const { getUserFromRequest, selectRows, updateRows, logConnectorEvent } = require('../_lib/supabaseRest');
 const {
   readRefreshToken,
+  storeRefreshToken,
+  purgeRefreshToken,
   refreshAccessToken,
   listOrganizations,
   ZohoAuthError
 } = require('../_lib/zohoClient');
+const selfCleanup = require('../_lib/selfCleanup');
 const { syncZohoForUser } = require('./sync');
 const { track } = require('../_lib/track');
 
@@ -152,9 +155,15 @@ async function handler(req, res) {
   // that's actually live should count as a duplicate.
   const duplicate = await selectRows(
     'zoho_organizations',
-    `select=id&user_id=eq.${user.id}&organization_id=eq.${chosenId}` +
+    `select=id,status&user_id=eq.${user.id}&organization_id=eq.${chosenId}` +
     `&status=in.(active,pending_org_selection,needs_reauth)&limit=1`
   );
+  // Reconnect after Zoho stopped accepting the old grant (revoked, expired): the new grant goes onto the existing
+  // connection, which keeps its data, its cursors and its item lines (a day of Zoho's allowance on the Free plan).
+  // Before, this answered 409 "already connected" and the owner could never reconnect.
+  if (duplicate.length > 0 && duplicate[0].id !== org.id && duplicate[0].status === 'needs_reauth') {
+    return adoptReconnect(req, res, user, org, duplicate[0], match);
+  }
   if (duplicate.length > 0 && duplicate[0].id !== org.id) {
     await orgSelectedEvent(user.id, false, 'org_already_connected');
     res.status(409).json({ error: 'That organization is already connected to Margyn' });
@@ -186,6 +195,10 @@ async function handler(req, res) {
     status: 'success',
     recordsSynced: 0
   });
+
+  // Older, disconnected connections to this same Zoho organisation still hold full copies of its books: removed now
+  // that this one is live (selfCleanup.js; counts in connector_logs). Never blocks the connect.
+  try { await selfCleanup.cleanupAccount(user.id); } catch (err) { console.error('[zoho] cleanup after connect failed:', err.message); }
 
   // One-time 12-month backfill. This used to be fired via a self-HTTP
   // fetch() that was never awaited — on Vercel's serverless model the
@@ -227,5 +240,47 @@ async function handler(req, res) {
     backfill: backfillResult && backfillResult.status === 'error' ? 'failed' : 'completed'
   });
 };
+
+/**
+ * The owner reconnected a connection that needs re-authorising: move the new grant onto it and carry on with a
+ * delta sync. The fresh pending row is set back to disconnected (it holds no data; the next connect reuses it).
+ */
+async function adoptReconnect(req, res, user, pending, existing, match) {
+  try {
+    const token = await readRefreshToken(pending.id);
+    await storeRefreshToken(existing.id, token);
+    await purgeRefreshToken(pending.id).catch(() => {});
+    await updateRows('zoho_organizations', `id=eq.${existing.id}`, {
+      api_domain: pending.api_domain,
+      accounts_domain: pending.accounts_domain,
+      organization_name: match.name || null,
+      plan_type: match.plan_type || null,
+      status: 'active',
+      connected_at: new Date().toISOString(),
+      last_token_refresh: new Date().toISOString(),
+      connector_disconnected_at: null
+    });
+    await updateRows('zoho_organizations', `id=eq.${pending.id}`, { status: 'disconnected', connector_disconnected_at: new Date().toISOString() });
+  } catch (err) {
+    await orgSelectedEvent(user.id, false, 'activate_failed');
+    res.status(500).json({ error: 'Could not reconnect. Please try again.' });
+    return;
+  }
+  await logConnectorEvent({ userId: user.id, connectorType: 'zoho_books', operation: 'reconnect', status: 'success', recordsSynced: 0 });
+  try { await selfCleanup.cleanupAccount(user.id); } catch (err) { console.error('[zoho] cleanup after reconnect failed:', err.message); }
+  let result;
+  try { result = await syncZohoForUser(user.id, 'delta'); } catch (err) { result = { status: 'error', message: err.message }; }
+  await orgSelectedEvent(user.id, true, 'none', { backfill_ok: !(result && result.status === 'error') });
+  res.status(200).json({
+    status: 'active',
+    reconnected: true,
+    org_ref: existing.id,
+    organization_id: match.organization_id,
+    organization_name: match.name || null,
+    plan_type: match.plan_type || null,
+    backfill: result && result.status === 'error' ? 'failed' : 'completed',
+    message: 'Reconnected. Margyn kept everything it had read and caught up from where it stopped.'
+  });
+}
 
 module.exports = { handler };

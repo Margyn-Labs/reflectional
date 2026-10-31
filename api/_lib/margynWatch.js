@@ -588,7 +588,7 @@ async function runWatchAll(slot, opts) {
   const o = opts || {};
   // The morning and evening may wait out a Tally sync (watchAccount), so they get most of the function's 300 s.
   const started = Date.now(), budgetMs = o.budgetMs || (slot === 'morning' || slot === 'evening' ? 200000 : 45000);
-  let users = [];
+  let users = [], cloud = { zoho: new Set(), odoo: new Set() }, tally = new Set();
   try {
     const rows = await selectRows('tally_installs', 'select=user_id&status=eq.active&limit=500');
     const more = await Promise.all([
@@ -596,6 +596,8 @@ async function runWatchAll(slot, opts) {
       selectRows('connector_credentials', 'select=user_id&connector_type=eq.odoo&disconnected_at=is.null&limit=500').catch(() => [])
     ]);
     users = [...new Set(rows.concat(...more).map((r) => r.user_id).filter(Boolean))];
+    tally = new Set(rows.map((r) => r.user_id));
+    cloud = { zoho: new Set(more[0].map((r) => r.user_id)), odoo: new Set(more[1].map((r) => r.user_id)) };
   } catch (e) { return { slot, error: 'could not list accounts with books' }; }
   const results = [];
   for (const u of users) {
@@ -604,11 +606,27 @@ async function runWatchAll(slot, opts) {
       await logRun(u, slot, { outcome: 'skipped', reason: 'Ran out of time this run; the next update carries on.' }).catch(() => {});
       results.push({ user: u, skipped: 'out of time this run' }); continue;
     }
+    // Zoho Books and Odoo are read nightly; Tally sends all day. So before a Zoho / Odoo account's update, a quick
+    // money refresh, or 10:30 repeats 02:30's figures. Never on an account with Tally (its books are already live).
+    if (!tally.has(u) && (cloud.zoho.has(u) || cloud.odoo.has(u)) && !o.noRefresh) {
+      const left = budgetMs - (Date.now() - started) - 30000;
+      if (left > 5000) await refreshBooks(u, { zoho: cloud.zoho.has(u), odoo: cloud.odoo.has(u), deadline: Date.now() + Math.min(25000, left) });
+    }
     // A sync in progress may hold one account a little; never past this run's budget.
     try { results.push(await watchAccount(u, { slot, waitMs: Math.max(0, budgetMs - (Date.now() - started) - 20000) })); }
     catch (e) { results.push({ user: u, error: String(e.message || e).slice(0, 160) }); }
   }
   return { slot, accounts: users.length, sent: results.filter((r) => r.sent).length, results };
+}
+
+/** A Zoho / Odoo account's money, read again before its update (_zoho/sync.refreshZohoMoney, _odoo/odoo.refreshOdoo). Never throws. */
+async function refreshBooks(userId, o) {
+  const out = {};
+  try { if (o.zoho) out.zoho = await require('../_zoho/sync').refreshZohoMoney(userId, { deadline: o.deadline }); } catch (e) { out.zoho = { refreshed: false, reason: String(e.message || e).slice(0, 120) }; }
+  try { if (o.odoo && Date.now() < o.deadline) out.odoo = await require('../_odoo/odoo').refreshOdoo(userId, { deadline: o.deadline }); } catch (e) { out.odoo = { refreshed: false, reason: String(e.message || e).slice(0, 120) }; }
+  // This instance's copy of the books is now behind: the update reads what just came in.
+  if ((out.zoho && out.zoho.refreshed) || (out.odoo && out.odoo.refreshed)) { try { require('./dataLayer/books').forgetBooks(userId); } catch (e) { /* the stamp check catches it */ } }
+  return out;
 }
 
 /** Owner choices from the app: mode, mute / unmute a finding or a whole kind. */
@@ -651,4 +669,4 @@ async function signals(userId) {
   };
 }
 
-module.exports = { runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };

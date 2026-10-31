@@ -106,6 +106,12 @@ async function handler(req, res) {
   let fillChain = false;
   try { fillChain = await triggerFillChain(1); } catch (err) { /* the next night carries on */ }
 
+  // Tidy up what earlier connections left (superseded copies, stale proposals and findings: selfCleanup.js).
+  // Never on a Tally account; never the live connection. Counts only, in connector_logs.
+  let cleanup = null;
+  try { const c = await require('../_lib/selfCleanup').cleanupAll({ deadline: startedAt + 285 * 1000 }); cleanup = { accounts: c.accounts, cleaned: c.cleaned }; }
+  catch (err) { cleanup = { error: 'cleanup failed' }; }
+
   res.status(200).json({
     orgs_synced: succeeded,
     partial,
@@ -113,6 +119,7 @@ async function handler(req, res) {
     failed_users: failed,
     total_orgs: userIds.length,
     fill_chain: fillChain,
+    cleanup,
     duration_ms: Date.now() - startedAt,
     timestamp: new Date().toISOString()
   });

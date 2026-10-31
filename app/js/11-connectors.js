@@ -657,7 +657,7 @@ function renderZohoStatus(){
     const needsReauth = zohoVitals.status === 'needs_reauth';
     const name = escapeHtml(zohoVitals.organization_name || zohoVitals.organization_id || 'your organization');
     const meta = needsReauth
-      ? 'Needs re-authentication, reconnect to resume nightly syncing'
+      ? 'Zoho Books stopped letting Margyn read your books (the access was removed or has expired). Press Reconnect and approve again: nothing Margyn already read is lost.'
       : (zohoVitals.backfill_completed_at
           ? 'Connected to ' + name + ', syncing nightly at 2:30 AM IST'
           : 'Connected to ' + name + ', first 12-month backfill in progress');
@@ -816,6 +816,8 @@ async function confirmZohoOrg(){
     zohoPendingOrgRef = null; zohoChosenOrgId = null;
     await loadZohoVitals();
     if(typeof mgrSetupConnected === 'function') mgrSetupConnected('zoho');   // 25-margyn.js: Margyn takes it from here
+    if(out.reconnected && out.message) toast(out.message, { ms:6000 });
+    if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync();
     if(out.multi_currency_detected){
       toast('Non-INR base currency', { kind:'info', ms:6000, sub:'Those records stay out of your vitals until currency conversion lands.' });
     }
@@ -833,6 +835,8 @@ async function syncZohoNow(){
   try {
     await zohoApi('/api/zoho?action=sync', { method:'POST', body: JSON.stringify({ mode:'delta' }) });
     await loadZohoVitals();
+    // Home's cash and the forecast follow the books just read, not the night's reading (19i-margin.js).
+    if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync();
   } catch(e){
     if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
   }
@@ -873,11 +877,22 @@ async function fillZohoItemsNow(){
     const b = document.getElementById('zohoFillBtn'); if(b){ b.disabled = false; b.textContent = 'Fill now'; }
   }
 }
+/* Disconnect asks twice: first whether to disconnect, then what happens to what Margyn copied (kept by default).
+   The server says which it did, and that is what the owner is told. */
+async function mgAskRemoveData(source){
+  return mgConfirm({ title:'Keep the ' + source + ' data Margyn copied?',
+    body:'Keep it: your past figures stay visible in Margyn. Remove it: Margyn deletes the invoices, bills and payments it copied from ' + source + ' (your books in ' + source + ' are not touched).',
+    cancelLabel:'Keep it', confirmLabel:'Remove it', danger:true });
+}
 async function disconnectZoho(){
-  if(!(await mgConfirm({ title:'Disconnect Zoho Books?', body:'Your historical figures stay visible in Margyn, but nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;
+  if(!(await mgConfirm({ title:'Disconnect Zoho Books?', body:'Margyn stops reading Zoho Books and gives back its access. Nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;
+  const removeData = await mgAskRemoveData('Zoho Books');
   const btn = document.getElementById('zohoDisconnectBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
-  try { await zohoApi('/api/zoho?action=disconnect', { method:'POST', body: JSON.stringify({}) }); }
+  try {
+    const out = await zohoApi('/api/zoho?action=disconnect', { method:'POST', body: JSON.stringify({ remove_data: removeData === true }) });
+    if(out && out.message) toast(out.message, { kind: out.data === 'removed' || !removeData ? 'ok' : 'bad' });
+  }
   catch(e){ toast('Could not disconnect: ' + e.message, {kind:'bad'}); }
   await loadZohoVitals();
 }
@@ -987,6 +1002,7 @@ async function syncOdooNow(){
   try {
     await zohoApi('/api/zoho?action=odoo-sync', { method:'POST', body: JSON.stringify({}) });
     await loadOdooStatus();
+    if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync();
   } catch(e){
     if(btn){ btn.textContent = 'Sync failed'; setTimeout(() => { btn.disabled = false; btn.textContent = 'Sync now'; }, 2200); return; }
   }
@@ -996,7 +1012,11 @@ async function disconnectOdoo(){
   if(!(await mgConfirm({ title:'Disconnect Odoo?', body:'Your historical invoice and bill data stays visible in Margyn, but nothing new will sync until you reconnect.', confirmLabel:'Disconnect', danger:true }))) return;
   const btn = document.getElementById('odooDisconnectBtn');
   if(btn){ btn.disabled = true; btn.textContent = 'Disconnecting…'; }
-  try { await zohoApi('/api/zoho?action=odoo-disconnect', { method:'POST', body: JSON.stringify({}) }); }
+  const removeData = await mgAskRemoveData('Odoo');
+  try {
+    const out = await zohoApi('/api/zoho?action=odoo-disconnect', { method:'POST', body: JSON.stringify({ remove_data: removeData === true }) });
+    if(out && out.message) toast(out.message, { kind: out.data === 'removed' || !removeData ? 'ok' : 'bad' });
+  }
   catch(e){ toast('Could not disconnect: ' + e.message, {kind:'bad'}); }
   await loadOdooStatus();
 }
