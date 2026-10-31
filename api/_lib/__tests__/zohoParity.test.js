@@ -417,6 +417,7 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     check('opening_read: overdue is Beta Traders only', n.late.length === 1 && n.late[0].party === 'Beta Traders' && n.recv_overdue === 20000, n.late);
     check('opening_read: since 15 Oct, ₹20,000 came in from Alpha Pharma (receipt of 20 Oct)', n.since.money_in === 20000 && n.since.paid[0].party === 'Alpha Pharma Ltd' && n.since.paid[0].on === '2026-10-20', n.since);
     check('opening_read: nothing went overdue since 15 Oct (Beta was already late)', n.since.went_overdue === 0, n.since);
+    check('opening_read: the app runs it, but it is never offered to chat, voice or WhatsApp (no account\'s tools change)', B.has('opening_read') && !B.TOOLS.some((x) => x.name === 'opening_read') && !B.realtimeDefs().some((x) => x.name === 'opening_read'));
     const none = await B.exec('opening_read', {}, ZU);
     check('opening_read: without since, no "since" part', none && !none.since && !none.numbers.since, Object.keys(none));
   }

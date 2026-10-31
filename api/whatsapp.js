@@ -1444,14 +1444,27 @@ async function handleRemindNow(req, res) {
     const n = target ? Number(target.chases_sent) || 0 : 0;
     const tier = chase.resolveTier(n, item.due || null, config, target ? Number(target.broken_promise_count) || 0 : 0);
     const msg = chase.buildChaseMessage({ tier, tonePreset: config.tone_preset, businessName, invoiceRef: item.ref, amount: item.amount, dueDate: item.due });
-    const stopped = target && ['stopped', 'opted_out', 'wrong_contact'].includes(target.state) ? target.state : null;
+    // The same refusals as the 10:30 run, plus one a day: a customer on the business opt-out list (replied STOP),
+    // switched off, a wrong number, inside a promise to pay, or already reminded in the last 20 hours.
+    const optedOut = !!phone && Array.isArray(config.opt_out) && config.opt_out.includes(normalizePhone(phone));
+    const promiseUntil = target && target.state === 'paused_promise' && target.promise_to_pay_date && String(target.promise_to_pay_date).slice(0, 10) >= new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10) ? String(target.promise_to_pay_date).slice(0, 10) : null;
+    const remindedAt = target && target.last_chase_at && Date.now() - Date.parse(target.last_chase_at) < 20 * 3600000 ? target.last_chase_at : null;
+    const stopped = optedOut ? 'opted_out' : target && ['stopped', 'opted_out', 'wrong_contact'].includes(target.state) ? target.state
+      : promiseUntil ? 'promised' : remindedAt ? 'reminded_recently' : null;
     const out = {
       party: item.party, amount: item.amount, invoice_ref: item.ref || null, due_date: item.due || null, party_id: party ? party.id : null,
       has_phone: !!phone, phone_end: phone ? String(phone).replace(/\D/g, '').slice(-4) : null,
-      text: msg.body, template_ready: !!msg.templateId, sends_off: sendsOff, chase_number: n + 1, stopped
+      text: msg.body, template_ready: !!msg.templateId, sends_off: sendsOff, chase_number: n + 1, stopped,
+      promise_until: promiseUntil, reminded_at: remindedAt
     };
     if (!send) { res.setHeader('Cache-Control', 'no-store'); res.status(200).json(out); return; }
-    if (stopped) { res.status(409).json(Object.assign(out, { error: stopped === 'stopped' ? 'You switched reminders off for ' + item.party + ' (Automations > Chasing).' : item.party + ' asked not to be messaged, or the number is wrong.' })); return; }
+    if (stopped) {
+      const why = stopped === 'stopped' ? 'You switched reminders off for ' + item.party + ' (Automations > Chasing).'
+        : stopped === 'promised' ? item.party + ' promised to pay by ' + promiseUntil + ', so no reminder until then.'
+        : stopped === 'reminded_recently' ? item.party + ' was already reminded in the last day, so nothing was sent again.'
+        : item.party + ' asked not to be messaged, or the number is wrong.';
+      res.status(409).json(Object.assign(out, { error: why })); return;
+    }
     if (!phone) { res.status(400).json(Object.assign(out, { error: 'need_phone' })); return; }
     if (!msg.templateId) { res.status(409).json(Object.assign(out, { error: 'The WhatsApp reminder template isn\'t set up yet, so nothing was sent.' })); return; }
     if (!target) {

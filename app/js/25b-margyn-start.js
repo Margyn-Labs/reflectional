@@ -303,7 +303,10 @@ async function mgoRemind(party){
   const who = mgoName(d.party);
   let html = '<p><b>Reminder to ' + escapeHtml(who) + '</b> for ' + escapeHtml(mgoInr(d.amount)) + (d.invoice_ref ? ' (' + escapeHtml(d.invoice_ref) + ')' : '') + '. This is exactly what goes on WhatsApp:</p>' +
     '<blockquote class="mgo-wa">' + escapeHtml(d.text) + '</blockquote>';
-  if(d.stopped) html += '<p class="mgo-note">' + escapeHtml(d.stopped === 'stopped' ? 'You switched reminders off for ' + who + ', so I won’t send this. Turn them back on under Automations → Chasing.' : who + ' asked not to be messaged, or the number is wrong.') + '</p>';
+  if(d.stopped) html += '<p class="mgo-note">' + escapeHtml(d.stopped === 'stopped' ? 'You switched reminders off for ' + who + ', so I won’t send this. Turn them back on under Automations → Chasing.'
+    : d.stopped === 'promised' ? who + ' promised to pay by ' + mgoDay(d.promise_until) + ', so I’ll wait until then.'
+    : d.stopped === 'reminded_recently' ? who + ' was already reminded in the last day, so I won’t send another today.'
+    : who + ' asked not to be messaged, or the number is wrong.') + '</p>';
   else if(!d.template_ready) html += '<p class="mgo-note">The WhatsApp reminder template isn’t set up on Margyn’s side yet, so I can’t send this one.</p>';
   else if(!d.has_phone) html += '<form class="mgr-name mgo-form" data-mgo-remindphone="' + escapeHtml(d.party) + '"><label>' + escapeHtml(who) + '’s WhatsApp number isn’t in your books. Add it and I’ll show the reminder again:</label><div><input type="tel" inputmode="tel" maxlength="20" placeholder="10-digit mobile"><button type="submit" class="mgr-chip on">Save number</button></div><div class="mgo-err" data-mgo-err></div></form>';
   else html += (d.sends_off ? '<p class="mgo-note">This account is in demo mode: it will be logged as “Preview: not sent” and won’t reach ' + escapeHtml(who) + '.</p>' : '') +

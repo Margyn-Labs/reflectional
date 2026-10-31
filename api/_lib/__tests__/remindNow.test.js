@@ -117,7 +117,40 @@ process.env.MARGYN_DEMO_ACCOUNTS = U2;   // an investor demo tenant: external se
     assert.ok(row.message_body.includes('INV-000201'));
   });
 
+  await t('a second tap the same day sends nothing (one reminder a day, like the 10:30 run)', async () => {
+    const before = gupshup.length;
+    const d = await call({ party: 'Gupta Traders' });
+    assert.strictEqual(d.body.stopped, 'reminded_recently', JSON.stringify(d.body));
+    const r = await call({ party: 'Gupta Traders', send: true });
+    assert.strictEqual(r.code, 409);
+    assert.ok(/already reminded/.test(r.body.error), r.body.error);
+    assert.strictEqual(gupshup.length, before);
+  });
+
+  await t('a customer who replied STOP (business opt-out list) is never messaged, even with no reminder row', async () => {
+    DB.agent_deployments = [{ user_id: U, agent_id: 'chase_agent', status: 'active', config: { opt_out: ['919820012345'] } }];
+    const saved = DB.whatsapp_chase_targets; DB.whatsapp_chase_targets = [];
+    const before = gupshup.length;
+    const d = await call({ party: 'Gupta Traders' });
+    assert.strictEqual(d.body.stopped, 'opted_out', JSON.stringify(d.body));
+    const r = await call({ party: 'Gupta Traders', send: true });
+    assert.strictEqual(r.code, 409);
+    assert.strictEqual(gupshup.length, before);
+    DB.whatsapp_chase_targets = saved; DB.agent_deployments = [];
+  });
+
+  await t('a customer who promised to pay by a later date is left alone until then', async () => {
+    const tg = DB.whatsapp_chase_targets[0], before = gupshup.length;
+    Object.assign(tg, { state: 'paused_promise', promise_to_pay_date: '2099-01-01', last_chase_at: null });
+    const r = await call({ party: 'Gupta Traders', send: true });
+    assert.strictEqual(r.code, 409);
+    assert.ok(/promised to pay by 2099-01-01/.test(r.body.error), r.body.error);
+    assert.strictEqual(gupshup.length, before);
+    Object.assign(tg, { state: 'active', promise_to_pay_date: null });
+  });
+
   await t('demo account (external sends off): logged "Preview: not sent", nothing reaches the customer', async () => {
+    DB.whatsapp_chase_targets[0].last_chase_at = null;   // the fake keeps one row for both accounts
     const before = gupshup.length, rows = DB.whatsapp_chases.length;
     const r = await call({ party: 'Gupta Traders', send: true }, { authorization: 'Bearer demo-token' });
     assert.strictEqual(r.code, 200, JSON.stringify(r.body));
