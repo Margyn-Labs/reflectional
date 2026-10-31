@@ -804,6 +804,8 @@ async function confirmZohoOrg(){
   zohoShowError('');
   btn.disabled = true; btn.textContent = 'Connecting…';
   btn.textContent = 'Connecting… (first sync can take a minute)';
+  // A new account: the Margyn panel says what it's reading while this runs (25b-margyn-start.js).
+  if(typeof mgoReading === 'function') mgoReading('zoho');
   try {
     // select-org now runs the one-time 12-month backfill in-process and
     // waits for it to finish before responding, so this call can take a
@@ -822,6 +824,8 @@ async function confirmZohoOrg(){
       toast('Non-INR base currency', { kind:'info', ms:6000, sub:'Those records stay out of your vitals until currency conversion lands.' });
     }
   } catch(e){
+    // Timed out on a big book while the first read carries on: Margyn keeps watching it instead of an error.
+    if(typeof mgoConnectSlow === 'function' && await mgoConnectSlow(e)){ zohoPendingOrgRef = null; zohoChosenOrgId = null; return; }
     zohoShowError(e.message);
     btn.disabled = false;
   } finally { btn.textContent = 'Confirm organization'; }

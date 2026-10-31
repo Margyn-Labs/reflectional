@@ -1337,6 +1337,72 @@ function attention(ctx, args) {
   };
 }
 
+/* ---------------- the opening read ----------------
+   What the Margyn panel says when someone signs in: cash, who owes most, what's late, bills due this week, and with
+   `since` (the last visit, ISO) what moved in the books since then: money in and from whom, what went overdue, new
+   invoices. Every figure is from the books; nothing is estimated. `numbers` carries the same figures unformatted. */
+function openingRead(ctx, args) {
+  const a = args || {};
+  const t = ctx.today.getTime(), todayKey = isoDay(ctx.today);
+  const recv = billRows(ctx, 'receivable'), pay = tradeOnly(billRows(ctx, 'payable'));
+  const parties = byParty(recv);
+  const recvTotal = recv.reduce((x, b) => x + b.amount, 0), recvOver = recv.filter((b) => b.late > 0).reduce((x, b) => x + b.amount, 0);
+  const due7 = pay.filter((b) => b.due && b.due.getTime() >= t && b.due.getTime() <= t + 7 * DAY && !(b.late > 0)).sort((x, y) => x.due - y.due);
+  const due7Total = due7.reduce((x, b) => x + b.amount, 0), payOver = pay.filter((b) => b.late > 0).reduce((x, b) => x + b.amount, 0);
+  let cash = null;
+  try { cash = cashAndDebt(ctx).raw.cash; } catch (e) { /* no cash ledgers read */ }
+  const who = SRC(ctx) === 'Tally' || isTallyBook(ctx) ? 'bills' : 'invoices';
+  const out = {
+    source: sourceLine(ctx),
+    as_of: dayStr(ctx.today, true),
+    entries: ctx.rows.length,
+    cash: cash == null ? undefined : inr(cash),
+    customers_owe: { total: inr(recvTotal), overdue: inr(recvOver), customers: parties.length, [who]: recv.length },
+    who_owes_most: parties.slice(0, 5).map((g) => ({ customer: g.party, owed: inr(g.total), overdue: inr(g.overdue), oldest_days_late: g.oldest })),
+    most_overdue: parties.filter((g) => g.overdue > 0).sort((x, y) => y.overdue - x.overdue).slice(0, 3).map((g) => ({ customer: g.party, overdue: inr(g.overdue), oldest_days_late: g.oldest })),
+    bills_due_next_7_days: { total: inr(due7Total), count: due7.length, list: due7.slice(0, 10).map((b) => ({ vendor: b.party, number: b.ref || undefined, due: dayStr(b.due, true), amount: inr(b.amount) })) },
+    bills_overdue: inr(payOver)
+  };
+  const numbers = { cash, recv_total: recvTotal, recv_overdue: recvOver, due7: due7Total, pay_overdue: payOver,
+    top: parties.slice(0, 5).map((g) => ({ party: g.party, owed: g.total, overdue: g.overdue, late: g.oldest })),
+    late: parties.filter((g) => g.overdue > 0).sort((x, y) => y.overdue - x.overdue).slice(0, 3).map((g) => ({ party: g.party, overdue: g.overdue, late: g.oldest })),
+    due7_list: due7.slice(0, 10).map((b) => ({ party: b.party, ref: b.ref || null, due: isoDay(b.due), amount: b.amount })) };
+  const sinceMs = a.since ? Date.parse(a.since) : NaN;
+  if (Number.isFinite(sinceMs)) {
+    // Entries carry a day, not a time: everything dated on or after the India day of the last visit.
+    const from = new Date(sinceMs + 330 * 60000).toISOString().slice(0, 10);
+    const fresh = ctx.rows.filter((r) => r.day >= from && r.day <= todayKey);
+    const paidBy = new Map();
+    for (const r of fresh) {
+      if (r.kind !== 'receipt' || !r.party || !(r.total > 0)) continue;
+      const k = norm(r.party), g = paidBy.get(k) || { party: r.party, amount: 0, last: r.dt };
+      g.amount += r.total; if (r.dt > g.last) g.last = r.dt;
+      paidBy.set(k, g);
+    }
+    const paid = [...paidBy.values()].sort((x, y) => y.amount - x.amount);
+    const lateNow = new Map();
+    for (const b of recv) {
+      if (!(b.late > 0) || !b.due || isoDay(b.due) < from) continue;
+      const k = norm(b.party), g = lateNow.get(k) || { party: b.party, amount: 0 };
+      g.amount += b.amount; lateNow.set(k, g);
+    }
+    const late = [...lateNow.values()].sort((x, y) => y.amount - x.amount);
+    const sales = fresh.filter((r) => r.kind === 'sales' && r.sales > 0);
+    const sum = (xs, f) => xs.reduce((x, y) => x + f(y), 0);
+    out.since = {
+      from: dayStr(A.parseDate(from), true),
+      money_in: { total: inr(sum(paid, (g) => g.amount)), from_customers: paid.length, by_customer: paid.slice(0, 5).map((g) => ({ customer: g.party, amount: inr(g.amount), last_on: dayStr(g.last, true) })) },
+      went_overdue: { total: inr(sum(late, (g) => g.amount)), customers: late.length, by_customer: late.slice(0, 5).map((g) => ({ customer: g.party, amount: inr(g.amount) })) },
+      new_sales_entries: { count: sales.length, total: inr(sum(sales, (r) => r.sales - r.returns)) }
+    };
+    numbers.since = { from, money_in: sum(paid, (g) => g.amount), paid: paid.slice(0, 5).map((g) => ({ party: g.party, amount: g.amount, on: isoDay(g.last) })),
+      went_overdue: sum(late, (g) => g.amount), late: late.slice(0, 5).map((g) => ({ party: g.party, amount: g.amount })), new_sales: sales.length };
+  }
+  out.numbers = numbers;
+  out.note = 'Straight from the books as of the last sync: who owes what invoice by invoice, money in from receipts dated since the last visit.';
+  return out;
+}
+
 /* ---------------- extras for the Margin page ---------------- */
 
 function kitsTable(ctx) {
@@ -1407,7 +1473,7 @@ function buildInsights(book, analytics, opts) {
 
 module.exports = {
   inr, pctStr, dayStr, resolvePeriod, PERIODS, MEASURES, GROUPS,
-  prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, isBorrowing, insights, attention,
+  prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, isBorrowing, insights, attention, openingRead,
   buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf, niceName,
   billRows, dailySales90, lateRanking, recentReceipts
 };

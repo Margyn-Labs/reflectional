@@ -316,4 +316,38 @@ async function handler(req, res) {
   });
 };
 
-module.exports = { handler, buildBriefingHints, netMarginFrom, istMonth, nextMonth };
+/* ------------------------------------------------------------------ */
+/* GET ?action=first-read: how far the first read has got, for the     */
+/* Margyn panel to say in words while the connect is still running.    */
+/* Reads only what sync.js setReading wrote; nothing from Zoho itself. */
+/* ------------------------------------------------------------------ */
+const READ_ORDER = ['chartofaccounts', 'invoices', 'bills', 'customerpayments', 'vendorpayments', 'bankaccounts', 'journals', 'contacts'];
+function firstReadFrom(org, rows) {
+  const by = new Map((rows || []).map((r) => [String(r.module).replace(/^reading:/, ''), r]));
+  const steps = READ_ORDER.filter((m) => by.has(m)).map((m) => {
+    const r = by.get(m);
+    return { module: m, read: Number(r.remote_count) || 0, done: r.last_run_status === 'success', at: r.last_run_at || null };
+  });
+  const current = steps.find((s) => !s.done) || null;
+  return {
+    connected: !!org, status: org ? org.status : null, organization_name: org ? org.organization_name || null : null,
+    done: !!(org && org.backfill_completed_at), steps, current: current ? current.module : null
+  };
+}
+async function firstReadHandler(req, res) {
+  if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return; }
+  let user;
+  try { user = await getUserFromRequest(req); } catch (err) { res.status(500).json({ error: 'Authentication check failed' }); return; }
+  if (!user) { res.status(401).json({ error: 'Not authenticated' }); return; }
+  try {
+    const orgs = await selectRows('zoho_organizations', `select=id,status,organization_name,backfill_completed_at&user_id=eq.${encodeURIComponent(user.id)}&status=in.(active,needs_reauth)&order=connected_at.desc&limit=1`);
+    const org = orgs[0] || null;
+    const rows = org ? await selectRows('zoho_sync_state', `select=module,remote_count,last_run_status,last_run_at&org_ref=eq.${encodeURIComponent(org.id)}&module=like.reading:*`).catch(() => []) : [];
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json(firstReadFrom(org, rows));
+  } catch (err) {
+    res.status(500).json({ error: 'Could not read the progress' });
+  }
+}
+
+module.exports = { handler, firstReadHandler, firstReadFrom, buildBriefingHints, netMarginFrom, istMonth, nextMonth };

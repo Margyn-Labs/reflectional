@@ -579,7 +579,25 @@ function previewNextChase(t, config, businessName) {
   };
 }
 
+/**
+ * "Remind <customer>" from the Margyn panel: the chase item for one customer. Same normalised name as Chase
+ * (lower case, letters and digits), exact first, then a name that contains the other; the books' entry before a
+ * manual one, then the largest. null when they owe nothing open.
+ */
+function pickReminderItem(items, party) {
+  const k = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const q = k(party);
+  if (!q) return null;
+  const rank = (a, b) => (a.src === 'manual') - (b.src === 'manual') || (Number(b.amount) || 0) - (Number(a.amount) || 0);
+  const open = (items || []).filter((x) => (Number(x.amount) || 0) > 0);
+  const exact = open.filter((x) => k(x.party) === q).sort(rank);
+  if (exact.length) return exact[0];
+  const near = open.filter((x) => { const n = k(x.party); return n.length >= 3 && q.length >= 3 && (n.includes(q) || q.includes(n)); }).sort(rank);
+  return near[0] || null;
+}
+
 module.exports = {
+  pickReminderItem,
   PREVIEW_NOTE,
   isPreviewChase,
   previewNextChase,

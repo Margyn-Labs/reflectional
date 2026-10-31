@@ -21,6 +21,7 @@
  *   GET/POST  /api/zoho?action=select-org    (was api/zoho-select-org.js)
  *   POST      /api/zoho?action=disconnect    (was api/disconnect-zoho.js)
  *   GET       /api/zoho?action=vitals        (was api/zoho-vitals.js)
+ *   GET       /api/zoho?action=first-read    (how far the first read after connect has got, for the Margyn panel)
  *   POST      /api/zoho?action=sync          (was api/sync-zoho.js)
  *   POST      /api/zoho?action=fill-items    ("Fill now": read Zoho item lines with
  *                                              the rest of today's call budget, _zoho/items.js)
@@ -76,6 +77,7 @@ module.exports = async function handler(req, res) {
   if (action === 'select-org') return selectOrg.handler(req, res);
   if (action === 'disconnect') return disconnect.handler(req, res);
   if (action === 'vitals') return vitals.handler(req, res);
+  if (action === 'first-read') return vitals.firstReadHandler(req, res);
   if (action === 'sync') return sync.handler(req, res);
   if (action === 'fill-items') return zohoItems.handleFillNow(req, res);
   if (action === 'fill-chain') return zohoItems.handleFillChain(req, res);
@@ -86,6 +88,6 @@ module.exports = async function handler(req, res) {
 
   res.status(400).json({
     error: 'unknown_action',
-    message: 'Expected ?action= one of oauth-start, select-org, disconnect, vitals, sync, fill-items, fill-chain, import-export, sync-gstr2b, cron, cron-gstr2b, odoo-connect, odoo-sync, odoo-status, odoo-disconnect, odoo-cron.'
+    message: 'Expected ?action= one of oauth-start, select-org, disconnect, vitals, first-read, sync, fill-items, fill-chain, import-export, sync-gstr2b, cron, cron-gstr2b, odoo-connect, odoo-sync, odoo-status, odoo-disconnect, odoo-cron.'
   });
 };

@@ -54,6 +54,7 @@ async function route(req, res) {
   if (action === 'cron-chase' && req.method === 'GET') return handleChaseCronAndWatch(req, res);
   if (action === 'cron-watch' && req.method === 'GET') return handleWatchCron(req, res);
   if (action === 'chase-preview' && req.method === 'POST') return handleChasePreview(req, res);
+  if (action === 'remind-now' && req.method === 'POST') return handleRemindNow(req, res);
 
   res.status(400).json({ error: 'unknown_action', message: 'Expected ?action= one of webhook, cron-opening, cron-closing, cron-chase.' });
 }
@@ -1403,6 +1404,104 @@ async function handleChasePreview(req, res) {
   } catch (err) {
     console.error('chase-preview failed:', err.message);
     res.status(500).json({ error: 'Could not build the preview' });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* remind-now — POST ?action=remind-now { party, send } (user JWT)     */
+/* "Remind <customer>" from the Margyn panel. Without send: the exact   */
+/* WhatsApp reminder Chase would send this customer next, and to which  */
+/* number. Sends nothing. With send: true (the owner's tap on Send):    */
+/* that one reminder now, through the same approved chase template,     */
+/* sendGuard and delivery tracking as the 10:30 run, logged as a chase  */
+/* so Channel health and paid-after-chase count it.                     */
+/* ------------------------------------------------------------------ */
+async function handleRemindNow(req, res) {
+  const { resolveActor, can } = require('./_lib/actor');
+  let actor;
+  try { actor = await resolveActor(req); } catch (e) { actor = null; }
+  if (!actor) { res.status(401).json({ error: 'Unauthorized' }); return; }
+  const b = req.body || {};
+  const send = b.send === true;
+  if (!can(actor, 'view_receivables') || (send && !can(actor, 'approve'))) { res.status(403).json({ error: 'Your access doesn\'t include sending reminders. The account owner can change it under Settings > People.' }); return; }
+  const userId = actor.accountId;
+  try {
+    const pos = (await moneyModel.positionForAccount(userId, { dirs: ['recv'], withRows: true })).receivables;
+    const item = chase.pickReminderItem(chase.chaseItemsFromPosition(pos.groups).items, String(b.party || '').slice(0, 160));
+    if (!item) { res.status(404).json({ error: 'not_found', message: 'I couldn\'t find anything ' + (b.party || 'they') + ' owes in your books.' }); return; }
+    const k = normPartyName(item.party);
+    const [parties, deps, targets, businessName, sendsOff] = await Promise.all([
+      selectRows('ledger_parties', `select=id,name,phone&user_id=eq.${userId}&limit=5000`).catch(() => []),
+      selectRows('agent_deployments', `select=status,config&user_id=eq.${userId}&agent_id=eq.chase_agent&limit=1`).catch(() => []),
+      selectRows('whatsapp_chase_targets', `select=*&user_id=eq.${userId}&receivable_id=eq.${encodeURIComponent(item.receivable_id)}&limit=1`).catch(() => []),
+      businessNameFor(userId),
+      sendGuard.accountSendsOff(userId).catch(() => false)
+    ]);
+    const party = parties.find((p) => normPartyName(p.name) === k && p.phone) || parties.find((p) => normPartyName(p.name) === k) || null;
+    const dep = deps[0] || null, config = chase.mergeConfig(dep && dep.config);
+    let target = targets[0] || null;
+    const phone = (target && target.contact_phone) || (party && party.phone ? normalizePhone(party.phone) : '');
+    const n = target ? Number(target.chases_sent) || 0 : 0;
+    const tier = chase.resolveTier(n, item.due || null, config, target ? Number(target.broken_promise_count) || 0 : 0);
+    const msg = chase.buildChaseMessage({ tier, tonePreset: config.tone_preset, businessName, invoiceRef: item.ref, amount: item.amount, dueDate: item.due });
+    // The same refusals as the 10:30 run, plus one a day: a customer on the business opt-out list (replied STOP),
+    // switched off, a wrong number, inside a promise to pay, or already reminded in the last 20 hours.
+    const optedOut = !!phone && Array.isArray(config.opt_out) && config.opt_out.includes(normalizePhone(phone));
+    const promiseUntil = target && target.state === 'paused_promise' && target.promise_to_pay_date && String(target.promise_to_pay_date).slice(0, 10) >= new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10) ? String(target.promise_to_pay_date).slice(0, 10) : null;
+    const remindedAt = target && target.last_chase_at && Date.now() - Date.parse(target.last_chase_at) < 20 * 3600000 ? target.last_chase_at : null;
+    const stopped = optedOut ? 'opted_out' : target && ['stopped', 'opted_out', 'wrong_contact'].includes(target.state) ? target.state
+      : promiseUntil ? 'promised' : remindedAt ? 'reminded_recently' : null;
+    const out = {
+      party: item.party, amount: item.amount, invoice_ref: item.ref || null, due_date: item.due || null, party_id: party ? party.id : null,
+      has_phone: !!phone, phone_end: phone ? String(phone).replace(/\D/g, '').slice(-4) : null,
+      text: msg.body, template_ready: !!msg.templateId, sends_off: sendsOff, chase_number: n + 1, stopped,
+      promise_until: promiseUntil, reminded_at: remindedAt
+    };
+    if (!send) { res.setHeader('Cache-Control', 'no-store'); res.status(200).json(out); return; }
+    if (stopped) {
+      const why = stopped === 'stopped' ? 'You switched reminders off for ' + item.party + ' (Automations > Chasing).'
+        : stopped === 'promised' ? item.party + ' promised to pay by ' + promiseUntil + ', so no reminder until then.'
+        : stopped === 'reminded_recently' ? item.party + ' was already reminded in the last day, so nothing was sent again.'
+        : item.party + ' asked not to be messaged, or the number is wrong.';
+      res.status(409).json(Object.assign(out, { error: why })); return;
+    }
+    if (!phone) { res.status(400).json(Object.assign(out, { error: 'need_phone' })); return; }
+    if (!msg.templateId) { res.status(409).json(Object.assign(out, { error: 'The WhatsApp reminder template isn\'t set up yet, so nothing was sent.' })); return; }
+    if (!target) {
+      const rows = await insertRows('whatsapp_chase_targets', [{
+        user_id: userId, receivable_id: item.receivable_id, party_id: party ? party.id : null, party_name: item.party || 'Customer',
+        contact_phone: phone, amount: Number(item.amount) || 0, due_date: item.due || null, invoice_ref: item.ref || null,
+        state: 'active', current_tier: tier, next_chase_at: null
+      }], { onConflict: 'user_id,receivable_id', merge: false }).catch(() => null);
+      target = (Array.isArray(rows) && rows[0]) || (await selectRows('whatsapp_chase_targets', `select=*&user_id=eq.${userId}&receivable_id=eq.${encodeURIComponent(item.receivable_id)}&limit=1`).catch(() => []))[0] || null;
+      if (!target) { res.status(500).json({ error: 'Could not record the reminder, so nothing was sent.' }); return; }
+    }
+    const result = await sendGuard.runAsAccount(userId, () => bsp.sendTemplate({ to: phone, templateId: msg.templateId, params: msg.params }));
+    const nowIso = new Date().toISOString();
+    const preview = !!(result && result.ok && result.blocked);
+    const ok = !!(result && result.ok);
+    if (ok && !preview) await deliveries.record({ messageId: result.messageId || null, userId, kind: 'chase', to: phone, sentTo: 'customer', ref: target.id });
+    try {
+      await insertRows('whatsapp_chases', [{
+        user_id: userId, chase_target_id: target.id, receivable_id: target.receivable_id || null, party_id: target.party_id || null,
+        invoice_ref: item.ref || null, contact_phone: phone, chase_number: n + 1, escalation_tier: tier, channel: 'whatsapp_template',
+        tone_preset: config.tone_preset || 'friendly', template_name: msg.templateName, template_params: msg.params, message_body: msg.body,
+        wa_message_id: ok ? result.messageId || null : null, status: preview ? 'skipped' : ok ? 'sent' : 'failed',
+        error: preview ? chase.PREVIEW_NOTE : ok ? null : (result && result.error) || 'send failed', scheduled_for: nowIso, sent_at: ok && !preview ? nowIso : null
+      }]);
+    } catch (err) { console.error('remind-now: could not log the chase', err.message); }
+    if (ok) {
+      // The next reminder follows the owner's Chase settings, only where Chase is switched on.
+      const nextAt = dep && dep.status === 'active' && config.enabled !== false ? chase.nextChaseAt(item.due || null, n + 1, config, new Date()) : null;
+      await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`, { chases_sent: n + 1, current_tier: tier, last_chase_at: nowIso, contact_phone: phone,
+        next_chase_at: nextAt && n + 1 < config.max_chases ? nextAt.toISOString() : null }).catch(() => {});
+    }
+    await logConnectorEvent({ userId, connectorType: 'whatsapp', operation: 'chase_now_' + tier, status: ok ? 'success' : 'error',
+      errorMessage: preview ? chase.PREVIEW_NOTE : ok ? null : (result && result.error) || null, recordsSynced: ok && !preview ? 1 : 0 }).catch(() => {});
+    res.status(ok ? 200 : 502).json(Object.assign(out, { sent: ok && !preview, preview, error: ok ? undefined : 'WhatsApp didn\'t take the message: ' + ((result && result.error) || 'unknown error') }));
+  } catch (err) {
+    console.error('remind-now failed:', err.message);
+    res.status(500).json({ error: 'Could not prepare the reminder' });
   }
 }
 

@@ -553,8 +553,11 @@ async function mgrGreet(){
   let html = '<h5>' + hi + (quick ? '.' : since ? ', welcome back.' : ', welcome to Margyn.') + '</h5>';
   if(quick){ /* nothing to recap */ }
   else if(since){
+    // The books' own changes follow in their own message (25b-margyn-start.js): don't call it quiet above them.
+    const booksNext = typeof mgoOpeningFor === 'function' && mgoOpeningFor();
     html += '<p>' + (mgrAway.did.length
       ? 'Since you were last here (' + escapeHtml(mgrAgo(since)) + '): ' + escapeHtml(mgrAway.did.join(', ')) + '.'
+      : booksNext ? 'Here’s what moved in your books since you were last here (' + escapeHtml(mgrAgo(since)) + ').'
       : 'Quiet since you were last here (' + escapeHtml(mgrAgo(since)) + '). Nothing new came in.') + '</p>';
   } else {
     html += '<p>I’m Margyn. I watch your numbers, chase who owes you, read what you forward me and tell you when something needs you. Ask me anything, or press Talk.</p>';
@@ -585,6 +588,8 @@ async function mgrGreet(){
   if(typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home') mgRenderOwn('home');
   if(setup){ mgrOpen(); if(typeof mgGo === 'function') mgGo('sources'); }
   mgrSetupFromLink();
+  // A new account's first minutes, and on later visits what changed in the books (25b-margyn-start.js).
+  if(typeof mgoAfterGreet === 'function') mgoAfterGreet({ setup:!!setup, since:since || null, quick:!!quick });
   setTimeout(mgrCheckNudges, 20000);
 }
 
@@ -648,6 +653,8 @@ function mgrSetupConnected(kind){
     '<button type="button" class="mgr-chip" data-mgr-ask="Who should I chase first, and why?">Who should I chase first?</button></div>', 'greet');
   mgStatus('Margyn connected Zoho Books', true);
   setTimeout(() => { if(typeof mgGo === 'function' && typeof mgCurrentView !== 'undefined' && /^(sources|connectors)$/.test(mgCurrentView)) mgGo('home'); }, 6000);
+  // A new account: the first read of the figures, then three quick questions (25b-margyn-start.js).
+  if(typeof mgoConnected === 'function') mgoConnected();
 }
 function mgrMarkSeen(){ if(currentUser) lsSet(MGR_SEEN_KEY + currentUser.id, new Date().toISOString()); }
 

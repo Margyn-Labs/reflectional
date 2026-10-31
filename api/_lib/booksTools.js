@@ -126,7 +126,10 @@ const TOOLS = [
   }
 ];
 
-const NAMES = new Set(TOOLS.map((t) => t.name));
+// Run by the app itself (?action=books), never offered to the model: the sign-in read (25b-margyn-start.js).
+// Kept out of TOOLS so no account's chat, voice or WhatsApp gets a new tool (Tally answers unchanged).
+const APP_ONLY = ['opening_read'];
+const NAMES = new Set(TOOLS.map((t) => t.name).concat(APP_ONLY));
 const RUN = {
   books_summary: E.summary,
   books_breakdown: E.breakdown,
@@ -136,7 +139,8 @@ const RUN = {
   find_entries: E.findEntries,
   cash_and_loans: E.cashAndDebt,
   cash_flow_statement: CFS.cashFlowTool,
-  what_needs_attention: E.attention
+  what_needs_attention: E.attention,
+  opening_read: E.openingRead
   // books_health_check runs in exec (it reads what the owner ignored).
 };
 
@@ -259,6 +263,7 @@ const STEP_LABELS = {
   cash_flow_statement: 'Built the cash flow statement from your entries',
   borrowing_history: 'Traced your overdraft and loans day by day',
   what_needs_attention: 'Checked what needs your attention',
+  opening_read: 'Read what changed in your books',
   books_health_check: 'Ran the books health check',
   how_its_calculated: 'Looked up how that is worked out'
 };

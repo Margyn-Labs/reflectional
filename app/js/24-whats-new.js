@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-margyn-starts-helping', date:'1 Nov 2026', title:'Margyn starts helping the moment you sign in',
+    items:[
+      { t:'Your first ten minutes, guided', what:'Connect Zoho Books and Margyn says what it’s reading as it goes (“Reading your invoices… 1,000 so far”), then gives you a first read: cash, who owes you most, what’s late and bills due this week. Then three quick questions, each one skippable: the least cash you never want to go below, WhatsApp numbers for your biggest debtors, and who gets the morning update.',
+        how:'On a new account, open the Margyn panel and press <b>Zoho Books</b>.', act:'connectors' },
+      { t:'What changed since you were last here', what:'Each time you come back, Margyn starts with what moved in your books since your last visit: money that came in and from whom, invoices that went overdue, and bills due this week.',
+        how:'Open Margyn after a day away. Ask <b>What did I miss?</b> any time.', act:'talk' },
+      { t:'One tap to act on it', what:'Remind a late customer (Margyn shows the exact WhatsApp message first and sends only when you press Send), send this week’s payables to your accountant (WhatsApp opens with the list; you press send), or see the list.',
+        how:'Press <b>Remind …</b> or <b>Send this week’s payables to my accountant</b> under Margyn’s opening message.', act:'talk' }
+    ]
+  },
+  {
     id:'2026-11-01-zoho-answers', date:'1 Nov 2026', title:'Clearer answers on Zoho Books',
     items:[
       { t:'Cash forecast on WhatsApp too', what:'Text Margyn “What will our cash be in 4 weeks?” and it answers from the same 13-week forecast as your Cash page, with its range and how close it has been before.',
