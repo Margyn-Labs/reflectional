@@ -96,7 +96,7 @@ const TOOLS = [
   },
   {
     name: 'cash_and_loans',
-    description: 'Cash and bank balances by account, loans and overdraft owed, interest paid this year by ledger, and the GST estimate for the last month with its usual due date. Use for "how much cash do I have", "what is my OD / loan", "how much interest am I paying", "how much GST is due". Balances are Tally\'s where it sent one, otherwise opening balance plus this year\'s entries.',
+    description: 'Cash and bank balances by account, loans and overdraft owed, interest paid this year by ledger, and the GST estimate for the last month with its usual due date. Use for "how much cash do I have", "what is my OD / loan", "how much interest am I paying", "how much GST is due". On Zoho Books / Odoo it also gives TDS/TCS deducted by customers and by you (use for any TDS question). Balances are Tally\'s where it sent one, otherwise opening balance plus this year\'s entries.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false }
   },
   {

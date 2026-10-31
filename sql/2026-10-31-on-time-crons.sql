@@ -12,6 +12,9 @@
 -- with the CRON_SECRET value from Vercel → reflectional → Settings → Environment Variables.
 -- Safe to run again: it replaces the jobs and the stored secret.
 
+-- Also (Zoho TDS, 31 Oct): Zoho's balance per account, so Margyn can say how much TDS customers deducted and you owe.
+alter table public.zoho_chart_of_accounts add column if not exists current_balance numeric;
+
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 

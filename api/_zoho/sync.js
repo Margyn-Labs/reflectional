@@ -192,13 +192,15 @@ function mapAccount(a, orgRef) {
     account_name: a.account_name || null,
     account_type: (a.account_type || '').toLowerCase() || null,
     is_active: a.is_active !== false,
+    // Balance-sheet figures postings don't carry (TDS receivable / payable). Column from 2026-10-31-on-time-crons.sql.
+    ...(a.current_balance != null ? { current_balance: toNumber(a.current_balance) } : {}),
     synced_at: new Date().toISOString()
   };
 }
 
 // ----------------------------------------------------------------- upsert
 
-const OPTIONAL_COLUMNS = ['sub_total', 'party_ref', 'payment_number', 'entry_number'];
+const OPTIONAL_COLUMNS = ['sub_total', 'party_ref', 'payment_number', 'entry_number', 'current_balance'];
 
 async function upsert(table, rows, conflictColumns) {
   if (!rows.length) return 0;
@@ -240,7 +242,7 @@ async function syncCollection(session, org, userId, spec, mode, results, errors,
   const cursor = await getSyncCursor(org.id, spec.module);
   const { since, isBackfill } = windowFor(mode, cursor);
 
-  const query = {};
+  const query = Object.assign({}, spec.query || {});
   if (spec.supportsLastModified) {
     // Delta sync. This is the whole point — never a full-table pull.
     query.last_modified_time = toZohoFilterTime(since);
@@ -487,7 +489,7 @@ const COLLECTION_SPECS = [
   {
     module: 'chartofaccounts', path: 'books/v3/chartofaccounts',
     collectionKey: 'chartofaccounts', table: 'zoho_chart_of_accounts',
-    conflict: 'org_ref,account_id', map: mapAccount, supportsLastModified: false
+    conflict: 'org_ref,account_id', map: mapAccount, supportsLastModified: false, query: { showbalance: 'true' }
   },
   {
     module: 'invoices', path: 'books/v3/invoices',
