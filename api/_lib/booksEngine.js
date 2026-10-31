@@ -985,7 +985,7 @@ function cashAndDebt(ctx) {
       const side = (k) => tds.filter((t) => t.side === k);
       const sum = (xs) => xs.reduce((s, t) => s + t.balance, 0);
       out.tds = {
-        deducted_by_customers: { total: inr(sum(side('deducted_by_customers'))), accounts: side('deducted_by_customers').map((t) => ({ account: t.account, balance: inr(t.balance) })), note: 'Customers paid you less and deposited this as tax for you: claim it against your income tax (check it shows in Form 26AS).' },
+        deducted_by_customers: { total: inr(sum(side('deducted_by_customers'))), accounts: side('deducted_by_customers').map((t) => ({ account: t.account, balance: inr(t.balance), ...(t.note ? { note: t.note } : {}) })), note: 'Customers paid you less and deposited this as tax for you: claim it against your income tax (check it shows in Form 26AS).' },
         deducted_by_you: { total: inr(sum(side('deducted_by_you'))), accounts: side('deducted_by_you').map((t) => ({ account: t.account, balance: inr(t.balance) })), note: 'You held this back from suppliers and must deposit it with the government by the 7th of the next month.' },
         source: `Balances of the TDS/TCS accounts in ${SRC(ctx)} as of the last sync.`
       };
