@@ -222,9 +222,9 @@ function zohoInputCandidates(){
     if(burn > 0) put('burn', burn);
     if(isFinite(Number(m.income))) put('netProfit', Number(m.income) - burn);
   }
-  // gst_payable is deliberately absent: Zoho reports leakage_pct against
-  // claimed ITC, not against GST payable, so deriving the denominator from it
-  // would be a guess. It stays self-reported until the GSTN channel lands.
+  // gst_payable is not derived from leakage_pct (that is against claimed ITC, not GST payable);
+  // it comes from the books' monthly GST estimate below, as on Tally.
+  try { booksPnlFor('zoho', put); booksPositionFor('zoho', put); } catch(e){ /* keep the vitals figures */ }
   return out;
 }
 
@@ -325,9 +325,19 @@ function tallyInputCandidates(){
     }
   } catch(e){ /* keep the bill figures */ }
   put('revenue', v.sales_30d);
-  // Revenue, burn and profit from Tally's own monthly P&L, averaged over up to six
-  // closed months: the latest month is often missing late-booked expenses (salaries, rent).
-  // Without this, burn and profit stayed frozen at whatever the first snapshot saw.
+  booksPnlInputs(put);
+  return out;
+}
+
+/* ---------- one rule for every books system (Tally, Zoho Books, Odoo) ----------
+   1 Nov 2026: the same books scored differently by where they came from. Zoho scored sales and profit on one month
+   (on the 1st, the empty new one), Odoo had no profit at all and counted every bill as due soon. Each connector now
+   offers its own figures first, then these two override them from the same server answers every page shows. */
+
+/* Revenue, burn and profit from the books' own monthly P&L, averaged over up to six
+   closed months: the latest month is often missing late-booked expenses (salaries, rent).
+   Without this, burn and profit stayed frozen at whatever the first snapshot saw. */
+function booksPnlInputs(put){
   const pnl = ((typeof mgMar !== 'undefined' && mgMar && mgMar.pnl) || [])
     .filter(r => !r.provisional && !r.partial_start && Number(r.net_sales) > 0).slice(-6);
   // Leave out months whose running costs aren't booked yet (analytics flags them).
@@ -339,13 +349,33 @@ function tallyInputCandidates(){
     const burn = avg(r => (Number(r.cogs_pre_stock) || 0) + (Number(r.opex) || 0));
     if(burn > 0) put('burn', burn);
     put('netProfit', avg(r => r.net_profit_pre_stock));
-    // GST due this month is last month's output tax less input credit, from Tally's duty
+    // GST due this month is last month's output tax less input credit, from the books' duty
     // ledgers. An estimate until the GSTN channel lands; never below zero (a credit carries).
     const last = pnl[pnl.length - 1].month;
     const g = ((mgMar && mgMar.gst_estimate) || []).find(x => x.month === last);
     if(g && isFinite(Number(g.net_payable_estimate))) put('gstPayable', Math.max(0, Number(g.net_payable_estimate)));
   }
-  return out;
+}
+/* The monthly P&L above, only when the Margin answer is this source's books (one books system per account). */
+function booksPnlFor(src, put){
+  if(typeof mgMar === 'undefined' || !mgMar || mgMarCompany || mgMar.books_source !== src) return;
+  booksPnlInputs(put);
+}
+/* Receivables, the 90+ share and bills due within 30 days (overdue included) from the same rows the Receivables and
+   Payables pages list, worked out as the Tally rows are. Only a full list counts (not one cut off at the cap). */
+function booksPositionFor(src, put){
+  const P = typeof mgPos !== 'undefined' && mgPos;
+  if(!P) return;
+  const rows = side => {
+    const S = P[side], cov = S && S.coverage && S.coverage[src];
+    if(!cov || !(cov.rows > 0) || cov.truncated) return null;
+    return S.groups.filter(g => g.primary === src).flatMap(g => (g.by[src] && g.by[src].rows) || []);
+  };
+  const sum = list => list.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const R = rows('receivables');
+  if(R){ put('recvTotal', sum(R)); put('recv90', sum(R.filter(r => r.days !== null && r.days < -90))); }
+  const Pa = rows('payables');
+  if(Pa) put('paySoon', sum(Pa.filter(r => r.days === null || r.days <= 30)));
 }
 
 function odooInputCandidates(){
@@ -360,6 +390,7 @@ function odooInputCandidates(){
   // cash aggregation shipped, so guard on bank_data_available.
   const c = odooStatus.cash_position || {};
   if(c.bank_data_available !== false && Number(c.balance) > 0) put('cash', c.balance);
+  try { booksPnlFor('odoo', put); booksPositionFor('odoo', put); } catch(e){ /* keep the totals */ }
   return out;
 }
 
@@ -560,6 +591,11 @@ async function resolveAndSaveSnapshot(){
   // Tally's monthly P&L feeds revenue, burn and profit (tallyInputCandidates); load it first.
   if(typeof mgLoadMargin === 'function' && (typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))){
     try { await mgLoadMargin(); if(typeof mgMarginFresh === 'function') await mgMarginFresh(); } catch(e){}   // a reading is saved from this sync's figures
+  }
+  // Zoho / Odoo receivables and bills due come from the Receivables / Payables list (booksPositionFor); load it first.
+  // Tally keeps its own timing (1 Nov 2026: Tally's score unchanged).
+  if(typeof mgLoadPosition === 'function' && !mgPos && ((typeof zohoConnected !== 'undefined' && zohoConnected) || (typeof odooConnected !== 'undefined' && odooConnected))){
+    try { await mgLoadPosition(); } catch(e){}
   }
 
   const { inputs, provenance, conflicts, hasConnectorInput } = resolveSnapshotInputs();
