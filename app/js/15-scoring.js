@@ -585,8 +585,19 @@ function inputsMateriallyDiffer(inputs, latest){
 
 /* Called from refreshAll once every connector global is loaded. Returns true
    when it wrote a new snapshot, so the caller can reload. */
+async function mgZohoFirstReadDone(){
+  if(typeof zohoConnected === 'undefined' || !zohoConnected || typeof zohoVitals === 'undefined' || !zohoVitals) return true;
+  if(zohoVitals.backfill_completed_at) return true;
+  try {
+    const d = await zohoApi('/api/zoho?action=first-read');
+    if(d && d.done){ zohoVitals.backfill_completed_at = zohoVitals.backfill_completed_at || new Date().toISOString(); return true; }
+    return !(d && d.connected);
+  } catch(e){ return true; }   // can't tell: as before
+}
 async function resolveAndSaveSnapshot(){
   if(!currentUser) return false;
+  // Zoho's first read still running: no reading yet, or day one shows a half-read Pulse and a jump (1 Nov 2026: 53 → 68 → 63).
+  if(!(await mgZohoFirstReadDone())) return false;
   let latest = snapshots[0];
   // Tally's monthly P&L feeds revenue, burn and profit (tallyInputCandidates); load it first.
   if(typeof mgLoadMargin === 'function' && (typeof mgBooksConnected === 'function' ? mgBooksConnected() : (typeof tallyConnected !== 'undefined' && tallyConnected))){

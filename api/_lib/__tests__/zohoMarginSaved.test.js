@@ -25,7 +25,7 @@ global.fetch = async (url, init = {}) => {
 };
 const U = 'zoho-user';
 db.users['jwt-z'] = { id: U, email: 'z@example.in' };
-db.t('zoho_organizations').push({ id: 'zo', user_id: U, organization_id: '1', organization_name: 'MARGYN DEMO', status: 'active', connected_at: '2026-10-29T00:00:00Z', last_synced_at: '2026-11-01T01:00:00Z' });
+db.t('zoho_organizations').push({ id: 'zo', user_id: U, organization_id: '1', organization_name: 'MARGYN DEMO', status: 'active', connected_at: '2026-10-29T00:00:00Z', backfill_completed_at: '2026-10-29T00:05:00Z', last_synced_at: '2026-11-01T01:00:00Z' });
 db.t('zoho_chart_of_accounts').push({ id: 'a1', org_ref: 'zo', account_id: 'B1', account_name: 'HDFC', account_type: 'bank' });
 db.t('zoho_bank_accounts').push({ org_ref: 'zo', account_id: 'B1', bank_name: 'HDFC', account_type: 'bank', current_balance: 2555559.38, is_primary: true });
 for (const r of [['I1', 'Bluecrate Exports', 89781, 0], ['I2', 'Iyer Retail', 50000, 50000]]) {
@@ -59,6 +59,16 @@ async function call(query) {
     check('fresh=1 works it out again', fresh.status === 200 && !fresh.payload.stale && !/answer;desc/.test(fresh.timing) && /compute/.test(fresh.timing));
     const fourth = await call();
     check('then served saved again', /answer;desc="saved"/.test(fourth.timing));
+    // A fresh connect: the first read is still bringing rows in, with no sync stamp yet (1 Nov 2026: ₹0 sales kept).
+    const org = db.t('zoho_organizations')[0];
+    org.backfill_completed_at = null; org.last_synced_at = null;
+    const writesBefore = writes.length;
+    const reading1 = await call();
+    check('first read running: worked out, not served from a save', reading1.status === 200 && !reading1.payload.stale && !/answer;desc/.test(reading1.timing) && /compute/.test(reading1.timing), reading1.timing);
+    check('…and not saved', writes.length === writesBefore, writes.slice(writesBefore));
+    db.t('zoho_invoices').push(sync._mapInvoice({ invoice_id: 'I3', invoice_number: 'INV-I3', customer_id: 'CI3', customer_name: 'Gupta Exports', total: 40000, sub_total: 40000, balance: 40000, status: 'sent', date: '2026-10-20', due_date: '2026-11-20' }, 'zo'));
+    const reading2 = await call();
+    check('rows that land mid-read show on the next ask (no 5-minute copy)', JSON.stringify(reading2.payload.receivables || reading2.payload.pnl) !== JSON.stringify(reading1.payload.receivables || reading1.payload.pnl), [reading1.payload.pnl && reading1.payload.pnl.slice(-1), reading2.payload.pnl && reading2.payload.pnl.slice(-1)]);
   } catch (e) {
     console.log('  FAIL- threw: ' + (e && e.stack)); T.fail++;
   } finally { console.error = origErr; console.warn = origWarn; }
