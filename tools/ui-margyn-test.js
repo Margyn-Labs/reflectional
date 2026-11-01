@@ -238,6 +238,9 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   ok(!(await p2.$('#vxFeed .mgr-divider')), 'no "new since you were here" divider after a quick return');
   await p2.close();
 
+  // **bold** in an answer shows as bold, never as asterisks; anything else stays text (1 Nov 2026)
+  const rich = await p.evaluate(() => { const d = document.createElement('div'); mgrRich(d, '1. **Call Gupta Exports.** <img src=x> owes ₹15.4 L'); return d.innerHTML; });
+  ok(/<b>Call Gupta Exports\.<\/b>/.test(rich) && !/\*\*/.test(rich) && !/<img/.test(rich), 'bold shows as bold, markup stays text: ' + rich);
   ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
   await b.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASS');

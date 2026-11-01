@@ -112,6 +112,24 @@ function nextMonth(period) {
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 }
 
+function prevMonth(period) {
+  const [y, m] = period.split('-').map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
+/**
+ * The months the Net Margin vital may be read from, newest first: closed months only, like Tally's
+ * (scoringBasisLive / tallyInputCandidates). The month in progress was used before 1 Nov 2026, so on the
+ * 1st of every month the vital went "n/a", net profit read ₹0 and Pulse fell 69 → 41 on a demo book.
+ * Exported for tests.
+ */
+function marginPeriods(nowMs, back = 6) {
+  const out = [];
+  let p = prevMonth(istMonth(nowMs));
+  for (let i = 0; i < back; i++) { out.push(p); p = prevMonth(p); }
+  return out;
+}
+
 const PNL_TYPES = ['income', 'other_income', 'cost_of_goods_sold', 'expense', 'other_expense'];
 
 /**
@@ -142,14 +160,24 @@ function netMarginFrom(accounts, postings, period) {
   };
 }
 
-async function netMarginFromPostings(orgRef, period) {
-  if (!orgRef) return null;
+async function netMarginFromPostings(orgRef, periods) {
+  if (!orgRef || !periods.length) return null;
   const accounts = await selectRows('zoho_chart_of_accounts',
     `select=id,account_type&org_ref=eq.${orgRef}&account_type=in.(${PNL_TYPES.join(',')})&limit=5000`);
   if (!accounts.length) return null;
+  const oldest = periods[periods.length - 1], newest = periods[0];
   const postings = await selectRows('zoho_journal_entries',
-    `select=account_ref,entry_date,debit,credit&org_ref=eq.${orgRef}&entry_date=gte.${period}-01&entry_date=lt.${nextMonth(period)}-01&order=id.asc&limit=100000`);
-  return netMarginFrom(accounts, postings, period);
+    `select=account_ref,entry_date,debit,credit&org_ref=eq.${orgRef}&entry_date=gte.${oldest}-01&entry_date=lt.${nextMonth(newest)}-01&order=id.asc&limit=100000`);
+  return latestClosedMargin(accounts, postings, periods);
+}
+
+/** Pure: the newest closed month with sales booked. Exported for tests. */
+function latestClosedMargin(accounts, postings, periods) {
+  for (const period of periods) {
+    const nm = netMarginFrom(accounts, postings, period);
+    if (nm && nm.income > 0) return nm;
+  }
+  return null;
 }
 
 async function handler(req, res) {
@@ -198,7 +226,7 @@ async function handler(req, res) {
   // Net margin the way Zoho's own Profit and Loss adds it up, from the synced postings (exact to the rupee on
   // a live org, 29 Oct 2026). The SQL function's figure is kept only when no postings have synced.
   try {
-    const nm = await netMarginFromPostings(v.org_ref, istMonth(Date.now()));
+    const nm = await netMarginFromPostings(v.org_ref, marginPeriods(Date.now()));
     if (nm) v.net_margin = nm;
   } catch (err) {
     console.error('zoho net margin from postings failed:', err.message);
@@ -350,4 +378,4 @@ async function firstReadHandler(req, res) {
   }
 }
 
-module.exports = { handler, firstReadHandler, firstReadFrom, buildBriefingHints, netMarginFrom, istMonth, nextMonth };
+module.exports = { handler, firstReadHandler, firstReadFrom, buildBriefingHints, netMarginFrom, latestClosedMargin, marginPeriods, istMonth, nextMonth };

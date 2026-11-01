@@ -23,7 +23,9 @@ const MG_RELEASES = [
       { t:'What changed since you were last here', what:'Each time you come back, Margyn starts with what moved in your books since your last visit: money that came in and from whom, invoices that went overdue, and bills due this week.',
         how:'Open Margyn after a day away. Ask <b>What did I miss?</b> any time.', act:'talk' },
       { t:'One tap to act on it', what:'Remind a late customer (Margyn shows the exact WhatsApp message first and sends only when you press Send), send this week’s payables to your accountant (WhatsApp opens with the list; you press send), or see the list.',
-        how:'Press <b>Remind …</b> or <b>Send this week’s payables to my accountant</b> under Margyn’s opening message.', act:'talk' }
+        how:'Press <b>Remind …</b> or <b>Send this week’s payables to my accountant</b> under Margyn’s opening message.', act:'talk' },
+      { t:'Pulse holds steady at the start of a month', what:'On Zoho Books, Net margin now comes from your last finished month, as it already did on Tally. Before, on the 1st it read the new month with no sales yet and the score dropped for no reason.',
+        how:'Open <b>Pulse Score</b>: Net margin shows last month’s figure.', act:'scores' }
     ]
   },
   {

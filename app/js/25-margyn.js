@@ -87,10 +87,16 @@ function mgrLine(who, text, id){
     row.innerHTML = (who === 'user' ? '' : '<div class="mgr-who">Margyn · ' + escapeHtml(mgrTime()) + '</div>') + '<div class="mgr-b"></div>';
     f.appendChild(row);
   }
-  row.querySelector('.mgr-b').textContent = text || '';
+  const b = row.querySelector('.mgr-b');
+  if(who === 'user') b.textContent = text || ''; else mgrRich(b, text);
   row.classList.toggle('pending', !text);
   mgrScroll();
   return row;
+}
+/* Margyn's words with **bold** shown as bold, not as asterisks (1 Nov 2026: answers read "**Call Gupta Exports.**").
+   Escaped first, so nothing in the text can become markup. */
+function mgrRich(el, text){
+  el.innerHTML = escapeHtml(String(text || '')).replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
 }
 function mgrHtmlLine(html, cls){
   const f = mgrFeed(); if(!f) return null;
@@ -106,12 +112,12 @@ function mgrHtmlLine(html, cls){
    free (the reply is already here). */
 function mgrType(el, text){
   return new Promise(resolve => {
-    if(document.hidden){ el.textContent = String(text || ''); mgrScroll(); resolve(); return; }   // timers crawl in a hidden tab
+    if(document.hidden){ mgrRich(el, text); mgrScroll(); resolve(); return; }   // timers crawl in a hidden tab
     const words = String(text || '').split(/(\s+)/);
     let i = 0; el.textContent = '';
     const tick = () => {
       i += 4;
-      el.textContent = words.slice(0, i).join('');
+      mgrRich(el, words.slice(0, i).join(''));
       mgrScroll();
       if(i < words.length) setTimeout(tick, 24); else resolve();
     };
@@ -358,7 +364,7 @@ async function mgrAsk(text, opts){
       else row.querySelector('.mgr-b').appendChild(live);
       const d = row.querySelector('.mgr-dots'); if(d) d.style.display = 'none';
     }
-    liveText += t; live.textContent = liveText; mgrScroll();
+    liveText += t; mgrRich(live, liveText); mgrScroll();
   };
   try {
     data = await mgrPost({ message:text, history, context:mgrContext(mgrFocus), depth, surface:'panel' }, onDelta);
@@ -379,7 +385,7 @@ async function mgrAsk(text, opts){
     row.classList.remove('working');
     if(live){
       // Already on screen as it was written: just make sure it's the final wording.
-      if(liveText.trim() !== reply.trim()) live.textContent = reply;
+      if(liveText.trim() !== reply.trim()) mgrRich(live, reply);
     } else {
       // Cards drawn during this turn sit above the answer; the answer comes last.
       const body = document.createElement('div'); body.className = 'mgr-text';
