@@ -513,6 +513,10 @@ async function deletePayable(p){
   } catch(err){ toast('Could not delete: ' + (err.message||'unknown error'), {kind:'bad'}); }
 }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+/* Margyn's words with **bold** as bold, never as asterisks; escaped first, so nothing in the text becomes markup (1 Nov 2026). */
+function mgBoldHtml(s){ return escapeHtml(String(s == null ? '' : s)).replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>'); }
+/* One line of an answer for a list: no **, # or bullet marks, one space between words. */
+function mgPreview(s, n){ return String(s == null ? '' : s).replace(/\*\*|__|^#+\s*/gm, '').replace(/^\s*[-•]\s+/gm, '').replace(/\s+/g, ' ').trim().slice(0, n); }
 document.getElementById('detailClose').addEventListener('click', () => document.getElementById('detailOverlay').classList.add('hidden'));
 document.getElementById('detailOverlay').addEventListener('click', (e) => { if(e.target.id === 'detailOverlay') e.currentTarget.classList.add('hidden'); });
 

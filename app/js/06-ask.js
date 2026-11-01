@@ -260,7 +260,7 @@ async function renderHistoryThreadList(){
     const label = tk.startsWith('panel:') ? 'Margyn panel' : tk.startsWith('voice:') ? 'Call' : isAgentHomeThread(tk) ? 'Margyn (earlier)'
       : (tk === 'global' || tk.startsWith('global:')) ? 'General' : (m.vital && m.vital !== 'Voice conversation' ? m.vital : tk.replace(/^finding:|^vital:/, '').replace(/::.*$/, ''));
     const when = new Date(m.created_at).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-    row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,90)) + '</div>';
+    row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(mgPreview(m.content, 90)) + '</div>';
     row.addEventListener('click', () => {
       listEl.querySelectorAll('.chat-history-row').forEach(r => r.classList.remove('on'));
       row.classList.add('on');

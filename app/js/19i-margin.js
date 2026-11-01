@@ -15,6 +15,15 @@ function mgBooksConnected(){
 }
 function mgBooksName(){ return (mgMar && mgMar.books_source_name) || 'Tally'; }
 
+/* The same sentence as the Margin headline (tallyAnalytics bridgeLine): only the parts that moved, with ₹ and a sign. */
+function mgMarBridgeLine(b){
+  const amt = n => fmtINR(Math.abs(Math.round(n))), d = b.margin_to - b.margin_from;
+  const parts = [['prices', b.price_effect], ['purchase costs', b.cost_effect], ['volume and mix', b.volume_mix_effect]].filter(x => Math.round(x[1]) !== 0);
+  const head = 'Item margin ' + (d >= 0 ? 'rose ' : 'fell ') + amt(d) + ' from ' + mgMarMonth(b.from_month) + ' to ' + mgMarMonth(b.to_month);
+  if(!parts.length) return head + '.';
+  if(parts.length === 1 && parts[0][0] === 'volume and mix') return head + ', all from what and how much you sold.';
+  return head + ': ' + parts.map(x => x[0] + ' ' + (x[1] >= 0 ? '+' : '−') + amt(x[1])).join(', ') + '.';
+}
 async function mgLoadMargin(force){
   if(mgMarBusy || (!force && mgMar && Date.now() - mgMarAt < 60000)) return;
   // Opened straight on Margin or Cash flow, sign-in isn't set up yet: try again shortly instead of showing "Couldn't load".
@@ -301,7 +310,7 @@ function mgRenderMargin(){
       '<td class="r">' + (i.avg_cost == null ? '—' : mgNum(i.avg_cost)) + '</td><td class="r">' + (i.est_margin == null ? '—' : mgNum(i.est_margin)) + '</td><td class="r">' + mgMarPct(i.est_margin_pct) + '</td></tr>').join('');
     const b = d.margin_bridge;
     itemsPanel = mgMarPanel('Margin by item', yrs.length > 1 ? 'Sold this year; cost is the average purchase price in your books' : 'Average purchase cost over the period', '<table class="mg-grid"><thead><tr><th>Item</th><th class="r">Qty sold</th><th class="r">Sales (₹)</th><th class="r">Avg price (₹)</th><th class="r">Avg cost (₹)</th><th class="r">Margin (₹)</th><th class="r">Margin %</th></tr></thead><tbody>' + ir + '</tbody></table>' +
-      (b ? mgMarNote('Between ' + mgMarMonth(b.from_month) + ' and ' + mgMarMonth(b.to_month) + ' margin moved ' + fmtINR(b.margin_to - b.margin_from) + ': selling price ' + fmtINR(b.price_effect) + ', purchase cost ' + fmtINR(b.cost_effect) + ', volume and mix ' + fmtINR(b.volume_mix_effect) + '.') : ''));
+      (b ? mgMarNote(mgMarBridgeLine(b)) : ''));
   } else {
     itemsPanel = mgMarPanel('Margin by item', 'Not available yet',
       mgMarNote('Tally hasn’t sent the item lines on your sales and purchase vouchers yet, so margin per product can’t be worked out. It arrives with the next Margyn Tally agent update. Until then customer margins below use your company-wide margin.'));

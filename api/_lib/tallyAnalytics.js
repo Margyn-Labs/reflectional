@@ -677,6 +677,19 @@ function tieOutGuard(ledgers, past, futureMove, convention) {
 
 const SOURCE_NAMES = { tally: 'Tally', zoho: 'Zoho Books', odoo: 'Odoo' };
 
+/* "Item margin rose ₹59,540 from Sep 2026 to Oct 2026, all from what and how much you sold." Only the parts that moved, each with ₹ and
+   a sign (1 Nov 2026: it read "selling price 0, purchase cost 0, volume and mix 59,540"). Exported for tests. */
+function bridgeLine(b, monthLabel) {
+  const amt = (n) => '₹' + Math.abs(Math.round(n)).toLocaleString('en-IN');
+  const d = b.margin_to - b.margin_from;
+  const parts = [['prices', b.price_effect], ['purchase costs', b.cost_effect], ['volume and mix', b.volume_mix_effect]]
+    .filter(([, v]) => Math.round(v) !== 0);
+  const head = `Item margin ${d >= 0 ? 'rose' : 'fell'} ${amt(d)} from ${monthLabel(b.from_month)} to ${monthLabel(b.to_month)}`;
+  if (!parts.length) return head + '.';
+  if (parts.length === 1 && parts[0][0] === 'volume and mix') return head + ', all from what and how much you sold.';
+  return head + ': ' + parts.map(([k, v]) => `${k} ${v >= 0 ? '+' : '−'}${amt(v)}`).join(', ') + '.';
+}
+
 function computeAnalytics(input) {
   const hint = input.balance_convention === 'same' || input.balance_convention === 'opposite' ? input.balance_convention : null;
   const today = asOfToday(input.ledgers, input.vouchers, input.now, hint, { priorLedgers: input.priorLedgers });
@@ -1478,7 +1491,7 @@ function computeAnalytics(input) {
   if (period.gross_margin_pct_after_stock != null) headlines.push(`Gross margin for ${years.length > 1 ? 'this financial year' : 'the whole period'}, after stock movement, is ${p1(period.gross_margin_pct_after_stock)}% (indicative).`);
   if (leaks.returns.pct_of_gross_sales > 2) headlines.push(`Returns and credit notes are ${p1(leaks.returns.pct_of_gross_sales)}% of gross sales.`);
   if (dso != null) headlines.push(`Customers take about ${Math.round(dso)} days to pay on the last 90 days of sales. Carrying ₹${Math.round(recv).toLocaleString('en-IN')} owed to you at ${Math.round(creditRate * 100)}% costs about ₹${Math.round(annualCarry).toLocaleString('en-IN')} a year.`);
-  if (margin_bridge) headlines.push(`Item margin moved ₹${Math.round(margin_bridge.margin_to - margin_bridge.margin_from).toLocaleString('en-IN')} from ${monthLabel(margin_bridge.from_month)} to ${monthLabel(margin_bridge.to_month)}: selling price ${Math.round(margin_bridge.price_effect).toLocaleString('en-IN')}, purchase cost ${Math.round(margin_bridge.cost_effect).toLocaleString('en-IN')}, volume and mix ${Math.round(margin_bridge.volume_mix_effect).toLocaleString('en-IN')}.`);
+  if (margin_bridge) headlines.push(bridgeLine(margin_bridge, monthLabel));
   // Items sold below cost are reported once, with the loss, in "what else your books say" (booksEngine insights):
   // this list is capped at 15 and counted likely unit mix-ups, so the two counts disagreed (15 vs 13).
 
@@ -1742,6 +1755,7 @@ function assemblyCosts(vouchers) {
 }
 
 module.exports = {
+  bridgeLine,
   computeAnalytics, asOfToday, deletedInTally, renamedInTally, priorClassifier, balancePeriod, applyTiedReceivables, invoiceGaps, stockRoll, classifyLedgers, nameKey, dedupe, bucketFromParent, guessBucket, PL_BUCKETS,
   // shared with booksEngine.js so a question answered in chat counts exactly the way the Margin page does
   partyRolesFromVouchers, impliedEntry, assemblyCosts, parseDate, monthKey, normParty,

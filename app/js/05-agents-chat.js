@@ -274,11 +274,11 @@ function revealText(el, text, threadEl){
     target.textContent = '';
     const tick = () => {
       i += 2; // 2 words/tick reads as fluent without dragging out long replies
-      target.textContent = words.slice(0, i).join(' ');
+      target.innerHTML = mgBoldHtml(words.slice(0, i).join(' '));
       if(threadEl) threadEl.scrollTop = threadEl.scrollHeight;
       if(i < words.length){ setTimeout(tick, 22); } else { resolve(); }
     };
-    if(words.length <= 1){ target.textContent = text; resolve(); } else { tick(); }
+    if(words.length <= 1){ target.innerHTML = mgBoldHtml(text); resolve(); } else { tick(); }
   });
 }
 
@@ -300,7 +300,9 @@ function appendChatBubble(threadEl, role, text, agentId){
     b.innerHTML =
       '<div class="msg-head"><span class="agent-avatar sm">' + agentAvatarInner(id) + '</span><span class="msg-agent-name">' + escapeHtml(meta.name) + '</span></div>' +
       '<div class="msg-body"></div>';
-    if(text) b.querySelector('.msg-body').textContent = text;
+    if(text) b.querySelector('.msg-body').innerHTML = mgBoldHtml(text);
+  } else if(isAssistant){
+    b.innerHTML = mgBoldHtml(text);
   } else {
     b.textContent = text;
   }
@@ -648,7 +650,7 @@ async function renderChatHistoryList(thread){
     const row = document.createElement('div');
     row.className = 'chat-history-row';
     const label = (m.thread_key === 'global' || m.thread_key.startsWith('global:')) ? 'General' : (m.vital || m.thread_key.replace(/^finding:|^vital:/, ''));
-    row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + '</div><div class="chr-preview">' + escapeHtml(m.content.slice(0,70)) + '</div>';
+    row.innerHTML = '<div class="chr-label">' + escapeHtml(label) + '</div><div class="chr-preview">' + escapeHtml(mgPreview(m.content, 70)) + '</div>';
     row.addEventListener('click', async () => {
       thread.innerHTML = '';
       currentGlobalThreadKey = m.thread_key;
