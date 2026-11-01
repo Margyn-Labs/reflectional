@@ -56,7 +56,10 @@ function learned() {
   ok(cash.band && cash.tips === 13, 'chart shows the range band and a hover value for each week');
   ok(cash.low12 <= cash.close12 && cash.close12 <= cash.high12, 'week 13: cautious ≤ likely ≤ hopeful');
   ok(cash.cols.includes('Cautious (₹)') && cash.cols.includes('Hopeful (₹)'), 'week-by-week table has cautious and hopeful columns');
-  ok(/Checked on your last \d+ weeks: money from customers was within \d+% on average/.test(cash.text), 'the track-record line is on the forecast');
+  ok(/Checked on your last \d+ weeks: money from customers was within \d+% on average/.test(cash.text), 'the track-record line is on the forecast (Tally account: wording unchanged)');
+  // Zoho Books / Odoo: said as how far off it was ("within 63%" read as 63% right, 1 Nov 2026).
+  const zl = await p.evaluate(() => { tallyConnected = false; const t = mgFcTrackLine(mgFcLearned()); tallyConnected = true; return t; });
+  ok(/^Checked on your last \d+ weeks: money from customers was off by about \d+% a week on average/.test(zl) && !/within/.test(zl), 'Zoho: track-record line says how far off it was: ' + zl);
   ok(/Lowest point in 13 weeks[\s\S]*Learned from your books/.test(cash.text), 'Lowest-point tile says where it comes from');
 
   // 2. How Margyn built this

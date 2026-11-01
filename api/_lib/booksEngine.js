@@ -931,7 +931,7 @@ function products(ctx, args) {
   // cost: big uncosted lines (Zoho's "Consulting", "Goods": ₹2.5 Cr) raised the bar so only 2 of 8 costed items
   // ranked and Margyn said "only two items have a known cost" (1 Nov 2026).
   const costedTotal = stats.reduce((t, s) => t + (s.margin != null ? s.g.value : 0), 0);
-  const floor = Math.max(25000, 0.003 * costedTotal);
+  const floor = Math.max(25000, 0.003 * (isTallyBook(ctx) ? total : costedTotal));   // Tally unchanged
   const big = (s) => s.g.value >= floor;
   let list;
   switch (sort) {
@@ -1182,7 +1182,7 @@ function insights(ctx) {
         title: cloud && owedAll.get(norm(g.party)) > g.late30 + 0.5
           ? `${name} owes ${inr(owedAll.get(norm(g.party)))} in all; ${inr(g.late30)} of it is more than a month late. Oldest is ${billTxt}, ${o.late} days.`
           : `${name} owes ${inr(g.late30)} that's more than a month late; oldest is ${billTxt}, ${o.late} days.`,
-        detail: (g.slipping > 0 ? `Plus ${inr(g.slipping)} that went past due recently. ` : '') + (() => { const c = (an.customers || []).find((x) => norm(x.party) === norm(g.party)); return c && c.dso_days != null ? `What they owe is about ${Math.round(c.dso_days)} days of what they buy from you.` : ''; })(),   // DSO, not how fast they pay a bill (the Cash forecast's "usually pays in")
+        detail: (g.slipping > 0 ? `Plus ${inr(g.slipping)} that went past due recently. ` : '') + (() => { const c = (an.customers || []).find((x) => norm(x.party) === norm(g.party)); return c && c.dso_days != null ? (isTallyBook(ctx) ? `They usually take about ${Math.round(c.dso_days)} days to pay.` : `What they owe is about ${Math.round(c.dso_days)} days of what they buy from you.`) : ''; })(),   // DSO, not how fast they pay a bill (the Cash forecast's "usually pays in")
         action: `Call ${name} about ${o.ref ? doc + ' ' + o.ref : 'the oldest ' + doc}.`, ask: `Tell me about ${g.party}` });
     }
   }

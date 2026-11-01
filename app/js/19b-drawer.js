@@ -59,12 +59,13 @@ function mgOpenParty(dir, key){
     '<table class="mg-grid"><thead><tr><th>Reference</th><th>Status</th><th class="r">Amount (₹)</th></tr></thead><tbody>' +
       rows.map(r => '<tr><td class="mg-mono">' + escapeHtml(r.ref || '—') + '</td><td>' + mgStatusBadge(r.days, dir) + '</td><td class="r">' + mgNum(r.amount) + '</td></tr>').join('') +
     '</tbody></table>';
+  // The date is the due date, said so: "18 Jan 2026" read as the invoice date beside Margin's "19 Dec" (1 Nov 2026).
   const sources = '<p class="mg-fine" style="margin:0 0 12px">Each source exactly as it reports this ' + who.toLowerCase() + '. They are compared, never added.</p>' +
     g.sources.map(s => {
       const h = mgSourceHealth(s);
       const b = g.by[s];
       return '<div class="mg-src-block"><div class="mg-src-block-h">' + mgLogo(s) + '<b>' + escapeHtml(MG_SRC_NAME[s]) + '</b><span class="mg-fine">' + escapeHtml(h.text || '') + '</span><span class="mg-src-amt">' + escapeHtml(fmtINR(b.amount)) + '</span></div>' +
-        b.rows.map(r => '<div class="mg-src-row"><span class="mg-mono">' + escapeHtml(r.ref || '—') + '</span><span>' + (r.due ? escapeHtml(fmtDay(r.due)) : 'No due date') + '</span><span class="mg-mono">' + mgNum(r.amount) + '</span></div>').join('') + '</div>';
+        b.rows.map(r => '<div class="mg-src-row"><span class="mg-mono">' + escapeHtml(r.ref || '—') + '</span><span>' + (r.due ? 'Due ' + escapeHtml(fmtDay(r.due)) : 'No due date') + '</span><span class="mg-mono">' + mgNum(r.amount) + '</span></div>').join('') + '</div>';
     }).join('') +
     (g.status === 'conflict' ? '<div class="mg-fc-callout warn">Sources differ by ' + escapeHtml(fmtINR(g.diff)) + '. Margyn uses ' + escapeHtml(MG_SRC_NAME[g.primary]) + ' and flags the difference; it never averages them.</div>' : '');
   const ev = ((typeof ledgerEvents !== 'undefined' && ledgerEvents) || []).filter(e => normPartyName(e.party_name) === g.key);

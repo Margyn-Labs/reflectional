@@ -71,6 +71,19 @@ function showKhataTab(tab){
 }
 document.querySelectorAll('#khataTabs .tab').forEach(t => t.addEventListener('click', () => showKhataTab(t.dataset.ktab)));
 /* ---------- parties list ---------- */
+/* What a saved party owes or is owed in the connected Zoho Books / Odoo, from the same groups Receivables and Payables
+   show. The khata alone counts only entries typed here, so a Zoho customer owing ₹4.9 L read "₹0 settled" (1 Nov 2026).
+   Tally accounts are left as they were. Returns { amount, payable, src } or null. */
+function khataBooksBalance(p){
+  if(typeof tallyConnected !== 'undefined' && tallyConnected) return null;
+  if(typeof mgMoneyGroups !== 'function' || typeof normPartyName !== 'function') return null;
+  const k = normPartyName(p.name);
+  for(const dir of (p.type === 'vendor' ? ['pay'] : p.type === 'customer' ? ['recv'] : ['recv', 'pay'])){
+    let g = null; try { g = mgMoneyGroups(dir).find(x => x.key === k && (x.primary === 'zoho' || x.primary === 'odoo')); } catch(e){}
+    if(g && g.amount > 0) return { amount:g.amount, payable:dir === 'pay', src:MG_SRC_NAME[g.primary] || 'your books' };
+  }
+  return null;
+}
 function renderKhataParties(){
   const host = document.getElementById('khataPartyList'); if(!host) return;
   const q = (document.getElementById('khataSearch').value || '').toLowerCase();
@@ -83,8 +96,9 @@ function renderKhataParties(){
   if(!rows.length){ host.innerHTML = '<div class="ledger-empty">No parties yet. Add your first customer or vendor above.</div>'; return; }
   host.innerHTML = '';
   rows.forEach(p => {
-    const bal = khataPartyBalance(p.id);
-    const isPayable = (p.type === 'vendor') || (p.type === 'both' && bal < 0);
+    const books = khataEntriesForParty(p.id).length ? null : khataBooksBalance(p);
+    const bal = books ? books.amount : khataPartyBalance(p.id);
+    const isPayable = books ? books.payable : (p.type === 'vendor') || (p.type === 'both' && bal < 0);
     const row = document.createElement('div'); row.className = 'cust-row';
     const tags = p.type === 'both' ? '<span class="cust-tag customer">Customer</span><span class="cust-tag vendor">Vendor</span>' : '<span class="cust-tag ' + p.type + '">' + (p.type === 'customer' ? 'Customer' : 'Vendor') + '</span>';
     row.innerHTML =
@@ -92,7 +106,7 @@ function renderKhataParties(){
       '<div class="cust-main"><div class="cust-name">' + escapeHtml(p.name) + tags + '</div>' +
       '<div class="cust-meta">' + escapeHtml(p.phone||'no phone') + (p.gstin ? ' · ' + escapeHtml(p.gstin) : ' · no GSTIN') + '</div></div>' +
       '<div class="cust-balance"><div class="amt" style="color:' + (bal===0?'#0E8F5C':(isPayable?'#5B6472':'#B3432E')) + ';">' + inr(Math.abs(bal)) + '</div>' +
-      '<div class="lbl">' + (bal===0?'settled':(isPayable?'payable':'receivable')) + '</div></div>';
+      '<div class="lbl">' + (bal===0?'settled':(isPayable?'payable':'receivable')) + (books ? ' · ' + escapeHtml(books.src) : '') + '</div></div>';
     row.addEventListener('click', () => openKhataPartyDetail(p.id));
     host.appendChild(row);
   });

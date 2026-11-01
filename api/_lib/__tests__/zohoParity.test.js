@@ -407,6 +407,8 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     // "usually take about 281 days to pay" (owed ÷ sales) clashed with the Cash forecast's "usually pays in 30 days".
     const dsoCtx = Object.assign({}, tctx, { material: 5000, source: 'zoho', source_name: 'Zoho Books', analytics: Object.assign({}, tctx.analytics, { customers: [{ party: 'Beta Traders', dso_days: 281 }] }) });
     const zd = (E.insights(dsoCtx).find((x) => x.kind === 'late') || {}).detail || '';
+    const tdso = (E.insights(Object.assign({}, tctx, { material: 5000, analytics: dsoCtx.analytics })).find((x) => x.kind === 'late') || {}).detail || '';
+    check('attention: Tally wording unchanged (usually take about N days)', /They usually take about 281 days to pay\./.test(tdso), tdso);
     check('attention: owed-in-days is said as what they owe, never how fast they pay', /What they owe is about 281 days of what they buy from you\./.test(zd) && !/usually take/.test(zd), zd);
     check('attention: Tally wording unchanged (bill)', tt && /^Beta Traders owes ₹20,000 that's more than a month late; oldest is bill INV-2/.test(tt.title) && /about bill INV-2\.$/.test(tt.action), tt);
     const z2 = E.insights(Object.assign({}, tctx, { material: 5000, source: 'zoho', source_name: 'Zoho Books', analytics: tctx.analytics }));

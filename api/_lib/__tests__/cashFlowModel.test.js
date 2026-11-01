@@ -128,6 +128,15 @@ console.log(`  self-check: ${sc.runs} runs, 4-week cash miss ${(cashMiss * 100).
 // Gamma's whole month lands on one day, so whether it falls inside a 4-week window moves cash by ~₹6 L.
 check('4 weeks out, cash missed by under 4% on average', cashMiss < 0.04, cashMiss);
 check('learned factor stays in bounds', sc.collection_factor >= 0.6 && sc.collection_factor <= 1.3);
+// The note says what customers actually paid, not the capped factor (1 Nov 2026: "paid 130%" when they paid 3.5 times).
+check('self-check gives the raw ratio beside the factor', sc.collection_raw == null || typeof sc.collection_raw === 'number', sc.collection_raw);
+const fnCap = CF.factorNote(3.5, 1.3, 9, 'customers paid', 'money in from customers');
+check('capped: says 350% paid and 130% used', /customers paid 350% of what it expected; money in from customers is scaled to 130%, moved only part of the way on 9 weeks/.test(fnCap), fnCap);
+check('uncapped: unchanged wording', CF.factorNote(1.12, 1.12, 9, 'customers paid', 'money in from customers') === 'customers paid 112% of what it expected, so money in from customers is scaled to match.');
+// Tally keeps its sentence: the note passes the factor alone (no raw), so a Tally book reads exactly as before.
+check('Tally note wording unchanged', CF.factorNote(null, 1.3, 9, 'customers paid', 'money in from customers') === 'customers paid 130% of what it expected, so money in from customers is scaled to match.');
+const outNotes = CF.build(ctx, { promises: [], pastRuns: [] }).notes.join(' ');
+check('build notes never claim a paid share other than the raw one', !/customers paid \d+%/.test(outNotes) || sc.collection_raw == null || new RegExp('customers paid ' + Math.round(sc.collection_raw * 100) + '%').test(outNotes) || Math.abs(sc.collection_raw - sc.collection_factor) < 0.03, outNotes);
 check('misses measured at 1, 2, 4 and 8 weeks', [1, 2, 4, 8].every((w) => sc.error_by_week[w] && sc.error_by_week[w].runs >= 3), sc.error_by_week);
 check('range comes from its own past misses and widens with time', out.band_basis === 'past_misses' && (out.weeks[12].high - out.weeks[12].low) > (out.weeks[0].high - out.weeks[0].low) && out.weeks.every((w) => w.low <= w.close && w.close <= w.high), out.weeks.map((w) => [w.low, w.close, w.high]).slice(0, 3));
 

@@ -248,7 +248,8 @@ async function mgRenderTeam(reload){
     const wa = isOwnerRow ? '' : '<div class="mg-sub">' + (m.whatsapp ? 'WhatsApp ' + escapeHtml(typeof waPrettyPhone === 'function' ? waPrettyPhone(m.whatsapp) : m.whatsapp) : 'No WhatsApp number linked') + '</div>';
     return '<tr' + (m.status === 'suspended' ? ' class="mg-muted"' : '') + '><td><b>' + escapeHtml(m.name || (m.email || '').split('@')[0]) + (me ? ' (you)' : '') + '</b><div class="mg-sub">' + escapeHtml(m.email || '') + '</div>' + wa + '</td>' +
       '<td>' + (editable ? roleSel(m.role, m.id) : escapeHtml(m.role_label)) + '<div class="mg-sub">' + escapeHtml((MG_ROLE_INFO[m.role] || ['', ''])[1]) + '</div></td>' +
-      '<td>' + (isOwnerRow ? '—' : escapeHtml(m.status === 'suspended' ? 'Suspended' : m.last_seen_at ? 'Last seen ' + when(m.last_seen_at) : 'Hasn’t signed in yet')) + '</td>' +
+      // The owner row said "—" with no reason: say what is known (you're here now, or when they were last seen).
+      '<td>' + (isOwnerRow ? escapeHtml(me ? 'Signed in now' : m.last_seen_at ? 'Last seen ' + when(m.last_seen_at) : 'Owner') : escapeHtml(m.status === 'suspended' ? 'Suspended' : m.last_seen_at ? 'Last seen ' + when(m.last_seen_at) : 'Hasn’t signed in yet')) + '</td>' +
       '<td class="r">' + (editable ? '<button class="mg-btn" type="button" data-team-access="' + m.id + '">Access</button> ' +
         '<button class="mg-btn" type="button" data-team-status="' + m.id + '" data-to="' + (m.status === 'suspended' ? 'active' : 'suspended') + '">' + (m.status === 'suspended' ? 'Restore' : 'Suspend') + '</button> ' +
         '<button class="mg-btn danger" type="button" data-team-remove="' + m.id + '">Remove</button>' : '') + '</td></tr>';

@@ -136,7 +136,8 @@ function positionHistory(ctx) {
   const pts = (((ctx.analytics || {}).cash_history) || {}).points || [];
   if (!pts.length) return null;
   let recvToday = 0, payToday = 0;
-  if (/^(zoho|odoo)$/.test(String((ctx.book && ctx.book.source) || ''))) {
+  const booksOnly = /^(zoho|odoo)$/.test(String((ctx.book && ctx.book.source) || ''));
+  if (booksOnly) {
     // Zoho Books / Odoo: customer and supplier accounts carry no balance, their open invoices and bills are what is
     // owed (the Receivables and Payables pages' totals). From the ledgers it read ₹0 today and walked back to
     // −₹3.68 Cr owed last December (1 Nov 2026).
@@ -175,7 +176,9 @@ function positionHistory(ctx) {
     const spanDays = i - from + 1;
     weekly.push({ date: d, cash: r0(pts[i].cash), receivables: r0(b.recv), payables: r0(b.pay),
       // Days to collect: what customers owe over the last 90 days' sales per day (needs 60+ days of history).
-      days_to_collect: spanDays >= 60 && sales90 > 0 ? Math.round(b.recv / (sales90 / spanDays)) : null });
+      // Per day the way Margin's "Days to get paid" counts it (tallyAnalytics: the sales since 90 days back over 90), so
+      // this week's figure and Margin's agree (241 beside 240, 1 Nov 2026).
+      days_to_collect: spanDays >= 60 && sales90 > 0 ? Math.round(b.recv / (sales90 / (booksOnly ? Math.min(90, spanDays) : spanDays))) : null });   // Tally unchanged
   }
   return { weeks: weekly.reverse(), receivables_today: r0(recvToday), payables_today: r0(payToday) };
 }
@@ -805,10 +808,10 @@ function selfCheck(ctx) {
   // when tied or untested); and if even that way kept paying out more or less than it expected, the same
   // correction as for customers (shrunk toward 1 with few runs, bounded 0.7–1.3).
   const supplier_method = inRuns >= 3 && supErr.pace < 0.9 * supErr.bills ? 'pace' : 'bills';
-  let supplier_factor = 1;
-  if (inRuns >= 2 && supPred[supplier_method] > 0) { const raw = supAct[supplier_method] / supPred[supplier_method]; supplier_factor = Math.max(0.7, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
-  let factor = 1;
-  if (inRuns >= 2 && predIn > 0) { const raw = actIn / predIn; factor = Math.max(0.6, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
+  let supplier_factor = 1, supplier_raw = null;
+  if (inRuns >= 2 && supPred[supplier_method] > 0) { const raw = supAct[supplier_method] / supPred[supplier_method]; supplier_raw = Math.round(raw * 100) / 100; supplier_factor = Math.max(0.7, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
+  let factor = 1, collection_raw = null;
+  if (inRuns >= 2 && predIn > 0) { const raw = actIn / predIn; collection_raw = Math.round(raw * 100) / 100; factor = Math.max(0.6, Math.min(1.3, 1 + (raw - 1) * inRuns / (inRuns + 4))); }
   const error_by_week = {};
   for (const [h, all] of Object.entries(errs)) {
     const a = all.map((x) => x[supplier_method]);
@@ -818,7 +821,7 @@ function selfCheck(ctx) {
     if (supplier_method === 'pace') { c.cash_error = r0(c._errP); c.predicted_cash = r0(c.actual_cash - c.loans_and_transfers + c._errP); c.by_kind.suppliers[0] = r0(c._supP); }
     delete c._errP; delete c._supP; delete c._supB;
   }
-  return { checks, collection_factor: Math.round(factor * 100) / 100, error_by_week, runs: checks.length, supplier_method, supplier_factor: Math.round(supplier_factor * 100) / 100,
+  return { checks, collection_factor: Math.round(factor * 100) / 100, collection_raw, supplier_raw, error_by_week, runs: checks.length, supplier_method, supplier_factor: Math.round(supplier_factor * 100) / 100,
     supplier_miss: inRuns ? { bills: r0(supErr.bills / inRuns), pace: r0(supErr.pace / inRuns) } : null };
 }
 
@@ -857,20 +860,31 @@ function build(ctx, o) {
   const hist = positionHistory(ctx);
   const notes = [];
   const nice = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return d + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]; };
-  if (Math.abs(check.collection_factor - 1) >= 0.03) notes.push(`Run on each of the last ${check.runs} weeks and checked against what happened, customers paid ${Math.round(check.collection_factor * 100)}% of what it expected, so money in from customers is scaled to match.`);
+  // What they actually paid against what it expected, and how far the forecast is moved: only part of the way
+  // with few weeks, never past 60–130%. "Customers paid 130%" read as fact when they had paid 3.5 times (1 Nov 2026).
+  const notTally = /^(zoho|odoo)$/.test(String((ctx.book && ctx.book.source) || ''));
+  const scaled = (raw, f, who, what) => factorNote(notTally ? raw : null, f, check.runs, who, what);   // Tally wording unchanged
+  if (Math.abs(check.collection_factor - 1) >= 0.03) notes.push(`Run on each of the last ${check.runs} weeks and checked against what happened, ` + scaled(check.collection_raw, check.collection_factor, 'customers paid', 'money in from customers'));
   const m4 = check.error_by_week[4];
   if (m4) notes.push(`Four weeks out it has typically been off by ₹${m4.typical_miss.toLocaleString('en-IN')} on your cash (before loans and overdraft), so the range shown is that wide.`);
   if (fc.drivers.doubtful.amount) notes.push(`₹${fc.drivers.doubtful.amount.toLocaleString('en-IN')} owed for more than six months (or far longer than that customer usually takes) is left out.`);
   const g = fc.drivers.gst_next;
   if (g && g.paid_from_elsewhere) notes.push(`GST: your books show about ₹${g.books_estimate.toLocaleString('en-IN')} due on ${nice(g.date)}, but for the last three months no GST went out of the accounts counted as cash here (it was paid from somewhere else, such as your overdraft), so it isn’t taken from this forecast.`);
   else if (g && g.paid_vs_estimate !== 1) notes.push(`GST: you’ve actually paid about ${Math.round(g.paid_vs_estimate * 100)}% of what your books estimated in recent months, so ₹${g.amount.toLocaleString('en-IN')} is expected on ${nice(g.date)}.`);
-  if (Math.abs((check.supplier_factor || 1) - 1) >= 0.03) notes.push(`On those weeks you paid suppliers ${Math.round(check.supplier_factor * 100)}% of what it expected, so supplier payments are scaled to match.`);
+  if (Math.abs((check.supplier_factor || 1) - 1) >= 0.03) notes.push('On those weeks ' + scaled(check.supplier_raw, check.supplier_factor, 'you paid suppliers', 'supplier payments'));
   if (check.supplier_miss) notes.push(check.supplier_method === 'pace'
     ? `Supplier payments follow your recent weekly pace: on your last ${check.runs} weeks that predicted them better than bill-by-bill timing.`
     : `Supplier payments follow each supplier’s open bills and how quickly you usually pay them: on your last ${check.runs} weeks that predicted them better than a weekly average.`);
   notes.push('Loan drawdowns, overdraft movements and transfers are left out unless they repeat monthly or are already entered for a later date.');
   return { version: 2, ...fc, history: hist ? hist.weeks : [], receivables_today: hist ? hist.receivables_today : null, payables_today: hist ? hist.payables_today : null,
     self_check: check, notes, accuracy: accuracyFromRuns(opts.pastRuns || [], (ctx.analytics.cash_history || {}).points || []) };
+}
+
+/** One sentence on a self-check correction: what was actually paid against what was expected, and how far the forecast moves. */
+function factorNote(raw, f, runs, who, what) {
+  return (raw == null || Math.abs(raw - f) < 0.03)
+    ? `${who} ${Math.round(f * 100)}% of what it expected, so ${what} is scaled to match.`
+    : `${who} ${Math.round(raw * 100)}% of what it expected; ${what} is scaled to ${Math.round(f * 100)}%, moved only part of the way on ${runs} weeks and never past 60–130%.`;
 }
 
 /**
@@ -892,4 +906,4 @@ function accuracyFromRuns(runs, points) {
   return out.slice(-20);
 }
 
-module.exports = { build, accuracyFromRuns, supplierOpenItems, creditorKinds, creditorKindOf, NON_TRADE_LABEL,partyBalancesToday, sinceOpening, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
+module.exports = { build, factorNote, accuracyFromRuns, supplierOpenItems, creditorKinds, creditorKindOf, NON_TRADE_LABEL,partyBalancesToday, sinceOpening, cashEvents, futureEvents, positionHistory, customerHabits, partyHabits, habitOf, survivalFrom, recurringPayments, weeklyPace, forecast, selfCheck, bandFromErrors, wPct, CATEGORY_LABEL, HORIZON_DAYS };
