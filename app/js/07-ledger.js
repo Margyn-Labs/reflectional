@@ -138,7 +138,7 @@ function renderLedgerFacts(){
     '<div data-margyn-topic="Total receivable"><div class="l">Receivable</div><div class="v" style="color:var(--rose);">'+inr(recvTotal)+'</div></div>' +
     '<div data-margyn-topic="Total payable"><div class="l">Payable</div><div class="v" style="color:var(--text-1);">'+inr(payTotal)+'</div></div>' +
     '<div data-margyn-topic="Net position"><div class="l">Net position</div><div class="v" style="color:'+(net>=0?'var(--emerald-bright)':'var(--rose)')+';">'+(net>=0?'+':'')+inr(net)+'</div></div>' +
-    '<div><div class="l">Overdue bills</div><div class="v">'+overdue+'</div></div>';
+    '<div><div class="l">Overdue entries</div><div class="v">'+overdue+'</div></div>';
 }
 function renderLedgerView(){
   renderLedgerFacts();

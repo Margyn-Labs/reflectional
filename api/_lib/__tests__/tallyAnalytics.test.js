@@ -112,7 +112,7 @@ const costless = vouchers.map((v) => {
   return v;
 });
 const nc = computeAnalytics({ ledgers, vouchers: costless, bills, now, source: 'zoho' });
-check('no margin bridge when no item sold has a cost (Zoho)', nc.items_available === true && nc.margin_bridge === null && !(nc.headlines || []).some((h) => /Item margin moved/.test(h)), { bridge: nc.margin_bridge, headlines: nc.headlines });
+check('no margin bridge when no item sold has a cost (Zoho)', nc.items_available === true && nc.margin_bridge === null && !(nc.headlines || []).some((h) => /Item margin (moved|rose|fell)/.test(h)), { bridge: nc.margin_bridge, headlines: nc.headlines });
 const ncTally = computeAnalytics({ ledgers, vouchers: costless, bills, now });
 check('Tally accounts keep the margin bridge exactly as before', ncTally.margin_bridge && ncTally.margin_bridge.from_month === '2026-07', ncTally.margin_bridge);
 
@@ -247,5 +247,14 @@ check('empty input does not throw, says so', e.pnl.length === 0 && e.quality.con
   check('nothing ahead: balances untouched', none.ledgers[0].closing_balance === 313191 && none.future.length === 0);
   const an = computeAnalytics({ ledgers, vouchers: vouchers.concat([V('Payment', '99', '20261120', null, [['Salaries', -999999], ['HDFC Bank', 999999]])]), bills, now });
   check('analytics: a future entry is listed, not counted', an.entered_ahead && an.entered_ahead.count === 1 && !an.pnl.some((m) => m.month === '2026-11'), an.entered_ahead);
+}
+// The item-margin sentence in plain words (1 Nov 2026: "selling price 0, purchase cost 0, volume and mix 59,540").
+{
+  const { bridgeLine } = require('../tallyAnalytics');
+  const ml = (k) => ({ '2026-09': 'Sep 2026', '2026-10': 'Oct 2026' }[k]);
+  const one = bridgeLine({ from_month: '2026-09', to_month: '2026-10', margin_from: 100000, margin_to: 159540, price_effect: 0.2, cost_effect: 0, volume_mix_effect: 59540 }, ml);
+  check('bridge: only the part that moved, in words', one === 'Item margin rose ₹59,540 from Sep 2026 to Oct 2026, all from what and how much you sold.', one);
+  const mix = bridgeLine({ from_month: '2026-09', to_month: '2026-10', margin_from: 200000, margin_to: 150000, price_effect: -20000, cost_effect: -40000, volume_mix_effect: 10000 }, ml);
+  check('bridge: each part with ₹ and a sign, a fall says fell', mix === 'Item margin fell ₹50,000 from Sep 2026 to Oct 2026: prices −₹20,000, purchase costs −₹40,000, volume and mix +₹10,000.', mix);
 }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

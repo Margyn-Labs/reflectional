@@ -217,7 +217,7 @@ function mgHubAsked(){
     '<button type="button" class="mg-chip' + (mgHub.topic === k ? ' on' : '') + '" data-hub-topic="' + k + '">' + escapeHtml((T && T.LABEL[k]) || k) + ' · ' + counts[k] + '</button>').join('') +
     (missed ? '<button type="button" class="mg-chip' + (mgHub.missedOnly ? ' on' : '') + '" data-hub-missed>Couldn’t answer · ' + missed + '</button>' : '');
   const shown = qs.filter(q => (!mgHub.topic || q.topics.includes(mgHub.topic)) && (!mgHub.missedOnly || q.missed)).slice(0, 12);
-  const rows = shown.map(q => '<div class="mg-li"><div style="min-width:0;flex:1"><div class="mg-li-t">' + escapeHtml(q.text.slice(0, 140)) + '</div>' +
+  const rows = shown.map(q => '<div class="mg-li"><div style="min-width:0;flex:1"><div class="mg-li-t">' + escapeHtml(mgPreview(q.text, 140)) + '</div>' +
     '<div class="mg-li-s">' + escapeHtml(MG_HUB_CHANNEL[q.channel] + ' · ' + fmtDay(q.at)) + (q.missed ? ' · <span class="mg-hub-miss">Margyn couldn’t answer this then</span>' : '') + '</div></div>' +
     '<button type="button" class="mg-btn mg-btn-sm" data-hub-ask="' + escapeHtml(q.text) + '">Ask again</button></div>').join('');
   return '<div class="mg-panel"><div class="mg-panel-h"><h2>What you’ve asked</h2><span class="mg-aside">' + qs.length + ' question' + (qs.length === 1 ? '' : 's') + ' across the app, calls and WhatsApp</span></div>' +
@@ -315,7 +315,7 @@ async function mgHubAppendWhatsApp(){
     row.setAttribute('data-hub-wa', t.phone);
     const who = t.phone === 'whatsapp' ? 'WhatsApp' : 'WhatsApp · ••' + String(t.phone).slice(-4);
     const when = new Date(t.last.created_at).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
-    row.innerHTML = '<div class="chr-label">' + escapeHtml(who) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(String(t.last.content).slice(0, 90)) + '</div>';
+    row.innerHTML = '<div class="chr-label">' + escapeHtml(who) + ' · ' + when + '</div><div class="chr-preview">' + escapeHtml(mgPreview(t.last.content, 90)) + '</div>';
     listEl.insertBefore(row, listEl.firstChild);   // WhatsApp chats lead the list: they're where the owner talks most
   });
 }

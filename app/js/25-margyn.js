@@ -96,7 +96,7 @@ function mgrLine(who, text, id){
 /* Margyn's words with **bold** shown as bold, not as asterisks (1 Nov 2026: answers read "**Call Gupta Exports.**").
    Escaped first, so nothing in the text can become markup. */
 function mgrRich(el, text){
-  el.innerHTML = escapeHtml(String(text || '')).replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>');
+  el.innerHTML = mgBoldHtml(text);
 }
 function mgrHtmlLine(html, cls){
   const f = mgrFeed(); if(!f) return null;

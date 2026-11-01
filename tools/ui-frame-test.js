@@ -83,8 +83,15 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const scopes = await p.$$eval('#view-cfopack .pk-scope', x => x.map(e => e.textContent));
   ok(scopes.length === 9 && scopes.every(t => /Anvaya Home Goods · Reconciled/.test(t)) && scopes.slice(0, 8).every(t => t.includes(LML + ' · closing reading')), 'every section carries its scope line and reading date');
   // With Tally connected the P&L lines are the selected month's own figures from Tally, not the reading's average.
-  ok(await p.evaluate(() => { const k = mgPackCurrent(), t = mgPackTallyPnl(k), pl = document.getElementById('pkPl').textContent;
-    return !!t && pl.includes(mgPackN(t.revenue)) && document.querySelectorAll('#pkPl tbody tr').length === 4; }), 'P&L: the month’s revenue comes from Tally, 4 rows')
+  // The seeded books end in Sep 2026: read the P&L for the newest month they cover, whatever today's date is.
+  await p.evaluate(() => { const ks = (mgMar.pnl || []).filter(r => !r.provisional).map(r => r.month), k = ks[ks.length - 1], s = document.querySelector('#view-cfopack [data-pk-month]');
+    if(s && k && [...s.options].some(o => o.value === k)){ s.value = k; s.dispatchEvent(new Event('change', { bubbles:true })); } });
+  await p.waitForTimeout(300);
+  { const pk = await p.evaluate(() => { const k = mgPackCurrent(), t = mgPackTallyPnl(k), pl = document.getElementById('pkPl').textContent;
+    return { ok:!!t && pl.includes(mgPackN(t.revenue)) && document.querySelectorAll('#pkPl tbody tr').length === 4, k, rev:t && mgPackN(t.revenue), rows:document.querySelectorAll('#pkPl tbody tr').length, pl:pl.slice(0, 300) }; });
+    ok(pk.ok, 'P&L: the month’s revenue comes from Tally, 4 rows' + (pk.ok ? '' : ' :: ' + JSON.stringify(pk))); }
+  await p.evaluate(k => { const s = document.querySelector('#view-cfopack [data-pk-month]'); s.value = k; s.dispatchEvent(new Event('change', { bubbles:true })); }, LM);
+  await p.waitForTimeout(300);
   ok(/Written by Margyn/.test(await p.textContent('#view-cfopack [data-pk-sec="commentary"]')) && /steadier month/.test(await p.textContent('#view-cfopack [data-pk-sec="commentary"]')), 'commentary is August’s briefing, labelled Written by Margyn');
   ok((await p.$$('#pkFc tbody tr')).length === 13 && !/Total/i.test(await p.textContent('#pkCash')), 'cash: sources not summed, 13-week table');
   ok(/HDFC Bank CA 0021/.test(await p.textContent('#pkCash')) && (await p.$$('#pkOverdue tbody tr')).length >= 3, 'cash by account and top overdue customers listed');
@@ -240,7 +247,10 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   apiCalls = await p.evaluate(() => window.__calls.filter(u => u.includes('disconnect')));
   ok(!(await p.isVisible('.mg-dialog')) && apiCalls.length === 0, 'Escape cancels, no disconnect request sent');
   await p.evaluate(() => { disconnectZoho(); }); await p.waitForTimeout(150);
-  await p.click('.mg-dlg-ok'); await p.waitForTimeout(300);
+  await p.click('.mg-dlg-ok'); await p.waitForTimeout(200);
+  // Then: keep or remove the data Margyn copied (asked since the disconnect clean-up shipped). Keep it.
+  ok(/Keep the Zoho Books data/.test(await p.textContent('.mg-dialog h3')), 'then asks whether to keep the copied data');
+  await p.click('.mg-dlg-cancel'); await p.waitForTimeout(300);
   apiCalls = await p.evaluate(() => window.__calls.filter(u => u.includes('disconnect')));
   ok(apiCalls.length === 1, 'Confirm sends exactly one disconnect request: ' + apiCalls);
 

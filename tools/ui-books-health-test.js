@@ -95,7 +95,8 @@ function payload() {
   ok(/Nothing to fix in your books right now/.test(clean) && !(await p.$('#mgBooksHealth [data-bh-send]')) && /Fixed in the last 30 days/.test(clean), 'all fixed: says nothing to fix, lists what was fixed, no send button');
 
   // 6. What's new has the release, with a button to the check.
-  ok(await p.evaluate(() => MG_RELEASES[0].id === '2026-10-07-books-health' && MG_RELEASES[0].items.every(i => i.act === 'bookshealth') && !!MG_WN_ACTS.bookshealth), 'What’s new: the release is first and opens the books check');
+  // Later releases sit above it now (newest first): find it by id.
+  ok(await p.evaluate(() => { const r = MG_RELEASES.find(x => x.id === '2026-10-07-books-health'); return !!r && r.items.every(i => i.act === 'bookshealth') && !!MG_WN_ACTS.bookshealth; }), 'What’s new: the release is listed and opens the books check');
 
   ok(!errs.length, 'no page errors: ' + errs.join(' | '));
   await b.close();
