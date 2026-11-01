@@ -483,7 +483,9 @@ function breakdown(ctx, args) {
       case 'gst': v = r.tax_out - r.tax_in; if (!v) continue; break;
       default: continue;
     }
-    add(keyOf(r), v, 1);
+    // Sales: "entries" is the number of invoices. A credit note lowers the amount but isn't another sale
+    // (1 Nov 2026: October read "138 invoices", Zoho has 129 and 9 credit notes).
+    add(keyOf(r), v, (measure === 'sales' || measure === 'sales_including_gst') && r.kind === 'credit_note' ? 0 : 1);
   }
 
   let list = [...groups.values()];
@@ -517,6 +519,7 @@ function breakdown(ctx, args) {
   if (measure === 'margin') out.margin_note = 'Margin = sales value less quantity x average cost (purchase price, or for kits you assemble, the cost of the parts).' + (costMissing ? ' ' + inr(costMissing) + ' of sales had no known cost and is left out.' : '');
   if (itemLevel && !ctx.rows.some((r) => r.items.length)) out.note = `Item lines haven't synced from ${SRC(ctx)} for these vouchers, so item-level figures aren't available.`;
   out.notes = periodNotes(ctx, per);
+  if (measure === 'sales' || measure === 'sales_including_gst') out.entries_note = '"entries" = sales invoices. Credit notes are taken off the amount but not counted as entries.';
   out.rupees_note = '"rupees" is for charts only; say the "amount" text.';
   return out;
 }
