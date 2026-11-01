@@ -16,6 +16,17 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-last-checks', date:'1 Nov 2026', title:'Clearer figures on Zoho Books',
+    items:[
+      { t:'Invoicing shows what saved customers owe', what:'A customer or supplier you’ve saved now shows what they owe in Zoho Books, marked as coming from Zoho Books. Before, a customer owing lakhs read “₹0 settled”.',
+        how:'Open <b>Invoicing → Parties</b>.', act:'invoicing' },
+      { t:'The forecast says how far off it has been', what:'The Cash forecast now says how far off it has been on your past weeks (“off by about 63% a week”), and what customers actually paid against what it expected, with how far it moved the forecast for that.',
+        how:'Open <b>Cash → Forecast</b> → How Margyn built this.', act:'cash' },
+      { t:'Smaller fixes', what:'A customer’s Sources tab now says each date is the due date. Days to collect counts days the same way as Margin. While item lines are still coming in, the Items table says that is why it is short of your profit and loss. Tables in Margyn’s answers fit the panel. Settings shows when the owner was last signed in.',
+        how:'Open a customer → <b>Sources</b>, or <b>Margin → Items</b>.', act:'margin' }
+    ]
+  },
+  {
     id:'2026-11-01-every-page-agrees', date:'1 Nov 2026', title:'Every page tells the same story',
     items:[
       { t:'Week by week this year, right on Zoho Books', what:'The Cash page’s week-by-week view now starts from what customers really owe you today (your open invoices) and what you owe suppliers (your open bills). Before, on Zoho Books it showed ₹0 owed and a line that dipped below zero.',

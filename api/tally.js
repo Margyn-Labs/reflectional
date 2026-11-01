@@ -483,6 +483,8 @@ async function handleAnalytics(req, res) {
   if (dataH != null && dataH > 36 && out.quality.confidence === 'high-for-a-single-source') { out.quality.confidence = 'medium'; out.quality.reasons.unshift(`These figures are as of ${new Date(Date.parse(dataAsOf) + 5.5 * 3600000).toISOString().replace('T', ' ').slice(0, 16)} India time; nothing has arrived from ${srcName} since.`); }
   if (staleH != null && staleH > 48) out.quality.reasons.unshift(`Last sync was ${staleH} hours ago. Numbers may be behind ${srcName}.`);
   for (const n of book.notes || []) out.quality.reasons.unshift(n);
+  // Zoho Books item lines still filling (newest first): the Items panel says the gap is unread documents, not sales without an item.
+  if (book.item_coverage && book.item_coverage.pending > 0) out.item_coverage = { read: book.item_coverage.read, documents: book.item_coverage.documents, complete_after: book.item_coverage.complete_after || null };
   if (book.source && book.source !== 'tally') out.quality.reasons = out.quality.reasons.map((r) => r.replace(/^Single source \(Tally\)/, `Single source (${srcName})`));
   if (book.files && book.files.files && book.files.files.length > 1) {
     out.company_files = book.files;

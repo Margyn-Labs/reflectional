@@ -188,9 +188,13 @@ function mgMarIbmPanel(d){
   const inSel = (k) => (mgMarIbmMonth ? k === mgMarIbmMonth : months.includes(k));
   const pnlSales = (d.pnl || []).filter(p => inSel(p.month)).reduce((t, p) => t + (p.net_sales || 0), 0);
   const gap = Math.round(tot.sv - pnlSales);
+  // While Zoho Books item lines are still coming in, documents not read yet are most of the gap: say that, not
+  // "sales entered without naming an item" (1 Nov 2026: May's ₹20.4 L was unread invoices).
+  const cov = d.item_coverage, filling = !!(cov && cov.documents > cov.read);
   const gapNote = (d.pnl || []).some(p => inSel(p.month)) && Math.abs(gap) >= 1
     ? ' Items add up to ' + fmtINR(tot.sv) + ' of sales; your profit and loss shows ' + fmtINR(pnlSales) + ' for the same period. The ' + fmtINR(Math.abs(gap)) + ' difference is ' +
-      (gap > 0 ? 'returns or discounts' : 'sales') + ' entered without naming an item, so no item report can place ' + (gap > 0 ? 'them' : 'it') + '.' : '';
+      (filling ? 'mostly documents whose item lines haven’t come in yet (' + cov.read.toLocaleString('en-IN') + ' of ' + cov.documents.toLocaleString('en-IN') + ' read' + (cov.complete_after ? ', item figures complete only after ' + cov.complete_after : '') + '); it closes as they arrive.'
+        : (gap > 0 ? 'returns or discounts' : 'sales') + ' entered without naming an item, so no item report can place ' + (gap > 0 ? 'them' : 'it') + '.') : '';
   const body = '<table class="mg-grid"><thead><tr><th>Item</th><th class="r">Qty sold</th><th class="r">Sales (₹)</th><th class="r">Average price (₹)</th>' +
     '<th class="r">Qty bought</th><th class="r">Purchases (₹)</th><th class="r">Average cost (₹)</th></tr></thead><tbody>' +
     rows.map(r => '<tr><td>' + escapeHtml(r.item) + '</td><td class="r">' + qty(r.sq, r.unit) + '</td><td class="r">' + mgNum(r.sv) + '</td><td class="r">' + avg(r.sv, r.sq) + '</td>' +

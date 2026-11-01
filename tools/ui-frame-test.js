@@ -324,6 +324,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   const teamTxt = await p.textContent('#setTeamMount');
   ok(/Arjun Kapoor/.test(teamTxt) && /Priya Mehta/.test(teamTxt) && /S\. Rao \(CA\)/.test(teamTxt), 'App logins lists the owner and both people');
   ok(/Waiting to join/.test(teamTxt) && /ravi@anvaya\.in/.test(teamTxt), 'open invite listed');
+  ok(await p.evaluate(() => { const r = document.querySelector('#setTeamMount .mg-team tbody tr'); const c = r && r.children[2]; return !!c && c.textContent.trim() !== '—' && c.textContent.trim().length > 1; }), 'owner row: Activity says something, not a bare dash');
   await p.fill('#mgTeamEmail', 'new@anvaya.in'); await p.selectOption('#mgTeamRole', 'viewer');
   ok(/changes nothing/.test(await p.textContent('#mgTeamRoleDesc')), 'role description follows the picked role');
   await p.click('#mgTeamGo'); await p.waitForTimeout(500);
@@ -436,7 +437,26 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
     ok(opts.join() === 'all,self,zoho', 'Ledger source menu on a Zoho-only account: no Tally (' + opts + ')');
     // Pulse: cash conversion cycle = the DSO and DPO shown just above it (it read 88d beside 240d − 173d).
     const cy = await q.evaluate(() => { const s = snapshots[0]; return { dso:METRICS.dso.calc(s), dpo:METRICS.dpo.calc(s), ccc:METRICS.ccc.calc(s), mar:marginDso(s) }; });
-    ok(cy.mar != null && Math.abs(cy.ccc - (cy.dso - cy.dpo)) < 1e-9, 'Pulse: cash conversion cycle = DSO − DPO as shown (' + JSON.stringify(cy) + ')');
+    ok(cy.mar != null && Math.abs(cy.ccc - (cy.dso - cy.dpo)) < 1e-9, 'Zoho account, Pulse: cash conversion cycle = DSO − DPO as shown (' + JSON.stringify(cy) + ')');
+    const cyT = await q.evaluate(() => { tallyConnected = true; const s = snapshots[0]; const v = METRICS.ccc.calc(s); tallyConnected = false; return { v, old:(s.recv_total / s.revenue - s.pay_soon / s.burn) * 30 }; });
+    ok(Math.abs(cyT.v - cyT.old) < 1e-9, 'Tally account: cash conversion cycle unchanged (' + JSON.stringify(cyT) + ')');
+    // Invoicing → Parties: a saved customer who owes money in Zoho Books isn't "₹0 settled" (1 Nov 2026); Tally accounts unchanged.
+    const kh = await q.evaluate(() => { tallyConnected = false;
+      const g = mgMoneyGroups('recv').find(x => x.primary === 'zoho' && !khataParties.some(k => normPartyName(k.name) === x.key)); if(!g) return { none:true };
+      khataParties.push({ id:'kp-z', name:g.party, type:'customer', opening_balance:0 }); showView('invoicing'); renderKhataParties();
+      const row = [...document.querySelectorAll('#khataPartyList .cust-row')].find(r => r.textContent.includes(g.party));
+      const zoho = row ? row.querySelector('.cust-balance').textContent : '';
+      tallyConnected = true; renderKhataParties();
+      const row2 = [...document.querySelectorAll('#khataPartyList .cust-row')].find(r => r.textContent.includes(g.party));
+      const tally = row2 ? row2.querySelector('.cust-balance').textContent : '';
+      tallyConnected = false; khataParties = khataParties.filter(p => p.id !== 'kp-z');
+      return { zoho, tally, want:inr(g.amount) }; });
+    ok(!kh.none && kh.zoho.includes(kh.want) && /receivable · Zoho Books/.test(kh.zoho) && /settled/.test(kh.tally), 'Invoicing parties: Zoho balance shown with its source; Tally accounts as before (' + JSON.stringify(kh) + ')');
+    // Margin → Items: while item lines are still coming in, the gap to the P&L is unread documents (1 Nov 2026).
+    const ib = await q.evaluate(() => { const d = { items_available:true, items_by_month:[{ month:'2026-10', item:'Mask', unit:'pcs', sold_qty:2, sold_value:100, bought_qty:0, bought_value:0 }], pnl:[{ month:'2026-10', net_sales:150 }] };
+      const el = document.createElement('div'); el.innerHTML = mgMarIbmPanel(Object.assign({ item_coverage:{ read:5, documents:10, complete_after:'2026-05-29' } }, d)); const filling = el.textContent;
+      el.innerHTML = mgMarIbmPanel(d); return { filling, done:el.textContent }; });
+    ok(/haven’t come in yet \(5 of 10 read, item figures complete only after 2026-05-29\)/.test(ib.filling) && !/without naming an item/.test(ib.filling) && /sales entered without naming an item/.test(ib.done), 'Items gap: unread documents while filling, unnamed sales once complete');
     // The old Ask panel, closed, can't be reached with Tab either (Enter in its box left the app).
     await q.waitForTimeout(400);
     ok(await q.evaluate(() => document.getElementById('askMargynPanel').classList.contains('hidden') && getComputedStyle(document.getElementById('askMargynInput')).visibility === 'hidden'), 'closed Ask panel: its box is hidden from the keyboard too');

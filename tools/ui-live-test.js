@@ -50,6 +50,7 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.evaluate(pt => mgOpenParty('recv', pt.key), party); await p.waitForTimeout(300);
   const tabs = await p.$$eval('.mg-drawer [data-dtab]', x => x.map(e => e.textContent));
   ok(tabs.join() === 'Details,Sources,Timeline,Comments', 'customer drawer: Details, Sources, Timeline, Comments: ' + tabs);
+  ok(await p.evaluate(() => [...document.querySelectorAll('.mg-drawer .mg-src-row span:nth-child(2)')].every(s => /^(Due \d|No due date)/.test(s.textContent))), 'Sources tab: each date says it is the due date');
   ok((await p.$$('.mg-drawer [data-dpanel="activity"] .lt-tl li')).length > 0, 'Timeline lists what happened across apps');
   ok(/Priya is here too/.test(await p.textContent('.mg-drawer .lt-here')), 'the drawer says who else has it open');
   ok(await p.evaluate(pt => window.__tracked && window.__tracked.rec === 'party|' + pt.key && window.__tracked.where === pt.name, party), 'opening it tells the team you are on ' + party.name);

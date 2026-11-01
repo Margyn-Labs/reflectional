@@ -176,9 +176,11 @@ check('kit and gloves lead margin %, glucose kit excluded from the top', pr.item
 {
   const before = pr.items.map((i) => i.item);
   const bigV = vouchers.concat([sale('VASAI SALES', 9, 9, 'ALKEM LABORATORIES LIMITED', [{ item: 'CONSULTING', qty: 100, rate: 5000000 }], 'BIG-1')]);
-  const ctxBig = E.prepare(Object.assign({}, book, { vouchers: bigV }), { now: NOW, analytics });
+  const ctxBig = E.prepare(Object.assign({}, book, { vouchers: bigV, source: 'zoho', source_name: 'Zoho Books' }), { now: NOW, analytics });
   const pb = E.products(ctxBig, { sort: 'margin_pct' });
-  check('uncosted giant line: the same costed items still rank', JSON.stringify(pb.items.map((i) => i.item)) === JSON.stringify(before) && pb.items_with_cost >= before.length, { before, after: pb.items.map((i) => i.item), n: pb.items_with_cost });
+  check('Zoho, uncosted giant line: the same costed items still rank', JSON.stringify(pb.items.map((i) => i.item)) === JSON.stringify(before) && pb.items_with_cost >= before.length, { before, after: pb.items.map((i) => i.item), n: pb.items_with_cost });
+  const tb = E.products(E.prepare(Object.assign({}, book, { vouchers: bigV }), { now: NOW, analytics }), { sort: 'margin_pct' });
+  check('Tally ranking unchanged (Mihir\'s account stays identical)', JSON.stringify(tb.items.map((i) => i.item)) === JSON.stringify(['NITRILE GLOVES', 'GAUZE SWAB 10X10']), tb.items.map((i) => i.item));
 }
 const kit = E.products(ctx, { name: 'post op' });
 check('kit costed from its parts', kit.cost_basis.startsWith('cost of the parts') && kit.made_from.length === 2 && kit.avg_cost === '₹24', kit);

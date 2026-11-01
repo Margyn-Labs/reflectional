@@ -194,8 +194,12 @@ function mgFcTrackLine(v){
   if(!sc || !sc.checks || !sc.checks.length) return '';
   const miss = sc.checks.reduce((t, c) => t + Math.abs(c.predicted_customer_in - c.actual_customer_in) / Math.max(1, c.actual_customer_in), 0) / sc.checks.length;
   const m4 = (sc.error_by_week || {})[4];
-  return 'Checked on your last ' + sc.checks.length + ' weeks: money from customers was within ' + Math.round(miss * 100) + '% on average' +
-    (m4 ? ', and cash four weeks out within about ' + fmtINR(m4.typical_miss, 'tile') : '') + '.';
+  if(typeof tallyConnected !== 'undefined' && tallyConnected)   // Tally accounts unchanged
+    return 'Checked on your last ' + sc.checks.length + ' weeks: money from customers was within ' + Math.round(miss * 100) + '% on average' +
+      (m4 ? ', and cash four weeks out within about ' + fmtINR(m4.typical_miss, 'tile') : '') + '.';
+  // Said as how far off it was: "within 63%" read as 63% right (1 Nov 2026).
+  return 'Checked on your last ' + sc.checks.length + ' weeks: money from customers was off by about ' + Math.round(miss * 100) + '% a week on average' +
+    (m4 ? ', and cash four weeks out by about ' + fmtINR(m4.typical_miss, 'tile') : '') + '.';
 }
 /* Coming in against going out, week by week, under the forecast line (the same weeks the line is built from). */
 function mgFcInOut(f){

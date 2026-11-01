@@ -222,7 +222,8 @@ body.mgr-open #vxTopBtn{ display:none; }
 .mgd-look-acts{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 /* A table Margyn wrote in an answer (mgMdTables, 04-metrics.js). */
 .mg-mdt{ overflow-x:auto; margin:4px 0; white-space:normal; }
-.mg-mdt table{ border-collapse:collapse; font-size:12.5px; width:100%; }
-.mg-mdt th, .mg-mdt td{ padding:4px 8px; border-bottom:1px solid var(--g100); text-align:left; white-space:nowrap; }
+.mg-mdt table{ border-collapse:collapse; font-size:12px; width:100%; }
+.mg-mdt th, .mg-mdt td{ padding:4px 6px; border-bottom:1px solid var(--g100); text-align:left; vertical-align:top; }
+.mg-mdt td.num{ white-space:nowrap; }   /* names wrap so every column fits the panel; amounts stay on one line */
 .mg-mdt th{ font-weight:600; color:var(--g600); }
 .mg-mdt td.num{ text-align:right; font-variant-numeric:tabular-nums; }
