@@ -599,6 +599,8 @@ async function loadZohoVitals(){
   }
   renderZohoStatus();
   renderZohoBooksTab();
+  // Opened (or refreshed) while the first read is still running: pick the figures up when it's done, no refresh needed.
+  if(zohoConnected && zohoVitals && !zohoVitals.backfill_completed_at && !zohoConnectWatch) zohoWatchFirstRead(false);
 }
 /* "done by" for the item-line fill (api/_zoho/items.js fillEta). */
 function zohoEtaText(eta){
@@ -798,6 +800,58 @@ function renderZohoOrgPicker(orgs){
   document.getElementById('zohoOrgConfirm').addEventListener('click', confirmZohoOrg);
   overlay.classList.remove('hidden');
 }
+/* The connect call does the whole first read before it answers, and how long that takes depends on the book and on
+   Zoho. It was the only thing that could close "Connecting…", so a slow or lost answer left the screen spinning
+   until a refresh, even with the books fully in (1 Nov 2026). Now the first-read progress (Margyn's own database,
+   no Zoho calls) is checked alongside it: whichever says "done" first finishes the connect and opens Home; once
+   Zoho is connected but still reading, the box closes after a short wait and the figures come in by themselves. */
+let ZOHO_HANDOFF_MS = 20000, ZOHO_WATCH_MS = 5000, ZOHO_WATCH_MAX_MS = 30 * 60000;
+let zohoConnectWatch = null;
+function zohoReadProgressText(d){
+  const steps = (d && d.steps) || [], cur = steps.find(x => !x.done);
+  const lbl = (typeof MGO_READ_LABEL !== 'undefined' && cur && MGO_READ_LABEL[cur.module]) || 'books';
+  return cur && cur.read ? 'Reading your ' + lbl + ': ' + Number(cur.read).toLocaleString('en-IN') + ' so far.' : 'Reading your books.';
+}
+/* Finish a Zoho connect once: close the box, load the figures, let Margyn take over, open Home. */
+async function zohoConnectFinished(out){
+  if(zohoConnectWatch){ if(zohoConnectWatch.done) return; zohoConnectWatch.done = true; clearInterval(zohoConnectWatch.timer); }
+  zohoConnectWatch = null;
+  document.getElementById('zohoOverlay').classList.add('hidden');
+  zohoPendingOrgRef = null; zohoChosenOrgId = null;
+  await loadZohoVitals();
+  if(typeof mgrSetupConnected === 'function') mgrSetupConnected('zoho');   // 25-margyn.js: Margyn takes it from here
+  if(out && out.reconnected && out.message) toast(out.message, { ms:6000 });
+  if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync();
+  if(out && out.multi_currency_detected){
+    toast('Non-INR base currency', { kind:'info', ms:6000, sub:'Those records stay out of your vitals until currency conversion lands.' });
+  }
+  if(typeof showView === 'function' && /^(connectors|home)$/.test(typeof mgCurrentView !== 'undefined' ? mgCurrentView : '')) showView('home');
+}
+/* Watch the first read until it is done. fromConnect: the "Connecting…" box is open and closes on hand-off. */
+function zohoWatchFirstRead(fromConnect){
+  if(zohoConnectWatch) return zohoConnectWatch;
+  const w = { started:Date.now(), handedOff:!fromConnect, done:false, connected:false, timer:null };
+  zohoConnectWatch = w;
+  const tick = async () => {
+    if(w.done) return;
+    let d = null; try { d = await zohoApi('/api/zoho?action=first-read'); } catch(e){ return; }
+    if(w.done || !d) return;
+    w.connected = !!d.connected;
+    if(d.connected && d.done){ zohoConnectFinished(null); return; }
+    if(d.connected && !w.handedOff && Date.now() - w.started > ZOHO_HANDOFF_MS){
+      w.handedOff = true;
+      document.getElementById('zohoOverlay').classList.add('hidden');
+      toast('Zoho Books is connected', { kind:'info', ms:9000, sub:zohoReadProgressText(d) + ' Your figures appear here by themselves when it’s done; no need to refresh.' });
+      if(typeof showView === 'function' && /^(connectors|home)$/.test(typeof mgCurrentView !== 'undefined' ? mgCurrentView : '')) showView('home');
+    }
+    if(Date.now() - w.started > ZOHO_WATCH_MAX_MS){
+      clearInterval(w.timer); zohoConnectWatch = null;
+      if(d.connected) loadZohoVitals().catch(() => {});
+    }
+  };
+  w.timer = setInterval(() => { if(!document.hidden) tick(); }, ZOHO_WATCH_MS);
+  return w;
+}
 async function confirmZohoOrg(){
   if(!zohoChosenOrgId || !zohoPendingOrgRef) return;
   const btn = document.getElementById('zohoOrgConfirm');
@@ -806,26 +860,25 @@ async function confirmZohoOrg(){
   btn.textContent = 'Connecting… (first sync can take a minute)';
   // A new account: the Margyn panel says what it's reading while this runs (25b-margyn-start.js).
   if(typeof mgoReading === 'function') mgoReading('zoho');
+  const watch = zohoWatchFirstRead(true);
   try {
-    // select-org now runs the one-time 12-month backfill in-process and
-    // waits for it to finish before responding, so this call can take a
-    // while on a data-heavy org — see api/_zoho/select-org.js.
+    // select-org runs the one-time 12-month backfill in-process and waits for it to finish before responding,
+    // so this call can take a while on a data-heavy org (api/_zoho/select-org.js). The watch above may finish first.
     const out = await zohoApi('/api/zoho?action=select-org', {
       method: 'POST',
       body: JSON.stringify({ org_ref: zohoPendingOrgRef, organization_id: zohoChosenOrgId })
     });
-    document.getElementById('zohoOverlay').classList.add('hidden');
-    zohoPendingOrgRef = null; zohoChosenOrgId = null;
-    await loadZohoVitals();
-    if(typeof mgrSetupConnected === 'function') mgrSetupConnected('zoho');   // 25-margyn.js: Margyn takes it from here
-    if(out.reconnected && out.message) toast(out.message, { ms:6000 });
-    if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync();
-    if(out.multi_currency_detected){
-      toast('Non-INR base currency', { kind:'info', ms:6000, sub:'Those records stay out of your vitals until currency conversion lands.' });
-    }
+    await zohoConnectFinished(out);
   } catch(e){
-    // Timed out on a big book while the first read carries on: Margyn keeps watching it instead of an error.
-    if(typeof mgoConnectSlow === 'function' && await mgoConnectSlow(e)){ zohoPendingOrgRef = null; zohoChosenOrgId = null; return; }
+    // Timed out on a big book while the first read carries on: the watch finishes it when the read is done.
+    let d = null; try { d = await zohoApi('/api/zoho?action=first-read'); } catch(x){}
+    if(d && d.connected){
+      if(d.done){ await zohoConnectFinished(null); return; }
+      if(!watch.handedOff){ watch.handedOff = true; document.getElementById('zohoOverlay').classList.add('hidden');
+        toast('Zoho Books is connected', { kind:'info', ms:9000, sub:zohoReadProgressText(d) + ' Your figures appear here by themselves when it’s done; no need to refresh.' }); }
+      return;
+    }
+    if(zohoConnectWatch === watch){ watch.done = true; clearInterval(watch.timer); zohoConnectWatch = null; }
     zohoShowError(e.message);
     btn.disabled = false;
   } finally { btn.textContent = 'Confirm organization'; }

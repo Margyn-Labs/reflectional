@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-connect-no-wait', date:'1 Nov 2026', title:'Connecting Zoho Books never leaves you waiting',
+    items:[
+      { t:'Connecting Zoho Books never leaves you waiting', what:'After you pick your Zoho organisation, Margyn opens Home as soon as your books are in. On a big book it lets you in after a few seconds and fills your figures in by itself when the first read is done. You never need to refresh.',
+        how:'Connect Zoho Books under <b>Organisations and sources</b>.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-11-01-last-checks', date:'1 Nov 2026', title:'Clearer figures on Zoho Books',
     items:[
       { t:'Invoicing shows what saved customers owe', what:'A customer or supplier you’ve saved now shows what they owe in Zoho Books, marked as coming from Zoho Books. Before, a customer owing lakhs read “₹0 settled”.',

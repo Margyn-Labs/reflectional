@@ -93,25 +93,7 @@ function mgoWatchRead(){
   tick();
   mgoPoll = setInterval(() => { if(!document.hidden) tick(); }, 3000);
 }
-/* The connect call itself ran out of time (a big book, Zoho slow): the read carries on on the server. */
-async function mgoConnectSlow(err){
-  if(!mgoActive()) return false;
-  let d = null;
-  try { d = await zohoApi('/api/zoho?action=first-read'); } catch(e){ return false; }
-  if(!d || !d.connected) return false;
-  document.getElementById('zohoOverlay').classList.add('hidden');
-  mgrLine('margyn', 'Zoho is connected; the first read is still going. I’ll carry on and tell you when your figures are in.');
-  // Wait for the read to finish, then take it from there as if the connect had answered.
-  const wait = setInterval(async () => {
-    let x = null; try { x = await zohoApi('/api/zoho?action=first-read'); } catch(e){ return; }
-    if(!x || !x.done) return;
-    clearInterval(wait);
-    await loadZohoVitals();
-    if(typeof mgrSetupConnected === 'function') mgrSetupConnected('zoho');
-    if(typeof mgAfterBooksSync === 'function') mgAfterBooksSync();
-  }, 10000);
-  return true;
-}
+/* A connect that runs long or loses its answer is finished by the first-read watch in 11-connectors.js (zohoWatchFirstRead). */
 
 /* ---------- 1b. connected: the first read, then the questions ---------- */
 /* Called by mgrSetupConnected (any books system) and on sign-in while a new account's setup isn't finished. */
