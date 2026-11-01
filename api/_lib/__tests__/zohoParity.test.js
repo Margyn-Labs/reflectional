@@ -396,6 +396,8 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     // Cash → Week by week this year: what customers owe today is the open invoices, never ₹0 (1 Nov 2026).
     const zlast = fc.history[fc.history.length - 1] || {};
     check('week by week: Zoho owed today = open invoices (₹1.2 L: Alpha ₹1 L + Beta ₹20,000), bills ₹40,000', fc.receivables_today === 120000 && fc.payables_today === 40000 && zlast.receivables === 120000 && zlast.payables === 40000, { rt: fc.receivables_today, pt: fc.payables_today, zlast });
+    const wcD = ((ctx.analytics || {}).working_capital || {}).dso_days;
+    check('week by week: this week\'s days to collect = Margin\'s days to get paid', wcD > 0 && zlast.days_to_collect === Math.round(wcD), { week: zlast.days_to_collect, margin: wcD });
     check('week by week: never owed less than nothing', fc.history.length > 3 && fc.history.every((w) => w.receivables >= 0 && w.payables >= 0), fc.history.map((w) => [w.date, w.receivables, w.payables]));
     check('cash_and_loans: Tally answer has no forecast added (unchanged)', !('cash_forecast' in out.t.cash_and_loans), Object.keys(out.t.cash_and_loans));
     // A customer far behind (Beta Traders, INV-2, ₹20,000, 92 days; small threshold so it is a point): Zoho says

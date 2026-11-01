@@ -135,6 +135,7 @@ check('capped: says 350% paid and 130% used', /customers paid 350% of what it ex
 check('uncapped: unchanged wording', CF.factorNote(1.12, 1.12, 9, 'customers paid', 'money in from customers') === 'customers paid 112% of what it expected, so money in from customers is scaled to match.');
 // Tally keeps its sentence: the note passes the factor alone (no raw), so a Tally book reads exactly as before.
 check('Tally note wording unchanged', CF.factorNote(null, 1.3, 9, 'customers paid', 'money in from customers') === 'customers paid 130% of what it expected, so money in from customers is scaled to match.');
+check('Tally supplier note wording unchanged (are, not is)', CF.factorNote(null, 1.3, 9, 'you paid suppliers', 'supplier payments') === 'you paid suppliers 130% of what it expected, so supplier payments are scaled to match.');
 const outNotes = CF.build(ctx, { promises: [], pastRuns: [] }).notes.join(' ');
 check('build notes never claim a paid share other than the raw one', !/customers paid \d+%/.test(outNotes) || sc.collection_raw == null || new RegExp('customers paid ' + Math.round(sc.collection_raw * 100) + '%').test(outNotes) || Math.abs(sc.collection_raw - sc.collection_factor) < 0.03, outNotes);
 check('misses measured at 1, 2, 4 and 8 weeks', [1, 2, 4, 8].every((w) => sc.error_by_week[w] && sc.error_by_week[w].runs >= 3), sc.error_by_week);
