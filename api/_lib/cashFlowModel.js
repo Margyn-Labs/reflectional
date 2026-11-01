@@ -135,9 +135,19 @@ function partyBalancesToday(ctx) {
 function positionHistory(ctx) {
   const pts = (((ctx.analytics || {}).cash_history) || {}).points || [];
   if (!pts.length) return null;
-  const bal = partyBalancesToday(ctx);
   let recvToday = 0, payToday = 0;
-  for (const x of bal.values()) { if (x.balance == null) continue; if (x.bucket === 'debtor') recvToday += x.balance; else payToday += -x.balance; }
+  if (/^(zoho|odoo)$/.test(String((ctx.book && ctx.book.source) || ''))) {
+    // Zoho Books / Odoo: customer and supplier accounts carry no balance, their open invoices and bills are what is
+    // owed (the Receivables and Payables pages' totals). From the ledgers it read ₹0 today and walked back to
+    // −₹3.68 Cr owed last December (1 Nov 2026).
+    for (const b of ctx.billsAsInTally || ctx.bills || []) {
+      const amt = Math.abs(num(b.closing_balance)) * (b.advance ? -1 : 1);
+      if (b.direction === 'payable') payToday += amt; else recvToday += amt;
+    }
+  } else {
+    const bal = partyBalancesToday(ctx);
+    for (const x of bal.values()) { if (x.balance == null) continue; if (x.bucket === 'debtor') recvToday += x.balance; else payToday += -x.balance; }
+  }
   const recvMove = new Map(), payMove = new Map(), salesDay = new Map();
   for (const r of ctx.rows) {
     for (const l of r.lines) {

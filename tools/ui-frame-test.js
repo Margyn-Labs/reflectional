@@ -419,6 +419,30 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await boot('#zoho=select-org&org_ref=abc');
   ok(!/#\/home/.test(p.url()) || !p.url().includes('zoho='), 'Zoho callback hash not overwritten before it is handled (' + p.url().split('#')[1] + ')');
 
+  // 10b. Ledger → Position agrees with Home and Pulse; the source menu offers only connected books (1 Nov 2026).
+  {
+    const q = await b.newPage({ viewport:{ width:1280, height:900 } });
+    q.on('pageerror', e => errs.push('ledger: ' + e.message));
+    await q.goto(B); await q.waitForTimeout(700); await q.evaluate(seedApp); await q.waitForTimeout(600);
+    const lc = await q.evaluate(() => { showView('books'); renderZohoBooksTab();
+      const pv = l => snapshots[0].vitals.find(v => v.label === l).value;
+      return { m:document.getElementById('zvMarginVal').textContent, pm:pv('Net Margin'), r:document.getElementById('zvRunwayVal').textContent, pr:pv('Working Capital Runway'),
+        head:[...document.querySelectorAll('#booksContent .cc-head h3')].map(h => h.textContent) }; });
+    ok(lc.m === lc.pm && lc.r === lc.pr, 'Ledger → Position: net margin and runway are the Pulse reading (' + JSON.stringify(lc) + ')');
+    ok(lc.head.includes('Largest overdue invoices') && !lc.head.includes('Overdue customers'), 'Ledger → Position: the invoice list is called what it is');
+    const gw = await q.evaluate(() => { zohoVitals.cash_position = { zoho_reported_balance:2555559, gateway_settled_90d:0, divergence_pct:null, bank_data_available:true }; renderZohoBooksTab(); return document.getElementById('zvCashFlag').textContent; });
+    ok(gw === '', 'no payment gateway: no "0% vs gateway settlements" (' + JSON.stringify(gw) + ')');
+    const opts = await q.evaluate(() => { tallyConnected = false; showView('ledger'); renderLedgerView(); return [...document.querySelectorAll('#ledgerSourceFilter option')].filter(o => !o.hidden).map(o => o.value); });
+    ok(opts.join() === 'all,self,zoho', 'Ledger source menu on a Zoho-only account: no Tally (' + opts + ')');
+    // Pulse: cash conversion cycle = the DSO and DPO shown just above it (it read 88d beside 240d − 173d).
+    const cy = await q.evaluate(() => { const s = snapshots[0]; return { dso:METRICS.dso.calc(s), dpo:METRICS.dpo.calc(s), ccc:METRICS.ccc.calc(s), mar:marginDso(s) }; });
+    ok(cy.mar != null && Math.abs(cy.ccc - (cy.dso - cy.dpo)) < 1e-9, 'Pulse: cash conversion cycle = DSO − DPO as shown (' + JSON.stringify(cy) + ')');
+    // The old Ask panel, closed, can't be reached with Tab either (Enter in its box left the app).
+    await q.waitForTimeout(400);
+    ok(await q.evaluate(() => document.getElementById('askMargynPanel').classList.contains('hidden') && getComputedStyle(document.getElementById('askMargynInput')).visibility === 'hidden'), 'closed Ask panel: its box is hidden from the keyboard too');
+    await q.close();
+  }
+
   // 11. Phone drawer
   const m = await b.newPage({ viewport:{ width:390, height:844 } });
   m.on('pageerror', e => errs.push('mobile: ' + e.message));

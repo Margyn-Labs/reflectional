@@ -220,3 +220,9 @@ body.mgr-open #vxTopBtn{ display:none; }
 .mgd-look-h{ font:600 var(--f12)/1 var(--font-ui); color:var(--g500); padding:14px 16px 4px; border-top:1px solid var(--g100); }
 .mgd-look .mgd-need-t{ font-weight:500; line-height:1.45; }
 .mgd-look-acts{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+/* A table Margyn wrote in an answer (mgMdTables, 04-metrics.js). */
+.mg-mdt{ overflow-x:auto; margin:4px 0; white-space:normal; }
+.mg-mdt table{ border-collapse:collapse; font-size:12.5px; width:100%; }
+.mg-mdt th, .mg-mdt td{ padding:4px 8px; border-bottom:1px solid var(--g100); text-align:left; white-space:nowrap; }
+.mg-mdt th{ font-weight:600; color:var(--g600); }
+.mg-mdt td.num{ text-align:right; font-variant-numeric:tabular-nums; }

@@ -16,6 +16,21 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-every-page-agrees', date:'1 Nov 2026', title:'Every page tells the same story',
+    items:[
+      { t:'Week by week this year, right on Zoho Books', what:'The Cash page’s week-by-week view now starts from what customers really owe you today (your open invoices) and what you owe suppliers (your open bills). Before, on Zoho Books it showed ₹0 owed and a line that dipped below zero.',
+        how:'Open <b>Cash → Forecast</b> and scroll to <b>Week by week this year</b>.', act:'cash' },
+      { t:'Ledger shows the same margin and runway as Home', what:'Ledger → Position now shows the net margin and working-capital runway from your Pulse Score, the same as Home and Pulse, and calls its invoice list what it is: your largest overdue invoices.',
+        how:'Open <b>Ledger → Position</b>.', act:'books' },
+      { t:'Tables in Margyn’s answers', what:'When Margyn answers with a table (your top customers, say), it now shows as a proper table instead of lines of | and -.',
+        how:'Ask Margyn “Who are my top 5 customers and what do they owe?”', act:'talk' },
+      { t:'Sharper answers', what:'Margyn now ranks every item that has a cost when you ask about margin by item, says how many customers are late, lists a supplier’s open bills one by one, and quotes one runway figure.',
+        how:'Ask “Which items make the best margin?” or “Show me Beta Supplies’ open bills”.', act:'talk' },
+      { t:'Tidier details', what:'Cash conversion cycle on Pulse is now days to get paid minus days you take to pay, the two figures shown above it. Home no longer says it checked a Shopify connection you don’t have, and the Ledger source menu lists only the books you’ve connected.',
+        how:'Open <b>Pulse Score</b> → Working capital.', act:'scores' }
+    ]
+  },
+  {
     id:'2026-11-01-margyn-starts-helping', date:'1 Nov 2026', title:'Margyn starts helping the moment you sign in',
     items:[
       { t:'Your first ten minutes, guided', what:'Connect Zoho Books and Margyn says what it’s reading as it goes (“Reading your invoices… 1,000 so far”), then gives you a first read: cash, who owes you most, what’s late and bills due this week. Then three quick questions, each one skippable: the least cash you never want to go below, WhatsApp numbers for your biggest debtors, and who gets the morning update.',

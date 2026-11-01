@@ -36,7 +36,7 @@ const METRICS = {
   /* Working capital cycle */
   dso:           { label:'Days sales outstanding', group:'Working capital', unit:'days', better:'down', why:'How long your money sits with customers: what they owe against the last 90 days of sales, the same figure as Margin. Earlier readings use that reading’s receivables against a month of revenue.', calc:s => { const d = marginDso(s); if(d !== null) return d; const r = div(s.recv_total, s.revenue); return r === null ? null : r * 30; } },
   dpo:           { label:'Days payable outstanding', group:'Working capital', unit:'days', better:'up', why:'Payables due in 30 days against an average month of spend.',   calc:s => { const r = div(s.pay_soon, s.burn); return r === null ? null : r * 30; } },
-  ccc:           { label:'Cash conversion cycle', group:'Working capital', unit:'days', better:'down', why:'Days between paying out and getting paid.', calc:s => { const a = div(s.recv_total, s.revenue), b = div(s.pay_soon, s.burn); return (a === null || b === null) ? null : (a - b) * 30; } },
+  ccc:           { label:'Cash conversion cycle', group:'Working capital', unit:'days', better:'down', why:'Days between paying out and getting paid: days sales outstanding less days payable outstanding, the two figures above.', calc:s => { const a = METRICS.dso.calc(s), b = METRICS.dpo.calc(s); return (a === null || b === null) ? null : a - b; } },
   /* Collections */
   receivables:   { label:'Receivables',          group:'Collections', unit:'inr', better:'down', why:'Everything customers still owe you.',           calc:s => num(s.recv_total) },
   recvOver90:    { label:'Receivables over 90d', group:'Collections', unit:'inr', better:'down', why:'The part that is genuinely at risk.',           calc:s => num(s.recv_90) },
@@ -514,7 +514,24 @@ async function deletePayable(p){
 }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 /* Margyn's words with **bold** as bold, never as asterisks; escaped first, so nothing in the text becomes markup (1 Nov 2026). */
-function mgBoldHtml(s){ return escapeHtml(String(s == null ? '' : s)).replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>'); }
+function mgBoldHtml(s){ return mgMdTables(escapeHtml(String(s == null ? '' : s)).replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>')); }
+/* A markdown table in an answer (| a | b | over |--|--|) shown as a table, not as pipes and dashes (1 Nov 2026:
+   "top 5 customers" came back as raw pipes). Works on already-escaped text, so cells stay text. */
+function mgMdTables(h){
+  const row = l => /^\s*\|.*\|\s*$/.test(l), sep = l => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
+  const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+  const isNum = c => /^[₹\-−+]?\s*[\d,.]+\s*(L|Cr|K|%|d|days?)?$/.test(c);
+  const lines = h.split('\n'), out = [];
+  for(let i = 0; i < lines.length; i++){
+    if(!(row(lines[i]) && i + 1 < lines.length && sep(lines[i + 1]))){ out.push(lines[i]); continue; }
+    const head = cells(lines[i]); const body = []; i += 2;
+    while(i < lines.length && row(lines[i])){ body.push(cells(lines[i])); i++; }
+    i--;
+    out.push('<div class="mg-mdt"><table><thead><tr>' + head.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>' +
+      body.map(r => '<tr>' + r.map(c => '<td' + (isNum(c) ? ' class="num"' : '') + '>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>');
+  }
+  return out.join('\n').replace(/<\/div>\n/g, '</div>');
+}
 /* One line of an answer for a list: no **, # or bullet marks, one space between words. */
 function mgPreview(s, n){ return String(s == null ? '' : s).replace(/\*\*|__|^#+\s*/gm, '').replace(/^\s*[-•]\s+/gm, '').replace(/\s+/g, ' ').trim().slice(0, n); }
 document.getElementById('detailClose').addEventListener('click', () => document.getElementById('detailOverlay').classList.add('hidden'));

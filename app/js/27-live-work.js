@@ -57,6 +57,8 @@ function lwSince(iso){
 function lwBooksName(){ try { return (typeof mgDataCheckSource === 'function' && mgDataCheckSource()) || 'your books'; } catch(e){ return 'your books'; } }
 const lwText = t => typeof t === 'function' ? t() : t;
 /* Calls the app makes, named by the job they do. First match wins. Text may be a function, read when the call runs. */
+/* A fifth entry marks a connection check: it shows only once the answer says that source is connected,
+   so a Zoho-only account never reads "Checked the Shopify connection". */
 const LW_CALLS = [
   [/\/api\/reconcile\?action=summary/, 'payments', 'Checking payments against invoices', 'Checked payments against invoices'],
   [/\/api\/reconcile\?action=position/, 'books', 'Working out who owes what across your books', 'Worked out who owes what'],
@@ -75,11 +77,11 @@ const LW_CALLS = [
   [/\/api\/zoho\?action=vitals/, 'books', 'Reading Zoho Books', 'Read Zoho Books'],
   [/\/api\/zoho\?action=sync/, 'books', 'Syncing Zoho Books', 'Synced Zoho Books'],
   [/\/api\/zoho\?action=odoo-sync/, 'books', 'Syncing Odoo', 'Synced Odoo'],
-  [/\/api\/zoho\?action=odoo-status/, 'books', 'Checking the Odoo connection', 'Checked the Odoo connection'],
-  [/\/api\/sync-razorpay\?action=cashfree-status/, 'payments', 'Checking the Cashfree connection', 'Checked the Cashfree connection'],
+  [/\/api\/zoho\?action=odoo-status/, 'books', 'Checking the Odoo connection', 'Checked the Odoo connection', d => d.connected === true],
+  [/\/api\/sync-razorpay\?action=cashfree-status/, 'payments', 'Checking the Cashfree connection', 'Checked the Cashfree connection', d => !!d.connected],
   [/\/api\/sync-razorpay/, 'payments', 'Syncing Razorpay', 'Synced Razorpay'],
   [/\/api\/shopify\?action=sync/, 'payments', 'Syncing Shopify orders', 'Synced Shopify'],
-  [/\/api\/shopify\?action=status/, 'payments', 'Checking the Shopify connection', 'Checked the Shopify connection'],
+  [/\/api\/shopify\?action=status/, 'payments', 'Checking the Shopify connection', 'Checked the Shopify connection', d => (d.stores || []).some(x => x.status !== 'disconnected')],
   [/\/api\/ask-margyn\?action=watch/, 'watch', 'Reading what I noticed in your books', 'Read what I noticed'],
   [/\/api\/ops\?action=cron-cfo-pack|cfo-pack-test/, 'close', 'Preparing the CFO pack', 'Prepared the CFO pack']
 ];
@@ -92,6 +94,10 @@ const LW_CALLS = [
     const p = base(input, init);
     if(!rule) return p;
     const doing = lwText(rule[2]), done = lwText(rule[3]);
+    if(rule[4]){
+      p.then(r => r.ok && r.clone().json().then(d => { if(d && rule[4](d)){ const now = new Date().toISOString(); lwAdd({ job:rule[1], text:done, state:'done', at:now, end:now }); } }), () => {}).catch(() => {});
+      return p;
+    }
     const a = lwAdd({ job:rule[1], text:doing + '…', state:'running', at:new Date().toISOString() });
     // A call that finishes in a blink still shows for 1.5 s, so you see what Margyn just did.
     const t0 = Date.now();

@@ -52,7 +52,7 @@ const TOOLS = [
   },
   {
     name: 'customer_or_vendor',
-    description: 'One customer\'s or vendor\'s whole story from the books: what they bought or sold this year and by month, their share of your sales, how often they order and when they last did, what they owe you bill by bill with how late each is, what they paid and when, how long they take to pay, their top items and the margin on them; for vendors what you bought, owe and paid. Use for "tell me about Alkem", "how is Sun Pharma doing", "what does X owe", "when did X last order / pay". Part of a name is fine.',
+    description: 'One customer\'s or vendor\'s whole story from the books: what they bought or sold this year and by month, their share of your sales, how often they order and when they last did, what they owe you bill by bill with how late each is, what they paid and when, how long they take to pay, their top items and the margin on them; for vendors what you bought, what you owe them bill by bill and what you paid. Use for "tell me about Alkem", "how is Sun Pharma doing", "what does X owe", "when did X last order / pay". Part of a name is fine.',
     input_schema: { type: 'object', properties: { name: { type: 'string', description: 'Customer or vendor name, or part of it.' } }, required: ['name'], additionalProperties: false }
   },
   {
