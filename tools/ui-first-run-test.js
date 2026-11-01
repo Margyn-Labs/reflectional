@@ -49,14 +49,15 @@ async function freshSeed(opts){
     window.__api.push({ path, body });
     if(path.startsWith('zoho?action=vitals')) return reply(vitals());
     if(path.startsWith('zoho?action=first-read')){
-      // Each poll moves the first read on: invoices page by page, then the rest.
-      const z = window.__z; z.reads++;
+      // The first read moves on every 3 seconds (the narrator's pace), however many things ask: invoices page by page, then the rest.
+      const z = window.__z; z.t0 = z.t0 || Date.now(); z.reads = 1 + Math.floor((Date.now() - z.t0) / 3000);
       const P = [[], [['chartofaccounts', 120, true]], [['chartofaccounts', 120, true], ['invoices', 200, false]], [['chartofaccounts', 120, true], ['invoices', 1000, false]],
         [['chartofaccounts', 120, true], ['invoices', 1204, true], ['bills', 200, false]], [['chartofaccounts', 120, true], ['invoices', 1204, true], ['bills', 312, true], ['customerpayments', 0, false]]];
       const st = P[Math.min(z.reads, P.length - 1)].map(([module, read, done]) => ({ module, read, done }));
-      return reply({ connected:true, status:'active', organization_name:'Rao Traders', done:!!z.connected, steps:st, current:(st.find(x => !x.done) || {}).module || null });
+      return reply({ connected:true, status:'active', organization_name:'Rao Traders', done:!!z.connected || !!window.__readDone, steps:st, current:(st.find(x => !x.done) || {}).module || null });
     }
     if(path.startsWith('zoho?action=select-org') && init && init.method === 'POST'){
+      if(window.__selectHang) return new Promise(() => {});   // the answer never arrives (lost or very slow)
       await new Promise(r => setTimeout(r, window.__selectMs || 9000));
       window.__z.connected = true;
       return reply({ status:'active', org_ref:'zo1', organization_id:'600', organization_name:'Rao Traders', backfill:'completed' });
@@ -183,6 +184,23 @@ const FIRST = { source:'Zoho Books', numbers:{ cash:1850000, recv_total:330000, 
   const pay = await p.inputValue('.mg-dialog textarea').catch(() => '');
   ok(/Apex Supplies B-12: ₹1,50,000/.test(pay) && await p.isVisible('[data-mgo-wa]'), 'payables for the accountant: the list, opened in WhatsApp by the owner');
   await p.click('.mg-dialog .mg-dlg-cancel');
+
+  /* ---------- 2b. the connect never answers: Margyn still finishes it (1 Nov 2026: spun until a refresh) ---------- */
+  await boot({ uid:'slowzoho', prefs:{ margyn_onboard:{ state:'done' } } }, () => { window.__z = { connected:false }; });
+  await p.evaluate(() => { ZOHO_HANDOFF_MS = 1500; ZOHO_WATCH_MS = 400; window.__selectHang = true; window.__readDone = false; showView('connectors');
+    zohoPendingOrgRef = 'ref9'; renderZohoOrgPicker([{ organization_id:'600', name:'Rao Traders', plan_type:'free', currency_code:'INR' }]); });
+  await p.click('#zohoOrgList input[type=radio]');
+  await p.click('#zohoOrgConfirm');
+  await p.waitForTimeout(700);
+  ok(await p.isVisible('#zohoOverlay') && /Connecting/.test(await p.textContent('#zohoOrgConfirm')), 'slow connect: "Connecting…" shows at first');
+  await p.waitForTimeout(2200);
+  ok(!(await p.isVisible('#zohoOverlay')) && await p.evaluate(() => [...document.querySelectorAll('#toastHost .toast')].some(t => /Zoho Books is connected/.test(t.textContent) && /no need to refresh/.test(t.textContent))),
+    'connected but still reading: the box closes by itself and says the figures will come in');
+  ok(await p.evaluate(() => mgCurrentView === 'home'), 'slow connect: Home opens without a refresh');
+  await p.evaluate(() => { window.__z.connected = true; window.__readDone = true; });
+  await p.waitForTimeout(1500);
+  ok(await p.evaluate(() => zohoConnected === true && !!zohoVitals && mgCurrentView === 'home' && !zohoConnectWatch), 'read done: figures load by themselves, no refresh, the watch stops');
+  await p.evaluate(() => { window.__selectHang = false; window.__readDone = false; ZOHO_HANDOFF_MS = 20000; ZOHO_WATCH_MS = 5000; });
 
   /* ---------- 3. an existing Tally account: nothing new ---------- */
   await boot({ uid:'tallyowner', tally:true, ageMs:300 * 86400000, phone:'919000000001' },
