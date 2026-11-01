@@ -76,6 +76,7 @@ module.exports = async function handler(req, res) {
   if (action === 'oauth-start') return oauthStart.handler(req, res);
   if (action === 'select-org') return selectOrg.handler(req, res);
   if (action === 'disconnect') return disconnect.handler(req, res);
+  if (action === 'remove-kept') return disconnect.handleRemoveKept(req, res);
   if (action === 'vitals') return vitals.handler(req, res);
   if (action === 'first-read') return vitals.firstReadHandler(req, res);
   if (action === 'sync') return sync.handler(req, res);

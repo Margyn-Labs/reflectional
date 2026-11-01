@@ -19,7 +19,7 @@
 
 const { getUserFromRequest, selectRows, updateRows, logConnectorEvent } = require('../_lib/supabaseRest');
 const { readRefreshToken, revokeRefreshToken, purgeRefreshToken } = require('../_lib/zohoClient');
-const { removeZohoData } = require('../_lib/selfCleanup');
+const { removeZohoData, removeReadings, removeKeptZoho } = require('../_lib/selfCleanup');
 
 async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -103,6 +103,8 @@ async function handler(req, res) {
     try {
       const counts = await removeZohoData(Object.assign({}, org, { status: 'disconnected' }));
       removed = Object.values(counts).reduce((t, n) => t + (Number(n) || 0), 0);
+      // And, with no books left connected, the readings worked out from them (else Home kept showing them as live).
+      await removeReadings(user.id).catch(() => null);
     } catch (err) {
       await logConnectorEvent({ userId: user.id, connectorType: 'zoho_books', operation: 'disconnect_remove_data', status: 'error', errorMessage: 'could not remove the synced data' });
       res.status(200).json({ status: 'disconnected', revoked_at_zoho: revoked, data: 'kept',
@@ -126,9 +128,31 @@ async function handler(req, res) {
     data: removed != null ? 'removed' : 'kept',
     ...(removed != null ? { removed_rows: removed } : {}),
     message: removed != null
-      ? 'Zoho Books disconnected and the data Margyn copied from it is removed. Customer and supplier contacts in your party list stay.'
+      ? 'Zoho Books disconnected and the data Margyn copied from it is removed, with the readings worked out from it. Customer and supplier contacts in your party list stay.'
       : 'Zoho Books disconnected. Your historical data stays visible in Margyn.'
   });
 };
 
-module.exports = { handler };
+/**
+ * POST /api/zoho?action=remove-kept — the owner kept the data at disconnect and now wants it gone: removes what
+ * Margyn copied from every disconnected Zoho connection, then (with no books connected) the readings worked out
+ * from it. Never touches a live connection or a Tally account. → { status, connections, rows, readings, message }
+ */
+async function handleRemoveKept(req, res) {
+  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+  let user;
+  try { user = await getUserFromRequest(req); } catch (err) { res.status(500).json({ error: 'Authentication check failed' }); return; }
+  if (!user) { res.status(401).json({ error: 'Not authenticated' }); return; }
+  try {
+    const out = await removeKeptZoho(user.id);
+    if (out.skipped) { res.status(409).json({ error: 'This account keeps its Tally books, so nothing was removed.' }); return; }
+    await logConnectorEvent({ userId: user.id, connectorType: 'zoho_books', operation: 'remove_kept_data', status: 'success', recordsSynced: out.rows,
+      errorMessage: `removed ${out.rows} rows from ${out.connections} disconnected connection(s)` + (out.readings && !out.readings.skipped ? `, ${out.readings.snapshots} readings` : '') });
+    res.status(200).json({ status: 'removed', ...out,
+      message: out.connections ? 'The data Margyn kept from Zoho Books is removed' + (out.readings && !out.readings.skipped ? ', with the readings worked out from it.' : '.') : 'There was no kept Zoho Books data to remove.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not remove the kept data. Nothing you see changed; try again.' });
+  }
+}
+
+module.exports = { handler, handleRemoveKept };

@@ -452,6 +452,24 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
       tallyConnected = false; khataParties = khataParties.filter(p => p.id !== 'kp-z');
       return { zoho, tally, want:inr(g.amount) }; });
     ok(!kh.none && kh.zoho.includes(kh.want) && /receivable · Zoho Books/.test(kh.zoho) && /settled/.test(kh.tally), 'Invoicing parties: Zoho balance shown with its source; Tally accounts as before (' + JSON.stringify(kh) + ')');
+    // Books disconnected, readings kept (MARGYN DEMO, 1 Nov 2026): Home says they're the last figures, never live;
+    // Margin doesn't say "Tally"; Sources offers to remove the kept data.
+    const off = await q.evaluate(() => {
+      const was = [zohoConnected, tallyConnected, typeof odooConnected !== 'undefined' && odooConnected];
+      zohoConnected = false; tallyConnected = false; if(typeof odooConnected !== 'undefined') odooConnected = false; zohoKeptData = true;
+      snapshots[0].source = 'resolved';
+      const m = mgrMood();
+      const keepMar = mgMar; mgMar = null; const sub = (() => { try { return mgBooksName(); } catch(e){ return 'ERR'; } })(); mgMar = keepMar;
+      renderZohoStatus(); const btn = !!document.getElementById('zohoRemoveKeptBtn');
+      zohoKeptData = false; renderZohoStatus(); const btnGone = !document.getElementById('zohoRemoveKeptBtn');
+      [zohoConnected, tallyConnected] = was; if(typeof odooConnected !== 'undefined') odooConnected = was[2];
+      const live = mgrMood();
+      return { m, sub, btn, btnGone, live };
+    });
+    ok(off.m.tag === 'Books not connected' && /aren’t connected/.test(off.m.line) && /last reading/.test(off.m.line) && !/stays above your floor|on track/.test(off.m.line), 'no books connected: Home says these are the last figures, not live (' + JSON.stringify(off.m) + ')');
+    ok(off.live.tag !== 'Books not connected', 'books connected: Home as before');
+    ok(off.sub === 'your books', 'nothing connected: Margin says "your books", not "Tally" (' + off.sub + ')');
+    ok(off.btn && off.btnGone, 'Sources: "Remove kept data" only when Margyn still holds data from a disconnected Zoho');
     // Margin → Items: while item lines are still coming in, the gap to the P&L is unread documents (1 Nov 2026).
     const ib = await q.evaluate(() => { const d = { items_available:true, items_by_month:[{ month:'2026-10', item:'Mask', unit:'pcs', sold_qty:2, sold_value:100, bought_qty:0, bought_value:0 }], pnl:[{ month:'2026-10', net_sales:150 }] };
       const el = document.createElement('div'); el.innerHTML = mgMarIbmPanel(Object.assign({ item_coverage:{ read:5, documents:10, complete_after:'2026-05-29' } }, d)); const filling = el.textContent;

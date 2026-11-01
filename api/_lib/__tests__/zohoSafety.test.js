@@ -266,6 +266,9 @@ const payRow = (db) => db.t('zoho_customer_payments').find((r) => r.payment_id =
       await sync.syncZohoForUser('user-1', 'delta');
       // Another account's rows must never be touched.
       db.t('zoho_invoices').push({ org_ref: 'someone-else', invoice_id: 'X1' });
+      // Readings worked out from these books (Pulse snapshots, saved forecasts), and another account's.
+      db.t('snapshots').push({ id: 's1', user_id: 'user-1', pulse_score: 68 }, { id: 's2', user_id: 'user-1', pulse_score: 63 }, { id: 's9', user_id: 'someone-else', pulse_score: 50 });
+      db.t('forecast_runs').push({ user_id: 'user-1', run_date: '2026-11-01' });
       const res = mockRes();
       await disconnect.handler({ method: 'POST', headers: { authorization: 'Bearer jwt-user-1' }, body: { remove_data: removeData } }, res);
       const org = db.t('zoho_organizations')[0];
@@ -275,11 +278,24 @@ const payRow = (db) => db.t('zoho_customer_payments').find((r) => r.payment_id =
       check(tag + ': connection disconnected', org.status === 'disconnected' && !!org.connector_disconnected_at);
       if (!removeData) {
         check('keep: data kept and the answer says so', res.body.data === 'kept' && db.t('zoho_invoices').filter((i) => i.org_ref === 'org-live').length === 3 && /stays visible/.test(res.body.message), res.body);
+        check('keep: readings kept too', db.t('snapshots').filter((x) => x.user_id === 'user-1').length === 2);
+        // Kept, then changed their mind: Sources offers "remove the kept data" (vitals says kept_data).
+        const vitals = require('../../_zoho/vitals');
+        const v = mockRes(); await vitals.handler({ method: 'GET', headers: { authorization: 'Bearer jwt-user-1' }, query: {} }, v);
+        check('keep: vitals says data is kept, so Sources can offer to remove it', v.body && v.body.connected === false && v.body.kept_data === true, v.body);
+        const rk = mockRes(); await disconnect.handleRemoveKept({ method: 'POST', headers: { authorization: 'Bearer jwt-user-1' }, body: {} }, rk);
+        const leftK = cleanup.ZOHO_TABLES.reduce((t, tb) => t + db.t(tb).filter((r) => r.org_ref === 'org-live').length, 0);
+        check('remove kept: copied rows and readings gone, the answer says so', rk.statusCode === 200 && leftK === 0 && rk.body.connections === 1 && db.t('snapshots').every((x) => x.user_id !== 'user-1') && /is removed/.test(rk.body.message), { leftK, body: rk.body });
+        check('remove kept: another account untouched', db.t('zoho_invoices').some((i) => i.org_ref === 'someone-else') && db.t('snapshots').some((x) => x.id === 's9'));
+        const v2 = mockRes(); await vitals.handler({ method: 'GET', headers: { authorization: 'Bearer jwt-user-1' }, query: {} }, v2);
+        check('remove kept: nothing left to offer', v2.body.kept_data === false, v2.body);
       } else {
         const left = cleanup.ZOHO_TABLES.reduce((t, tb) => t + db.t(tb).filter((r) => r.org_ref === 'org-live').length, 0);
         check('remove: every synced row of this connection removed and the answer says so', res.body.data === 'removed' && left === 0 && res.body.removed_rows > 0 && /is removed/.test(res.body.message), { left, body: res.body });
         check('remove: another account\'s rows untouched', db.t('zoho_invoices').some((i) => i.org_ref === 'someone-else'));
         check('remove: logged as a count only', db.t('connector_logs').some((l) => l.operation === 'disconnect' && /removed \d+ synced rows/.test(l.error_message || '')));
+        // 1 Nov 2026: removed data, yet Home kept "Pulse 68, cash stays above your floor" from the old readings.
+        check('remove: the readings worked out from them go too (no books left); another account\'s stay', db.t('snapshots').every((x) => x.user_id !== 'user-1') && db.t('snapshots').some((x) => x.id === 's9') && !db.t('forecast_runs').some((x) => x.user_id === 'user-1'), db.t('snapshots'));
       }
       const r2 = await sync.syncZohoForUser('user-1', 'delta');
       check(tag + ': nothing syncs after disconnect', r2.status === 'error' && /not connected/.test(r2.message));
@@ -341,6 +357,20 @@ const payRow = (db) => db.t('zoho_customer_payments').find((r) => r.payment_id =
       { id: 'o2', odoo_base_url: 'https://x.odoo.com', odoo_db: 'x', created_at: '2026-10-02', disconnected_at: null },
       { id: 'o3', odoo_base_url: 'https://y.odoo.com', odoo_db: 'y', created_at: '2026-09-01', disconnected_at: '2026-09-02' }
     ]).map((r) => r.id).join() === 'o1');
+    {
+      // A Tally account: readings and kept data are never removed, whatever is asked.
+      const db = new H.FakeDb(); H.installFetch(db, new H.FakeZoho());
+      db.t('tally_installs').push({ id: 't1', user_id: 'mihir', status: 'active' });
+      db.t('snapshots').push({ id: 'm1', user_id: 'mihir' });
+      db.t('zoho_organizations').push({ id: 'mz', user_id: 'mihir', organization_id: '9', status: 'disconnected' });
+      db.t('zoho_invoices').push({ org_ref: 'mz', x: 1 });
+      const r = await cleanup.removeReadings('mihir'), k = await cleanup.removeKeptZoho('mihir');
+      check('Tally account: removeReadings / removeKeptZoho touch nothing', r.skipped === 'tally_account' && k.skipped === 'tally_account' && db.t('snapshots').length === 1 && db.t('zoho_invoices').length === 1);
+      // Books still connected: readings stay.
+      db.t('zoho_organizations').push({ id: 'z2', user_id: 'amy', organization_id: '5', status: 'active' }); db.t('snapshots').push({ id: 'a1', user_id: 'amy' });
+      const r2 = await cleanup.removeReadings('amy');
+      check('books still connected: readings stay', r2.skipped === 'books_still_connected' && db.t('snapshots').some((x) => x.id === 'a1'));
+    }
     let refused = false;
     try { await cleanup.removeZohoData({ id: 'e5a18507', status: 'active' }); } catch (e) { refused = /still live/.test(e.message); }
     check('removing a live connection\'s data is refused', refused);

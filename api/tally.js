@@ -391,7 +391,8 @@ async function cloudAnalyticsKey(userId, q, prom) {
   if ((st.zoho || 'none') === 'none' && (st.odoo || 'none') === 'none') return null;
   if (/@reading@/.test(st.zoho || '')) return null;   // Zoho's first read still running: nothing saved or served from a save
   const O = await selectRows('tally_ledger_classes', `select=company_name,ledger_name,bucket,set_by&user_id=eq.${userId}&order=ledger_name.asc`).catch(() => []);
-  return sha256(JSON.stringify(['cloud', st.zoho, st.odoo, O.map((x) => [x.company_name, x.ledger_name, x.bucket, !x.set_by]), prom, String(q.credit_rate || ''), istDay(), ANSWER_VERSION]));
+  // 'cloud-2026-11-01': Zoho/Odoo answers saved before tonight's fixes are worked out again (Tally's key unchanged).
+  return sha256(JSON.stringify(['cloud', 'cloud-2026-11-01', st.zoho, st.odoo, O.map((x) => [x.company_name, x.ledger_name, x.bucket, !x.set_by]), prom, String(q.credit_rate || ''), istDay(), ANSWER_VERSION]));
 }
 /** A saved answer this account may be served: Tally's (as before), or one from Zoho Books / Odoo alone. */
 function savedSourceOk(body) {

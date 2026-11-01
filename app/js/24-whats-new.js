@@ -16,6 +16,15 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-01-remove-means-removed', date:'1 Nov 2026', title:'Removing your data removes all of it',
+    items:[
+      { t:'Disconnect and remove means a clean slate', what:'When you disconnect Zoho Books or Odoo and choose to remove the data, Margyn now also removes the Pulse readings and forecasts it worked out from those books. If you kept the data and change your mind, Organisations and sources has a Remove kept data button.',
+        how:'Open <b>Organisations and sources</b>.', act:'connectors' },
+      { t:'Home is honest when your books aren’t connected', what:'With no books connected, Home says its figures are your last reading and when it was taken, instead of a live-sounding forecast.',
+        how:'Open <b>Home</b>.', act:'home' }
+    ]
+  },
+  {
     id:'2026-11-01-connect-no-wait', date:'1 Nov 2026', title:'Connecting Zoho Books never leaves you waiting',
     items:[
       { t:'Connecting Zoho Books never leaves you waiting', what:'After you pick your Zoho organisation, Margyn opens Home as soon as your books are in. On a big book it lets you in after a few seconds and fills your figures in by itself when the first read is done. You never need to refresh.',

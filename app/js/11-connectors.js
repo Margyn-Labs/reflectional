@@ -576,10 +576,12 @@ function zohoShowError(msg){
   el.style.display = msg ? 'block' : 'none';
 }
 /* ---------- status row inside Connectors ---------- */
+let zohoKeptData = false;   // disconnected with "keep": Sources offers to remove what was kept
 async function loadZohoVitals(){
   try {
     const v = await zohoApi('/api/zoho?action=vitals');
     zohoConnected = v && v.connected === true;
+    zohoKeptData = !zohoConnected && !!(v && v.kept_data);
     zohoVitals = zohoConnected ? v : null;
     zohoLedgerRows = zohoConnected
       ? { receivables: Array.isArray(v.receivables_list) ? v.receivables_list : [], payables: Array.isArray(v.payables_list) ? v.payables_list : [] }
@@ -695,9 +697,13 @@ function renderZohoStatus(){
       '<div class="ledger-row"><div class="lr-main">' +
         '<div class="lr-party">Zoho Books</div>' +
         '<div class="lr-meta">Not connected · unlocks receivables, payables, GST/ITC leakage and true margin</div>' +
-      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectZohoBtn">Connect</button></div></div>';
+        (zohoKeptData ? '<div class="lr-meta">Margyn still has the data it copied before you disconnected, and the readings worked out from it.</div>' : '') +
+      '</div><div class="lr-actions"><button class="lr-btn connect" id="connectZohoBtn">Connect</button>' +
+        (zohoKeptData ? '<button class="lr-btn danger" id="zohoRemoveKeptBtn">Remove kept data</button>' : '') + '</div></div>';
     const btn = document.getElementById('connectZohoBtn');
     if(btn) btn.addEventListener('click', openZohoModal);
+    const rk = document.getElementById('zohoRemoveKeptBtn');
+    if(rk) rk.addEventListener('click', removeKeptZohoData);
   }
 }
 /* ---------- step 1: consent ---------- */
@@ -934,11 +940,22 @@ async function fillZohoItemsNow(){
     const b = document.getElementById('zohoFillBtn'); if(b){ b.disabled = false; b.textContent = 'Fill now'; }
   }
 }
+/* Kept the data at disconnect, now wants it gone: one confirm, then the server removes what was copied and, with no
+   books connected, the readings worked out from it (api/_zoho/disconnect.js handleRemoveKept). */
+async function removeKeptZohoData(){
+  if(!(await mgConfirm({ title:'Remove the data Margyn kept from Zoho Books?', body:'Margyn deletes the invoices, bills and payments it copied from Zoho Books, and the Pulse readings and forecasts worked out from them. Your books in Zoho are not touched. You can connect again any time.', cancelLabel:'Keep it', confirmLabel:'Remove it', danger:true }))) return;
+  const b = document.getElementById('zohoRemoveKeptBtn'); if(b){ b.disabled = true; b.textContent = 'Removing…'; }
+  try {
+    const out = await zohoApi('/api/zoho?action=remove-kept', { method:'POST', body:'{}' });
+    toast(out.message || 'Removed', { kind:'ok' });
+    if(typeof refreshAll === 'function') await refreshAll(); else await loadZohoVitals();
+  } catch(e){ toast('Could not remove it: ' + e.message, { kind:'bad' }); if(b){ b.disabled = false; b.textContent = 'Remove kept data'; } }
+}
 /* Disconnect asks twice: first whether to disconnect, then what happens to what Margyn copied (kept by default).
    The server says which it did, and that is what the owner is told. */
 async function mgAskRemoveData(source){
   return mgConfirm({ title:'Keep the ' + source + ' data Margyn copied?',
-    body:'Keep it: your past figures stay visible in Margyn. Remove it: Margyn deletes the invoices, bills and payments it copied from ' + source + ' (your books in ' + source + ' are not touched).',
+    body:'Keep it: your past figures stay visible in Margyn. Remove it: Margyn deletes the invoices, bills and payments it copied from ' + source + ', and the readings worked out from them (your books in ' + source + ' are not touched).',
     cancelLabel:'Keep it', confirmLabel:'Remove it', danger:true });
 }
 async function disconnectZoho(){

@@ -109,6 +109,8 @@ class FakeDb {
       if (fn === 'zoho_vault_store') { this.vault[body.p_org_ref] = body.p_token; return json(200, null); }
       if (fn === 'zoho_vault_get') { return json(200, this.vault[body.p_org_ref] || null); }
       if (fn === 'zoho_vault_purge') { delete this.vault[body.p_org_ref]; return json(200, null); }
+      // Only whether the account has a live connection (sql/zoho_books_migration.sql answers { connected:false } without one).
+      if (fn === 'zoho_vitals') return json(200, { connected: this.t('zoho_organizations').some((o) => o.user_id === body.p_user_id && o.status === 'active') });
       return json(404, { message: 'no rpc ' + fn });
     }
 

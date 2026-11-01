@@ -13,7 +13,15 @@ let mgMar = null, mgMarBusy = false, mgMarErr = false, mgMarAt = 0, mgMarCompany
 function mgBooksConnected(){
   try { return !!((typeof tallyConnected !== 'undefined' && tallyConnected) || (typeof zohoConnected !== 'undefined' && zohoConnected) || (typeof odooConnected !== 'undefined' && odooConnected)); } catch(e){ return false; }
 }
-function mgBooksName(){ return (mgMar && mgMar.books_source_name) || 'Tally'; }
+/* The connected books' name. With none connected it said "Tally" (Margin read "worked out from your Tally books" on an
+   account with no Tally, 1 Nov 2026): now the connected one, else "your books". */
+function mgBooksName(){
+  if(mgMar && mgMar.books_source_name) return mgMar.books_source_name;
+  if(typeof tallyConnected !== 'undefined' && tallyConnected) return 'Tally';
+  if(typeof zohoConnected !== 'undefined' && zohoConnected) return 'Zoho Books';
+  if(typeof odooConnected !== 'undefined' && odooConnected) return 'Odoo';
+  return 'your books';
+}
 
 /* The same sentence as the Margin headline (tallyAnalytics bridgeLine): only the parts that moved, with ₹ and a sign. */
 function mgMarBridgeLine(b){
@@ -256,7 +264,7 @@ function mgRenderMargin(){
   if(!mgMar && !mgMarBusy && !mgMarErr) mgLoadMargin();
   const d = mgMar;
   const head = mgPageHead({ group:'Insight', title:'Margin',
-    sub:'How much you keep, worked out from your ' + mgBooksName() + (/books$/i.test(mgBooksName()) ? '' : ' books') + '. One source, so every figure is a signal until bank and GST agree with it.' + (d && d.stale ? ' Updating to your latest sync…' : ''),
+    sub:'How much you keep, worked out from ' + (mgBooksName() === 'your books' ? 'your books' : 'your ' + mgBooksName() + (/books$/i.test(mgBooksName()) ? '' : ' books')) + '. One source, so every figure is a signal until bank and GST agree with it.' + (d && d.stale ? ' Updating to your latest sync…' : ''),
     actions:mgBtn('Refresh', 'data-mar-refresh') + (d && d.connected ? mgExportBtn('marExport') : '') });
   if(!d){
     host.innerHTML = head + '<div class="mg-panel mg-empty-panel"><h2>' + (mgMarErr ? 'Couldn’t load margin' : 'Loading…') + '</h2>' +
