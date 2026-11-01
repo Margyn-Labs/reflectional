@@ -180,6 +180,10 @@ function positionHistory(ctx) {
       // this week's figure and Margin's agree (241 beside 240, 1 Nov 2026).
       days_to_collect: spanDays >= 60 && sales90 > 0 ? Math.round(b.recv / (sales90 / (booksOnly ? Math.min(90, spanDays) : spanDays))) : null });   // Tally unchanged
   }
+  // Zoho Books / Odoo: this week's days to collect is Margin's own "Days to get paid" (it reads to the last entry,
+  // this walks to today, so they rounded 239 against 240, 1 Nov 2026). Tally unchanged.
+  const mDso = num(((ctx.analytics || {}).working_capital || {}).dso_days);
+  if (booksOnly && weekly.length && mDso > 0) weekly[0].days_to_collect = Math.round(mDso);
   return { weeks: weekly.reverse(), receivables_today: r0(recvToday), payables_today: r0(payToday) };
 }
 
@@ -882,9 +886,10 @@ function build(ctx, o) {
 
 /** One sentence on a self-check correction: what was actually paid against what was expected, and how far the forecast moves. */
 function factorNote(raw, f, runs, who, what) {
+  const is = /payments$/.test(what) ? 'are' : 'is';   // "supplier payments are", "money in from customers is"
   return (raw == null || Math.abs(raw - f) < 0.03)
-    ? `${who} ${Math.round(f * 100)}% of what it expected, so ${what} is scaled to match.`
-    : `${who} ${Math.round(raw * 100)}% of what it expected; ${what} is scaled to ${Math.round(f * 100)}%, moved only part of the way on ${runs} weeks and never past 60–130%.`;
+    ? `${who} ${Math.round(f * 100)}% of what it expected, so ${what} ${is} scaled to match.`
+    : `${who} ${Math.round(raw * 100)}% of what it expected; ${what} ${is} scaled to ${Math.round(f * 100)}%, moved only part of the way on ${runs} weeks and never past 60–130%.`;
 }
 
 /**
