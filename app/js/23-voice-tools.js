@@ -1020,15 +1020,15 @@ const VX_VIEWS = {
     const snaps = (snapshots || []).slice(0, 6), s = snaps[0], p = snaps[1];
     if(!s) return { shown:false, note:'No P&L yet: connect Zoho Books or Tally, or enter figures.' };
     const margin = x => Number(x.revenue) ? Number(x.net_profit) / Number(x.revenue) * 100 : null;
-    let z = null; try { z = zohoConnected && zohoVitals && zohoVitals.net_margin ? zohoVitals.net_margin : null; } catch(e){}
+    // One card for every books system (1 Nov 2026): Zoho showed one month's costs beside the averaged revenue.
     const rows = [
       { cells:['Revenue', vxInr(s.revenue), p ? vxInr(p.revenue) : '—'] },
-      ...(z ? [{ cells:['Cost of goods (' + (z.period || 'Zoho') + ')', vxInr(z.cogs), '—'] }, { cells:['Operating expenses (' + (z.period || 'Zoho') + ')', vxInr(z.opex), '—'] }] : [{ cells:['Total spend', vxInr(s.burn), p ? vxInr(p.burn) : '—'] }]),
+      { cells:['Total spend', vxInr(s.burn), p ? vxInr(p.burn) : '—'] },
       { cls:'tot', cells:['Net profit', { t:vxInr(s.net_profit), cls:Number(s.net_profit) < 0 ? 'neg' : '' }, p ? vxInr(p.net_profit) : '—'] },
       { cells:['GST payable', vxInr(s.gst_payable), p ? vxInr(p.gst_payable) : '—'] }
     ];
     const hist = snaps.slice().reverse();
-    const card = vxViewCard('pnl', 'Profit and loss', mgAsOf() + (z ? ' · COGS and opex from Zoho Books' : ''),
+    const card = vxViewCard('pnl', 'Profit and loss', mgAsOf(),
       '<div class="vx-kpis">' + vxKpi('Revenue', vxInr(s.revenue), p ? vxPct(s.revenue, p.revenue) : null) + vxKpi('Net profit', vxInr(s.net_profit), p ? vxPct(s.net_profit, p.net_profit) : null) +
         vxKpi('Net margin', margin(s) == null ? '—' : margin(s).toFixed(1) + '%', null) + '</div>' +
       (hist.length > 1 ? '<div class="vx-chart"><canvas></canvas></div>' : '') +
@@ -1037,7 +1037,7 @@ const VX_VIEWS = {
     return { revenue:vxInr(s.revenue), net_profit:vxInr(s.net_profit), net_margin_pct:margin(s) == null ? null : +margin(s).toFixed(1),
       revenue_change_pct:p && !s.pl_in_progress ? vxR1(vxPct(s.revenue, p.revenue)) : null, month_in_progress:!!s.pl_in_progress,
     costs_not_all_booked:s.costs_incomplete ? 'Running costs for this month look incomplete in Tally, so profit is overstated; say so if you quote it.' : null, profit_change_pct:p ? vxR1(vxPct(s.net_profit, p.net_profit)) : null,
-      cogs:z ? vxInr(z.cogs) : null, opex:z ? vxInr(z.opex) : null, months_charted:hist.length, as_of:mgAsOf() };
+      months_charted:hist.length, as_of:mgAsOf() };
   },
   receivables(){ return vxMoneyView('recv'); },
   payables(){ return vxMoneyView('pay'); },
