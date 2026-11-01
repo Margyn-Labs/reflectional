@@ -855,6 +855,14 @@ function mgrMood(){
   const runway = s && (s.vitals || []).find(v => v.label === 'Working Capital Runway');
   const rNow = runway ? parseFloat(runway.value) : null;
   const pd = (s && p && s.pulse_score != null && p.pulse_score != null) ? s.pulse_score - p.pulse_score : null;
+  // Books disconnected, readings left from them: say they are the last figures, never present them as live
+  // ("Cash stays above your floor… Collections are on track" on an account with no books, 1 Nov 2026).
+  const booksOn = (typeof zohoConnected !== 'undefined' && zohoConnected) || (typeof tallyConnected !== 'undefined' && tallyConnected) || (typeof odooConnected !== 'undefined' && odooConnected);
+  if(s && !booksOn && s.source === 'resolved' && typeof mgDataReady !== 'undefined' && mgDataReady){
+    const when = s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' }) : 'earlier';
+    return { level:'watch', tag:'Books not connected', line:'Your books aren’t connected, so I can’t say how things stand today. The figures below are your last reading, from ' + when + '.',
+      sub:(s.pulse_score != null ? 'Last Pulse ' + s.pulse_score + ' · ' : '') + 'Connect your books on Organisations and sources' };
+  }
   let cashLine;
   if(f && f.firstBelow >= 0) cashLine = 'Cash dips below your floor in week ' + (f.firstBelow + 1) + '.';
   else if(f) cashLine = 'Cash stays above your floor for the next 13 weeks.';

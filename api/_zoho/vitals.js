@@ -215,7 +215,9 @@ async function handler(req, res) {
     : (Array.isArray(vitals) ? vitals[0] : {});
 
   if (!raw || raw.connected !== true) {
-    res.status(200).json({ connected: false });
+    // Data still kept from a disconnected connection: the Sources page offers to remove it.
+    const kept = await selectRows('zoho_organizations', `select=id&user_id=eq.${encodeURIComponent(user.id)}&status=eq.disconnected&data_removed_at=is.null&limit=1`).catch(() => []);
+    res.status(200).json({ connected: false, kept_data: kept.length > 0 });
     return;
   }
 

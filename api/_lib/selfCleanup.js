@@ -13,6 +13,8 @@
  *  4. Resolved Margyn Watch findings not seen for over 400 days, only of kinds that may be sent again within a year
  *     (once-only kinds are kept forever: their row is what stops a repeat).
  *
+ * Also removeReadings / removeKeptZoho, only when the owner asks to remove what was copied (see below).
+ *
  * Never: anything on an account with an active Tally install; the active (or needs-reconnect) connection's rows;
  * a disconnected connection with no newer one (the owner chose at disconnect whether to keep it); snapshots (the
  * account's history of readings; which of those "conflict" is a judgement, not a tidy-up).
@@ -106,6 +108,31 @@ async function removeOdooData(cred) {
 const total = (c) => Object.values(c || {}).reduce((t, n) => t + (Number(n) || 0), 0);
 
 /**
+ * The readings worked out from books that are gone: Pulse readings (snapshots) and saved forecasts (forecast_runs).
+ * Only when the owner removed the copied data AND no books system is still connected, so Home doesn't keep showing
+ * "Cash stays above your floor… Pulse 68" from a book that isn't there (1 Nov 2026). Never on a Tally account.
+ * → { snapshots, forecast_runs } | { skipped }
+ */
+async function removeReadings(userId) {
+  const u = encodeURIComponent(userId);
+  if (await hasTally(userId)) return { skipped: 'tally_account' };
+  const liveZoho = await selectRows('zoho_organizations', `select=id&user_id=eq.${u}&status=in.(active,needs_reauth,pending_org_selection)&limit=1`).catch(() => []);
+  const liveOdoo = await selectRows('connector_credentials', `select=id&user_id=eq.${u}&connector_type=eq.odoo&disconnected_at=is.null&limit=1`).catch(() => []);
+  if (liveZoho.length || liveOdoo.length) return { skipped: 'books_still_connected' };
+  return { snapshots: await deleteCount('snapshots', `user_id=eq.${u}`), forecast_runs: await deleteCount('forecast_runs', `user_id=eq.${u}`) };
+}
+
+/** Everything Margyn kept from Zoho connections the owner disconnected with "keep": removed, then the readings. */
+async function removeKeptZoho(userId) {
+  if (await hasTally(userId)) return { skipped: 'tally_account' };
+  const u = encodeURIComponent(userId);
+  const kept = await selectRows('zoho_organizations', `select=id,status,data_removed_at&user_id=eq.${u}&status=eq.disconnected&data_removed_at=is.null&limit=50`);
+  let rows = 0;
+  for (const org of kept) rows += total(await removeZohoData(org));
+  return { connections: kept.length, rows, readings: await removeReadings(userId) };
+}
+
+/**
  * One account's tidy-up. opts.dryRun: say what would go, delete nothing. → { skipped? } | { zoho, odoo, proposals, signals }
  */
 async function cleanupAccount(userId, opts) {
@@ -178,4 +205,4 @@ async function cleanupAll(opts) {
   return { accounts: users.length, cleaned: results.filter((r) => (r.zoho && r.zoho.length) || (r.odoo && r.odoo.length) || r.proposals_expired || r.signals_removed).length, results };
 }
 
-module.exports = { cleanupAccount, cleanupAll, removeZohoData, removeOdooData, supersededZohoOrgs, supersededOdooCreds, deleteCount, ZOHO_TABLES, ODOO_TABLES };
+module.exports = { cleanupAccount, cleanupAll, removeZohoData, removeReadings, removeKeptZoho, removeOdooData, supersededZohoOrgs, supersededOdooCreds, deleteCount, ZOHO_TABLES, ODOO_TABLES };

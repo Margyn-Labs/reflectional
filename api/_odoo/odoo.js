@@ -694,14 +694,15 @@ async function handleDisconnect(req, res) {
   if (body.remove_data === true) {
     let removed = 0;
     try {
-      const { removeOdooData } = require('../_lib/selfCleanup');
+      const { removeOdooData, removeReadings } = require('../_lib/selfCleanup');
       for (const c of live) removed += Object.values(await removeOdooData({ id: c.id, disconnected_at: at })).reduce((t, n) => t + (Number(n) || 0), 0);
+      await removeReadings(user.id).catch(() => null);   // with no books left connected, the readings worked out from them too
     } catch (e) {
       return json(res, 200, { disconnected: true, data: 'kept', message: 'Disconnected, but Margyn could not remove the Odoo data it copied. It is still in Margyn; try Disconnect again to remove it.' });
     }
     await logRun({ userId: user.id, kind: 'disconnect', received: 0, upserted: 0, status: 'ok', error: `removed ${removed} synced rows` }).catch(() => {});
     return json(res, 200, { disconnected: true, data: 'removed', removed_rows: removed,
-      message: 'Disconnected, and the Odoo data Margyn copied is removed. To fully revoke access, delete the API key inside Odoo under Account Security.' });
+      message: 'Disconnected, and the Odoo data Margyn copied is removed, with the readings worked out from it. To fully revoke access, delete the API key inside Odoo under Account Security.' });
   }
 
   return json(res, 200, {
