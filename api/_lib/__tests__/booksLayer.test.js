@@ -93,7 +93,7 @@ const DB = {
   tally_vouchers: [{ install_id: 'i1', tally_guid: 'g1', voucher_type: 'Sales', date: '2026-09-01', party_name: 'X', amount: 100, entries: [{ ledger: 'X', amount: -100, is_party: true }, { ledger: 'Sales', amount: 100 }] },
     { install_id: 'i3', tally_guid: 'g3', voucher_type: 'Sales', date: '2026-09-01', party_name: 'X', amount: 100, entries: [{ ledger: 'X', amount: -100, is_party: true }, { ledger: 'Sales', amount: 100 }] }],
   tally_bills: [{ install_id: 'i3', direction: 'receivable', party_name: 'X', bill_ref: 'A', closing_balance: 100 }],
-  zoho_organizations: [{ id: 'o2', user_id: U2, status: 'active', organization_name: 'Zed', last_sync_at: '2026-10-03T00:00:00Z' }, { id: 'o3', user_id: U3, status: 'active', organization_name: 'Both Co', last_sync_at: '2026-10-04T00:00:00Z' }],
+  zoho_organizations: [{ id: 'o2', user_id: U2, status: 'active', organization_name: 'Zed', backfill_completed_at: '2026-10-01T00:00:00Z', last_sync_at: '2026-10-03T00:00:00Z' }, { id: 'o3', user_id: U3, status: 'active', organization_name: 'Both Co', backfill_completed_at: '2026-10-01T00:00:00Z', last_sync_at: '2026-10-04T00:00:00Z' }],
   zoho_invoices: [{ org_ref: 'o2', invoice_id: 'z1', customer_name: 'Y', total: 118, sub_total: 100, balance: 118, status: 'sent', invoice_date: '2026-09-02' },
     { org_ref: 'o3', invoice_id: 'z3', customer_name: 'X', total: 236, sub_total: 200, balance: 236, status: 'sent', invoice_date: '2026-09-02' }]
 };

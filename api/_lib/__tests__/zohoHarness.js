@@ -85,6 +85,7 @@ class FakeDb {
       else if (v.startsWith('lte.')) { if (!(String(val) <= v.slice(4))) return false; }
       else if (v.startsWith('lt.')) { if (!(String(val) < decodeURIComponent(v.slice(3)))) return false; }
       else if (v === 'is.null') { if (val != null) return false; }
+      else if (v === 'not.is.null') { if (val == null) return false; }
       else throw new Error('FakeDb: unsupported filter ' + k + '=' + v);
     }
     return true;

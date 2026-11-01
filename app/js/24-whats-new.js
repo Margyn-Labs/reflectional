@@ -27,7 +27,9 @@ const MG_RELEASES = [
       { t:'Pulse holds steady at the start of a month', what:'On Zoho Books, Net margin now comes from your last finished month, as it already did on Tally. Before, on the 1st it read the new month with no sales yet and the score dropped for no reason.',
         how:'Open <b>Pulse Score</b>: Net margin shows last month’s figure.', act:'scores' },
       { t:'Your first figures wait for the whole first read', what:'Right after you connect Zoho Books, Margyn now waits until every invoice, bill and journal is in before it works out Margin or takes your first Pulse reading. Before, a reading taken halfway could show no sales for a few minutes and make the score jump on day one.',
-        how:'Connect Zoho Books: your first Pulse appears once Margyn says the read is done.', act:'scores' }
+        how:'Connect Zoho Books: your first Pulse appears once Margyn says the read is done.', act:'scores' },
+      { t:'Margin keeps up as item lines arrive', what:'On a newly connected Zoho Books, item lines come in through the day. Margin now refreshes as they land instead of waiting for the night’s sync, and “this month against last” means the whole month before, the same on Margin and when you ask Margyn.',
+        how:'Open <b>Margin → Items</b>, or ask Margyn “how were sales in October?”', act:'margin' }
     ]
   },
   {

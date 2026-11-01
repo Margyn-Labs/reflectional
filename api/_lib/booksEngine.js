@@ -372,7 +372,13 @@ function summary(ctx, args) {
   }
   // Same length of time just before, when the books cover it.
   const len = Math.round((per.to - per.from) / DAY) + 1;
-  const prevTo = addDays(per.from, -1), prevFrom = addDays(per.from, -len);
+  // Whole calendar months (October, a quarter) compare with the same number of whole months before, as the Margin
+  // page does; anything else with the same number of days. (1 Nov 2026: "October" against 31 Aug–30 Sep read
+  // +32.2% here and +33.7% on Margin.)
+  const wholeMonths = per.from.getUTCDate() === 1 && per.to.getTime() === monthEnd(per.to).getTime()
+    ? (per.to.getUTCFullYear() - per.from.getUTCFullYear()) * 12 + per.to.getUTCMonth() - per.from.getUTCMonth() + 1 : 0;
+  const prevTo = addDays(per.from, -1);
+  const prevFrom = wholeMonths ? new Date(Date.UTC(per.from.getUTCFullYear(), per.from.getUTCMonth() - wholeMonths, 1)) : addDays(per.from, -len);
   if (ctx.coverage.from && prevFrom >= ctx.coverage.from && len <= 120) {
     const p = sumRows(ctx.rows.filter((r) => r.dt >= prevFrom && r.dt <= prevTo));
     if (p.net_sales > 0) out.compared_with_the_period_before = { period: dayStr(prevFrom) + ' to ' + dayStr(prevTo), sales: inr(p.net_sales), change: (t.net_sales >= p.net_sales ? '+' : '') + pctStr(pctOf(t.net_sales - p.net_sales, p.net_sales)) };
@@ -1238,7 +1244,9 @@ function insights(ctx) {
     }
     jumps.sort((x, y) => (y.cur - y.avg) - (x.cur - x.avg));
     for (const j of jumps.slice(0, 2)) push({ key: 'expense:' + norm(j.ledger) + ':' + lastM, kind: 'expense_jump', severity: 'medium', impact: j.cur - j.avg,
-      title: `${j.ledger} was ${inr(j.cur)} in ${monthLabel(lastM)}, against about ${inr(j.avg)} a month before.`,
+      title: Math.abs(j.avg) < 1
+        ? `${j.ledger} was ${inr(j.cur)} in ${monthLabel(lastM)}, new this month: nothing was booked there in the ${prior.length} months before.`
+        : `${j.ledger} was ${inr(j.cur)} in ${monthLabel(lastM)}, against about ${inr(j.avg)} a month before.`,
       detail: 'A one-off, or something to look at?', action: null, ask: `Show ${j.ledger} entries in ${monthLabel(lastM)}` });
   }
 
