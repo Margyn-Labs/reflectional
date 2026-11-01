@@ -484,7 +484,10 @@ const _cache = new Map();   // userId|source -> { at, book, stamp }
 // here old: a new stamp reads the books again instead of serving a copy up to 5 minutes behind (31 Oct: Home said
 // ₹24.7 L after Sync now had ₹25.6 L).
 const STAMP = {
-  zoho: (userId) => selectRows('zoho_organizations', `select=id,last_synced_at&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`).then((r) => (r[0] ? r[0].id + '@' + (r[0].last_synced_at || '') : 'none')),
+  // While the first read is still running the rows change with no sync stamp: a stamp that never repeats, so neither
+  // this cache nor the Margin page's saved answer keeps a half-read book (1 Nov 2026: ₹0 sales shown after connect).
+  zoho: (userId) => selectRows('zoho_organizations', `select=id,last_synced_at,backfill_completed_at&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`).then((r) => (!r[0] ? 'none'
+    : !r[0].backfill_completed_at ? r[0].id + '@reading@' + Date.now() : r[0].id + '@' + (r[0].last_synced_at || ''))),
   odoo: (userId) => selectRows('connector_credentials', `select=id,last_success_at&user_id=eq.${userId}&connector_type=eq.odoo&disconnected_at=is.null&order=created_at.desc&limit=1`).then((r) => (r[0] ? r[0].id + '@' + (r[0].last_success_at || '') : 'none'))
 };
 function cached(source, load) {

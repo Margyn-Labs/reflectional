@@ -389,6 +389,7 @@ async function cloudAnalyticsKey(userId, q, prom) {
   const st = await cloudStamps(userId);
   if (!st.zoho && !st.odoo) return null;
   if ((st.zoho || 'none') === 'none' && (st.odoo || 'none') === 'none') return null;
+  if (/@reading@/.test(st.zoho || '')) return null;   // Zoho's first read still running: nothing saved or served from a save
   const O = await selectRows('tally_ledger_classes', `select=company_name,ledger_name,bucket,set_by&user_id=eq.${userId}&order=ledger_name.asc`).catch(() => []);
   return sha256(JSON.stringify(['cloud', st.zoho, st.odoo, O.map((x) => [x.company_name, x.ledger_name, x.bucket, !x.set_by]), prom, String(q.credit_rate || ''), istDay(), ANSWER_VERSION]));
 }

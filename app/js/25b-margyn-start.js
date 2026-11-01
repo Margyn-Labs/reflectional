@@ -84,7 +84,11 @@ function mgoWatchRead(){
       slowSaid = true;
       mgrLine('margyn', 'Zoho is answering slowly right now, so this is taking longer. I’m still reading; nothing is lost if you close this.');
     }
-    if(d.done || Date.now() - started > 25 * 60000){ clearInterval(mgoPoll); mgoPoll = null; host.classList.add('finished'); }
+    if(d.done || Date.now() - started > 25 * 60000){
+      clearInterval(mgoPoll); mgoPoll = null; host.classList.add('finished');
+      // Readings wait for the first read (resolveAndSaveSnapshot): take the first one now, from the whole book.
+      if(d.done && typeof mgAfterBooksSync === 'function'){ try { if(typeof loadZohoVitals === 'function') await loadZohoVitals(); } catch(e){} mgAfterBooksSync(); }
+    }
   };
   tick();
   mgoPoll = setInterval(() => { if(!document.hidden) tick(); }, 3000);
