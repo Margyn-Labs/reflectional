@@ -124,6 +124,11 @@ check('September flagged unfinished', s.notes.some((n) => /Sep 2026 looks unfini
 check('profit after stock for the whole year', /after|%/.test(s.profit_after_stock_change || ''), s.profit_after_stock_change);
 const lfy = E.summary(ctx, { period: 'last_fy' });
 check('last FY says honestly it is not synced', lfy.sales_before_gst === '₹0' && lfy.notes.some((n) => /only from .* 2026/.test(n)), lfy);
+const aug = E.summary(ctx, { period: '2026-08' });
+const julSales = E.summary(ctx, { period: '2026-07' }).sales_before_gst;
+check('a month compares with the whole month before (as the Margin page does)', aug.compared_with_the_period_before && /^1 Jul to 31 Jul$/.test(aug.compared_with_the_period_before.period) && aug.compared_with_the_period_before.sales === julSales, { cmp: aug.compared_with_the_period_before, julSales });
+const ad = E.summary(ctx, { period: { from: '2026-08-10', to: '2026-08-19' } });
+check('…and a run of days with the same number of days before', ad.compared_with_the_period_before && /^31 Jul to 9 Aug$/.test(ad.compared_with_the_period_before.period), ad.compared_with_the_period_before);
 check('source line names company and sync', /CARE TEST/.test(s.source) && /last synced/.test(s.source), s.source);
 
 console.log('breakdowns');

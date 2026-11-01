@@ -176,6 +176,11 @@ function mgPackDoc(k){
   const margin = Number(plS.revenue) && !costsOpen && !(tk && tk.pl_in_progress) ? Number(plS.net_profit) / Number(plS.revenue) * 100 : null;
   const marginP = plP && Number(plP.revenue) ? Number(plP.net_profit) / Number(plP.revenue) * 100 : null;
   const band = s.pulse_score != null ? scoreBand(s.pulse_score) : null;
+  // A month from before Margyn's first reading (an account connected after it ended): its figures come from the books,
+  // but the month-end receivables, payables and Pulse lines need a reading taken then. Say so instead of a bare dash.
+  const firstRead = snapshots.length ? snapshots[snapshots.length - 1] : null;
+  const preRead = !!(s._books && s.pulse_score == null && firstRead);
+  const preReadNote = preRead ? 'Margyn started reading these books on ' + fmtDay(firstRead.created_at) + ', so there is no reading from the end of ' + month + ' for these lines. ' : '';
 
   // 1. headline
   const tile = (l, v, note) => '<div class="pk-tile"><div class="pk-tile-l">' + escapeHtml(l) + '</div><div class="pk-tile-v">' + escapeHtml(v) + '</div><div class="pk-tile-n">' + note + '</div></div>';
@@ -183,7 +188,7 @@ function mgPackDoc(k){
     tile('Cash at month end', s.cash == null ? 'n/a' : fmtINR(s.cash, 'tile'), p ? mgPackChg(s.cash, p.cash, true) + ' vs prior month' : 'First month') +
     tile('Revenue', fmtINR(plS.revenue, 'tile'), (tk && tk.pl_in_progress ? 'Month in progress' : plCmp ? mgPackChg(plS.revenue, plP.revenue, true) + ' vs prior month' : '')) +
     tile('Net profit', fmtINR(plS.net_profit, 'tile'), costsOpen ? 'Costs not all booked yet' : margin != null ? escapeHtml(margin.toFixed(1) + '% margin') : '') +
-    tile('Pulse Score', s.pulse_score != null ? String(s.pulse_score) : 'n/a', band ? escapeHtml(band.label + ' · operating health') : '') + '</div>';
+    tile('Pulse Score', s.pulse_score != null ? String(s.pulse_score) : 'n/a', band ? escapeHtml(band.label + ' · operating health') : preRead && firstRead.pulse_score != null ? escapeHtml('First reading ' + firstRead.pulse_score + ' on ' + fmtDay(firstRead.created_at)) : '') + '</div>';
 
   // 2. P&L
   const plRow = (l, a, b, goodUp, cost) => { const c = plCmp && !(cost && costsOpen);
@@ -235,6 +240,7 @@ function mgPackDoc(k){
   const recvHtml = mgPackTable(['At month end', month + ' (₹)', 'Prior month (₹)', 'Change %'], [
       '<tr><td>Receivables outstanding</td><td class="r">' + mgPackN(s.recv_total) + '</td><td class="r">' + (p ? mgPackN(p.recv_total) : '—') + '</td><td class="r">' + (p ? mgPackChg(s.recv_total, p.recv_total, false) : '—') + '</td></tr>',
       '<tr><td>Of which over 90 days</td><td class="r">' + mgPackN(s.recv_90) + '</td><td class="r">' + (p ? mgPackN(p.recv_90) : '—') + '</td><td class="r">' + (p ? mgPackChg(s.recv_90, p.recv_90, false) : '—') + '</td></tr>'], 'pkRecvMonth') +
+    (preRead && s.recv_total == null ? '<div class="pk-note">' + escapeHtml(preReadNote + 'The ageing below is today’s.') + '</div>' : '') +
     '<div class="pk-blk"><h3>Ageing, as of today</h3>' + (btot ? mgPackTable(['Age', 'Open amount (₹)', 'Share %'], MG_BUCKETS.map(([bk, l]) => '<tr><td>' + escapeHtml(l) + '</td><td class="r">' + mgPackN(buckets[bk]) + '</td><td class="r">' + (buckets[bk] / btot * 100).toFixed(1) + '%</td></tr>'), 'pkAging') : '<div class="pk-empty">No open receivables.</div>') + '</div>' +
     '<div class="pk-blk"><h3>Top overdue customers, as of today</h3>' + (over.length ? mgPackTable(['Customer', 'Overdue (₹)', 'Oldest (days overdue)', 'Sources'], over.map(g =>
       '<tr><td>' + escapeHtml(g.party) + '</td><td class="r">' + mgPackN(g.overdue) + '</td><td class="r">' + (g.oldestDays != null && g.oldestDays < 0 ? -g.oldestDays : '—') + '</td><td>' + escapeHtml(g.sources.map(x => MG_SRC_NAME[x]).join(', ')) + (g.status === 'conflict' ? ' <span class="pk-bdg neg">Sources differ by ' + escapeHtml(fmtINR(g.diff)) + '</span>' : '') + '</td></tr>'), 'pkOverdue') : '<div class="pk-empty">No customer is overdue.</div>') +
@@ -253,6 +259,7 @@ function mgPackDoc(k){
       '<tr><td>Overdue today</td><td class="r' + (pOver ? ' pk-neg' : '') + '">' + mgPackN(pOver) + '</td></tr>',
       '<tr><td>Due in the next 7 days</td><td class="r">' + mgPackN(p7) + '</td></tr>',
       '<tr><td>Due in 8 to 30 days</td><td class="r">' + mgPackN(p30) + '</td></tr>'], 'pkPay') +
+    (preRead && s.pay_soon == null ? '<div class="pk-note">' + escapeHtml(preReadNote + 'The lines below are today’s.') + '</div>' : '') +
     '<div class="pk-blk"><h3>Bills due soonest, as of today</h3>' + (soon.length ? mgPackTable(['Vendor', 'Reference', 'Due', 'Amount (₹)'], soon.map(r =>
       '<tr><td>' + escapeHtml(r.party) + '</td><td class="pk-mono">' + escapeHtml(r.ref || '—') + '</td><td>' + (r.days === null ? 'No due date' : r.days < 0 ? '<span class="pk-neg">Overdue ' + (-r.days) + 'd</span>' : 'In ' + r.days + 'd') + '</td><td class="r">' + mgPackN(r.amount) + '</td></tr>'), 'pkPaySoon') : '<div class="pk-empty">No bills due in the next 30 days.</div>') + '</div>';
 
@@ -275,6 +282,7 @@ function mgPackDoc(k){
       tile('Confidence', s.confidence != null ? Math.round(Number(s.confidence) * 100) + '%' : 'n/a', 'share of inputs from connected sources') + '</div>' +
     (vit.length ? '<div class="pk-blk"><h3>What drives it</h3>' + mgPackTable(['Vital', 'Reading', 'Score (0–100)', 'Effect (pts)'], vit.map(v =>
       '<tr><td>' + escapeHtml(v.label) + '</td><td class="pk-mono">' + escapeHtml(v.value == null ? '—' : String(v.value)) + '</td><td class="r">' + (isFinite(v.score) ? Math.round(v.score) : '—') + '</td><td class="r ' + (v.pts < 0 ? 'pk-neg' : 'pk-pos') + '">' + (v.pts < 0 ? '−' : '+') + Math.abs(v.pts).toFixed(0) + '</td></tr>'), 'pkPulse') + '</div>' : '') +
+    (preRead ? '<div class="pk-note">' + escapeHtml(preReadNote + (firstRead.pulse_score != null ? 'The first reading was ' + firstRead.pulse_score + '.' : '')) + '</div>' : '') +
     '<div class="pk-note">The Pulse Score measures operating health from your own figures. It is not a credit score, and Margyn is not a lender. Effect = points above or below a neutral 50, by each vital’s weight.</div>';
 
   // 8. commentary

@@ -486,8 +486,15 @@ const _cache = new Map();   // userId|source -> { at, book, stamp }
 const STAMP = {
   // While the first read is still running the rows change with no sync stamp: a stamp that never repeats, so neither
   // this cache nor the Margin page's saved answer keeps a half-read book (1 Nov 2026: ₹0 sales shown after connect).
-  zoho: (userId) => selectRows('zoho_organizations', `select=id,last_synced_at,backfill_completed_at&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`).then((r) => (!r[0] ? 'none'
-    : !r[0].backfill_completed_at ? r[0].id + '@reading@' + Date.now() : r[0].id + '@' + (r[0].last_synced_at || ''))),
+  // Item lines fill in through the day without a sync (Fill now, the follow-on runs): the newest line read moves the
+  // stamp too, or Margin kept the morning's item figures (1 Nov 2026: Margin "158 of 1,055 read", Sources 587).
+  zoho: async (userId) => {
+    const r = await selectRows('zoho_organizations', `select=id,last_synced_at,backfill_completed_at&user_id=eq.${userId}&status=eq.active&order=connected_at.desc&limit=1`);
+    if (!r[0]) return 'none';
+    if (!r[0].backfill_completed_at) return r[0].id + '@reading@' + Date.now();
+    const l = await selectRows('zoho_line_state', `select=lines_read_at&org_ref=eq.${r[0].id}&lines_read_at=not.is.null&order=lines_read_at.desc&limit=1`).catch(() => []);
+    return r[0].id + '@' + (r[0].last_synced_at || '') + '@' + ((l[0] && l[0].lines_read_at) || '');
+  },
   odoo: (userId) => selectRows('connector_credentials', `select=id,last_success_at&user_id=eq.${userId}&connector_type=eq.odoo&disconnected_at=is.null&order=created_at.desc&limit=1`).then((r) => (r[0] ? r[0].id + '@' + (r[0].last_success_at || '') : 'none'))
 };
 function cached(source, load) {

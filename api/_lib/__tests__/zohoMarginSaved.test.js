@@ -59,6 +59,13 @@ async function call(query) {
     check('fresh=1 works it out again', fresh.status === 200 && !fresh.payload.stale && !/answer;desc/.test(fresh.timing) && /compute/.test(fresh.timing));
     const fourth = await call();
     check('then served saved again', /answer;desc="saved"/.test(fourth.timing));
+    // Item lines filled in during the day (Fill now, the follow-on runs): no sync, but Margin's item figures moved.
+    db.t('zoho_line_state').push({ id: 'ls1', org_ref: 'zo', doc_type: 'invoice', doc_id: 'I1', status: 'paid', lines_read_at: '2026-11-01T06:00:00Z', line_count: 1 });
+    const lines1 = await call();
+    check('item lines read since: last answer marked stale, so Margin catches up', lines1.payload.stale === true, lines1.timing);
+    await call({ fresh: '1' });
+    const lines2 = await call();
+    check('…then saved again until more lines arrive', /answer;desc="saved"/.test(lines2.timing), lines2.timing);
     // A fresh connect: the first read is still bringing rows in, with no sync stamp yet (1 Nov 2026: ₹0 sales kept).
     const org = db.t('zoho_organizations')[0];
     org.backfill_completed_at = null; org.last_synced_at = null;
