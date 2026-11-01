@@ -417,6 +417,7 @@ function mgRenderHome(){
     const cap = s ? '<p class="mgh-cap">' + escapeHtml(srcLine + (mgAsOf ? ' · ' + mgAsOf() : '')) + '</p>' : '';
     host.innerHTML += qa + mgrDeskTop({ ring, tiles:tiles + cap, cash:cashPanel, dis:'<div class="mg-row3 mgd-one">' + disPanel + '</div>', brief:briefPanel });
     const q = host.querySelector('.mgh-qa'), ph = host.querySelector('.mg-ph'); if(q && ph) ph.after(q);
+    mghRingSettle(host);
     return;
   }
   host.innerHTML += tiles +
@@ -427,6 +428,25 @@ function mgRenderHome(){
       '<div class="mg-panel"><div class="mg-panel-h"><h2>Needs your decision</h2>' + (dec.length ? '<button class="mg-link mg-aside" type="button" data-go-page="inbox">All ' + dec.length + ' in Inbox →</button>' : '') + '</div>' +
         (dec.length ? listRows(dec) : '<div class="mg-empty">Nothing is waiting on you.</div>') + '</div>' + disPanel +
     '</div>' + briefPanel;
+}
+
+/* Home is redrawn as each answer lands (saved screen, readings, money lists, Margin, the new reading), and the ring's
+   sweep is a CSS animation on the new element, so it played from zero 3–5 times on a fresh load (1 Nov 2026).
+   Now it sweeps once: a redraw during the sweep carries on from where it was, and after that a changed score glides
+   from the old value to the new one. */
+let mghRing = null;   // { at, dash } of the first sweep, then the value on screen
+function mghRingSettle(host){
+  const c = host.querySelector('.mgh-ring-v'); if(!c) return;
+  const dash = c.getAttribute('stroke-dasharray'), now = Date.now();
+  if(!mghRing){ mghRing = { at:now, dash }; return; }
+  const left = 1150 - (now - mghRing.at);
+  if(left > 0){ c.style.animationDelay = ((150 - (now - mghRing.at)) / 1000) + 's'; mghRing.dash = dash; return; }
+  c.classList.add('settled');
+  if(dash !== mghRing.dash){
+    c.setAttribute('stroke-dasharray', mghRing.dash); c.getBoundingClientRect();
+    requestAnimationFrame(() => c.setAttribute('stroke-dasharray', dash));
+  }
+  mghRing.dash = dash; mghRing.at = 0;
 }
 
 /* ---------- Receivables / Payables ---------- */

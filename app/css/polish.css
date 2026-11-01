@@ -327,6 +327,7 @@ button.mgh-tag{ cursor:pointer; } button.mgh-tag:hover{ border-color:var(--line)
   @keyframes mgpRun{ 0%{ left:-40%; } 100%{ left:100%; } }
   .mgh-ring-v{ animation:mgpRing 1s cubic-bezier(.22,1,.36,1) both .15s; }
   @keyframes mgpRing{ from{ stroke-dasharray:0 258; } }
+  .mgh-ring-v.settled{ animation:none; transition:stroke-dasharray .6s cubic-bezier(.22,1,.36,1); }
 }
 
 /* ---------- 5c. Inbox: the list on the left, the decision on the right (31-polish.js) ---------- */
