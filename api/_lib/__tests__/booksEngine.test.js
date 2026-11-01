@@ -137,6 +137,16 @@ check('Alkem is the top customer', b.rows[0].name === 'ALKEM LABORATORIES LIMITE
 b = E.breakdown(ctx, { measure: 'sales', by: 'branch' });
 check('branches from renamed sales types', b.rows.map((r) => r.name).sort().join(',') === 'Kandivali,Vasai', b.rows);
 b = E.breakdown(ctx, { measure: 'ledger', ledger: 'commission', by: 'month' });
+{
+  // One credit note added to August's sales.
+  const sale = ctx.rows.find((r) => r.kind === 'sales' && r.mk === '2026-08');
+  const ctxCn = Object.assign({}, ctx, { rows: ctx.rows.concat([Object.assign({}, sale, { kind: 'credit_note', type: 'Credit Note', number: 'CN-1', sales: 0, returns: 1000, total: 1050, items: [], lines: [] })]) });
+  const augInv = ctx.rows.filter((r) => r.kind === 'sales' && r.mk === '2026-08').length;
+  const before = E.breakdown(ctx, { measure: 'sales', by: 'month', period: '2026-08' }).rows[0];
+  const after = E.breakdown(ctxCn, { measure: 'sales', by: 'month', period: '2026-08' }).rows[0];
+  check('sales by month: a credit note lowers the amount', after.rupees === before.rupees - 1000, { before, after });
+  check('…but entries stay the number of invoices', after.entries === augInv && before.entries === augInv, { augInv, before: before.entries, after: after.entries });
+}
 check('commission by month', b.rows.length === 6 && b.total === E.inr(360000), b);
 b = E.breakdown(ctx, { measure: 'expenses', by: 'ledger' });
 check('expenses by ledger led by salary', b.rows[0].name === 'SALARY', b.rows);
