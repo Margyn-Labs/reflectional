@@ -297,7 +297,7 @@ function renderInvoiceForm(){
   if(bn){
     const zohoBooks = typeof mgDataCheckSource === 'function' && mgDataCheckSource() === 'Zoho Books';
     bn.classList.toggle('hidden', !zohoBooks);
-    bn.textContent = zohoBooks ? 'Your books are in Zoho Books. Margyn never writes to Zoho, so an invoice made here stays in Margyn only and shows as a separate manual entry. To keep one set of figures, raise invoices in Zoho Books: they arrive here with the next sync.' : '';
+    bn.textContent = zohoBooks ? 'Your books are in Zoho Books. An invoice made here isn’t sent to Zoho Books today: it stays in Margyn and shows as a separate manual entry. To keep one set of figures, raise invoices in Zoho Books: they arrive here with the next sync.' : '';
   }
   document.getElementById('invNumber').value = nextInvoiceNumber();
   document.getElementById('invIssueDate').value = mgTodayIST();

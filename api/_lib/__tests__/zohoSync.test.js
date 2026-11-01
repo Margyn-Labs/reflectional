@@ -122,7 +122,6 @@ const TABLES = [
       check('one token refresh for the whole run', zoho.refreshCount === 1);
       check('no stray network', strays.length === 0, strays);
     }
-
     // ------------------------------------------------------- idempotent re-run
     console.log('# running sync twice yields no duplicate rows');
     {
@@ -366,6 +365,17 @@ const TABLES = [
       W2.zoho.route('books/v3/chartofaccounts/accounttransactions', () => H.json(404, { code: 5, message: 'Invalid URL Passed' }));
       const r = await sync.syncZohoForUser('user-1', 'backfill');
       check('journal endpoint 404 on every P&L account is reported, not a silent zero', r.status === 'partial' && (r.errors || []).some((e) => /journals: transactions unavailable for all/.test(e)), r.errors);
+    }
+    // A first connect marks the first read done as soon as the books are in, before item lines (one call per
+    // document, up to 4 minutes): it used to come after, so a 300 s limit could leave it never written (1 Nov 2026).
+    {
+      const W2 = world();
+      populated(W2.zoho);
+      const items = require('../../_zoho/items');
+      const orig = items.syncItemLines; let doneWhenItemsStart = null;
+      items.syncItemLines = async (...a) => { doneWhenItemsStart = !!W2.org().backfill_completed_at; return orig(...a); };
+      try { await sync.syncZohoForUser('user-1', 'backfill'); } finally { items.syncItemLines = orig; }
+      check('first read is marked done before item lines start', doneWhenItemsStart === true, doneWhenItemsStart);
     }
   } catch (err) {
     console.error = origErr;

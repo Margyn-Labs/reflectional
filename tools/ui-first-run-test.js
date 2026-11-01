@@ -197,10 +197,18 @@ const FIRST = { source:'Zoho Books', numbers:{ cash:1850000, recv_total:330000, 
   ok(!(await p.isVisible('#zohoOverlay')) && await p.evaluate(() => [...document.querySelectorAll('#toastHost .toast')].some(t => /Zoho Books is connected/.test(t.textContent) && /no need to refresh/.test(t.textContent))),
     'connected but still reading: the box closes by itself and says the figures will come in');
   ok(await p.evaluate(() => mgCurrentView === 'home'), 'slow connect: Home opens without a refresh');
+  await p.waitForTimeout(900);
+  const homeTxt = await p.textContent('#view-home');
+  ok(/Reading your Zoho Books…/.test(homeTxt) && /appear here by themselves/.test(homeTxt) && !/I don’t have your figures yet/.test(homeTxt) && !/Start with your figures/.test(homeTxt),
+    'while reading: Home says Zoho is being read, not "I don’t have your figures yet" / "Connect a source"');
   await p.evaluate(() => { window.__z.connected = true; window.__readDone = true; });
   await p.waitForTimeout(1500);
   ok(await p.evaluate(() => zohoConnected === true && !!zohoVitals && mgCurrentView === 'home' && !zohoConnectWatch), 'read done: figures load by themselves, no refresh, the watch stops');
   await p.evaluate(() => { window.__selectHang = false; window.__readDone = false; ZOHO_HANDOFF_MS = 20000; ZOHO_WATCH_MS = 5000; });
+
+  // The connect box: says what connecting does, without "only ever reads… never creates" (investors read it).
+  const box = await p.evaluate(() => { openZohoModal(); const t = document.getElementById('zohoContent').textContent; document.getElementById('zohoOverlay').classList.add('hidden'); return t; });
+  ok(/doesn’t create, change or delete anything in Zoho/.test(box) && !/only ever reads|never creates/.test(box), 'connect box wording: ' + box.slice(0, 160));
 
   /* ---------- 3. an existing Tally account: nothing new ---------- */
   await boot({ uid:'tallyowner', tally:true, ageMs:300 * 86400000, phone:'919000000001' },
