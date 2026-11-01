@@ -393,6 +393,10 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     const { ctx } = await B.contextFor(ZU);
     const fc = CF.build(ctx, { promises: [], pastRuns: [] });
     check('cash_and_loans: the forecast is the Cash page\'s own (cashFlowModel.build)', zc.in_4_weeks === E.inr(fc.weeks[3].close) && zc.in_13_weeks === E.inr(fc.weeks[12].close), { zc, w4: fc.weeks[3] });
+    // Cash → Week by week this year: what customers owe today is the open invoices, never ₹0 (1 Nov 2026).
+    const zlast = fc.history[fc.history.length - 1] || {};
+    check('week by week: Zoho owed today = open invoices (₹1.2 L: Alpha ₹1 L + Beta ₹20,000), bills ₹40,000', fc.receivables_today === 120000 && fc.payables_today === 40000 && zlast.receivables === 120000 && zlast.payables === 40000, { rt: fc.receivables_today, pt: fc.payables_today, zlast });
+    check('week by week: never owed less than nothing', fc.history.length > 3 && fc.history.every((w) => w.receivables >= 0 && w.payables >= 0), fc.history.map((w) => [w.date, w.receivables, w.payables]));
     check('cash_and_loans: Tally answer has no forecast added (unchanged)', !('cash_forecast' in out.t.cash_and_loans), Object.keys(out.t.cash_and_loans));
     // A customer far behind (Beta Traders, INV-2, ₹20,000, 92 days; small threshold so it is a point): Zoho says
     // "invoice" and, when they owe more than the late part, the whole balance first. Tally exactly as before.
@@ -400,6 +404,10 @@ const TOOL = { products_below_cost: 'products', product_detail: 'products', vend
     const point = (c, src) => E.insights(Object.assign({}, c, { material: 5000 }, src ? { source: 'zoho', source_name: 'Zoho Books' } : {})).find((x) => x.kind === 'late');
     const zt = point(tctx, true), tt = point(tctx, false);
     check('attention: Zoho says invoice, never bill', zt && /oldest is invoice INV-2/.test(zt.title) && /Call Beta Traders about invoice INV-2/.test(zt.action), zt);
+    // "usually take about 281 days to pay" (owed ÷ sales) clashed with the Cash forecast's "usually pays in 30 days".
+    const dsoCtx = Object.assign({}, tctx, { material: 5000, source: 'zoho', source_name: 'Zoho Books', analytics: Object.assign({}, tctx.analytics, { customers: [{ party: 'Beta Traders', dso_days: 281 }] }) });
+    const zd = (E.insights(dsoCtx).find((x) => x.kind === 'late') || {}).detail || '';
+    check('attention: owed-in-days is said as what they owe, never how fast they pay', /What they owe is about 281 days of what they buy from you\./.test(zd) && !/usually take/.test(zd), zd);
     check('attention: Tally wording unchanged (bill)', tt && /^Beta Traders owes ₹20,000 that's more than a month late; oldest is bill INV-2/.test(tt.title) && /about bill INV-2\.$/.test(tt.action), tt);
     const z2 = E.insights(Object.assign({}, tctx, { material: 5000, source: 'zoho', source_name: 'Zoho Books', analytics: tctx.analytics }));
     check('attention: Zoho overdue total action names the invoice', !z2.find((x) => x.kind === 'overdue_total') || /oldest invoice/.test(z2.find((x) => x.kind === 'overdue_total').action || 'oldest invoice'), z2.map((x) => x.action));

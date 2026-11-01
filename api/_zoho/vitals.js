@@ -62,7 +62,8 @@ function buildBriefingHints(v) {
     if (t.customer_name) {
       lines.push(
         `${t.customer_name} owes you ${inr(t.balance)}, ${t.days_overdue} days overdue` +
-        (topOverdue.length > 1 ? ` — your largest single receivable of ${topOverdue.length} overdue accounts.` : '.')
+        // top_overdue_customers is the 5 largest overdue invoices, not every overdue customer: never "of 5 overdue accounts".
+        (topOverdue.length > 1 ? ' — your largest single overdue invoice.' : '.')
       );
     }
   }

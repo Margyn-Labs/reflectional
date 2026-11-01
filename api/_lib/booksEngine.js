@@ -667,6 +667,8 @@ function moneyOwed(ctx, args) {
     direction: dir === 'payable' ? 'what you owe vendors' : 'what customers owe you',
     total: inr(total), overdue: inr(overdue) + (total ? ' (' + pctStr(pctOf(overdue, total)) + ')' : ''),
     parties: parties.length,
+    // How many of them are late (1 Nov 2026: Margyn hedged "I can't confirm every one of the 41 is late").
+    parties_overdue: parties.filter((g) => g.overdue > 0).length,
     ageing: ageing(tradeOnly(bills)),
     largest: parties.slice(0, top).map((g) => ({ [dir === 'payable' ? 'vendor' : 'customer']: g.party, owed: inr(g.total), overdue: inr(g.overdue), oldest_bill_days_late: g.oldest, bills: g.bills })),
     most_overdue: parties.filter((g) => g.overdue > 0).sort((x, y) => y.overdue - x.overdue).slice(0, 5).map((g) => ({ name: g.party, overdue: inr(g.overdue), oldest_days_late: g.oldest }))
@@ -824,6 +826,8 @@ function partyProfile(ctx, args) {
       top_items: [...items.values()].sort((x, y) => y.value - x.value).slice(0, 6).map((g) => ({ item: g.item, qty: Math.round(g.qty), value: inr(g.value), avg_cost: g.qty > 0 ? inr(g.value / g.qty) : null })),
       you_owe: inr(bills.reduce((s, b) => s + b.amount, 0)),
       overdue: inr(bills.filter((b) => b.late > 0).reduce((s, b) => s + b.amount, 0)),
+      // Bill by bill, the way a customer's invoices are listed (1 Nov 2026: "I can't list each bill").
+      open_bills: bills.slice().sort((x, y) => y.late - x.late).slice(0, 8).map((b) => ({ bill: b.ref, dated: dayStr(b.date, true), amount: inr(b.amount), days_late: b.late > 0 ? b.late : 0 })),
       paid_them_this_fy: inr(paid.filter((r) => inPeriod(r, fy)).reduce((s, r) => s + r.total, 0)),
       last_paid: lastPaid ? { date: dayStr(lastPaid.dt, true), amount: inr(lastPaid.total) } : null
     };
@@ -923,8 +927,12 @@ function products(ctx, args) {
   const sort = String(a.sort || 'sales');
   const top = Math.max(1, Math.min(30, parseInt(a.top, 10) || 10));
   const total = stats.reduce((t, s) => t + s.g.value, 0);
-  // Margin rankings ignore tiny items, or a ₹2,000 one-off tops the list.
-  const big = (s) => s.g.value >= Math.max(25000, 0.003 * total);
+  // Margin rankings ignore tiny items, or a ₹2,000 one-off tops the list. "Tiny" is against the sales that have a
+  // cost: big uncosted lines (Zoho's "Consulting", "Goods": ₹2.5 Cr) raised the bar so only 2 of 8 costed items
+  // ranked and Margyn said "only two items have a known cost" (1 Nov 2026).
+  const costedTotal = stats.reduce((t, s) => t + (s.margin != null ? s.g.value : 0), 0);
+  const floor = Math.max(25000, 0.003 * costedTotal);
+  const big = (s) => s.g.value >= floor;
   let list;
   switch (sort) {
     case 'margin_pct': list = stats.filter((s) => s.marginPct != null && big(s)).sort((x, y) => y.marginPct - x.marginPct); break;
@@ -942,6 +950,9 @@ function products(ctx, args) {
     items_sold: stats.length, total_item_sales: inr(total),
     overall_item_margin: mv ? inr(mk) + ' (' + pctStr(pctOf(mk, mv)) + ') on ' + inr(mv) + ' of sales with a known cost' : null,
     items: list.slice(0, top).map(fmt),
+    items_with_cost: stats.filter((s) => s.margin != null).length,
+    left_out_as_small: /margin_pct$/.test(sort) && stats.some((s) => s.marginPct != null && !big(s))
+      ? `${stats.filter((s) => s.marginPct != null && !big(s)).length} costed items sold under ${inr(floor)} are left out of this ranking; ask for one by name.` : undefined,
     cost_note: ctx.book.no_production_entries
       ? `Cost per unit = average purchase price over the synced year, else the purchase rate on your ${SRC(ctx)} item list. ${SRC(ctx)} has no production entries, so kits you assemble aren't costed from their parts. Stock bought before the synced year isn't costed.`
       : 'Cost per unit = average purchase price over the synced year; for kits you assemble, the cost of the parts from Manufacturing Journals. Stock bought before the synced year isn\'t costed.',
@@ -1171,7 +1182,7 @@ function insights(ctx) {
         title: cloud && owedAll.get(norm(g.party)) > g.late30 + 0.5
           ? `${name} owes ${inr(owedAll.get(norm(g.party)))} in all; ${inr(g.late30)} of it is more than a month late. Oldest is ${billTxt}, ${o.late} days.`
           : `${name} owes ${inr(g.late30)} that's more than a month late; oldest is ${billTxt}, ${o.late} days.`,
-        detail: (g.slipping > 0 ? `Plus ${inr(g.slipping)} that went past due recently. ` : '') + (() => { const c = (an.customers || []).find((x) => norm(x.party) === norm(g.party)); return c && c.dso_days != null ? `They usually take about ${Math.round(c.dso_days)} days to pay.` : ''; })(),
+        detail: (g.slipping > 0 ? `Plus ${inr(g.slipping)} that went past due recently. ` : '') + (() => { const c = (an.customers || []).find((x) => norm(x.party) === norm(g.party)); return c && c.dso_days != null ? `What they owe is about ${Math.round(c.dso_days)} days of what they buy from you.` : ''; })(),   // DSO, not how fast they pay a bill (the Cash forecast's "usually pays in")
         action: `Call ${name} about ${o.ref ? doc + ' ' + o.ref : 'the oldest ' + doc}.`, ask: `Tell me about ${g.party}` });
     }
   }

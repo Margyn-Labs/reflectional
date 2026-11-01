@@ -36,5 +36,12 @@ const nm2 = latestClosedMargin(accounts, noOct, ps);
 check('no October sales → falls back to September', nm2 && nm2.period === '2026-09' && nm2.income === 500000, nm2);
 check('no sales at all → null (keeps the SQL figure)', latestClosedMargin(accounts, [post('2026-10-02', 'E', 10, 0)], ps) === null);
 
+// Ledger → Checks: the five largest overdue invoices are not all the overdue customers (1 Nov 2026: "of 5 overdue
+// accounts" while 41 customers were overdue).
+const { buildBriefingHints } = require('../../_zoho/vitals');
+const top5 = ['VARAD PANDEY', 'Gupta Exports', 'Rao Exports', 'Acme Retail', 'Mehta Retail'].map((n, i) => ({ customer_name: n, invoice_number: 'INV-' + i, balance: 100000 - i * 1000, days_overdue: 32 }));
+const hint = buildBriefingHints({ top_overdue_customers: top5 }).lines[0];
+check('overdue hint: names the largest overdue invoice, never a count of 5 accounts', /^VARAD PANDEY owes you ₹1\.00 L, 32 days overdue — your largest single overdue invoice\.$/.test(hint) && !/overdue accounts/.test(hint), hint);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

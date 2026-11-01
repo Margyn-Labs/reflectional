@@ -241,6 +241,11 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   // **bold** in an answer shows as bold, never as asterisks; anything else stays text (1 Nov 2026)
   const rich = await p.evaluate(() => { const d = document.createElement('div'); mgrRich(d, '1. **Call Gupta Exports.** <img src=x> owes ₹15.4 L'); return d.innerHTML; });
   ok(/<b>Call Gupta Exports\.<\/b>/.test(rich) && !/\*\*/.test(rich) && !/<img/.test(rich), 'bold shows as bold, markup stays text: ' + rich);
+  // A markdown table in an answer shows as a table, not pipes and dashes (1 Nov 2026: "top 5 customers")
+  const tbl = await p.evaluate(() => { const d = document.createElement('div'); mgrRich(d, 'Here they are.\n\n| Customer | Sales | Owes you |\n|--|--|--|\n| Mehta Traders | ₹13.5 L | ₹15.5 L |\n| <b>Gupta</b> | ₹13.2 L | ₹15.4 L |\n\nGupta first.');
+    return { html:d.innerHTML, rows:d.querySelectorAll('.mg-mdt tbody tr').length, th:[...d.querySelectorAll('.mg-mdt th')].map(x => x.textContent), num:d.querySelectorAll('.mg-mdt td.num').length, text:d.textContent }; });
+  ok(tbl.rows === 2 && tbl.th.join() === 'Customer,Sales,Owes you' && tbl.num === 4 && !/\|/.test(tbl.text) && /Here they are\./.test(tbl.text) && /Gupta first\./.test(tbl.text), 'markdown table shows as a table: ' + JSON.stringify(tbl).slice(0, 300));
+  ok(!/<b>Gupta<\/b>/.test(tbl.html) && /&lt;b&gt;Gupta/.test(tbl.html), 'table cells stay text');
   ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
   await b.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASS');

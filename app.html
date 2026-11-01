@@ -984,17 +984,17 @@
         <div class="pay-card">
           <div class="pc-label">Net margin</div>
           <div class="pc-value" id="zvMarginVal">—</div>
-          <div class="pc-sub">From real COGS and opex, not gateway fees.</div>
+          <div class="pc-sub" id="zvMarginSub">From real COGS and opex, not gateway fees.</div>
         </div>
         <div class="pay-card">
           <div class="pc-label">Working capital runway</div>
           <div class="pc-value" id="zvRunwayVal">—</div>
-          <div class="pc-sub">Cash plus near-term receivables, less payables due.</div>
+          <div class="pc-sub" id="zvRunwaySub">Cash plus near-term receivables, less payables due.</div>
         </div>
         <div class="pay-card">
           <div class="pc-label">Cash position (books)</div>
           <div class="pc-value" id="zvCashVal">—</div>
-          <div class="pc-sub">Bank balance per your books, cross-checked against gateway settlements.</div>
+          <div class="pc-sub">Bank balance per your books, cross-checked against gateway settlements when one is connected.</div>
           <span class="pc-flag" id="zvCashFlag"></span>
         </div>
       </div>
@@ -1007,7 +1007,7 @@
         <div class="hbar-list" id="zvAgingChart"></div>
       </div>
       <div class="chart-card">
-        <div class="cc-head"><h3>Overdue customers</h3><span class="cc-sub">Largest first</span></div>
+        <div class="cc-head"><h3>Largest overdue invoices</h3><span class="cc-sub">Largest first</span></div>
         <div id="zvOverdueList"></div>
       </div>
       <div class="chart-card">

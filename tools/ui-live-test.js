@@ -19,6 +19,12 @@ let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); 
   await p.goto(B); await p.waitForTimeout(600);
   const run = await p.evaluate(async () => { const f = fetch('/api/zoho?action=sync'); const during = lwAct.filter(a => a.state === 'running').map(a => a.text); await f; await new Promise(r => setTimeout(r, 1700)); return { during, after:lwAct[0] && lwAct[0].text, state:lwAct[0] && lwAct[0].state }; });
   ok(run.during.includes('Syncing Zoho Books…') && run.after === 'Synced Zoho Books' && run.state === 'done', 'an /api call shows while it runs, then as done: ' + JSON.stringify(run));
+  // 1b. A connection check for a source that isn't connected never shows ("Checked the Shopify connection" on a Zoho-only account).
+  await p.route('**/api/shopify?action=status*', r => r.fulfill({ status:200, contentType:'application/json', body:'{"stores":[]}' }));
+  await p.route('**/api/sync-razorpay?action=cashfree-status*', r => r.fulfill({ status:200, contentType:'application/json', body:'{"connected":true}' }));
+  const chk = await p.evaluate(async () => { await (await fetch('/api/shopify?action=status')).json(); await (await fetch('/api/sync-razorpay?action=cashfree-status')).json(); await new Promise(r => setTimeout(r, 300)); return lwAct.map(a => a.text); });
+  ok(!chk.some(t => /Shopify/.test(t)), 'a source that isn’t connected: no "Checked the Shopify connection": ' + JSON.stringify(chk));
+  ok(chk.includes('Checked the Cashfree connection'), 'a connected source still shows its check');
 
   await p.evaluate(seedApp); await p.waitForTimeout(900);
 

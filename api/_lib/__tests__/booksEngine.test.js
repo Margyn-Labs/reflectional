@@ -166,11 +166,20 @@ check('payments received this FY', pp.owes_you.paid_you_this_fy === E.inr(540000
 check('money from customers excludes non-customer receipts', s.money_received_from_customers === E.inr(5400000) && /loans, transfers/.test(s.other_money_in), [s.money_received_from_customers, s.other_money_in]);
 const vp = E.partyProfile(ctx, { name: 'gauze supplier' });
 check('vendor story', vp.role === 'vendor' && vp.as_vendor && vp.as_vendor.you_owe === '₹6 L', vp);
+check('vendor story lists the open bills one by one', Array.isArray(vp.as_vendor.open_bills) && vp.as_vendor.open_bills.length > 0 && vp.as_vendor.open_bills.every((x) => x.bill && x.amount), vp.as_vendor.open_bills);
 check('unknown name', E.partyProfile(ctx, { name: 'zzz nobody' }).found === false);
 
 console.log('products');
 let pr = E.products(ctx, { sort: 'margin_pct' });
 check('kit and gloves lead margin %, glucose kit excluded from the top', pr.items[0].item === 'POST OP KIT' && pr.items[1].item === 'NITRILE GLOVES', pr.items);
+// A huge line with no cost (Zoho's "Consulting") must not push costed items out of the margin ranking (1 Nov 2026).
+{
+  const before = pr.items.map((i) => i.item);
+  const bigV = vouchers.concat([sale('VASAI SALES', 9, 9, 'ALKEM LABORATORIES LIMITED', [{ item: 'CONSULTING', qty: 100, rate: 5000000 }], 'BIG-1')]);
+  const ctxBig = E.prepare(Object.assign({}, book, { vouchers: bigV }), { now: NOW, analytics });
+  const pb = E.products(ctxBig, { sort: 'margin_pct' });
+  check('uncosted giant line: the same costed items still rank', JSON.stringify(pb.items.map((i) => i.item)) === JSON.stringify(before) && pb.items_with_cost >= before.length, { before, after: pb.items.map((i) => i.item), n: pb.items_with_cost });
+}
 const kit = E.products(ctx, { name: 'post op' });
 check('kit costed from its parts', kit.cost_basis.startsWith('cost of the parts') && kit.made_from.length === 2 && kit.avg_cost === '₹24', kit);
 pr = E.products(ctx, { sort: 'below_cost' });
@@ -180,6 +189,7 @@ check('repack is not a kit', !assemblyCosts(vouchers)['NITRILE GLOVES']);
 console.log('money owed');
 const mo = E.moneyOwed(ctx, {});
 check('total owed', mo.total === E.inr(13204000 + 4100000 + 330000 + 150000), mo.total);
+check('how many customers are late is given, not left to guess', Number.isInteger(mo.parties_overdue) && mo.parties_overdue >= mo.most_overdue.length && mo.parties_overdue <= mo.parties, { n: mo.parties_overdue, of: mo.parties });
 check('over a year old', mo.over_a_year_old && /GLENMARK/.test(mo.over_a_year_old.names[0]), mo.over_a_year_old);
 check('faster collection maths', /Every 10 days faster/.test(mo.what_faster_collection_frees || ''), mo.what_faster_collection_frees);
 check('payables', E.moneyOwed(ctx, { direction: 'payable' }).total === '₹6 L');

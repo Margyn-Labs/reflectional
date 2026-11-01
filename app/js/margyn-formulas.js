@@ -160,7 +160,7 @@
     dso: {
       label: 'Days sales outstanding (DSO)', aliases: ['dso', 'days to get paid', 'collection days'],
       what: 'How many days of sales are sitting with customers.',
-      formula: 'DSO = receivables ÷ monthly revenue × 30. DPO = payables due ÷ monthly spend × 30. Cash conversion cycle = DSO − DPO.',
+      formula: 'DSO = what customers owe ÷ the last 90 days of sales per day (the same figure as Margin; older readings use receivables ÷ monthly revenue × 30). DPO = payables due ÷ monthly spend × 30. Cash conversion cycle = DSO − DPO, the two figures shown.',
       inputs: ['recvTotal', 'revenue', 'paySoon', 'burn'],
       notes: ['The books tool money_owed also gives "days to get paid" from actual payment dates in Tally, which is the truer number per customer.'],
       code: '04-metrics.js METRICS.dso, dpo, ccc', page: 'analytics'

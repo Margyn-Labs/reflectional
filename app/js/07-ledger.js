@@ -151,6 +151,8 @@ function renderLedgerView(){
   const srcSel = document.getElementById('ledgerSourceFilter');
   const srcNote = document.getElementById('ledgerSourceNote');
   if(srcSel && srcSel.value !== ledgerSourceFilter) srcSel.value = ledgerSourceFilter;
+  // Only the books this account has connected are offered: a Zoho account never sees a Tally choice.
+  if(srcSel) srcSel.querySelectorAll('option').forEach(o => { o.hidden = o.value !== ledgerSourceFilter && ((o.value === 'zoho' && !zohoConnected) || (o.value === 'tally' && !tallyConnected)); });
   if(ledgerActiveTab === 'cash'){
     addForm.classList.add('hidden');
     if(srcSel) srcSel.parentElement.style.display = 'none';

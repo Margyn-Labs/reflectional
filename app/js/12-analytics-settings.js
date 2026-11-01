@@ -254,16 +254,25 @@ function renderZohoBooksTab(){
            leakPct > 0 ? leakPct + '% of claimed ITC' : 'Nothing at risk');
   }
 
-  zvSet('zvMarginVal', (m.net_margin_pct !== null && m.net_margin_pct !== undefined) ? m.net_margin_pct + '%' : '—');
-  zvSet('zvRunwayVal', (w.runway_days !== null && w.runway_days !== undefined) ? Math.round(w.runway_days) + ' days' : '—');
+  // Net margin and runway: the Pulse Score's own reading (Home, Cash and Pulse show it), so no page disagrees.
+  // This card used to show October alone (80.98%) and runway in days (1247) beside Home's 74.9% and 42.8 months.
+  const snap = (typeof snapshots !== 'undefined' && snapshots && snapshots[0]) || null;
+  const pv = label => (snap && Array.isArray(snap.vitals) ? snap.vitals.find(x => x.label === label) : null);
+  const pm = pv('Net Margin'), pr = pv('Working Capital Runway');
+  const monthName = per => { const d = /^(\d{4})-(\d{2})$/.exec(per || ''); return d ? new Date(Date.UTC(+d[1], +d[2] - 1, 1)).toLocaleDateString('en-IN', { month:'short', year:'numeric', timeZone:'UTC' }) : ''; };
+  if(pm && pm.value && pm.value !== 'n/a'){ zvSet('zvMarginVal', pm.value); zvSet('zvMarginSub', 'Same as your Pulse Score: your last closed months, after costs.'); }
+  else { zvSet('zvMarginVal', (m.net_margin_pct !== null && m.net_margin_pct !== undefined) ? m.net_margin_pct + '%' : '—'); zvSet('zvMarginSub', m.period ? monthName(m.period) + ', after costs.' : 'After costs.'); }
+  if(pr && pr.value && pr.value !== 'n/a'){ zvSet('zvRunwayVal', pr.value); zvSet('zvRunwaySub', 'Same as your Pulse Score: cash plus receivables, less bills due, in months of running costs.'); }
+  else zvSet('zvRunwayVal', (w.runway_days !== null && w.runway_days !== undefined) ? Math.round(w.runway_days) + ' days' : '—');
 
   if(c.bank_data_available === false){
     zvSet('zvCashVal', 'Not available');
     zvFlag('zvCashFlag', 'warn', 'Needs Zoho Standard plan');
   } else {
     zvSet('zvCashVal', inr(c.zoho_reported_balance));
-    const div = Number(c.divergence_pct) || 0;
-    zvFlag('zvCashFlag', div > 10 ? 'bad' : 'ok', div + '% vs gateway settlements');
+    // Only a connected payment gateway gives something to cross-check against; without one, no "0% vs gateway settlements".
+    const div = Number(c.divergence_pct) || 0, gw = Number(c.gateway_settled_90d) > 0;
+    zvFlag('zvCashFlag', gw ? (div > 10 ? 'bad' : 'ok') : '', gw ? div + '% vs gateway settlements' : '');
   }
 
   // Named-entity insight lines, generated server-side alongside the vitals.

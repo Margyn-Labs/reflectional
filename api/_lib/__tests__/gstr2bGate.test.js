@@ -142,6 +142,9 @@ function fakeRes() {
   const t3 = txt({ gst_leakage: { total_leakage: 54000, leakage_pct: 6 }, gstr2b: { available: true } });
   check('context: real figure is shown', /ITC at risk: ₹/.test(t3) && !/ITC at risk: not available/.test(t3));
 
+  // One runway and one net margin to quote: the Pulse vitals (1 Nov 2026: "1247 days (about 42.8 months)").
+  const t4 = txt({ net_margin: { period: '2026-10', net_margin_pct: 80.98 }, working_capital_runway: { runway_days: 1246.6 }, top_overdue_customers: [{ customer_name: 'VARAD PANDEY', balance: 100000, days_overdue: 32, invoice_number: 'INV-1' }] });
+  check('context: no second runway in days; one-month margin says which month', !/1247 days|runway: \d+ days/i.test(t4) && /Net margin for 2026-10 alone/.test(t4) && /Largest single overdue invoices \(not every overdue customer\)/.test(t4), t4);
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

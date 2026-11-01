@@ -130,10 +130,11 @@ export function formatMargynContext(context) {
     if (books.gstr2b && books.gstr2b.available === false) lines.push(`ITC at risk: not available (${books.gstr2b.message || 'GSTR-2B not read yet'}). Do not state or imply a figure, including zero.`);
     else if (g.total_leakage == null || !isFinite(Number(g.total_leakage))) lines.push('ITC at risk: not available. Do not state or imply a figure, including zero.');
     else lines.push(`ITC at risk: ${inr(g.total_leakage)}${g.leakage_pct != null ? ' (' + Number(g.leakage_pct).toFixed(0) + '% of claimed ITC' + (g.filing_period ? ', period ' + g.filing_period : '') + ')' : ''}`);
-    if (m.net_margin_pct != null) lines.push(`Net margin (from books COGS/opex): ${Number(m.net_margin_pct).toFixed(1)}%`);
-    if (w.runway_days != null) lines.push(`Working capital runway: ${Math.round(w.runway_days)} days`);
+    // One month only: the Pulse vitals above carry the net margin and working-capital runway to quote. A second
+    // runway in days (1,247 beside 42.8 months) had Margyn quoting both (1 Nov 2026).
+    if (m.net_margin_pct != null) lines.push(`Net margin for ${m.period || 'the last closed month'} alone (from books COGS/opex): ${Number(m.net_margin_pct).toFixed(1)}%. For "my net margin" quote the Net Margin vital above.`);
     if (Array.isArray(books.top_overdue_customers) && books.top_overdue_customers.length) {
-      lines.push('Top overdue customers: ' + books.top_overdue_customers.slice(0, 5).map((x) => `${x.customer_name || 'Unnamed'} ${inr(x.balance)} (${x.days_overdue}d, inv ${x.invoice_number || '—'})`).join('; '));
+      lines.push('Largest single overdue invoices (not every overdue customer): ' + books.top_overdue_customers.slice(0, 5).map((x) => `${x.customer_name || 'Unnamed'} ${inr(x.balance)} (${x.days_overdue}d, inv ${x.invoice_number || '—'})`).join('; '));
     }
     if (Array.isArray(books.flags) && books.flags.length) lines.push('Flags: ' + books.flags.join(', '));
     booksBlock = lines.length ? lines.join('\n') : 'Zoho Books connected but returned no material figures on the last sync.';
