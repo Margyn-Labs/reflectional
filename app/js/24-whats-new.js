@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-02-first-read-faster', date:'2 Nov 2026', title:'Your Zoho figures arrive in about a minute',
+    items:[
+      { t:'First figures in about a minute', what:'After you connect Zoho Books, your sales, cash and who owes what now appear as soon as those are read, usually within a minute or two. Item details keep coming in afterwards. While it reads, Home says what it is reading.',
+        how:'Connect Zoho Books under <b>Organisations and sources</b>.', act:'connectors' }
+    ]
+  },
+  {
     id:'2026-11-01-remove-means-removed', date:'1 Nov 2026', title:'Removing your data removes all of it',
     items:[
       { t:'Disconnect and remove means a clean slate', what:'When you disconnect Zoho Books or Odoo and choose to remove the data, Margyn now also removes the Pulse readings and forecasts it worked out from those books. If you kept the data and change your mind, Organisations and sources has a Remove kept data button.',

@@ -720,7 +720,7 @@ function openZohoModal(){
     '<div class="detail-eyebrow">Connect data</div>' +
     '<div class="detail-title">Connect Zoho Books</div>' +
     '<div class="zoho-scope-note">Read-only access</div>' +
-    '<div class="detail-body" style="margin-bottom:16px;">You will sign in on Zoho\'s own page. Margyn never sees your Zoho password. Margyn only ever reads your books and never creates, edits or deletes anything in them.</div>' +
+    '<div class="detail-body" style="margin-bottom:16px;">You will sign in on Zoho\'s own page. Margyn never sees your Zoho password. Connecting lets Margyn read your books; it doesn’t create, change or delete anything in Zoho.</div>' +
     '<div class="ledger-form">' +
       '<div class="lf-title">Your Zoho data centre</div>' +
       '<select id="zohoRegion" style="margin-bottom:8px;">' + opts + '</select>' +
@@ -818,6 +818,8 @@ function zohoReadProgressText(d){
   const lbl = (typeof MGO_READ_LABEL !== 'undefined' && cur && MGO_READ_LABEL[cur.module]) || 'books';
   return cur && cur.read ? 'Reading your ' + lbl + ': ' + Number(cur.read).toLocaleString('en-IN') + ' so far.' : 'Reading your books.';
 }
+/* While a first read runs (after the box closed): what is being read, for Home. '' when nothing is. */
+function zohoReadingNow(){ const w = zohoConnectWatch; return w && !w.done && w.connected && w.handedOff ? (w.text || 'Reading your books.') : ''; }
 /* Finish a Zoho connect once: close the box, load the figures, let Margyn take over, open Home. */
 async function zohoConnectFinished(out){
   if(zohoConnectWatch){ if(zohoConnectWatch.done) return; zohoConnectWatch.done = true; clearInterval(zohoConnectWatch.timer); }
@@ -843,12 +845,16 @@ function zohoWatchFirstRead(fromConnect){
     let d = null; try { d = await zohoApi('/api/zoho?action=first-read'); } catch(e){ return; }
     if(w.done || !d) return;
     w.connected = !!d.connected;
+    // Home says what is being read while it runs (zohoReadingNow), instead of "I don't have your figures yet".
+    const text = d.connected && !d.done ? zohoReadProgressText(d) : '';
+    if(text !== w.text){ w.text = text; if(w.handedOff && typeof mgRenderOwn === 'function' && typeof mgCurrentView !== 'undefined' && mgCurrentView === 'home') try { mgRenderOwn('home'); } catch(e){} }
     if(d.connected && d.done){ zohoConnectFinished(null); return; }
     if(d.connected && !w.handedOff && Date.now() - w.started > ZOHO_HANDOFF_MS){
       w.handedOff = true;
       document.getElementById('zohoOverlay').classList.add('hidden');
       toast('Zoho Books is connected', { kind:'info', ms:9000, sub:zohoReadProgressText(d) + ' Your figures appear here by themselves when it’s done; no need to refresh.' });
       if(typeof showView === 'function' && /^(connectors|home)$/.test(typeof mgCurrentView !== 'undefined' ? mgCurrentView : '')) showView('home');
+      else if(typeof mgRenderOwn === 'function' && mgCurrentView === 'home') try { mgRenderOwn('home'); } catch(e){}
     }
     if(Date.now() - w.started > ZOHO_WATCH_MAX_MS){
       clearInterval(w.timer); zohoConnectWatch = null;

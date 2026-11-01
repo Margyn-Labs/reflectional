@@ -386,7 +386,9 @@ function mgRenderHome(){
   const desk = typeof mgrDeskTop === 'function';
   host.innerHTML = mgPageHead({ group:'Overview', title:first ? (since ? 'Welcome back, ' : 'Welcome, ') + first : (desk ? 'Welcome back' : 'Home'),
       sub:who ? 'Signed in as ' + mgActor.roleLabel + (mgCan('edit') ? '' : ', read-only') + '. You see what your role allows.' : '', scope:mgScopeText('Reconciled') }) +
-    (s ? '' : !mgDataReady ? mgReadingPanel() : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>');
+    (s ? '' : !mgDataReady ? mgReadingPanel() : (typeof zohoReadingNow === 'function' && zohoReadingNow())
+      ? '<div class="mg-panel mg-empty-panel" data-zoho-reading><h2>Reading your Zoho Books…</h2><p>' + escapeHtml(zohoReadingNow()) + ' Your figures appear here by themselves when it’s done; no need to refresh.</p></div>'
+      : '<div class="mg-panel mg-empty-panel"><h2>Start with your figures</h2><p>Import a workbook or connect a source, and Margyn fills this page in.</p>' + mgBtn('Import a file', 'data-go-page="import"', true) + ' ' + mgBtn('Connect a source', 'data-go-page="sources"') + '</div>');
   const cashPanel = typeof mgCan === 'function' && !mgCan('view_cash') ? '' : fc || ('<div class="mg-panel"><div class="mg-panel-h"><h2>Cash position</h2><span class="mg-aside">' + (bookHist ? 'Last 90 days, from your books' : hist.length ? 'Last ' + hist.length + ' readings' : '') + '</span>' +
     (s ? '<button class="mg-btn mg-btn-sm" type="button" data-fc-adjust>Show forecast</button>' : '') + '</div><div class="mg-panel-b">' + mgCashChart(hist) + '</div></div>');
   const disPanel = '<div class="mg-panel"><div class="mg-panel-h"><h2>Sources disagree</h2>' + (dis.length ? '<button class="mg-link mg-aside" type="button" data-compare="receivables">Open in Compare →</button>' : '') + '</div>' +

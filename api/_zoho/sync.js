@@ -845,6 +845,16 @@ async function syncZohoForUser(userId, mode, opts) {
   if (!contacts.error && contacts.read != null) await setRemoteCount(org.id, 'contacts', contacts.read);
   if (!contacts.error && contacts.with_details != null) await setRemoteCount(org.id, 'contacts_with_details', contacts.with_details);
 
+  // The books are in: say so now. It was stamped only after payment links and item lines (up to 4 minutes of one
+  // call per document), so a first connect could hit the 300 s limit before "done" was ever written; the app then
+  // waited on a first read that never finished until the nightly run (MARGYN DEMO, 1 Nov 2026). Item lines keep
+  // their own progress (items.js), shown apart.
+  if (!org.backfill_completed_at) {
+    const at = new Date().toISOString();
+    try { await updateRows('zoho_organizations', `id=eq.${org.id}`, { backfill_completed_at: at }); org.backfill_completed_at = at; }
+    catch (err) { console.error('Failed to mark the first read done'); }
+  }
+
   // Item lines (items.js): read invoice, bill, credit note and vendor credit details inside today's call budget,
   // newest first, keeping 200 calls spare. Resumes where it stopped on the next run.
   const itemStep = require('./items');
