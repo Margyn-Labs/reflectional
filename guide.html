@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Margyn User Guide</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout concept: a quiet reference manual. Sticky contents on the left, one reading column, each page of the app described the way it is named in the sidebar. */
+:root{
+  color-scheme:light;--bg:#f6f5f1; --surface:#ffffff; --fg:#1b2420; --muted:#5d6a63; --line:#e1e3dc;
+  --accent:#0d7a55; --accent-soft:#e3f1ea; --note:#fbf3df; --note-line:#ecd9a0; --note-fg:#5a4710;
+  --font:'Manrope',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121815; --surface:#1a2320; --fg:#e8eee9; --muted:#9aa89f; --line:#2b3732;
+  --accent:#4fcf9b; --accent-soft:#1c3329; --note:#2b2512; --note-line:#5a4a1d; --note-fg:#ead9a4; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121815; --surface:#1a2320; --fg:#e8eee9; --muted:#9aa89f; --line:#2b3732;
+  --accent:#4fcf9b; --accent-soft:#1c3329; --note:#2b2512; --note-line:#5a4a1d; --note-fg:#ead9a4; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.65;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+.wrap{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px;align-items:start}
+header.top{max-width:1120px;margin:0 auto;padding:40px 0 28px}
+header.top h1{font-size:clamp(28px,4vw,40px);line-height:1.15;font-weight:700;margin:0 0 10px;letter-spacing:-.01em;text-wrap:balance}
+header.top p{margin:0;color:var(--muted);max-width:60ch}
+nav.toc{position:sticky;top:16px;font-size:14px;max-height:calc(100vh - 32px);overflow:auto;padding-right:8px}
+nav.toc input{width:100%;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);margin-bottom:12px}
+nav.toc input:focus-visible,nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+nav.toc h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:16px 0 4px;font-weight:600}
+nav.toc a{display:block;color:var(--fg);text-decoration:none;padding:4px 0}
+nav.toc a:hover{color:var(--accent)}
+main{min-width:0}
+section.g{padding:6px 0 18px}
+section.g>h2{font-size:24px;line-height:1.25;margin:32px 0 6px;font-weight:700;text-wrap:balance}
+.lede{color:var(--muted);margin:0 0 12px;max-width:62ch}
+article.p{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:14px 0}
+article.p h3{font-size:18px;margin:0 0 4px;font-weight:700}
+article.p .what{margin:0 0 10px;color:var(--muted)}
+article.p h4{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px;font-weight:600}
+article.p ul,article.p ol{margin:4px 0 0;padding-left:20px}
+article.p li{margin:3px 0}
+p{max-width:68ch}
+.ui{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);color:var(--accent);padding:1px 6px;border-radius:4px;overflow-wrap:anywhere}
+.ask{font-style:normal;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:1px 7px;white-space:normal}
+.note{background:var(--note);border:1px solid var(--note-line);color:var(--note-fg);border-radius:8px;padding:12px 16px;margin:14px 0;max-width:72ch}
+.note b{font-weight:700}
+.tw{overflow-x:auto;margin:12px 0}
+table{border-collapse:collapse;width:100%;min-width:420px;font-size:15px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+details{border-bottom:1px solid var(--line);padding:10px 0}
+details summary{cursor:pointer;font-weight:600}
+details summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+details p{margin:8px 0 2px}
+a{color:var(--accent)}
+.empty{display:none;color:var(--muted)}
+@media (max-width:820px){
+  .wrap{grid-template-columns:minmax(0,1fr);gap:8px}
+  nav.toc{position:static;max-height:none;overflow:visible;border-bottom:1px solid var(--line);padding-bottom:12px}
+  header.top{padding-top:28px}
+  nav.toc h2{display:none}
+  nav.toc a{display:inline-block;padding:4px 10px;margin:0 6px 6px 0;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:13px}
+}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Margyn User Guide</h1>
+  <p>Everything Margyn does, page by page, written for the person using it. Use the search box to jump to what you are stuck on. If something looks off, send Varad a screenshot at varad@margynlabs.com.</p>
+</header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <input id="q" type="search" placeholder="Search this guide" aria-label="Search this guide">
+  <h2>Start</h2>
+  <a href="#start">Your first ten minutes</a>
+  <a href="#margyn">Talking to Margyn</a>
+  <a href="#scope">The bar at the top</a>
+  <h2>Money</h2>
+  <a href="#home">Home</a>
+  <a href="#inbox">Inbox</a>
+  <a href="#cash">Cash</a>
+  <a href="#receivables">Receivables</a>
+  <a href="#payables">Payables</a>
+  <a href="#gst">GST and tax</a>
+  <a href="#ledger">Ledger</a>
+  <a href="#invoicing">Invoicing</a>
+  <h2>People</h2>
+  <a href="#parties">Customers and Vendors</a>
+  <h2>Insight</h2>
+  <a href="#reports">Reports</a>
+  <a href="#margin">Margin</a>
+  <a href="#cashflow">Cash flow</a>
+  <a href="#cfopack">CFO pack</a>
+  <a href="#pulse">Pulse Score</a>
+  <a href="#conversations">Conversations</a>
+  <h2>Automation and admin</h2>
+  <a href="#automations">Automations</a>
+  <a href="#whatsapp">WhatsApp</a>
+  <a href="#sources">Organisations and sources</a>
+  <a href="#import">Import</a>
+  <a href="#settings">Settings and people</a>
+  <a href="#audit">Audit log</a>
+  <a href="#channels">Channel health</a>
+  <h2>Help</h2>
+  <a href="#zohoplan">Your Zoho plan and product margins</a>
+  <a href="#stuck">If you are stuck</a>
+</nav>
+
+<main id="main">
+<p class="empty" id="none">Nothing in this guide matches that. Try a shorter word, or email Varad.</p>
+
+<section class="g" id="start">
+  <h2>Your first ten minutes</h2>
+  <p class="lede">Margyn is a finance platform where people and AI agents work together. It connects to the tools a business already uses, reads the books, and tells you what needs attention. A person approves anything that goes out.</p>
+  <article class="p">
+    <h3>Sign up and connect Zoho Books</h3>
+    <ol>
+      <li>Open <a href="https://www.margynlabs.com/app.html">www.margynlabs.com/app.html</a>, press <span class="ui">Create account</span>, and sign up with your email and a password, or choose <span class="ui">Continue with Google</span>.</li>
+      <li>Margyn asks where you keep your accounts. Press <span class="ui">Zoho Books</span>, sign in to Zoho, press <span class="ui">Accept</span> and pick your organisation.</li>
+      <li>Margyn reads your invoices, bills, payments and accounts. Your first figures usually arrive within a minute or two. After about 20 seconds it takes you to Home, says what it is reading, and fills in your figures by itself. You do not need to refresh.</li>
+      <li>Margyn gives you a first read in the chat: your cash, who owes you most, who is most late and bills due this week. It then asks three short questions, and each can be skipped: the least cash you never want to go below, WhatsApp numbers for your biggest debtors, and who else should get updates.</li>
+    </ol>
+    <div class="note"><b>Margyn reads your Zoho Books and does not change anything in them.</b> Nothing goes to your customers unless you add their number and press Send yourself.</div>
+    <h4>What fills in later</h4>
+    <p>Product-level margins arrive after the first figures, because Zoho only gives out each invoice's product lines one invoice at a time. How long that takes depends on your Zoho plan. See <a href="#zohoplan">Your Zoho plan and product margins</a>.</p>
+  </article>
+</section>
+
+<section class="g" id="margyn">
+  <h2>Talking to Margyn</h2>
+  <p class="lede">Margyn is one assistant in a panel on the right of every page. Type, or press <span class="ui">Talk</span> and speak.</p>
+  <article class="p">
+    <h3>The Margyn panel</h3>
+    <p class="what">Open it from the green M strip on the right. It opens over the page, so your figures stay visible.</p>
+    <h4>What to ask</h4>
+    <ul>
+      <li><span class="ask">Who should I chase first?</span> Names the customers owing the most that are most late, with what each owes in all and how much of it is more than a month late.</li>
+      <li><span class="ask">What will cash look like in 4 weeks?</span> Answers from the same 13-week forecast as the Cash page, with its range and how far off it has been on your past weeks.</li>
+      <li><span class="ask">What did I miss?</span> What moved in your books since you were last here: money that came in, invoices that went overdue, bills due this week.</li>
+      <li><span class="ask">Which items make the best margin?</span> Ranks items that have a cost.</li>
+      <li><span class="ask">Is this invoice paid?</span> Says what is still owed on a Zoho invoice or bill, even when the customer paid less because they deducted TDS.</li>
+      <li><span class="ask">Show me Beta Supplies' open bills.</span> Lists a supplier's open bills one by one.</li>
+      <li>Ask how a figure is worked out, for example <span class="ask">How is my Pulse Score calculated?</span> Margyn explains the formula.</li>
+    </ul>
+    <h4>One tap to act</h4>
+    <p>Under Margyn's opening message you may see <span class="ui">Remind …</span> (for a late customer) or <span class="ui">Send this week's payables to my accountant</span>. A reminder shows you the exact WhatsApp message first and goes out only when you press Send. The accountant button opens WhatsApp with the list ready, and you press send.</p>
+    <h4>Good to know</h4>
+    <ul>
+      <li>Answers are worked out from your books, and tables appear as proper tables.</li>
+      <li>You can search any page, setting or question from the box at the top, or press <span class="ui">⌘K</span>.</li>
+      <li><span class="ui">What's new</span> in that search box reopens the card that explains each release.</li>
+    </ul>
+  </article>
+</section>
+
+<section class="g" id="scope">
+  <h2>The bar at the top</h2>
+  <article class="p">
+    <h3>Organisation, Sources and Period</h3>
+    <p class="what">Three controls decide what every page shows.</p>
+    <ul>
+      <li><b>Organisation</b> picks which company's books you are looking at.</li>
+      <li><b>Sources</b> picks which connected system the figures come from. <span class="ui">Reconciled</span> means Margyn uses the most trusted source for each figure and says which. With one source connected it is a single source.</li>
+      <li><b>Period</b> sets the date the figures are as of.</li>
+    </ul>
+    <p>The same figure should read the same on every page. If two pages ever disagree, tell Varad which two.</p>
+  </article>
+</section>
+
+<section class="g" id="home">
+  <h2>Money</h2>
+  <article class="p" id="homecard">
+    <h3>Home</h3>
+    <p class="what">Where the day starts. Your Pulse Score, a one-line read of your cash outlook, and what needs your attention.</p>
+    <ul>
+      <li>The big line says how your cash looks over the next 13 weeks, with your Pulse Score ring beside it. <span class="ui">What would move it</span> shows what would change the score.</li>
+      <li>The box under it takes a question or a task, for example "chase everyone past 90 days".</li>
+      <li><b>Needs you</b> lists the few things worth acting on, each with a button.</li>
+      <li><b>What I'm working on</b> shows what each part of Margyn did most recently: Payments, Books, Close, GST, Forecast, Documents, Watch and Collections.</li>
+      <li>The timeline shows the day's updates from the morning update to the evening wrap.</li>
+      <li><b>Sources disagree</b> appears only if two connected systems report different figures.</li>
+    </ul>
+    <p>Shortcuts across the top: <span class="ui">Review Inbox</span>, <span class="ui">New invoice</span>, <span class="ui">Add a bill</span>, <span class="ui">Import a file</span> and <span class="ui">This month's CFO pack</span>.</p>
+  </article>
+  <article class="p" id="inbox">
+    <h3>Inbox</h3>
+    <p class="what">Things waiting for your decision. Anything Margyn proposes, such as a figure read from a file you imported or a document forwarded to Margyn, waits here until you accept or reject it. The count shows on the Margyn strip.</p>
+  </article>
+  <article class="p" id="cash">
+    <h3>Cash</h3>
+    <p class="what">How much you have, where it is, what is on its way and whether it lasts.</p>
+    <ul>
+      <li>Four tiles: <b>Cash (reconciled)</b>, <b>In transit</b> (payment gateway money not yet in the bank), <b>Working-capital runway</b> in months and <b>Lowest point in 13 weeks</b>, with the week it happens.</li>
+      <li><b>Position</b> shows each source and its balance. Balances are never added across sources. The reconciled cash uses the most trusted source that has it, which on Zoho Books is its bank and cash balance.</li>
+      <li><b>Forecast</b> is a 13-week forecast learned from how your customers have actually paid. It shows a range, how far off it was on your past weeks, and a week-by-week table. Change any assumption and the forecast updates, including the cash floor you never want to go below.</li>
+      <li><b>Settlements</b> and <b>Payment gateways</b> show money from Razorpay or Cashfree on its way to your bank, if you have connected them.</li>
+    </ul>
+    <p>The forecast is before any loans or overdraft, and it says so.</p>
+  </article>
+  <article class="p" id="receivables">
+    <h3>Receivables</h3>
+    <p class="what">What customers owe you, each customer counted once.</p>
+    <ul>
+      <li>The top strip shows what is open, what is overdue, the number of customers and an ageing bar: 0 to 30, 31 to 60, 61 to 90 and 90+ days.</li>
+      <li>Each row is a customer with open invoices, how late they are and the open amount. Open a customer to see every invoice.</li>
+      <li><span class="ui">Reconciled</span>, <span class="ui">By source</span> and <span class="ui">Compare</span> switch between the one trusted figure and each source's own figure.</li>
+      <li>Use <span class="ui">Find a customer</span> to search, <span class="ui">Export</span> to download, and <span class="ui">New invoice</span> to create one.</li>
+    </ul>
+    <p>These should match Zoho's own Receivables report.</p>
+  </article>
+  <article class="p" id="payables">
+    <h3>Payables</h3>
+    <p class="what">What you owe vendors, each vendor counted once. It works like Receivables, with <span class="ui">Add a bill</span> in place of New invoice.</p>
+    <p>It should match Zoho's own Payables report.</p>
+  </article>
+  <article class="p" id="gst">
+    <h3>GST and tax</h3>
+    <p class="what">GSTR-2B against your books, and the input credit at risk vendor by vendor.</p>
+    <ul>
+      <li>If no GST is booked in Zoho Books, Margyn says so instead of showing GST payable as zero.</li>
+      <li>TDS: Margyn reads your TDS accounts, covering what customers deducted when they paid you (claim it in your return) and what you held back from suppliers (deposit it by the 7th).</li>
+      <li>GST input credit is left out of your Pulse Score until your purchases can be matched to GSTR-2B from a connected source. Pulse says so.</li>
+    </ul>
+  </article>
+  <article class="p" id="ledger">
+    <h3>Ledger</h3>
+    <p class="what">Your books entry by entry, with a <b>Position</b> view that shows the same net margin and working-capital runway as Home and Pulse. Its source menu lists only the books you have connected.</p>
+  </article>
+  <article class="p" id="invoicing">
+    <h3>Invoicing</h3>
+    <p class="what">Create invoices and bills, and manage the parties on them. It is free. <b>Invoicing → Parties</b> shows what each saved customer or supplier owes, marked as coming from Zoho Books.</p>
+  </article>
+</section>
+
+<section class="g" id="parties">
+  <h2>People</h2>
+  <article class="p">
+    <h3>Customers and Vendors</h3>
+    <p class="what">One page per person you deal with, with everything about them in one place.</p>
+    <ul>
+      <li>Open a customer to see their invoices, how they usually pay, and a <b>Sources</b> tab that says each date is the due date.</li>
+      <li>Margyn reads phone numbers, emails and GSTIN from Zoho Books. A number you type in yourself is never overwritten.</li>
+      <li>Add a WhatsApp number here so Margyn can remind a customer. Without a number, Margyn tells you it cannot send and who to call instead.</li>
+      <li>Every customer has a <span class="ui">Reminders</span> switch. Turn it off and Margyn sends that customer no payment reminders, including for new invoices, until you turn it back on.</li>
+    </ul>
+  </article>
+</section>
+
+<section class="g" id="reports">
+  <h2>Insight</h2>
+  <article class="p">
+    <h3>Reports</h3>
+    <p class="what">The standard reports from your books, ready to read or export.</p>
+  </article>
+  <article class="p" id="margin">
+    <h3>Margin</h3>
+    <p class="what">How much you keep, worked out from your Zoho Books. Every figure is a signal until bank and GST agree with it, and the page tells you how confident it is.</p>
+    <ul>
+      <li><b>Overview</b> gives net sales before GST, gross margin before stock movement, returns and credit notes, and days to get paid, with what stands out in plain words. These figures are worked out from your books, not written by AI.</li>
+      <li><b>Customers</b> and <b>Items</b> show margin by customer and by product. Items shows each item's quantity and value sold and bought, with average price and cost, for the year or one month. Returns come off sales and vendor credits come off purchases.</li>
+      <li><b>Where the money goes</b>, <b>Working capital</b>, <b>GST estimate</b> and <b>Needs your help</b> cover costs, cash tied up, an estimated GST position and the entries your accountant should look at.</li>
+      <li>While item lines are still arriving, the page says how many documents it has read and which dates are complete. The Items table will be short of your profit and loss until it finishes.</li>
+      <li><span class="ui">Refresh</span> recalculates. <span class="ui">Export</span> downloads.</li>
+    </ul>
+  </article>
+  <article class="p" id="cashflow">
+    <h3>Cash flow</h3>
+    <p class="what">Where your cash came from and where it went, month by month, from every entry in your books.</p>
+    <ul>
+      <li><span class="ui">Owner view</span> is a short story: profit, what running the business brought in as cash, what went on assets and investments, what came from loans and the owner, and cash now.</li>
+      <li><span class="ui">Accountant view</span> shows the full statement, line by line.</li>
+      <li>The two views end at the same cash figure as the Cash page.</li>
+    </ul>
+  </article>
+  <article class="p" id="cfopack">
+    <h3>CFO pack</h3>
+    <p class="what">A monthly report to share with your CA, co-founder or lender.</p>
+    <ul>
+      <li>Pick a month. The pack shows headline figures, profit and loss, and other sections, including your cash forecast and GST.</li>
+      <li><span class="ui">Save as PDF</span> downloads it. <span class="ui">Delivery and sections</span> lets you choose what goes in. <span class="ui">Set up delivery</span> emails it to you each month.</li>
+    </ul>
+  </article>
+  <article class="p" id="pulse">
+    <h3>Pulse Score</h3>
+    <p class="what">One number out of 100 for how healthy the business looks, and why. Every point is arithmetic on your own figures. AI writes the briefing and never touches the score.</p>
+    <ul>
+      <li>Vitals: <b>Cash Position</b>, <b>Receivables Aging</b>, <b>Payables Due (30d)</b>, <b>Net Margin</b> and <b>Working Capital Runway</b>, each with a weight. GST input credit is added when a connected source can measure it.</li>
+      <li>The line chart shows the score over time. A confidence figure says how many vitals came from connected sources.</li>
+      <li><span class="ui">Show the math</span> opens the exact calculation. <span class="ui">Customize</span> changes weights and settings.</li>
+    </ul>
+  </article>
+  <article class="p" id="conversations">
+    <h3>Conversations</h3>
+    <p class="what">Your chats with Margyn and the WhatsApp updates it has sent. <b>Today's updates</b> lists each update, and says why if one was skipped.</p>
+  </article>
+</section>
+
+<section class="g" id="automations">
+  <h2>Automation and admin</h2>
+  <article class="p">
+    <h3>Automations</h3>
+    <p class="what">What Margyn does without being asked, and the switches that control it.</p>
+    <ul>
+      <li><b>Payment reminders on WhatsApp</b> and the <b>Chasing</b> list. Each customer's next reminder is shown word for word with the time it goes out. Review this before you rely on it.</li>
+      <li><b>Updates</b> to your own WhatsApp: a morning update, short updates through the day, and an evening wrap. Before each one Margyn reads your latest invoices, payments and bank balances from Zoho, so the update is about today.</li>
+      <li>An update that would repeat the last one is not sent.</li>
+    </ul>
+  </article>
+  <article class="p" id="whatsapp">
+    <h3>WhatsApp</h3>
+    <p class="what">Two different things use WhatsApp, and they need different numbers.</p>
+    <ul>
+      <li><b>Updates to you.</b> Add your own WhatsApp number in Settings and people. Margyn then sends you updates and answers when you text it, for example <span class="ask">What will our cash be in 4 weeks?</span></li>
+      <li><b>Reminders to your customers.</b> These need a number saved for each customer on the Customers page. Margyn shows the exact message first and sends only when you press Send.</li>
+      <li><b>Text "onboard"</b> to Margyn's WhatsApp number to hear where your setup stands: books connected, how many item details are read and when the rest will be in, and whether reminders are on. It replies with the one link for your next step.</li>
+      <li>You can forward an invoice, bill or receipt to the same number. It lands in your Inbox for you to approve or reject.</li>
+    </ul>
+  </article>
+  <article class="p" id="sources">
+    <h3>Organisations and sources</h3>
+    <p class="what">Where you connect, refresh and disconnect your books and payment tools.</p>
+    <ul>
+      <li>Connect <b>Zoho Books</b>, and others such as Tally, Odoo, Razorpay, Cashfree and Shopify.</li>
+      <li>The Zoho Books card shows when it last read, how far the product-level fill has got, and an estimate of when it will be done.</li>
+      <li><span class="ui">Sync now</span> reads again immediately, so Home, the forecast and Margyn's answers show the balance just read.</li>
+      <li><b>Is all your data in?</b> lists every part of Zoho Books that Margyn reads, with counts against Zoho's own. It also says plainly what Margyn does not read.</li>
+      <li><span class="ui">Disconnect</span> asks whether to keep or remove the data Margyn copied. Choose remove and the Pulse readings and forecasts worked out from those books go too. If you kept the data, <span class="ui">Remove kept data</span> is there later.</li>
+    </ul>
+  </article>
+  <article class="p" id="import">
+    <h3>Import</h3>
+    <p class="what">Bring in anything that is not connected. Press <span class="ui">Import</span> at the top, or <span class="ui">Import a file</span> on Home.</p>
+    <ul>
+      <li>Drop in an Excel, CSV, PDF or image. Margyn proposes where each figure goes and you accept or reject each one.</li>
+      <li>If you have a lot of Zoho history and a small plan, export Invoices, Bills, Credit Notes and Vendor Credits from Zoho Books and drop each file in. Margyn recognises Zoho's export, skips the AI reading and adds every item line to the documents it already has. A year of item sales, costs and margins is then in within minutes on any plan. Nothing is written back to Zoho.</li>
+    </ul>
+  </article>
+  <article class="p" id="settings">
+    <h3>Settings and people</h3>
+    <p class="what">Your account, your team and your preferences.</p>
+    <ul>
+      <li>Add people who can sign in, each with their own access. Each person can have their own WhatsApp number.</li>
+      <li>If you are invited to someone else's account, use <b>Join a team</b> and enter the code from the invite while signed in with the email it was sent to.</li>
+      <li>Settings also shows when the owner last signed in.</li>
+    </ul>
+  </article>
+  <article class="p" id="audit">
+    <h3>Audit log</h3>
+    <p class="what">Every change to your ledger and your team: what changed, when, who did it and where it came from. It can be exported.</p>
+  </article>
+  <article class="p" id="channels">
+    <h3>Channel health</h3>
+    <p class="what">Which messages are actually reaching people. WhatsApp templates that WhatsApp has not approved fail without any warning, so this is where you would see it.</p>
+    <ul>
+      <li>Each channel shows its status, how many were sent and failed in the last 30 days, and when the last one was delivered.</li>
+      <li>The top strip shows what was paid after Margyn chased, with the invoices, so you can see whether reminders are working. It counts payments that followed a chase and cannot prove the customer would not have paid anyway.</li>
+    </ul>
+  </article>
+</section>
+
+<section class="g" id="zohoplan">
+  <h2>Your Zoho plan and product margins</h2>
+  <p class="lede">Everything in this guide works on every Zoho plan. Only one thing depends on the plan: how fast product-level margins fill in.</p>
+  <article class="p">
+    <h3>Why it differs</h3>
+    <p>Zoho gives out the product lines of each invoice one invoice at a time, and caps how many reads an app gets each day. The cap depends on your plan. Everything else, including cash, receivables, payables, forecast and the first read, arrives within minutes on any plan.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Zoho Books plan</th><th class="n">Reads per day</th><th>What to expect for product margins</th></tr></thead>
+      <tbody>
+        <tr><td>Free</td><td class="n">about 1,000</td><td>A day or two for every thousand invoices or so.</td></tr>
+        <tr><td>Standard</td><td class="n">2,000</td><td>Usually inside a day for a larger book.</td></tr>
+        <tr><td>Professional</td><td class="n">5,000</td><td>A few thousand invoices usually within the hour.</td></tr>
+        <tr><td>Premium and above</td><td class="n">10,000</td><td>A few thousand invoices usually within the hour.</td></tr>
+      </tbody>
+    </table></div>
+    <p>Margyn reads newest first, so this month and this year fill in before older history. Until a period is complete, Margyn says which dates are done. The Zoho Books card shows an estimate of when it will finish, and Margyn keeps refreshing from Zoho every night.</p>
+    <h4>To speed it up</h4>
+    <ul>
+      <li>Export your invoices, bills, credit notes and vendor credits from Zoho and drop them into <a href="#import">Import</a>. This works on any plan.</li>
+      <li>Ask Zoho for a short limit raise by emailing support@zohobooks.com with your organisation ID.</li>
+    </ul>
+  </article>
+</section>
+
+<section class="g" id="stuck">
+  <h2>If you are stuck</h2>
+  <article class="p">
+    <details><summary>My figures are not showing after I connected.</summary><p>Wait for Margyn to say the first read is done. Home fills in by itself. If it has been more than ten minutes, open <b>Organisations and sources</b> and check the Zoho Books card.</p></details>
+    <details><summary>A number does not match Zoho.</summary><p>Receivables and Payables should match Zoho's own reports. Check the date in the bar at the top first. If they still differ, send Varad a screenshot of both.</p></details>
+    <details><summary>Product margins or the Items table look short.</summary><p>That is the plan-based fill described above. The Margin page says how many documents it has read and which dates are complete.</p></details>
+    <details><summary>Margyn says it cannot send a reminder.</summary><p>The customer has no WhatsApp number saved. Add it on the Customers page.</p></details>
+    <details><summary>Home first showed an older figure.</summary><p>Margyn opens instantly with the last screen saved on your device and then redraws with fresh data a few seconds later. If a figure changes right after you open the app, that is why.</p></details>
+    <details><summary>How do I stop?</summary><p>Open <b>Organisations and sources</b>, then Zoho Books, then <span class="ui">Disconnect</span>. You can choose to have Margyn delete everything it copied.</p></details>
+    <details><summary>Who do I contact?</summary><p>Reply to Varad's email, or write to varad@margynlabs.com with a screenshot. Varad will fix it the same day.</p></details>
+  </article>
+</section>
+</main>
+</div>
+
+<script>
+(function(){
+  var q=document.getElementById('q'),none=document.getElementById('none');
+  var items=[].slice.call(document.querySelectorAll('article.p'));
+  var text=items.map(function(a){return a.textContent.toLowerCase()});
+  if(!q)return;
+  q.addEventListener('input',function(){
+    var v=q.value.trim().toLowerCase(),shown=0;
+    items.forEach(function(a,i){var ok=!v||text[i].indexOf(v)>-1;a.style.display=ok?'':'none';if(ok)shown++});
+    [].slice.call(document.querySelectorAll('section.g')).forEach(function(s){
+      var any=[].slice.call(s.querySelectorAll('article.p')).some(function(a){return a.style.display!=='none'});
+      s.style.display=any?'':'none';
+    });
+    none.style.display=(v&&!shown)?'block':'none';
+  });
+})();
+</script>
+</body>
+</html>
