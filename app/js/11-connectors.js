@@ -742,6 +742,25 @@ function openZohoModal(){
   });
   overlay.classList.remove('hidden');
 }
+/* Why a Zoho connect stopped, in the owner's words. The callback names the exact stage (api/zoho-oauth-callback.js);
+   the code itself stays in the console, never on screen. */
+const ZOHO_FAIL = {
+  invalid_state: 'The connection took too long and expired before Zoho sent you back. Press Continue to Zoho again.',
+  missing_code: 'Zoho did not finish the approval. Press Continue to Zoho again.',
+  token_exchange_failed: 'Zoho did not accept the approval. Press Continue to Zoho again, and finish the Zoho screens within a minute or two.',
+  db_write_failed: 'Something went wrong on our side while saving the connection. Please try again in a minute.',
+  vault_write_failed: 'Something went wrong on our side while saving the connection. Please try again in a minute.',
+  org_list_failed: 'You signed in to Zoho, but Zoho did not send your list of Books companies. Please try again in a minute.',
+  no_books_organization: 'The Zoho login you approved can’t see any Zoho Books company. If you use Zoho Books, you are probably signed in to Zoho with a different login: sign out of Zoho, then press Continue to Zoho and sign in with the login you use for Books. If someone invited you to their Books company, accept that invite first.',
+  access_denied: 'The Zoho approval was cancelled. Press Continue to Zoho when you are ready.'
+};
+function zohoShowFailure(reason){
+  if(/access_denied/i.test(String(reason || ''))) reason = 'access_denied';
+  // Make sure the Continue to Zoho form is on screen (after a redirect return nothing is open yet).
+  if(!document.getElementById('zohoRegion')) openZohoModal();
+  document.getElementById('zohoOverlay').classList.remove('hidden');
+  zohoShowError(ZOHO_FAIL[reason] || 'The Zoho connection didn’t finish. Please press Continue to Zoho again.');
+}
 /* The callback page posts back here, then closes itself. */
 window.addEventListener('message', (ev) => {
   if(!ev.data || ev.data.source !== 'margyn-zoho-oauth') return;
@@ -750,17 +769,7 @@ window.addEventListener('message', (ev) => {
     // The callback already tells us exactly which stage failed. Show it,
     // instead of collapsing six distinct failures into one useless sentence.
     console.error('[margyn] Zoho OAuth failed:', p);
-    document.getElementById('zohoOverlay').classList.remove('hidden');
-    const ZOHO_FAIL = {
-      invalid_state: 'The connection link expired before Zoho sent you back. Try again and move through the Zoho screens without pausing.',
-      missing_code: 'Zoho did not return an authorization code.',
-      token_exchange_failed: 'Zoho rejected the token exchange, usually a data-centre mismatch or the client secret not being valid for that data centre.',
-      db_write_failed: 'Could not record the connection, the zoho_organizations write failed. Check the SQL migration ran.',
-      vault_write_failed: 'Could not store the Zoho token, the Supabase vault write failed. Check the supabase_vault extension is enabled.',
-      org_list_failed: 'Signed in to Zoho, but could not list your Books organizations.',
-      no_books_organization: 'That Zoho login has no Zoho Books organization. A Zoho Books plan (the free plan works) is required.'
-    };
-    zohoShowError((ZOHO_FAIL[p.reason] || 'Could not complete the Zoho connection.') + '  [' + (p.reason || 'unknown') + ']');
+    zohoShowFailure(p.reason);
     return;
   }
   zohoPendingOrgRef = p.org_ref;
@@ -768,6 +777,17 @@ window.addEventListener('message', (ev) => {
 });
 /* Popup blocked? The callback falls back to a redirect carrying the org ref. */
 function handleZohoHashReturn(){
+  // No popup (some phones and iPads open Zoho in the same tab): a failed connect comes back as
+  // #zoho=error&reason=…, and used to be dropped without a word.
+  const fail = /zoho=error(?:&reason=([^&]*))?/.exec(location.hash);
+  if(fail){
+    history.replaceState(null, '', location.pathname + location.search);
+    let reason = '';
+    try { reason = decodeURIComponent(fail[1] || ''); } catch(e){}
+    console.error('[margyn] Zoho OAuth failed:', reason);
+    zohoShowFailure(reason);
+    return;
+  }
   if(location.hash.indexOf('zoho=select-org') === -1) return;
   const m = /org_ref=([^&]+)/.exec(location.hash);
   if(!m) return;

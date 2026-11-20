@@ -173,6 +173,24 @@ async function call(query) {
       const r = await call({ code: 'good-code', state: Z.signState({ uid: 'u4', region: 'in' }) });
       check('org list failure -> 502 org_list_failed', r.statusCode === 502 && payloadOf(r.body).reason === 'org_list_failed');
     }
+    {
+      // An error carried inside a 200 must never be read as "this login has no Books".
+      const { zin } = world();
+      zin.route('books/v3/organizations', () => H.json(200, { code: 57, message: 'You are not authorized to perform this operation' }));
+      const r = await call({ code: 'good-code', state: Z.signState({ uid: 'u6', region: 'in' }) });
+      check('200 with a non-zero Zoho code -> org_list_failed, not no_books_organization', r.statusCode === 502 && payloadOf(r.body).reason === 'org_list_failed');
+    }
+    {
+      const { zin } = world();
+      zin.route('books/v3/organizations', () => H.json(200, { code: 0, message: 'success' }));
+      const r = await call({ code: 'good-code', state: Z.signState({ uid: 'u7', region: 'in' }) });
+      check('200 without an organizations list -> org_list_failed', r.statusCode === 502 && payloadOf(r.body).reason === 'org_list_failed');
+    }
+    {
+      const { db } = world({ orgsFixture: 'organizations.empty.json' });
+      await call({ code: 'good-code', state: Z.signState({ uid: 'u8', region: 'in' }) });
+      check('a true empty list logs which Zoho data centre answered', db.t('connector_logs').some((l) => /no_books_organization at www\.zohoapis\.in/.test(l.error_message || '')), db.t('connector_logs'));
+    }
 
     console.log('# script-context injection');
     {
