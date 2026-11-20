@@ -539,8 +539,21 @@ async function listOrganizations(apiDomain, accessToken) {
   if (!res.ok) {
     throw new ZohoAuthError(`Could not list Zoho organizations (${res.status})`);
   }
-  const data = await res.json();
-  return (data.organizations || []).map((o) => ({
+  const data = await res.json().catch(() => null);
+  // Only an explicit success (code 0) with an organizations array counts as an answer. Anything else
+  // (an error carried in a 200 body, a changed shape) is a failed read, never "this login has no Books":
+  // telling an owner they have no Zoho Books when Zoho simply answered oddly is the worse mistake.
+  const code = data && data.code;
+  if (!data || (code !== undefined && Number(code) !== 0) || !Array.isArray(data.organizations)) {
+    console.error('[zoho] organizations list not usable at', apiDomain,
+      '| code=', code, '| message=', data && String(data.message || '').slice(0, 160));
+    throw new ZohoAuthError(`Zoho organizations list was not a success (code ${code})`);
+  }
+  if (data.organizations.length === 0) {
+    // Kept in the function log so a "no Books" answer can always be checked later (no names, no ids).
+    console.warn('[zoho] organizations list empty at', apiDomain, '| code=', code, '| message=', String(data.message || '').slice(0, 80));
+  }
+  return data.organizations.map((o) => ({
     organization_id: o.organization_id,
     name: o.name,
     plan_type: (o.plan_name || o.plan_type || '').toString().toLowerCase() || null,

@@ -237,11 +237,14 @@ module.exports = async (req, res) => {
   if (orgs.length === 0) {
     await logConnectorEvent({
       userId, connectorType: 'zoho_books', operation: 'oauth_callback',
-      status: 'error', errorMessage: 'no_books_organization'
+      // Which Zoho data centre answered, so a "no Books" result can be checked later.
+      status: 'error', errorMessage: 'no_books_organization at ' + String(tokens.apiDomain || '').replace(/^https?:\/\//, '')
     });
     await callbackEvent(userId, false, 'no_books_organization', 0);
-    send(res, 200, page('No Zoho Books organization found',
-      'This Zoho login does not have access to any Zoho Books organization. If you use other Zoho apps but not Books, you will need a Zoho Books subscription (the free plan works) before connecting.',
+    // Zoho said this login sees no Books company. That does not prove the person has no Zoho Books:
+    // the usual cause is being signed in to Zoho with a different login, so say that first.
+    send(res, 200, page('No Zoho Books company on this login',
+      'The Zoho login you just approved cannot see any Zoho Books company. If you use Zoho Books, you are probably signed in to Zoho with a different login: sign out of Zoho, then press Connect again and sign in with the login you use for Books.',
       { ok: false, reason: 'no_books_organization', org_ref: orgRef }));
     return;
   }
