@@ -97,7 +97,18 @@ async function whoami(deps, user) {
         `select=id,account_id,role,permissions,name,status&user_id=eq.${authId}&status=eq.active&order=created_at.asc`);
     } catch (e2) { ready = false; }
   }
-  const names = await companyNames(deps, rows.map((r) => r.account_id));
+  // For the sign-in nudge (2026-11-21): in which of these businesses are books connected, and has this
+  // person linked their WhatsApp there? null = couldn't tell, so the app doesn't nudge.
+  const ids = rows.map((r) => r.account_id), memIds = rows.map((r) => r.id).filter((x) => UUID_RE.test(String(x)));
+  const booksOf = deps.connectedBooks || require('./booksSource').connectedBooks;
+  const [names, linkedRows, books] = await Promise.all([
+    companyNames(deps, ids),
+    memIds.length && followups
+      ? deps.selectRows('business_stakeholders', `select=member_id&member_id=in.(${memIds.join(',')})&whatsapp_access=eq.true`).catch(() => null)
+      : Promise.resolve(followups ? [] : null),
+    Promise.all(ids.slice(0, 10).map((id) => booksOf(id).catch(() => null)))
+  ]);
+  const linkedSet = linkedRows ? new Set(linkedRows.map((x) => x.member_id)) : null;
   if (rows.length) {
     deps.updateRows('account_members', `user_id=eq.${authId}&status=eq.active`, { last_seen_at: new Date(deps.now ? deps.now() : Date.now()).toISOString() }).catch(() => {});
   }
@@ -107,11 +118,13 @@ async function whoami(deps, user) {
     features: { audit_actor: ready && followups, member_prefs: ready && followups, phone_link: ready && followups },
     me: { id: authId, email: user.email || null },
     own_account: own[0] ? { account_id: authId, company_name: own[0].company_name || null } : null,
-    memberships: rows.map((r) => ({
+    memberships: rows.map((r, i) => ({
       member_id: r.id, account_id: r.account_id, company_name: names[r.account_id] || null,
       role: r.role, role_label: ROLE_LABEL[r.role] || r.role, name: r.name || null,
       permissions: effectivePermissions(r.role, r.permissions),
-      preferences: r.preferences && typeof r.preferences === 'object' ? r.preferences : {}
+      preferences: r.preferences && typeof r.preferences === 'object' ? r.preferences : {},
+      books_connected: Array.isArray(books[i]) ? books[i].length > 0 : null,
+      whatsapp_linked: linkedSet ? linkedSet.has(r.id) : null
     })),
     roles: ROLES.map((k) => ({ key: k, label: ROLE_LABEL[k] })),
     permissions: PERMISSIONS
