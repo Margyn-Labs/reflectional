@@ -18,7 +18,7 @@ const MG_RELEASES = [
   {
     id:'2026-11-21-my-whatsapp-number', date:'21 Nov 2026', title:'Team members can link their own WhatsApp',
     items:[
-      { t:'Link your own WhatsApp number', what:'If you were invited to a business, you can now link your own WhatsApp number to it yourself, without asking the owner. Margyn then knows it’s you on WhatsApp and answers about that business. What you can do there follows your role. The owner sees your number under App logins.',
+      { t:'Link your own WhatsApp number', what:'If you were invited to a business, you can now link your own WhatsApp number to it yourself, without asking the owner. Margyn then knows it’s you on WhatsApp and answers about that business. What you can do there follows your role. The owner sees your number under App logins. Until you link one, Margyn asks once each time you sign in, for a business whose books are connected.',
         how:'Choose your initials at the top right, then <b>My WhatsApp number</b>.' }
     ]
   },

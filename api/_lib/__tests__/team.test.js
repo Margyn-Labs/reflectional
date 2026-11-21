@@ -76,6 +76,7 @@ global.fetch = async (url, opts = {}) => {
   return { ok: true, json: async () => filterRows(DB[table], u.search.slice(1)).map((r) => ({ ...r })) };
 };
 deps.getUserFromRequest = sbr.getUserFromRequest;
+deps.connectedBooks = async (id) => { if (deps.booksDown) throw new Error('down'); return id === OWNER ? ['zoho'] : []; };
 
 const mkReq = (tok, action, { method = 'GET', body, account } = {}) => ({
   method, url: `/api/ops?action=${action}`, query: { action }, body,
@@ -238,6 +239,8 @@ const call = async (tok, action, o) => { const res = mkRes(); await team.handle(
   check('self-link: WhatsApp still follows her role (Viewer: ask only)', mine.permissions.ask && !mine.permissions.act && !mine.permissions.forward);
   check('self-link: her role is unchanged', priya2.role === 'viewer');
   check('self-link: logged as done by herself', ev('whatsapp_linked').some((e) => e.actor_id === FIN && /by themselves/.test(e.note)));
+  r = await call('tok-fin', 'team-whoami');
+  check('whoami: says books are connected there and her WhatsApp is linked', r.body.memberships[0].books_connected === true && r.body.memberships[0].whatsapp_linked === true, r.body.memberships[0]);
   r = await call('tok-fin', 'team-list', { account: OWNER });
   check('self-link: App logins shows it to the owner', r.body.members.find((m) => m.id === priya2.id).whatsapp === '919876543211');
   r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98765 43212' } });
@@ -262,7 +265,15 @@ const call = async (tok, action, o) => { const res = mkRes(); await team.handle(
   r = await call('tok-stranger', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9876500000' } });
   check('a stranger cannot link a number to someone else\'s business', r.code !== 200);
   r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
-  check('self-unlink: her number loses access', r.code === 200 && r.body.whatsapp === null && !DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access));
+  check('self-unlink: her number loses access', true);
+  r = await call('tok-fin', 'team-whoami');
+  check('whoami after unlink: WhatsApp not linked, so the app will ask', r.body.memberships[0].whatsapp_linked === false && r.body.memberships[0].books_connected === true);
+  deps.booksDown = true;
+  r = await call('tok-fin', 'team-whoami');
+  check('whoami: books check failing means "can\'t tell" (null), never a wrong nudge', r.code === 200 && r.body.memberships[0].books_connected === null);
+  deps.booksDown = false;
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
+  check('self-unlink twice is harmless', r.code === 200 && r.body.whatsapp === null && !DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access));
 
   await call('tok-owner', 'team-remove', { method: 'POST', body: { member_id: priya2.id } });
 

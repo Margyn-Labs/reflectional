@@ -152,6 +152,7 @@ function mgApplyActor(){
   if(myPh) myPh.classList.toggle('hidden', !(mgActor && !mgActor.isOwner && mgMe && mgMe.features && mgMe.features.phone_link));
   if(typeof mgRenderUser === 'function') mgRenderUser();
   if(mgJoinNotice){ mgTeamToast(mgJoinNotice.text, !mgJoinNotice.ok); mgJoinNotice = null; }
+  if(typeof mgMaybeAskPhone === 'function') mgMaybeAskPhone();
   // Signed in to a page this role can't see (an old link): go Home.
   const P = typeof mgCurrentView !== 'undefined' ? mgCurrentView : null;
   if(P && !mgPageAllowed(P) && typeof showView === 'function') showView('home');
@@ -228,28 +229,53 @@ async function mgJoinWithCode(code){
 })();
 
 /* ---------- a member's own WhatsApp number (2026-11-21) ----------
-   Any team member links their own number to the business they're in, so
+   Any team member links their own number to a business they're in, so
    Margyn on WhatsApp knows it's them. What the number may do follows the
-   role the owner gave them; the server decides that (team-my-phone). */
-(function(){
-  const btn = document.getElementById('mgMyPhoneBtn');
-  if(!btn) return;
-  btn.addEventListener('click', async () => {
-    if(typeof mgCloseAllPops === 'function') mgCloseAllPops();
-    if(!mgActor || mgActor.isOwner) return;
-    const company = mgActor.company || 'this business';
-    const can = mgCan('edit') ? 'ask about the numbers, send in bills and invoices, and confirm changes'
-      : mgCan('approve') ? 'ask about the numbers and confirm approvals' : 'ask about the numbers';
-    mgDrawer({ title:'My WhatsApp number', sub:escapeHtml('Link your number and Margyn on WhatsApp will know it’s you, for ' + company + '. As ' + mgActor.roleLabel + ' you can ' + can + '.'),
-      body:'<form id="mgMyPhoneForm"><label class="mg-tf"><span>Your WhatsApp number</span><input type="tel" class="mono" id="mgMyPhoneIn" inputmode="numeric" placeholder="98765 43210" disabled></label>' +
-        '<small class="mg-sub" id="mgMyPhoneHint">Loading…</small><div class="mg-form-err" id="mgMyPhoneErr" hidden></div></form>',
-      foot:'<button class="mg-btn hidden" type="button" id="mgMyPhoneOff">Unlink</button><button class="mg-btn primary" type="button" id="mgMyPhoneGo" disabled>Save</button>' });
-    const inp = document.getElementById('mgMyPhoneIn'), hint = document.getElementById('mgMyPhoneHint'),
-      err = document.getElementById('mgMyPhoneErr'), go = document.getElementById('mgMyPhoneGo'), off = document.getElementById('mgMyPhoneOff');
+   role the owner gave them; the server decides that (team-my-phone).
+   Two ways in: initials menu > My WhatsApp number (the business they're in
+   now), and a nudge after sign-in when a business they're a member of has
+   books connected and their number isn't linked there yet. */
+async function mgTeamApiFor(action, body, accountId){
+  const { data:{ session } } = await sbClient.auth.getSession();
+  const h = { 'Authorization':'Bearer ' + (session && session.access_token), 'X-Margyn-Account':accountId };
+  if(body) h['Content-Type'] = 'application/json';
+  const res = await fetch('/api/ops?action=' + action, { method: body ? 'POST' : 'GET', headers:h, body: body ? JSON.stringify(body) : undefined });
+  const j = await res.json().catch(() => ({}));
+  if(!res.ok) throw Object.assign(new Error(j.error || 'Something went wrong (' + res.status + ').'), { status:res.status });
+  return j;
+}
+function mgPhoneCanText(perms){
+  perms = perms || [];
+  return perms.includes('edit') ? 'ask about the numbers, send in bills and invoices, and confirm changes'
+    : perms.includes('approve') ? 'ask about the numbers and confirm approvals' : 'ask about the numbers';
+}
+/* The membership the person is working in now, or null (owner). */
+function mgActiveMembership(){
+  if(!mgActor || mgActor.isOwner) return null;
+  const m = ((mgMe && mgMe.memberships) || []).find(x => x.account_id === mgActor.accountId);
+  return m || { account_id:mgActor.accountId, company_name:mgActor.company, role_label:mgActor.roleLabel, permissions:mgActor.permissions };
+}
+async function mgOpenMyPhone(target, nudge){
+  if(!target) return;
+  const company = target.company_name || 'this business';
+  const elsewhere = !mgActor || mgActor.accountId !== target.account_id;
+  const sub = nudge
+    ? 'Margyn can answer you on WhatsApp about ' + company + '’s books. Add the number you’d like to use' + (elsewhere ? ' for ' + company + ' (not your own business).' : '.') + ' As ' + (target.role_label || 'a team member') + ' you can ' + mgPhoneCanText(target.permissions) + '.'
+    : 'Link your number and Margyn on WhatsApp will know it’s you, for ' + company + '. As ' + (target.role_label || 'a team member') + ' you can ' + mgPhoneCanText(target.permissions) + '.';
+  mgDrawer({ title: nudge ? 'Add your WhatsApp for ' + company : 'My WhatsApp number', sub:escapeHtml(sub),
+    body:'<form id="mgMyPhoneForm"><label class="mg-tf"><span>Your WhatsApp number</span><input type="tel" class="mono" id="mgMyPhoneIn" inputmode="numeric" placeholder="98765 43210"' + (nudge ? '' : ' disabled') + '></label>' +
+      '<small class="mg-sub" id="mgMyPhoneHint">' + (nudge ? 'A 10-digit Indian mobile, or a full number with country code.' : 'Loading…') + '</small><div class="mg-form-err" id="mgMyPhoneErr" hidden></div></form>',
+    foot:(nudge ? '<button class="mg-btn" type="button" id="mgMyPhoneLater">Not now</button>' : '<button class="mg-btn hidden" type="button" id="mgMyPhoneOff">Unlink</button>') +
+      '<button class="mg-btn primary" type="button" id="mgMyPhoneGo"' + (nudge ? '' : ' disabled') + '>Save</button>' });
+  const inp = document.getElementById('mgMyPhoneIn'), hint = document.getElementById('mgMyPhoneHint'),
+    err = document.getElementById('mgMyPhoneErr'), go = document.getElementById('mgMyPhoneGo'), off = document.getElementById('mgMyPhoneOff');
+  const later = document.getElementById('mgMyPhoneLater');
+  if(later) later.addEventListener('click', () => mgCloseDrawer());
+  if(!nudge){
     let now = '';
     try {
-      const t = await mgTeamApi('team-list');
-      const me = (t.members || []).find(m => m.user_id === mgActor.authId);
+      const t = await mgTeamApiFor('team-list', null, target.account_id);
+      const me = (t.members || []).find(m => m.user_id === (mgActor && mgActor.authId));
       now = (me && me.whatsapp) || '';
     } catch(e){}
     if(!document.getElementById('mgMyPhoneIn')) return;   // drawer closed meanwhile
@@ -257,22 +283,54 @@ async function mgJoinWithCode(code){
     inp.value = now ? (typeof waPrettyPhone === 'function' ? waPrettyPhone(now) : now) : '';
     off.classList.toggle('hidden', !now);
     hint.textContent = now ? 'Linked. Message Margyn from this number any time.' : 'A 10-digit Indian mobile, or a full number with country code.';
-    const save = async (val) => {
-      err.hidden = true; go.disabled = true; off.disabled = true;
-      try {
-        const j = await mgTeamApi('team-my-phone', { phone:val });
-        mgCloseDrawer();
-        mgTeamToast(j.whatsapp ? 'Linked. Message Margyn on WhatsApp from this number.' : 'Your number is unlinked.');
-      } catch(x){ err.textContent = x.message; err.hidden = false; go.disabled = false; off.disabled = false; }
-    };
-    go.addEventListener('click', () => {
-      if(!inp.value.replace(/[^\d]/g, '')){ err.textContent = 'Enter your number, or press Unlink.'; err.hidden = false; return; }
-      save(inp.value);
-    });
-    off.addEventListener('click', () => save(''));
-    document.getElementById('mgMyPhoneForm').addEventListener('submit', e => { e.preventDefault(); go.click(); });
+  } else { setTimeout(() => { try { inp.focus(); } catch(e){} }, 50); }
+  const save = async (val) => {
+    err.hidden = true; go.disabled = true; if(off) off.disabled = true;
+    try {
+      const j = await mgTeamApiFor('team-my-phone', { phone:val }, target.account_id);
+      const mem = ((mgMe && mgMe.memberships) || []).find(x => x.account_id === target.account_id);
+      if(mem) mem.whatsapp_linked = !!j.whatsapp;
+      mgCloseDrawer();
+      mgTeamToast(j.whatsapp ? 'Linked to ' + company + '. Message Margyn on WhatsApp from this number.' : 'Your number is unlinked.');
+    } catch(x){ err.textContent = x.message; err.hidden = false; go.disabled = false; if(off) off.disabled = false; }
+  };
+  go.addEventListener('click', () => {
+    if(!inp.value.replace(/[^\d]/g, '')){ err.textContent = nudge ? 'Enter your number, or press Not now.' : 'Enter your number, or press Unlink.'; err.hidden = false; return; }
+    save(inp.value);
+  });
+  if(off) off.addEventListener('click', () => save(''));
+  document.getElementById('mgMyPhoneForm').addEventListener('submit', e => { e.preventDefault(); go.click(); });
+}
+(function(){
+  const btn = document.getElementById('mgMyPhoneBtn');
+  if(btn) btn.addEventListener('click', () => {
+    if(typeof mgCloseAllPops === 'function') mgCloseAllPops();
+    mgOpenMyPhone(mgActiveMembership(), false);
   });
 })();
+/* After each sign-in: a business this person is a member of has books
+   connected and their WhatsApp isn't linked there? Ask once per sign-in
+   (this browser tab). The business they're in now comes first. Only when
+   the server could tell (true/false, never null). */
+const MG_PHONE_ASK_SS = 'margyn_phone_asked';
+function mgPhoneNudgeTarget(){
+  if(!mgMe || !mgMe.features || !mgMe.features.phone_link || !mgActor) return null;
+  const want = m => m && m.books_connected === true && m.whatsapp_linked === false;
+  const mems = mgMe.memberships || [];
+  if(!mgActor.isOwner){ const here = mems.find(m => m.account_id === mgActor.accountId); return want(here) ? here : null; }
+  return mems.find(want) || null;
+}
+function mgMaybeAskPhone(){
+  const t = mgPhoneNudgeTarget(); if(!t) return;
+  const key = MG_PHONE_ASK_SS + ':' + (mgActor && mgActor.authId) + ':' + t.account_id;
+  try { if(sessionStorage.getItem(key)) return; } catch(e){}
+  setTimeout(() => {
+    if(document.querySelector('.mg-drawer-scrim, .mg-dialog-scrim')) return;   // something else is open: try next sign-in
+    const t2 = mgPhoneNudgeTarget(); if(!t2 || t2.account_id !== t.account_id) return;
+    try { sessionStorage.setItem(key, '1'); } catch(e){}
+    mgOpenMyPhone(t2, true);
+  }, 2500);
+}
 
 /* ---------- Settings > People > App logins ---------- */
 let mgTeamData = null, mgTeamFresh = null;
