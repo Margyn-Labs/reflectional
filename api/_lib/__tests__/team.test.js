@@ -76,7 +76,7 @@ global.fetch = async (url, opts = {}) => {
   return { ok: true, json: async () => filterRows(DB[table], u.search.slice(1)).map((r) => ({ ...r })) };
 };
 deps.getUserFromRequest = sbr.getUserFromRequest;
-deps.connectedBooks = async (id) => { if (deps.booksDown) throw new Error('down'); return id === OWNER ? ['zoho'] : []; };
+deps.connectedBooks = async (id) => { if (deps.booksDown) throw new Error('down'); return id === OWNER ? ['zoho'] : (deps.extraBooks && deps.extraBooks[id]) || []; };
 
 const mkReq = (tok, action, { method = 'GET', body, account } = {}) => ({
   method, url: `/api/ops?action=${action}`, query: { action }, body,
@@ -249,8 +249,16 @@ const call = async (tok, action, o) => { const res = mkRes(); await team.handle(
   r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9800000001' } });
   check('self-link: the business\'s own number is refused', r.code === 409);
   DB.profiles.push({ id: FIN, company_name: 'Priya Co', whatsapp_phone: '919811111111' });
+  deps.extraBooks = { [FIN]: ['tally'] };
   r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98111 11111' } });
-  check('self-link: her own business\'s number is refused with a way out', r.code === 409 && /your own Margyn business/.test(r.body.error), r.body);
+  check('self-link: her own business has books, so its number stays there, with a way out', r.code === 409 && /your own Margyn business, which has books/.test(r.body.error)
+    && DB.profiles.find((x) => x.id === FIN).whatsapp_phone === '919811111111', r.body);
+  deps.extraBooks = {};
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '919811111111', auto: true } });
+  check('auto-link: her own business is empty, so the number from her sign-up moves to the business she joined', r.code === 200 && r.body.moved_from_own === true
+    && !DB.profiles.find((x) => x.id === FIN).whatsapp_phone && DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access && x.phone === '919811111111'), r.body);
+  check('auto-link: logged as automatic, and moved', ev('whatsapp_linked').some((e) => /automatically, from their own sign-up\), moved from their own empty business/.test(e.note || '')));
+  await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98765 43212' } });   // back to where the next checks expect
   DB.profiles = DB.profiles.filter((x) => x.id !== FIN);
   const elseP = DB.profiles.find((x) => x.id === STRANGER); elseP.whatsapp_phone = '919800000077';
   r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9800000077' } });
