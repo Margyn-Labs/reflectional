@@ -4,7 +4,8 @@
 //   - a caller passes { dryRun: true }, or
 //   - the account being served has external sends off: profiles.preferences.external_sends = 'off'
 //     (an investor demo tenant), or its id is in MARGYN_DEMO_ACCOUNTS (comma-separated). Such an account
-//     still reaches its own owner's WhatsApp number (replies to the owner, Margyn Watch), so the person
+//     still reaches its own owner's WhatsApp number, and its team members' linked numbers (replies to them,
+//     Margyn Watch, the first message after linking), so the person
 //     trying Margyn gets the whole experience; customers, invitees and report recipients get nothing.
 // The account comes from the async context: runAsAccount(userId, fn) around per-account work (crons,
 // Watch), or inRequest(fn) + markAccount(userId) when a request learns its account part-way (the inbound
@@ -34,6 +35,13 @@ async function accountSetting(userId) {
     const p = (rows[0] && rows[0].preferences) || {};
     off = off || String(p.external_sends || '').toLowerCase() === 'off' || p.demo === true;
     if (rows[0] && rows[0].whatsapp_phone) own = [digits(rows[0].whatsapp_phone)];
+    // A team member's own linked number (team logins, 21 Nov 2026) is the account's own too: they signed in
+    // and linked it themselves, so a demo tenant still answers its own team.
+    if (off) {
+      const team = await selectRows('business_stakeholders',
+        `select=phone&business_id=eq.${encodeURIComponent(userId)}&member_id=not.is.null&whatsapp_access=eq.true&limit=100`).catch(() => []);
+      own = own.concat(team.map((r) => digits(r.phone)).filter(Boolean));
+    }
   } catch (e) { /* as normal, unless listed */ }
   const out = { off, own, at: Date.now() };
   cache.set(userId, out);
@@ -82,4 +90,6 @@ function blockedResult(channel, to) {
   return { ok: true, blocked: true, preview: true, messageId: 'preview-not-sent' };
 }
 function _clearCache() { cache.clear(); }
-module.exports = { sendsBlocked, blockedResult, maskDest, runAsAccount, inRequest, markAccount, accountSendsOff, _clearCache };
+/** Drop one account's cached setting (a number was just linked, so its "own" list changed). */
+function forget(userId) { cache.delete(userId); }
+module.exports = { sendsBlocked, blockedResult, maskDest, runAsAccount, inRequest, markAccount, accountSendsOff, forget, _clearCache };

@@ -260,8 +260,8 @@ async function mgOpenMyPhone(target, nudge){
   const company = target.company_name || 'this business';
   const elsewhere = !mgActor || mgActor.accountId !== target.account_id;
   const sub = nudge
-    ? 'Margyn can answer you on WhatsApp about ' + company + '’s books. Add the number you’d like to use' + (elsewhere ? ' for ' + company + ' (not your own business).' : '.') + ' As ' + (target.role_label || 'a team member') + ' you can ' + mgPhoneCanText(target.permissions) + '.'
-    : 'Link your number and Margyn on WhatsApp will know it’s you, for ' + company + '. As ' + (target.role_label || 'a team member') + ' you can ' + mgPhoneCanText(target.permissions) + '.';
+    ? 'Add your number and Margyn will message you on WhatsApp right away with ' + company + '’s latest figures' + (elsewhere ? ' (this is for ' + company + ', not your own business)' : '') + '. Reply there any time. As ' + (target.role_label || 'a team member') + ' you can ' + mgPhoneCanText(target.permissions) + '.'
+    : 'Link your number and Margyn will message you on WhatsApp with ' + company + '’s latest figures, and know it’s you whenever you write. As ' + (target.role_label || 'a team member') + ' you can ' + mgPhoneCanText(target.permissions) + '.';
   mgDrawer({ title: nudge ? 'Add your WhatsApp for ' + company : 'My WhatsApp number', sub:escapeHtml(sub),
     body:'<form id="mgMyPhoneForm"><label class="mg-tf"><span>Your WhatsApp number</span><input type="tel" class="mono" id="mgMyPhoneIn" inputmode="numeric" placeholder="98765 43210"' + (nudge ? '' : ' disabled') + '></label>' +
       '<small class="mg-sub" id="mgMyPhoneHint">' + (nudge ? 'A 10-digit Indian mobile, or a full number with country code.' : 'Loading…') + '</small><div class="mg-form-err" id="mgMyPhoneErr" hidden></div></form>',
@@ -285,14 +285,18 @@ async function mgOpenMyPhone(target, nudge){
     hint.textContent = now ? 'Linked. Message Margyn from this number any time.' : 'A 10-digit Indian mobile, or a full number with country code.';
   } else { setTimeout(() => { try { inp.focus(); } catch(e){} }, 50); }
   const save = async (val) => {
-    err.hidden = true; go.disabled = true; if(off) off.disabled = true;
+    err.hidden = true; go.disabled = true; if(off) off.disabled = true; go.textContent = 'Saving…';
     try {
       const j = await mgTeamApiFor('team-my-phone', { phone:val }, target.account_id);
       const mem = ((mgMe && mgMe.memberships) || []).find(x => x.account_id === target.account_id);
       if(mem) mem.whatsapp_linked = !!j.whatsapp;
       mgCloseDrawer();
-      mgTeamToast(j.whatsapp ? 'Linked to ' + company + '. Message Margyn on WhatsApp from this number.' : 'Your number is unlinked.');
-    } catch(x){ err.textContent = x.message; err.hidden = false; go.disabled = false; if(off) off.disabled = false; }
+      const w = j.welcome;
+      mgTeamToast(!j.whatsapp ? 'Your number is unlinked.'
+        : w && w.sent ? 'Linked. Margyn has just messaged you on WhatsApp. Reply there to see the full update.'
+        : w && w.reason === 'still working' ? 'Linked. Margyn’s first WhatsApp message is on its way.'
+        : 'Linked to ' + company + '. Message Margyn on WhatsApp from this number any time.');
+    } catch(x){ err.textContent = x.message; err.hidden = false; go.disabled = false; go.textContent = 'Save'; if(off) off.disabled = false; }
   };
   go.addEventListener('click', () => {
     if(!inp.value.replace(/[^\d]/g, '')){ err.textContent = nudge ? 'Enter your number, or press Not now.' : 'Enter your number, or press Unlink.'; err.hidden = false; return; }

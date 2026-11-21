@@ -216,7 +216,7 @@ function headlineParams(headline, { company, firstName }, max) {
  *   Reply to this message for the full update or to ask about any figure. (STOP line left out at submission, 8 Oct)
  * Points go by title only; Why now / Backing / Next come with the full update on any reply.
  */
-const UPDATE_SLOT_NAMES = { morning: 'morning', evening: 'evening wrap', midday: '10:30', noon: '12:30', afternoon: '3 pm', late: '5 pm' };
+const UPDATE_SLOT_NAMES = { welcome: 'first update', morning: 'morning', evening: 'evening wrap', midday: '10:30', noon: '12:30', afternoon: '3 pm', late: '5 pm' };
 const UPDATE_BUCKETS = [
   { re: /where you stand/i, empty: 'same as the last update' },
   { re: /^(yesterday|today|since|last week|getting better)/i, empty: 'nothing new entered in your books yet' },
@@ -448,12 +448,12 @@ async function watchAccountInner(userId, opts) {
   const snaps = await loadSnaps(userId);
   const snap = brief.snapshot(ctx, fc, o.now);
   const promises = slot === 'evening' ? await forecastStore.promises(userId) : [];
-  const build = (preview) => buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, { firstName: preview ? null : firstNameOf(profile), preview, company, promises });
+  const build = (preview) => buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, { firstName: preview ? null : (o.firstName || firstNameOf(profile)), preview, company, promises });
   const { msg, sentItems, points } = build(false);
   const all = list.concat(deep);
 
   if (o.previewOnly) {
-    const res = { user: userId, mode, slot, found: all.length, chosen: sentItems.map((x) => x.kind), text: msg.send ? msg.text : null, note: msg.send ? undefined : 'Nothing has changed enough to send an update right now.' };
+    const res = { user: userId, mode, slot, company, found: all.length, chosen: sentItems.map((x) => x.kind), text: msg.send ? msg.text : null, note: msg.send ? undefined : 'Nothing has changed enough to send an update right now.' };
     if (msg.send && mode === 'preview' && process.env.MARGYN_WATCH_PREVIEW_PHONE) {
       const to = process.env.MARGYN_WATCH_PREVIEW_PHONE;
       const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: build(true).msg.text }) : null;
@@ -676,4 +676,45 @@ async function signals(userId) {
   };
 }
 
-module.exports = { refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+/**
+ * The first message to a team member whose WhatsApp was just linked (21 Nov 2026), so they never have to find
+ * and save Margyn's number: the business's morning update, worked out read-only (the preview path: records
+ * nothing, uses up no point), with their first name. In an open chat it goes as text; otherwise as the approved
+ * Utility numbers template (WHATSAPP_TEMPLATE_UPDATE), and any reply brings the full update (watch_pending), the
+ * same as the owner's. Follows the account's send setting (sendGuard; a linked team member counts as the
+ * account's own). Never throws: { sent, via?, reason? }.
+ */
+async function welcomeMember(userId, { to, firstName, now } = {}) {
+  if (!digits(to)) return { sent: false, reason: 'no number' };
+  try {
+    const guard = require('./sendGuard');
+    guard.forget(userId);   // the number was just linked: re-read who counts as this account's own
+    return await guard.runAsAccount(userId, async () => {
+      const res = await watchAccountInner(userId, { previewOnly: true, slot: 'morning', mode: 'on', firstName, now });
+      if (!res || res.skipped || !res.text) return { sent: false, reason: res && res.skipped ? 'no books yet' : 'nothing to send' };
+      const text = res.text;
+      let sent = null, via = null;
+      if (await sessionOpen(to, now)) {
+        sent = await bsp.sendText({ to, text });
+        if (sent && sent.ok) via = 'session';
+      }
+      if (!via && process.env.WHATSAPP_TEMPLATE_UPDATE) {
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: updateParams({ text }, { company: res.company, firstName, slot: 'welcome', now }) });
+        if (sent && sent.ok) via = 'template';
+      }
+      if (sent && sent.blocked) return { sent: false, reason: 'sends are off for this account' };
+      if (!via) return { sent: false, reason: process.env.WHATSAPP_TEMPLATE_UPDATE ? 'WhatsApp did not take it' : 'no update template set' };
+      if (via === 'template') await savePending(to, userId, text);
+      await deliveries.record({ messageId: sent.messageId, userId, kind: 'welcome', to, sentTo: 'member', keys: [] });
+      // In this number's thread, so a reply has the context.
+      await insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text, tool_calls: null, wa_message_id: sent.messageId || null, from_phone: digits(to) }])
+        .catch(() => insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text }]).catch(() => {}));
+      return { sent: true, via };
+    });
+  } catch (e) {
+    console.error('[watch] welcome failed', String(e.message || e).slice(0, 160));
+    return { sent: false, reason: 'could not read the books' };
+  }
+}
+
+module.exports = { welcomeMember, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
