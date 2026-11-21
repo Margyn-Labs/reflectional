@@ -236,7 +236,7 @@ async function linkPhone(deps, c, m, raw) {
 async function welcomeIfNew(deps, c, m, link) {
   if (!link || !link.linked || !link.isNew) return null;
   const firstName = String(m.name || '').trim().split(/\s+/)[0] || null;
-  const run = (deps.welcome || ((acct, o) => require('./margynWatch').welcomeMember(acct, o)))(c.accountId, { to: link.linked, firstName });
+  const run = (deps.welcome || ((acct, o) => require('./margynWatch').welcomeMember(acct, o)))(c.accountId, { to: link.linked, firstName, role: ROLE_LABEL[m.role] || null });
   const cap = new Promise((resolve) => setTimeout(() => resolve({ sent: false, reason: 'still working' }), deps.welcomeWaitMs || 25000));
   try { return await Promise.race([Promise.resolve(run).catch(() => ({ sent: false, reason: 'failed' })), cap]); }
   catch (e) { return { sent: false, reason: 'failed' }; }

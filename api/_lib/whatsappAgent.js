@@ -200,7 +200,15 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
 
   // Persist the inbound turn first (with its wamid, so a retry that arrives
   // after this point is caught by the persistent dedupe check above).
-  await persist({ profileId, phone: fromPhone }, 'user', cleanText, null, wamid);
+  const mine = await persist({ profileId, phone: fromPhone }, 'user', cleanText, null, wamid);
+
+  // Several messages in a row ("Hi" / "Yo" / a question, a second apart): wait a moment, and if a newer one
+  // from this number came in, let that one answer them all (the history joins them). Before 21 Nov 2026 each
+  // got its own reply, three answers in six seconds.
+  if (await newerFromSameNumber(profileId, fromPhone, mine)) {
+    console.log('[whatsappAgent] newer message from the same number; that one answers');
+    return;
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -253,7 +261,7 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
     // non-fatal — fall back to the generic label
   }
 
-  const messages = await buildMessages(profileId, fromPhone, cleanText);
+  const messages = await buildMessages(profileId, fromPhone, cleanText, { legacy: !sender || !!sender.is_primary });
   // Without the Act permission the propose tool isn't offered at all, and
   // the prompt says so, so Margyn explains instead of trying.
   const fullTools = canAct ? ALL_TOOLS : ALL_TOOLS.filter(t => !marginActions.isProposeAction(t.name));
@@ -872,20 +880,23 @@ async function appMemoryBlock(profileId, authorId) {
 /* ------------------------------------------------------------------ */
 /* Conversation history                                                */
 /* ------------------------------------------------------------------ */
-async function buildMessages(profileId, fromPhone, cleanText) {
+async function buildMessages(profileId, fromPhone, cleanText, opts) {
   // Each person on the account gets their own thread: two partners texting
   // the same line must not see each other's half-finished conversations.
-  // Rows from before 2026-09-23 have no from_phone and count for everyone.
-  // If the from_phone column doesn't exist yet (migration not run), fall
-  // back to the old account-wide history.
+  // Rows from before 2026-09-23 have no from_phone: they are the owner's
+  // line, so only the owner's number reads them (21 Nov 2026: a newly linked
+  // team member was answered from the owner's old chat, "a correction on
+  // earlier" about things never said to them). If the from_phone column
+  // doesn't exist yet (migration not run), fall back to the old history.
+  const legacy = !opts || opts.legacy !== false;
   const base = `select=role,content&profile_id=eq.${profileId}&order=created_at.desc&limit=40`;
   const phone = String(fromPhone || '').replace(/[^\d]/g, '');
   let rows = [];
   try {
     rows = await selectRows('whatsapp_conversations',
-      phone ? `${base}&or=(from_phone.eq.${phone},from_phone.is.null)` : base);
+      !phone ? base : legacy ? `${base}&or=(from_phone.eq.${phone},from_phone.is.null)` : `${base}&from_phone=eq.${phone}`);
   } catch (e) {
-    try { rows = await selectRows('whatsapp_conversations', base); } catch (e2) { rows = []; }
+    try { rows = legacy ? await selectRows('whatsapp_conversations', base) : []; } catch (e2) { rows = []; }
   }
 
   // Newest-first from the query -> oldest-first for the transcript. Keep only
@@ -908,14 +919,34 @@ async function buildMessages(profileId, fromPhone, cleanText) {
     if (last && last.role === t.role) last.content += '\n' + t.content;
     else collapsed.push({ role: t.role, content: t.content });
   }
-  while (collapsed.length && collapsed[0].role !== 'user') collapsed.shift();
+  // Margyn wrote first (a team member's welcome, a morning update): keep what it said, so a reply like "why?"
+  // has its context. The transcript must open with a user turn, so a short note stands in front of it.
+  if (collapsed.length && collapsed[0].role !== 'user') collapsed.unshift({ role: 'user', content: '(Margyn messaged this number first.)' });
 
+  // Unanswered messages before this one (a burst answered once): one user turn, in order.
+  const lastTurn = collapsed[collapsed.length - 1];
+  if (lastTurn && lastTurn.role === 'user') { lastTurn.content += '\n' + cleanText; return collapsed; }
   return [...collapsed, { role: 'user', content: cleanText }];
 }
 
 /* ------------------------------------------------------------------ */
 /* Persistence — never throws (a logging failure must not break reply) */
 /* ------------------------------------------------------------------ */
+const BURST_MS = Number(process.env.WA_BURST_MS != null ? process.env.WA_BURST_MS : 2500);
+/** After a short wait: did this number send another message after `row`? Never throws (false). */
+async function newerFromSameNumber(profileId, fromPhone, row, waitMs) {
+  const phone = String(fromPhone || '').replace(/[^\d]/g, '');
+  const ms = waitMs != null ? waitMs : BURST_MS;
+  if (!phone || !row || !row.created_at || !(ms > 0)) return false;
+  await new Promise((r) => setTimeout(r, ms));
+  try {
+    const r = await selectRows('whatsapp_conversations',
+      `select=id&profile_id=eq.${profileId}&from_phone=eq.${phone}&role=eq.user&created_at=gt.${encodeURIComponent(row.created_at)}&limit=1`);
+    return r.length > 0;
+  } catch (e) { return false; }
+}
+
+/** Saves one turn; returns the saved row (with created_at) or null. Never throws. */
 async function persist(thread, role, content, toolCalls, waMessageId) {
   const row = {
     profile_id: thread.profileId,
@@ -926,7 +957,8 @@ async function persist(thread, role, content, toolCalls, waMessageId) {
   };
   const phone = String(thread.phone || '').replace(/[^\d]/g, '');
   try {
-    await insertRows('whatsapp_conversations', [phone ? { ...row, from_phone: phone } : row]);
+    const saved = await insertRows('whatsapp_conversations', [phone ? { ...row, from_phone: phone } : row]);
+    return (saved && saved[0]) || null;
   } catch (e) {
     // from_phone column missing (migration not run yet) — keep the turn anyway.
     if (!phone) { console.error('[whatsappAgent] persist failed:', e.message); return; }
@@ -935,4 +967,4 @@ async function persist(thread, role, content, toolCalls, waMessageId) {
   }
 }
 
-module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS };
+module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS, buildMessages, newerFromSameNumber };
