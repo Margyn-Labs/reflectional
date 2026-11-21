@@ -61,6 +61,7 @@ function analyze(d, now) {
   const welcomes = d.welcomes || [];
   const companyOf = Object.fromEntries((d.profiles || []).map((p) => [p.id, p.company_name || null]));
   const hasOwn = new Set((d.profiles || []).map((p) => p.id));
+  const phoneOnFile = new Set((d.profiles || []).filter((p) => p.whatsapp_phone).map((p) => p.id));   // yes/no only, never the number
   const emails = d.emails || {};
   const books = d.books || {};
 
@@ -128,7 +129,7 @@ function analyze(d, now) {
     const w = wel[wel.length - 1] || null;
     p.whatsapp = {
       linked: !!link, last4: phone ? phone.slice(-4) : null, linked_at: iso(linkedAt),
-      linked_by: linkedEv ? (/by themselves/.test(linkedEv.note || '') ? 'themselves' : (linkedEv.actor_name || 'the owner')) : null,
+      linked_by: linkedEv ? (/automatically/.test(linkedEv.note || '') ? 'automatically, from their sign-up' : /by themselves/.test(linkedEv.note || '') ? 'themselves' : (linkedEv.actor_name || 'the owner')) : null,
       welcome: w ? {
         status: w.read_at ? 'read' : w.delivered_at ? 'delivered' : w.failed_at || w.status === 'failed' ? 'failed' : 'sent',
         sent_at: w.sent_at || null, delivered_at: w.delivered_at || null, read_at: w.read_at || null,
@@ -190,6 +191,7 @@ function analyze(d, now) {
     p.own_account = p.user_id && hasOwn.has(p.user_id) ? {
       company: companyOf[p.user_id] || null,
       books: books[p.user_id] || null,
+      whatsapp_on_file: phoneOnFile.has(p.user_id),
       zoho: ownZ.length ? ownZ.map((z) => z.status).join(', ') : null,
       zoho_failures: ownCb.filter((e) => e.props && e.props.ok === false).map((e) => ({ at: e.at, code: e.props.error_code || 'unexpected' })).slice(-5)
     } : null;
@@ -323,7 +325,7 @@ async function load(deps, now) {
   const allIds = [...new Set(accountIds.concat(personIds))];
   const booksOf = deps.connectedBooks || require('./booksSource').connectedBooks;
   const [profiles, chats, events, convo, emails, ownZoho, ownEvents, booksList] = await Promise.all([
-    allIds.length ? S('profiles', `select=id,company_name&id=in.(${inList(allIds)})`) : none,
+    allIds.length ? S('profiles', `select=id,company_name,whatsapp_phone&id=in.(${inList(allIds)})`) : none,
     personIds.length ? S('chat_messages', `select=author_id,user_id,role,created_at&author_id=in.(${inList(personIds)})&role=eq.user&order=created_at.asc&limit=20000`) : none,
     personIds.length ? S('product_events', `select=user_id,name,at,props&props->>by=in.(${inList(personIds)})&at=gte.${since30}&order=at.asc&limit=20000`) : none,
     phones.length ? S('whatsapp_conversations', `select=from_phone,role,created_at,profile_id&from_phone=in.(${inList(phones)})&order=created_at.asc&limit=20000`) : none,

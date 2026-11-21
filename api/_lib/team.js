@@ -211,10 +211,24 @@ async function linkPhone(deps, c, m, raw) {
   // Another business's main number wins on WhatsApp (whatsapp.js findSender reads
   // profiles first), so linking it here would look done but never reach this business.
   const mainElsewhere = await deps.selectRows('profiles', `select=id&whatsapp_phone=eq.${digits}&id=neq.${acct}&limit=1`).catch(() => []);
+  let movedFromOwn = false;
   if (mainElsewhere.length) {
-    return [409, { error: mainElsewhere[0].id === c.authId
-      ? 'That number is the WhatsApp number on your own Margyn business, so messages from it go there. Remove it there first (switch to your business, then Settings > People), or use another number.'
-      : 'That number already talks to Margyn for another business. A number can do that for one business only.' }];
+    const theirOwn = !!m.user_id && mainElsewhere[0].id === m.user_id;
+    // Their own business on Margyn has no books (an investor's or adviser's empty sign-up): there's nothing for
+    // Margyn to tell them about it, so the number moves to the business they joined (21 Nov 2026). With books
+    // there, it stays where it is and they're told how to choose.
+    if (theirOwn) {
+      const books = await (deps.connectedBooks || require('./booksSource').connectedBooks)(m.user_id).catch(() => null);
+      if (Array.isArray(books) && books.length === 0) {
+        await deps.updateRows('profiles', `id=eq.${m.user_id}`, { whatsapp_phone: null });
+        movedFromOwn = true;
+      }
+    }
+    if (!movedFromOwn) {
+      return [409, { error: theirOwn
+        ? 'That number is the WhatsApp number on your own Margyn business, which has books connected, so messages from it go there. Remove it there first (switch to your business, then Settings > People), or use another number.'
+        : 'That number already talks to Margyn for another business. A number can do that for one business only.' }];
+    }
   }
   const elsewhere = await deps.selectRows('business_stakeholders', `select=id&phone=eq.${digits}&whatsapp_access=eq.true&business_id=neq.${acct}&limit=1`);
   if (elsewhere.length) return [409, { error: 'That number already talks to Margyn for another business. A number can do that for one business only.' }];
@@ -228,7 +242,7 @@ async function linkPhone(deps, c, m, raw) {
     await deps.insertRows('business_stakeholders', [{ business_id: acct, name: m.name || String(m.email || '').split('@')[0] || 'Team member',
       phone: digits, role: m.role === 'finance' ? 'finance' : 'other', whatsapp_access: true, member_id: m.id, permissions }]);
   }
-  return { linked: digits, isNew: !(mine && String(mine.phone) === digits && same && mine.id === same.id) };
+  return { linked: digits, isNew: !(mine && String(mine.phone) === digits && same && mine.id === same.id), movedFromOwn };
 }
 
 /* A number just linked: Margyn messages it first (margynWatch.welcomeMember), so the person never has to
@@ -256,9 +270,10 @@ async function myPhone(deps, c, b) {
   const link = await linkPhone(deps, c, m, b.phone);
   if (Array.isArray(link)) return link;
   const digits = normPhone(b.phone);
-  await audit(deps, c, 'whatsapp_linked', m.name || m.email, digits ? '+' + digits + ' (by themselves)' : 'unlinked (by themselves)');
+  const how = b.auto ? ' (automatically, from their own sign-up)' : ' (by themselves)';
+  await audit(deps, c, 'whatsapp_linked', m.name || m.email, digits ? '+' + digits + how + (link.movedFromOwn ? ', moved from their own empty business' : '') : 'unlinked (by themselves)');
   const welcome = await welcomeIfNew(deps, c, m, link);
-  return [200, { ok: true, whatsapp: digits || null, welcome }];
+  return [200, { ok: true, whatsapp: digits || null, welcome, moved_from_own: !!link.movedFromOwn }];
 }
 
 /* ---------- a member's own settings ---------- */
@@ -354,7 +369,7 @@ async function update(deps, c, b) {
   if (b.phone !== undefined) {
     const link = await linkPhone(deps, c, row, b.phone);
     if (Array.isArray(link)) return link;
-    await audit(deps, c, 'whatsapp_linked', who, normPhone(b.phone) ? '+' + normPhone(b.phone) : 'unlinked');
+    await audit(deps, c, 'whatsapp_linked', who, normPhone(b.phone) ? '+' + normPhone(b.phone) + (link.movedFromOwn ? ', moved from their own empty business' : '') : 'unlinked');
     welcome = await welcomeIfNew(deps, c, row, link);
   } else if (patch.role || patch.permissions) {
     const linked = await deps.selectRows('business_stakeholders', `select=id,permissions&business_id=eq.${c.accountId}&member_id=eq.${m.id}&limit=1`).catch(() => []);

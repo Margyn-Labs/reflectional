@@ -523,6 +523,7 @@ function openPerson(key){
   const own = p.own_account;
   const ownHtml = own ? '<div class="kv"><div>Their business</div><div>' + escapeHtml(own.company || '—') + '</div>'
       + '<div>Books connected there</div><div>' + (own.books ? (own.books.length ? escapeHtml(own.books.join(', ')) : 'none') : '—') + '</div>'
+      + '<div>WhatsApp number on their sign-up</div><div>' + (own.whatsapp_on_file ? 'yes' : 'no') + '</div>'
       + '<div>Zoho</div><div>' + escapeHtml(own.zoho ? own.zoho.split(', ').map(z => ZOHO_STATE[z] || z).join(', ') : 'never tried') + '</div></div>'
       + (own.zoho_failures.length ? '<h3>Zoho connect attempts that failed</h3>' + own.zoho_failures.map(f => '<div class="evrow"><div>' + fmtDate(f.at) + '</div><div class="mono">' + escapeHtml(f.code) + '</div><div class="muted">' + escapeHtml(f.code === 'no_books_organization' ? 'The Zoho login they approved has no Zoho Books company' : '') + '</div></div>').join('') : '')
     : '<p class="muted">No business of their own on Margyn' + (p.user_id ? '' : ' (not joined yet)') + '.</p>';

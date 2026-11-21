@@ -324,11 +324,36 @@ function mgPhoneNudgeTarget(){
   if(!mgActor.isOwner){ const here = mems.find(m => m.account_id === mgActor.accountId); return want(here) ? here : null; }
   return mems.find(want) || null;
 }
+/* Their own sign-up already has their WhatsApp number (the optional field at sign-up): link it to the business
+   they joined without asking, and say so (21 Nov 2026). Margyn messages them straight away. Once per account per
+   browser, so a failure falls back to asking, never to a loop. Returns true when it linked. */
+const MG_PHONE_AUTO_LS = 'margyn_phone_auto';
+async function mgAutoLinkPhone(t){
+  const key = MG_PHONE_AUTO_LS + ':' + (mgActor && mgActor.authId) + ':' + t.account_id;
+  try { if(localStorage.getItem(key)) return false; localStorage.setItem(key, '1'); } catch(e){ return false; }
+  let own = '';
+  try {
+    const { data } = await sbClient.from('profiles').select('whatsapp_phone').eq('id', mgActor.authId).maybeSingle();
+    own = (data && data.whatsapp_phone) || '';
+  } catch(e){}
+  if(!String(own).replace(/[^\d]/g, '')) return false;
+  try {
+    const j = await mgTeamApiFor('team-my-phone', { phone:own, auto:true }, t.account_id);
+    const mem = ((mgMe && mgMe.memberships) || []).find(x => x.account_id === t.account_id);
+    if(mem) mem.whatsapp_linked = !!j.whatsapp;
+    const last4 = String(j.whatsapp || own).replace(/[^\d]/g, '').slice(-4);
+    mgTeamToast((j.welcome && j.welcome.sent ? 'Margyn has just messaged you on WhatsApp (…' + last4 + ') for ' : 'Your WhatsApp (…' + last4 + ') is now linked to ')
+      + (t.company_name || 'this business') + '. To use another number: your initials, then My WhatsApp number.');
+    return true;
+  } catch(e){ return false; }
+}
 function mgMaybeAskPhone(){
   const t = mgPhoneNudgeTarget(); if(!t) return;
   const key = MG_PHONE_ASK_SS + ':' + (mgActor && mgActor.authId) + ':' + t.account_id;
   try { if(sessionStorage.getItem(key)) return; } catch(e){}
-  setTimeout(() => {
+  setTimeout(async () => {
+    const t0 = mgPhoneNudgeTarget(); if(!t0 || t0.account_id !== t.account_id) return;
+    if(await mgAutoLinkPhone(t0)) return;
     if(document.querySelector('.mg-drawer-scrim, .mg-dialog-scrim')) return;   // something else is open: try next sign-in
     const t2 = mgPhoneNudgeTarget(); if(!t2 || t2.account_id !== t.account_id) return;
     try { sessionStorage.setItem(key, '1'); } catch(e){}
