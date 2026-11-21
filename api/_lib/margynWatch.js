@@ -278,7 +278,11 @@ async function takePending(phone) {
     const r = await selectRows('watch_pending', `select=text,user_id,created_at&phone=eq.${d}&limit=1`);
     if (!r[0] || !r[0].text) return null;
     const row = Object.assign({}, r[0]);
-    await updateRows('watch_pending', `phone=eq.${d}`, { text: '', created_at: new Date(0).toISOString() }).catch(() => {});
+    // Claim it: only the reply whose update still finds it unclaimed sends it. Two messages a second apart used
+    // to both read it before either cleared it, and the full update went out twice (21 Nov 2026).
+    const claimed = await updateRows('watch_pending', `phone=eq.${d}&created_at=eq.${encodeURIComponent(row.created_at)}&text=neq.`,
+      { text: '', created_at: new Date(0).toISOString() }).catch(() => null);
+    if (Array.isArray(claimed) && claimed.length === 0) return null;
     return Date.now() - Date.parse(row.created_at) > PENDING_HOURS * 3600000 ? null : row;
   } catch (e) { return null; }
 }
@@ -684,7 +688,30 @@ async function signals(userId) {
  * same as the owner's. Follows the account's send setting (sendGuard; a linked team member counts as the
  * account's own). Never throws: { sent, via?, reason? }.
  */
-async function welcomeMember(userId, { to, firstName, now } = {}) {
+/**
+ * The update, reworded as a first hello to someone just added: who Margyn is, which business, what they can do;
+ * "Good morning" only fits at 7:30 am, and the scheduled-update promises (evening check-in, STOP ALERTS) are the
+ * owner's, not theirs. Pure.
+ */
+function welcomeText(text, { firstName, company, role }) {
+  const co = shortCompany(company);
+  const intro = `Hi ${firstName || 'there'}, I'm Margyn. You've been added to ${co} on Margyn${role ? ' as ' + role : ''}, so you can ask me about its books here any time, by text or voice note. Here's where it stands.`;
+  return String(text || '')
+    .replace(/^Good (morning|afternoon|evening)[^.]*\.\s*/, intro + '\n\n')
+    .replace(/^(Hi [^\n]*?Here's where it stands\.\n\n)Your /, `$1${co}'s `)
+    .replace(/^(Hi [^\n]*?Here's where it stands\.\n\n)From your /, `$1From ${co}'s `)
+    .replace(/ I'll check back this evening on what moved\./, '')
+    .replace(/ Reply STOP ALERTS to pause these\./, '')
+    .trim();
+}
+/** WHATSAPP_TEMPLATE_WELCOME (WHATSAPP-TEMPLATES-MASTER.md §F): name, business, role, where it stands. One line each. */
+function welcomeParams(text, { firstName, company, role, now }) {
+  const balances = updateParams({ text }, { company, firstName, slot: 'welcome', now })[2];
+  const one = (x, n) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  return [one(firstName || 'there', 30), one(shortCompany(company), 60), one(role || 'a team member', 30), one(balances, 300)];
+}
+
+async function welcomeMember(userId, { to, firstName, role, now } = {}) {
   if (!digits(to)) return { sent: false, reason: 'no number' };
   try {
     const guard = require('./sendGuard');
@@ -692,14 +719,20 @@ async function welcomeMember(userId, { to, firstName, now } = {}) {
     return await guard.runAsAccount(userId, async () => {
       const res = await watchAccountInner(userId, { previewOnly: true, slot: 'morning', mode: 'on', firstName, now });
       if (!res || res.skipped || !res.text) return { sent: false, reason: res && res.skipped ? 'no books yet' : 'nothing to send' };
-      const text = res.text;
+      const raw = res.text;
+      const text = welcomeText(raw, { firstName, company: res.company, role });
       let sent = null, via = null;
       if (await sessionOpen(to, now)) {
         sent = await bsp.sendText({ to, text });
         if (sent && sent.ok) via = 'session';
       }
+      // A proper hello once its template is approved; until then the numbers template, which already works.
+      if (!via && process.env.WHATSAPP_TEMPLATE_WELCOME) {
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_WELCOME, params: welcomeParams(raw, { firstName, company: res.company, role, now }) });
+        if (sent && sent.ok) via = 'template';
+      }
       if (!via && process.env.WHATSAPP_TEMPLATE_UPDATE) {
-        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: updateParams({ text }, { company: res.company, firstName, slot: 'welcome', now }) });
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: updateParams({ text: raw }, { company: res.company, firstName, slot: 'welcome', now }) });
         if (sent && sent.ok) via = 'template';
       }
       if (sent && sent.blocked) return { sent: false, reason: 'sends are off for this account' };
@@ -717,4 +750,4 @@ async function welcomeMember(userId, { to, firstName, now } = {}) {
   }
 }
 
-module.exports = { welcomeMember, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { welcomeMember, welcomeText, welcomeParams, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };

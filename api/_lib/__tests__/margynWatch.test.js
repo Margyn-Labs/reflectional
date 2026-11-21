@@ -57,9 +57,12 @@ global.fetch = async (url, opts = {}) => {
     return ok(rows);
   }
   if (method === 'PATCH') {
-    const key = eq('key'), id = eq('id'), phone = eq('phone');
-    for (const r of DB[table] || []) if ((key && r.key === key) || (id && r.id === id) || (phone && r.phone === phone)) Object.assign(r, body);
-    return ok([]);
+    const key = eq('key'), id = eq('id'), phone = eq('phone'), cat = eq('created_at');
+    const notEmpty = u.searchParams.get('text') === 'neq.';
+    const hit = [];
+    for (const r of DB[table] || []) if (((key && r.key === key) || (id && r.id === id) || (phone && r.phone === phone))
+      && (!cat || r.created_at === cat) && (!notEmpty || r.text !== '')) { Object.assign(r, body); hit.push(Object.assign({}, r)); }
+    return ok(hit);
   }
   return ok([]);
 };
@@ -312,18 +315,25 @@ const W = require('../margynWatch');
   DB.margyn_signals = []; DB.watch_pending = [];
   process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-3';
   let n1 = sent.length;
-  let w = await W.welcomeMember(U, { to: '919811100000', firstName: 'Yash' });
+  let w = await W.welcomeMember(U, { to: '919811100000', firstName: 'Yash', role: 'Finance' });
   const wt = sent[sent.length - 1] && sent[sent.length - 1].template ? JSON.parse(sent[sent.length - 1].template) : {};
   check('welcome: sent to the member, as the approved numbers template', w.sent && w.via === 'template' && sent.length === n1 + 1 && sent[sent.length - 1].destination === '919811100000' && wt.id === 'tpl-3', { w, last: sent[sent.length - 1] });
   check('welcome: greets the member by name, says it is the first update, carries figures', wt.params && wt.params[0] === 'Yash' && /^first update, \d+ [A-Z][a-z]{2}$/.test(wt.params[1]) && /₹/.test(wt.params.slice(2).join(' ')), wt.params);
   check('welcome: nothing to the owner, nothing used up', !sent.slice(n1).some((x) => x.destination === '919324000000') && DB.margyn_signals.length === 0, DB.margyn_signals);
   const wp = (DB.watch_pending || []).find((x) => x.phone === '919811100000');
-  check('welcome: any reply brings the full update, in his name', wp && /Good morning Yash/.test(wp.text), wp);
-  check('welcome: kept in his number\'s thread for context', DB.whatsapp_conversations.some((x) => x.role === 'assistant' && x.from_phone === '919811100000' && /Good morning Yash/.test(x.content)));
+  check('welcome: any reply brings the full update, opening as a hello', wp && /^Hi Yash, I'm Margyn\. You've been added to Acme on Margyn as Finance/.test(wp.text) && /Acme's Tally/.test(wp.text), wp && wp.text.slice(0, 220));
+  check('welcome: no "Good morning" at any hour, none of the owner\'s scheduled-update promises', wp && !/Good morning|check back this evening|STOP ALERTS/.test(wp.text));
+  check('welcome: kept in his number\'s thread for context', DB.whatsapp_conversations.some((x) => x.role === 'assistant' && x.from_phone === '919811100000' && /Hi Yash, I'm Margyn/.test(x.content)));
   DB.whatsapp_conversations.push({ role: 'user', from_phone: '919811100001', content: 'hi', created_at: new Date().toISOString() });
   n1 = sent.length;
   w = await W.welcomeMember(U, { to: '919811100001', firstName: 'Yash' });
-  check('welcome: an open chat gets the full update as plain text', w.sent && w.via === 'session' && sent.length === n1 + 1 && /Good morning Yash/.test(sent[sent.length - 1].message || ''), { w, last: sent[sent.length - 1] });
+  check('welcome: an open chat gets the hello + update as plain text', w.sent && w.via === 'session' && sent.length === n1 + 1 && /Hi Yash, I'm Margyn/.test(sent[sent.length - 1].message || ''), { w, last: sent[sent.length - 1] });
+  process.env.WHATSAPP_TEMPLATE_WELCOME = 'tpl-w';
+  n1 = sent.length;
+  w = await W.welcomeMember(U, { to: '919811100003', firstName: 'Yash', role: 'Finance' });
+  const ww = JSON.parse(sent[sent.length - 1].template || '{}');
+  check('welcome: the welcome template once it is approved: name, business, role, where it stands', w.sent && ww.id === 'tpl-w' && ww.params[0] === 'Yash' && ww.params[1] === 'Acme' && ww.params[2] === 'Finance' && /₹/.test(ww.params[3]) && ww.params.every((x) => !/\n/.test(x)), ww);
+  delete process.env.WHATSAPP_TEMPLATE_WELCOME;
   delete process.env.WHATSAPP_TEMPLATE_UPDATE;
   n1 = sent.length;
   w = await W.welcomeMember(U, { to: '919811100002', firstName: 'Yash' });
