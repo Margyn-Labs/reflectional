@@ -310,6 +310,19 @@ const W = require('../margynWatch');
   const all = await W.runWatchAll('morning');
   check('runs over Tally accounts', all.accounts === 1 && all.results.length === 1, all);
 
+  console.log('greets the owner by name even without a display name (21 Nov 2026)');
+  check('no display name: the sign-up name, first word', W.firstNameOf({ preferences: {}, owner_name: 'Varad Pandey' }) === 'Varad');
+  check('a display name still wins', W.firstNameOf({ preferences: { display_name: 'Mihir Shah' }, owner_name: 'Someone' }) === 'Mihir');
+  {
+    const prefs = DB.profiles[0].preferences, dn = prefs.display_name;
+    delete prefs.display_name;
+    DB.business_stakeholders = [{ business_id: U, name: 'Varad Pandey', is_primary: true }];
+    DB.margyn_signals = []; DB.watch_pending = [];
+    const rr = await W.watchAccount(U, { slot: 'morning' });
+    const last = sent[sent.length - 1];
+    check('a Tally account keeps exactly the greeting it had (no sign-up-name fallback)', rr.sent && !/Varad/.test(last.message || last.template || ''), (last.message || '').slice(0, 80));
+    prefs.display_name = dn; DB.business_stakeholders = [];
+  }
   console.log('first message to a newly linked team member (21 Nov 2026)');
   check('welcome wording: a name ending in s gets an apostrophe only, and the business is the one they were added to',
     /^Hi Varad, I'm Margyn\. You've been added to Margyn Demos on Margyn as Finance.*\n\nMargyn Demos' Zoho Books as of/.test(W.welcomeText('Good morning Varad. Your Zoho Books as of 21 Nov.\n\nx', { firstName: 'Varad', company: 'Margyn Demos', role: 'Finance' })));

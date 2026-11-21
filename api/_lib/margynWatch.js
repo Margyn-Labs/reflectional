@@ -82,13 +82,20 @@ const PENDING_HOURS = 24;
 const digits = (p) => String(p || '').replace(/[^\d]/g, '');
 
 async function prefsOf(userId) {
+  // The owner's name from sign-up ("Your name") lives on the account's main person (business_stakeholders,
+  // is_primary); without it an account with no display_name was greeted by its company ("Hi Margyn Labs", 21 Nov).
+  const ownerP = selectRows('business_stakeholders', `select=name&business_id=eq.${userId}&is_primary=eq.true&limit=1`).catch(() => []);
+  let p;
   try {
     const r = await selectRows('profiles', `select=preferences,whatsapp_phone,whatsapp_opt_in,company_name&id=eq.${userId}&limit=1`);
-    return r[0] || {};
+    p = r[0] || {};
   } catch (e) {
     const r = await selectRows('profiles', `select=whatsapp_phone,whatsapp_opt_in,company_name&id=eq.${userId}&limit=1`).catch(() => []);
-    return r[0] || {};
+    p = r[0] || {};
   }
+  const owner = await ownerP;
+  if (owner[0] && owner[0].name) p.owner_name = owner[0].name;
+  return p;
 }
 function modeOf(profile) {
   const w = profile && profile.preferences && profile.preferences.margyn_watch;
@@ -447,6 +454,8 @@ async function watchAccountInner(userId, opts) {
   state = await onlyDelivered(userId, state);
 
   const profile = await prefsOf(userId);
+  // Tally accounts (Mihir's) keep exactly the greeting they had: the sign-up-name fallback is for Zoho / Odoo.
+  if (String(ctx.source || '') === 'tally' || /tally/i.test(String(ctx.source_name || ''))) delete profile.owner_name;
   const mode = o.mode || modeOf(profile);
   const company = ctx.company || profile.company_name;
   const snaps = await loadSnaps(userId);
@@ -584,7 +593,8 @@ async function onlyDelivered(userId, state) {
 }
 
 function firstNameOf(profile) {
-  return String(((profile && profile.preferences) || {}).display_name || '').trim().split(/\s+/)[0] || null;
+  const name = ((profile && profile.preferences) || {}).display_name || (profile && profile.owner_name) || '';
+  return String(name).trim().split(/\s+/)[0] || null;
 }
 
 /** Every account with books connected (Tally, Zoho Books or Odoo: dataLayer/books.js). Bounded so one cron run can't overrun. */
@@ -752,4 +762,4 @@ async function welcomeMember(userId, { to, firstName, role, now } = {}) {
   }
 }
 
-module.exports = { welcomeMember, welcomeText, welcomeParams, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { welcomeMember, welcomeText, welcomeParams, firstNameOf, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
