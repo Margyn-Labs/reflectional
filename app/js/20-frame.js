@@ -142,6 +142,23 @@ function mgOrgShort(){ return mgOrgName().replace(/\s+(Private Limited|Pvt\.? Lt
 
 /* ---------- state ---------- */
 let mgCurrentView = 'home';
+/* Ops Console usage (2026-11-21): which page, and how long on the one before it. Page keys only, never
+   what's on the page. The server adds who did it for team logins. Fire-and-forget. */
+let mgPageSince = Date.now();
+const mgPageKey = (p) => String(p || '').toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^[^a-z]+/, '').slice(0, 40) || null;
+function mgPageSeen(page, prev){
+  const secs = Math.round((Date.now() - mgPageSince) / 1000);
+  mgPageSince = Date.now();
+  if(typeof mtrack !== 'function' || document.getElementById('appShell')?.classList.contains('hidden')) return;
+  const props = { page:mgPageKey(page) };
+  if(prev && mgPageKey(prev)) { props.prev_page = mgPageKey(prev); props.prev_secs = Math.max(0, Math.min(secs, 86400)); }
+  if(props.page) mtrack('page_view', props);
+}
+// Leaving (tab hidden or closed): count the time on the last page. Back again: the clock restarts.
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'hidden') mgPageSeen('left_app', mgCurrentView);
+  else mgPageSince = Date.now();
+});
 let mgChipView = '';   // the own page being rendered (its header draws before mgCurrentView moves)
 let mgApplying = false;       // true while the router itself is navigating
 let mgFirstLoadDone = false;  // set once the first refreshAll() after login has applied the URL
@@ -308,6 +325,7 @@ showView = function(name){
   const railKey = (MG_PAGES[page] && MG_PAGES[page].parent) || page;   // Payment gateways lights up Cash
   document.querySelectorAll('.pagenav button').forEach(b => b.classList.toggle('active', b.dataset.view === railKey));
   const changed = page !== mgCurrentView;
+  if(changed) mgPageSeen(page, mgCurrentView);
   mgCurrentView = page;
   // A customer/vendor panel belongs to the page it was opened on: leaving the page closes it.
   if(changed && typeof mgCloseDrawer === 'function') mgCloseDrawer();

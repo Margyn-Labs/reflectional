@@ -84,6 +84,30 @@
   .step.stuck{ color:var(--orange); font-weight:700; }
   .invform{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:12.5px; }
   .invform input{ font:inherit; font-size:12.5px; border:1px solid var(--border); border-radius:7px; padding:6px 9px; background:var(--surf); min-width:200px; }
+  /* team logins (2026-11-21) */
+  .kpis{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:18px; }
+  .kpi{ background:var(--surf); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+  .kpi span{ display:block; font-size:11px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.04em; }
+  .kpi b{ display:block; font-size:20px; font-family:'IBM Plex Mono',monospace; font-weight:500; margin-top:2px; }
+  .kpi small{ display:block; font-size:11.5px; color:var(--ink-1); margin-top:1px; }
+  .kpi.bad b{ color:var(--rust); }
+  .sec{ font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-2); margin:22px 0 8px; font-weight:700; }
+  .fun{ background:var(--surf); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .fun .row{ display:grid; grid-template-columns:200px 1fr 60px 150px; gap:12px; align-items:center; font-size:12.5px; padding:4px 0; }
+  .fun .bar{ height:14px; background:#F4F2EE; border-radius:4px; overflow:hidden; }
+  .fun .bar i{ display:block; height:100%; background:var(--emerald); border-radius:4px; }
+  .dots{ display:flex; gap:3px; }
+  .dots i{ width:10px; height:10px; border-radius:50%; background:#E4E1DA; display:block; }
+  .dots i.on{ background:var(--emerald); }
+  .dots i.stuck{ background:var(--orange); }
+  .strip{ display:flex; gap:2px; align-items:flex-end; height:44px; margin:6px 0 14px; }
+  .strip i{ flex:1; background:#E4E1DA; border-radius:2px; min-height:3px; display:block; }
+  .strip i.on{ background:var(--emerald); }
+  .two{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .stg{ display:grid; grid-template-columns:22px 1fr 150px 120px; gap:8px; font-size:13px; padding:6px 0; border-bottom:1px dashed var(--border); align-items:center; }
+  .stg .ic{ font-weight:800; }
+  .stg .ic.on{ color:var(--emerald); } .stg .ic.stuck{ color:var(--orange); } .stg .ic.off{ color:var(--ink-2); }
+  @media (max-width:900px){ .two{ grid-template-columns:1fr; } .fun .row{ grid-template-columns:120px 1fr 44px; } .fun .row .muted{ display:none; } }
   @media (max-width:720px){ main{ padding:16px; } table{ display:block; overflow-x:auto; } }
 </style>
 </head>
@@ -91,7 +115,7 @@
 <header>
   <h1>Margyn Ops</h1>
   <span class="sub">design-partner health &middot; usage &middot; value</span>
-  <nav><button id="tabPartners" class="on">Partners</button><button id="tabInvestors">Investors</button></nav>
+  <nav><button id="tabPartners" class="on">Partners</button><button id="tabInvestors">Investors</button><button id="tabTeam">Team logins</button></nav>
   <span class="spacer"></span>
   <span class="sub" id="genAt"></span>
   <button id="refreshBtn">Refresh</button>
@@ -391,7 +415,151 @@ function setView(v){
   view = v;
   $('#tabPartners').classList.toggle('on', v === 'partners');
   $('#tabInvestors').classList.toggle('on', v === 'investors');
+  $('#tabTeam').classList.toggle('on', v === 'team');
   load();
+}
+
+/* ---------- Team logins: invited people, analysed (api/ops.js?action=people, api/_lib/opsTeam.js) ----------
+   Names and emails of team members (like partner emails above); never message text or figures; phones as
+   the last four digits only. */
+let team = null, teamSort = 'health', teamDir = 1, teamFilter = 'all';
+const HRANK = { red:0, yellow:1, green:2, grey:3 };
+const STATUS_LABEL = { member:'Member', invited:'Invited', expired:'Invite expired', cancelled:'Cancelled', removed:'Removed', suspended:'Suspended' };
+const PAGE_LABEL = { home:'Home', cash:'Cash', receivables:'Receivables', payables:'Payables', customers:'Customers', vendors:'Vendors', gst:'GST and tax', books:'Books', margin:'Margin', analytics:'Reports', cashflow:'Cash flow', cfopack:'CFO pack', scores:'Pulse score', history:'Conversations', inbox:'Inbox', agents:'Automations', settings:'Settings', people:'People', connectors:'Organisations and sources', invoicing:'Invoicing', payments:'Payments', audit:'Audit', channels:'Channel health', profile:'Profile', financing:'Capital readiness' };
+const pageName = (k) => PAGE_LABEL[k] || k;
+const hrs = (h) => h == null ? '—' : h < 1 ? Math.round(h * 60) + ' min' : h < 48 ? (Math.round(h * 10) / 10) + ' h' : Math.round(h / 24 * 10) / 10 + ' d';
+const mins = (s) => s < 60 ? s + ' s' : Math.round(s / 60) + ' min';
+function kpi(label, value, sub, bad){ return '<div class="kpi' + (bad ? ' bad' : '') + '"><span>' + label + '</span><b>' + value + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>'; }
+function dotsFor(p){
+  return '<span class="dots" title="' + escapeHtml(team.stages.map(s => team.stage_labels[s] + ': ' + (p.stages[s] ? fmtDate(p.stages[s]) : (p.stuck_at === s ? 'stuck here' : '—'))).join('\n')) + '">'
+    + team.stages.map(s => '<i class="' + (p.stages[s] ? 'on' : p.stuck_at === s ? 'stuck' : '') + '"></i>').join('') + '</span>';
+}
+function waCell(p){
+  const w = p.whatsapp;
+  if(!w.linked) return p.member_id ? '<span class="muted">not linked</span>' : '<span class="muted">—</span>';
+  const wl = w.welcome;
+  const chip = !wl ? '<span class="chip grey">no first message</span>'
+    : '<span class="chip ' + (wl.status === 'read' || wl.status === 'delivered' ? 'green' : wl.status === 'failed' ? 'red' : 'yellow') + '">' + (wl.status === 'sent' ? 'sent, unconfirmed' : wl.status) + '</span>';
+  return '<span class="mono">…' + escapeHtml(w.last4) + '</span> ' + chip;
+}
+function renderTeam(){
+  const d = team;
+  if(!d){ $('#main').innerHTML = '<div class="loading">Loading team logins…</div>'; return; }
+  if(d.error){ $('#main').innerHTML = '<div class="gate">Could not load team logins.</div>'; return; }
+  const T = d.totals;
+  const banner = (d.missing && d.missing.length ? '<div class="banner">Some sources couldn’t be read, so these parts show as empty, not zero: <b>' + escapeHtml(d.missing.join(', ')) + '</b>.</div>' : '')
+    + (!d.pages.length && T.members ? '<div class="banner">Page views and time on each page start after <span class="mono">2026-11-21-ops-page-views.sql</span> is run, and only from then on. Questions, WhatsApp and joins are counted from the start.</div>' : '');
+  const kpis = '<div class="kpis">'
+    + kpi('Members', T.members, T.open_invites + ' invite' + (T.open_invites === 1 ? '' : 's') + ' open')
+    + kpi('Active, 7 days', T.active_7d, T.members ? Math.round(T.active_7d / T.members * 100) + '% of members' : '')
+    + kpi('Joined', T.join_rate_pct == null ? '—' : T.join_rate_pct + '%', T.joined + ' of ' + T.invites_sent + ' invited')
+    + kpi('Time to join', hrs(T.median_hours_to_join), 'median, invite → joined')
+    + kpi('WhatsApp linked', T.whatsapp_linked_pct == null ? '—' : T.whatsapp_linked_pct + '%', T.whatsapp_linked + ' of ' + T.members + ' members')
+    + kpi('First message', T.welcome_sent ? T.welcome_delivered + '/' + T.welcome_sent : '—', T.welcome_sent ? T.welcome_read + ' read · ' + T.welcome_failed + ' failed' : 'none sent yet', T.welcome_failed > 0)
+    + kpi('Questions, 30 days', T.questions_30d, T.asked_30d + ' people · ' + (T.questions_whatsapp_share_pct == null ? '—' : T.questions_whatsapp_share_pct + '% on WhatsApp'))
+    + kpi('Active days', T.avg_active_days_30d == null ? '—' : T.avg_active_days_30d, 'average per member, 30 days')
+    + kpi('Needs you', T.needs_attention, T.expiring_48h + ' expiring · ' + T.expired_unused + ' expired', T.needs_attention > 0)
+    + '</div>';
+  const maxN = Math.max(1, ...d.funnel.map(f => f.count));
+  const funnel = '<div class="sec">Journey, everyone invited</div><div class="fun">' + d.funnel.map(f =>
+    '<div class="row"><div>' + escapeHtml(f.label) + '</div><div class="bar"><i style="width:' + Math.round(f.count / maxN * 100) + '%"></i></div>'
+    + '<div class="num">' + f.count + (f.from_previous_pct != null ? ' <span class="muted">' + f.from_previous_pct + '%</span>' : '') + '</div>'
+    + '<div class="muted">' + (f.median_hours_from_previous != null ? 'median ' + hrs(f.median_hours_from_previous) + ' from the step before' : '') + '</div></div>').join('') + '</div>';
+  let ps = d.people.slice();
+  if(teamFilter === 'attention') ps = ps.filter(p => p.health === 'red' || p.health === 'yellow');
+  else if(teamFilter === 'members') ps = ps.filter(p => p.status === 'member' || p.status === 'suspended');
+  else if(teamFilter === 'invites') ps = ps.filter(p => ['invited', 'expired', 'cancelled'].includes(p.status));
+  const sk = { health: p => HRANK[p.health], person: p => (p.name || p.email || '').toLowerCase(), business: p => (p.business || '').toLowerCase(),
+    used: p => -(Date.parse(p.activity.last_used_at || 0) || 0), days: p => -p.activity.active_days_30d, q: p => -(p.activity.questions_app_30d + p.activity.whatsapp_in_30d) };
+  ps.sort((a, b) => { const x = sk[teamSort](a), y = sk[teamSort](b); return (x < y ? -1 : x > y ? 1 : 0) * teamDir; });
+  const filt = '<div class="wlog"><h2 style="margin:22px 0 8px">People ' + ['all', 'attention', 'members', 'invites'].map(k =>
+    '<button data-tf="' + k + '" class="' + (teamFilter === k ? 'on' : '') + '">' + { all:'All', attention:'Needs you', members:'Members', invites:'Invites' }[k] + '</button>').join('') + '</h2></div>';
+  const rows = ps.map(p => '<tr data-pk="' + escapeHtml(p.key) + '">'
+    + '<td><span class="chip ' + p.health + '">' + (p.health === 'grey' ? 'done' : p.health) + '</span></td>'
+    + '<td>' + escapeHtml(p.name || p.email) + (p.name ? '<br><span class="muted">' + escapeHtml(p.email || '') + '</span>' : '') + '</td>'
+    + '<td>' + escapeHtml(p.business || '—') + '<br><span class="muted">' + escapeHtml(p.role_label || '') + '</span></td>'
+    + '<td>' + escapeHtml(STATUS_LABEL[p.status] || p.status) + '<br>' + dotsFor(p) + '</td>'
+    + '<td class="num">' + ago(p.activity.last_used_at) + '</td>'
+    + '<td class="num">' + p.activity.active_days_30d + '</td>'
+    + '<td class="num">' + p.activity.questions_app_30d + ' / ' + p.activity.whatsapp_in_30d + '</td>'
+    + '<td>' + waCell(p) + '</td>'
+    + '<td>' + escapeHtml(p.next) + '</td></tr>').join('');
+  const table = '<table><thead><tr><th data-ts="health">Health</th><th data-ts="person">Person</th><th data-ts="business">Business · role</th><th>Status · journey</th>'
+    + '<th data-ts="used">Last used</th><th data-ts="days">Days 30d</th><th data-ts="q">Asked 30d<br><span style="text-transform:none">app / WhatsApp</span></th><th>WhatsApp</th><th>Next</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="9" class="muted">No one here yet. Invite someone from a business’s Settings > People > App logins.</td></tr>') + '</tbody></table>';
+  const biz = '<table><thead><tr><th>Business</th><th>Members</th><th>Active 7d</th><th>WhatsApp</th><th>Invites open</th><th>Books</th></tr></thead><tbody>'
+    + d.businesses.map(b => '<tr><td>' + escapeHtml(b.business || b.account_id) + '<br><span class="muted">' + escapeHtml(b.owner_email || '') + '</span></td>'
+      + '<td>' + b.members + ' <span class="muted">' + escapeHtml(Object.entries(b.roles).map(([k, v]) => v + ' ' + k).join(', ')) + '</span></td>'
+      + '<td class="num">' + b.active_7d + '</td><td class="num">' + b.whatsapp_linked + '</td><td class="num">' + b.open_invites + '</td>'
+      + '<td>' + (b.books ? (b.books.length ? b.books.map(x => '<span class="conn">' + escapeHtml(x) + '</span>').join('') : '<span class="muted">none</span>') : '<span class="muted">—</span>') + '</td></tr>').join('')
+    + '</tbody></table>';
+  const pages = d.pages.length ? '<table><thead><tr><th>Page</th><th>People</th><th>Views</th><th>Time</th></tr></thead><tbody>'
+    + d.pages.slice(0, 15).map(x => '<tr><td>' + escapeHtml(pageName(x.page)) + '</td><td class="num">' + x.people + '</td><td class="num">' + x.views + '</td><td class="num">' + mins(x.secs) + '</td></tr>').join('') + '</tbody></table>'
+    : '<p class="muted">No page views stored yet.</p>';
+  $('#main').innerHTML = banner + kpis + funnel + filt + table
+    + '<div class="two"><div><div class="sec">Businesses with team logins</div>' + biz + '</div><div><div class="sec">What team members look at, 30 days</div>' + pages + '</div></div>';
+  $('#main').querySelectorAll('[data-tf]').forEach(b => b.onclick = () => { teamFilter = b.dataset.tf; renderTeam(); });
+  $('#main').querySelectorAll('th[data-ts]').forEach(th => th.onclick = () => { const k = th.dataset.ts; if(teamSort === k) teamDir *= -1; else { teamSort = k; teamDir = 1; } renderTeam(); });
+  $('#main').querySelectorAll('tr[data-pk]').forEach(tr => tr.onclick = () => openPerson(tr.dataset.pk));
+}
+function openPerson(key){
+  const p = team.people.find(x => x.key === key); if(!p) return;
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.onclick = (e) => { if(e.target === ov) ov.remove(); };
+  const a = p.activity, w = p.whatsapp;
+  let prevT = null;
+  const journey = team.stages.map(s => {
+    const at = p.stages[s], since = at && prevT ? hrs((Date.parse(at) - prevT) / 3600000) : null;
+    if(at) prevT = Date.parse(at);
+    const ic = at ? '<span class="ic on">&#10003;</span>' : p.stuck_at === s ? '<span class="ic stuck">&#9679;</span>' : '<span class="ic off">&#9675;</span>';
+    return '<div class="stg">' + ic + '<div>' + escapeHtml(team.stage_labels[s]) + (p.stuck_at === s ? ' <b style="color:var(--orange)">stuck here</b>' : '') + '</div><div>' + (at ? fmtDate(at) : '—') + '</div><div class="muted">' + (since ? '+' + since : '') + '</div></div>';
+  }).join('');
+  const maxS = Math.max(1, ...a.strip.map(x => x.n));
+  const strip = '<div class="strip">' + a.strip.map(x => '<i class="' + (x.n ? 'on' : '') + '" style="height:' + (x.n ? Math.max(12, Math.round(x.n / maxS * 100)) : 7) + '%" title="' + x.day + ': ' + x.n + '"></i>').join('') + '</div>';
+  const pages = p.pages.length ? p.pages.map(x => '<div class="evrow"><div>' + escapeHtml(pageName(x.page)) + '</div><div class="num">' + x.views + ' view' + (x.views === 1 ? '' : 's') + ' · ' + mins(x.secs) + '</div><div class="muted">last ' + fmtDate(x.last_at) + '</div></div>').join('')
+    : '<p class="muted">No page views stored' + (a.tracked_since ? '' : ' yet (they start after the page-views SQL, for visits from then on)') + '.</p>';
+  const own = p.own_account;
+  const ownHtml = own ? '<div class="kv"><div>Their business</div><div>' + escapeHtml(own.company || '—') + '</div>'
+      + '<div>Books connected there</div><div>' + (own.books ? (own.books.length ? escapeHtml(own.books.join(', ')) : 'none') : '—') + '</div>'
+      + '<div>Zoho</div><div>' + escapeHtml(own.zoho || 'never tried') + '</div></div>'
+      + (own.zoho_failures.length ? '<h3>Zoho connect attempts that failed</h3>' + own.zoho_failures.map(f => '<div class="evrow"><div>' + fmtDate(f.at) + '</div><div class="mono">' + escapeHtml(f.code) + '</div><div class="muted">' + escapeHtml(f.code === 'no_books_organization' ? 'The Zoho login they approved has no Zoho Books company' : '') + '</div></div>').join('') : '')
+    : '<p class="muted">No business of their own on Margyn' + (p.user_id ? '' : ' (not joined yet)') + '.</p>';
+  ov.innerHTML = '<div class="drawer"><div class="dhead"><button class="x">&times;</button><h2>' + escapeHtml(p.name || p.email) + '</h2>'
+    + '<div class="muted" style="font-size:12px">' + escapeHtml([p.email, p.role_label, p.business].filter(Boolean).join(' · ')) + '</div></div>'
+    + '<div class="tabs"><button data-t="j" class="active">Journey</button><button data-t="a">Activity</button><button data-t="w">WhatsApp</button><button data-t="o">Their own account</button></div>'
+    + '<div class="tabpane" data-p="j"><div class="suggest"><b>Next:</b> ' + escapeHtml(p.next) + '</div>' + journey
+      + '<div class="kv" style="margin-top:16px"><div>Invited by</div><div>' + escapeHtml(p.invited_by || '—') + '</div>'
+      + '<div>Time to join</div><div>' + hrs(p.hours_to_join) + '</div>'
+      + (p.expires_at ? '<div>Invite works until</div><div>' + fmtDate(p.expires_at) + '</div>' : '')
+      + '<div>Status</div><div>' + escapeHtml(STATUS_LABEL[p.status] || p.status) + '</div>'
+      + '<div>Business books</div><div>' + (p.business_books ? escapeHtml(p.business_books.join(', ') || 'none') : '—') + '</div></div></div>'
+    + '<div class="tabpane" data-p="a" hidden><h3>Last 30 days</h3>' + strip
+      + '<div class="kv"><div>Last used</div><div>' + fmtDate(a.last_used_at) + '</div>'
+      + '<div>Active days, 30d</div><div class="num">' + a.active_days_30d + '</div>'
+      + '<div>App opens, 7d / 30d</div><div class="num">' + a.app_opens_7d + ' / ' + a.app_opens_30d + '</div>'
+      + '<div>Time in the app, 30d</div><div class="num">' + a.minutes_in_app_30d + ' min</div>'
+      + '<div>Questions in the app</div><div class="num">' + a.questions_app_30d + ' in 30d · ' + a.questions_app_total + ' ever</div>'
+      + '<div>Messages on WhatsApp</div><div class="num">' + a.whatsapp_in_30d + ' in 30d · ' + a.whatsapp_in_total + ' ever</div></div>'
+      + '<h3>Pages, by time spent</h3>' + pages + '</div>'
+    + '<div class="tabpane" data-p="w" hidden><div class="kv"><div>Number</div><div>' + (w.linked ? '<span class="mono">…' + escapeHtml(w.last4) + '</span>' : 'not linked') + '</div>'
+      + '<div>Linked</div><div>' + (w.linked_at ? fmtDate(w.linked_at) + (w.linked_by ? ' by ' + escapeHtml(w.linked_by) : '') : '—') + '</div>'
+      + '<div>Margyn’s first message</div><div>' + (w.welcome ? escapeHtml(w.welcome.status) + (w.welcome.error_code ? ' <span class="mono">' + escapeHtml(w.welcome.error_code) + '</span>' : '') : '—') + '</div>'
+      + (w.welcome ? '<div>Sent / delivered / read</div><div>' + fmtDate(w.welcome.sent_at) + ' / ' + fmtDate(w.welcome.delivered_at) + ' / ' + fmtDate(w.welcome.read_at) + '</div>' : '')
+      + '<div>Replied after it</div><div>' + (a.replied_after_welcome ? 'yes' : w.welcome ? 'not yet' : '—') + '</div>'
+      + '<div>Margyn’s messages to them, 30d</div><div class="num">' + a.whatsapp_out_30d + '</div></div>'
+      + '<p class="muted" style="font-size:12px">Counts and times only. Message text never comes here.</p></div>'
+    + '<div class="tabpane" data-p="o" hidden>' + ownHtml + '</div></div>';
+  document.body.appendChild(ov);
+  $('.x', ov).onclick = () => ov.remove();
+  ov.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    ov.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
+    ov.querySelectorAll('.tabpane').forEach(x => x.hidden = x.dataset.p !== b.dataset.t);
+  });
+}
+async function loadTeam(){
+  try { team = await api('?action=people'); }
+  catch(e){ if(e.gate) throw e; team = { error: true }; }
 }
 
 function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
@@ -401,6 +569,13 @@ async function load(){
     const { data:{ session } } = await sb.auth.getSession();
     if(!session){ $('#main').innerHTML = '<div class="gate">Not signed in. Open the app, sign in as the founder, then reload this page.</div>'; return; }
     token = session.access_token;
+    if(view === 'team'){
+      team = null; renderTeam();
+      await loadTeam();
+      $('#genAt').textContent = team && team.generated_at ? 'as of ' + fmtDate(team.generated_at) : '';
+      renderTeam();
+      return;
+    }
     if(view === 'investors'){
       investors = null; renderInvestors();
       await loadInvestors();
@@ -430,6 +605,7 @@ async function load(){
   $('#refreshBtn').onclick = load;
   $('#tabPartners').onclick = () => setView('partners');
   $('#tabInvestors').onclick = () => setView('investors');
+  $('#tabTeam').onclick = () => setView('team');
   load();
 })();
 </script>

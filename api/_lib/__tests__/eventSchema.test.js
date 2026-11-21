@@ -140,7 +140,9 @@ const MUST_REFUSE = ['amount', 'name', 'gstin', 'text', 'email', 'phone',
   }
 
   console.log('SQL allowlist matches the schema');
-  const sqlFile = ['sql/2026-10-29-ops-investor-funnel.sql', '2026-10-29-ops-investor-funnel.sql'].map((f) => path.join(root, f)).find((f) => fs.existsSync(f));
+  // The newest migration that sets the allowlist (2026-11-21 added page_view).
+  const sqlFile = ['sql/2026-11-21-ops-page-views.sql', '2026-11-21-ops-page-views.sql', 'sql/2026-10-29-ops-investor-funnel.sql', '2026-10-29-ops-investor-funnel.sql']
+    .map((f) => path.join(root, f)).find((f) => fs.existsSync(f));
   const sql = fs.readFileSync(sqlFile, 'utf8');
   const block = /product_events_name_allowlist check \(name in \(([\s\S]*?)\)\);/.exec(sql);
   const sqlNames = block ? block[1].match(/'([a-z0-9_]+)'/g).map((x) => x.slice(1, -1)).sort() : [];
