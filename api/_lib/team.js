@@ -13,6 +13,7 @@
  *   POST team-remove   { member_id }
  *   POST team-join     { code }  the signed-in person joins with their code
  *   POST team-prefs    { prefs }  a member's own settings (merged; null = default)
+ *   POST team-my-phone { phone }  a member links their own WhatsApp number ('' unlinks)
  *
  * team-update also takes { phone }: link that person's WhatsApp number to
  * their login, so WhatsApp follows the same role ('' unlinks).
@@ -194,6 +195,14 @@ async function linkPhone(deps, c, m, raw) {
   if (digits.length < 11 || digits.length > 15) return [400, { error: 'Enter a 10-digit mobile, or a full number with country code.' }];
   const owner = await deps.selectRows('profiles', `select=whatsapp_phone&id=eq.${acct}&limit=1`).catch(() => []);
   if (owner[0] && normPhone(owner[0].whatsapp_phone) === digits) return [409, { error: 'That’s the account’s own WhatsApp number.' }];
+  // Another business's main number wins on WhatsApp (whatsapp.js findSender reads
+  // profiles first), so linking it here would look done but never reach this business.
+  const mainElsewhere = await deps.selectRows('profiles', `select=id&whatsapp_phone=eq.${digits}&id=neq.${acct}&limit=1`).catch(() => []);
+  if (mainElsewhere.length) {
+    return [409, { error: mainElsewhere[0].id === c.authId
+      ? 'That number is the WhatsApp number on your own Margyn business, so messages from it go there. Remove it there first (switch to your business, then Settings > People), or use another number.'
+      : 'That number already talks to Margyn for another business. A number can do that for one business only.' }];
+  }
   const elsewhere = await deps.selectRows('business_stakeholders', `select=id&phone=eq.${digits}&whatsapp_access=eq.true&business_id=neq.${acct}&limit=1`);
   if (elsewhere.length) return [409, { error: 'That number already talks to Margyn for another business. A number can do that for one business only.' }];
   const same = (await deps.selectRows('business_stakeholders', `select=id,name,member_id,permissions&business_id=eq.${acct}&phone=eq.${digits}&limit=1`))[0] || null;
@@ -207,6 +216,24 @@ async function linkPhone(deps, c, m, raw) {
       phone: digits, role: m.role === 'finance' ? 'finance' : 'other', whatsapp_access: true, member_id: m.id, permissions }]);
   }
   return null;
+}
+
+/* ---------- a member links their own number ----------
+   Any member, any role: it is their own number, and what it may do on
+   WhatsApp still follows the role the owner gave them (waPermsFor). They
+   can't link anyone else's login, and can't change their role or access. */
+async function myPhone(deps, c, b) {
+  if (c.isOwner) return [400, { error: 'This business’s own WhatsApp number is set under Settings > People.' }];
+  if (b.phone === undefined || b.phone === null || typeof b.phone === 'object') return [400, { error: 'phone is required (empty to unlink)' }];
+  const rows = await deps.selectRows('account_members',
+    `select=id,user_id,role,permissions,name,email,status&account_id=eq.${c.accountId}&user_id=eq.${c.authId}&status=eq.active&limit=1`);
+  const m = rows[0];
+  if (!m) return [404, { error: 'Membership not found' }];
+  const err = await linkPhone(deps, c, m, b.phone);
+  if (err) return err;
+  const digits = normPhone(b.phone);
+  await audit(deps, c, 'whatsapp_linked', m.name || m.email, digits ? '+' + digits + ' (by themselves)' : 'unlinked (by themselves)');
+  return [200, { ok: true, whatsapp: digits || null }];
 }
 
 /* ---------- a member's own settings ---------- */
@@ -370,6 +397,7 @@ async function handle(action, req, res, deps) {
     else if (action === 'team-remove') out = await remove(deps, c, b);
     else if (action === 'team-join') out = await join(deps, user, b);
     else if (action === 'team-prefs') out = await prefs(deps, c, b);
+    else if (action === 'team-my-phone') out = await myPhone(deps, c, b);
     else return send(res, 404, { error: 'Unknown action' });
     return send(res, out[0], out[1]);
   } catch (e) {
