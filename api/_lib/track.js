@@ -24,6 +24,7 @@ const { insertRows } = require('./supabaseRest');
 const { EVENT_NAMES, sanitizeEventProps } = require('./eventSchema');
 
 const ALLOWED_NAMES = new Set(EVENT_NAMES);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Back-compat name: sanitizeProps(name, props) -> the schema-filtered props. */
 function sanitizeProps(name, props) {
@@ -34,15 +35,20 @@ function sanitizeProps(name, props) {
  * @param {string} userId  auth.users.id of the partner the event belongs to
  * @param {string} name     one of ALLOWED_NAMES
  * @param {object} [props]   flat metadata listed for this event in eventSchema.js
+ * @param {string} [by]      the person who did it, when that isn't the account's owner (a team login's
+ *                           auth id, 21 Nov 2026). An internal id, never an email; kept as props.by so the
+ *                           Ops Console can tell team members apart. Anything not a uuid is dropped.
  * @returns {Promise<void>}  always resolves
  */
-async function track(userId, name, props) {
+async function track(userId, name, props, by) {
   try {
     if (!userId || !name || !ALLOWED_NAMES.has(name)) return;
+    const clean = sanitizeProps(name, props);
+    if (by && UUID_RE.test(String(by)) && String(by) !== String(userId)) clean.by = String(by).toLowerCase();
     await insertRows('product_events', [{
       user_id: userId,
       name,
-      props: sanitizeProps(name, props)
+      props: clean
     }]);
   } catch (err) {
     console.error(`track(${name}) failed:`, err && err.message);

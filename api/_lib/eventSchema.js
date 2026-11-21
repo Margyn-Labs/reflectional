@@ -51,6 +51,11 @@ const EVENT_SCHEMA = {
   question_asked: { channel: ['panel', 'chat', 'whatsapp'], topic: 'slug', answered: 'bool' },
   watch_sent: { kind: 'slug', points: 'count', mode: 'slug', via: 'slug' },
 
+  // ---- which page, and how long on the one before (2026-11-21) ----
+  // page / prev_page: the app's own page keys ('home', 'receivables'…; 'left_app' = tab hidden or closed).
+  // prev_secs: seconds on prev_page. Who did it rides along as props.by (track.js), for team logins.
+  page_view: { page: 'slug', prev_page: 'slug', prev_secs: 'count' },
+
   // ---- Zoho Books funnel, server-side (2026-10-29) ----
   zoho_connect_started: { region: ZOHO_REGIONS },
   zoho_callback: { ok: 'bool', error_code: ZOHO_ERROR_CODES, org_count: 'count' },

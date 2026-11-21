@@ -62,6 +62,7 @@ const previewView = require('./_lib/previewView');
 const cfoPack = require('./_lib/cfoPack');
 const { EVENT_SCHEMA } = require('./_lib/eventSchema');
 const investorFunnel = require('./_lib/investorFunnel');
+const opsTeam = require('./_lib/opsTeam');
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -631,7 +632,7 @@ module.exports = async (req, res) => {
       const user = await getUserFromRequest(req);
       if (!user) { res.status(401).json({ error: 'Unauthorized' }); return; }
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      await track(user.id, body.name, body.props);
+      await track(user.id, body.name, body.props, user.member ? user.auth_id : null);
       res.status(202).json({ ok: true });
     } catch (err) {
       // never surface tracking failure to the product
@@ -698,6 +699,13 @@ module.exports = async (req, res) => {
       const rows = await buildPartners();
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).json({ partners: rows, generated_at: new Date().toISOString() });
+      return;
+    }
+
+    if (action === 'people' && req.method === 'GET') {
+      // Team logins, analysed (api/_lib/opsTeam.js). Not 'team-*': those route to the person's own team API above.
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json(await opsTeam.load({ selectRows, loadUserEmails }));
       return;
     }
 
