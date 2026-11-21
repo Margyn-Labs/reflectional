@@ -148,6 +148,8 @@ function mgApplyActor(){
     if(show) role.textContent = mgActor.roleLabel + (mgActor.company ? ' · ' + mgActor.company : '') + (ro ? ' · read-only' : '');
   }
   mgRenderAcctSwitch();
+  const myPh = document.getElementById('mgMyPhoneBtn');
+  if(myPh) myPh.classList.toggle('hidden', !(mgActor && !mgActor.isOwner && mgMe && mgMe.features && mgMe.features.phone_link));
   if(typeof mgRenderUser === 'function') mgRenderUser();
   if(mgJoinNotice){ mgTeamToast(mgJoinNotice.text, !mgJoinNotice.ok); mgJoinNotice = null; }
   // Signed in to a page this role can't see (an old link): go Home.
@@ -222,6 +224,53 @@ async function mgJoinWithCode(code){
     };
     go.addEventListener('click', run);
     document.getElementById('mgJoinDrawerForm').addEventListener('submit', e => { e.preventDefault(); run(); });
+  });
+})();
+
+/* ---------- a member's own WhatsApp number (2026-11-21) ----------
+   Any team member links their own number to the business they're in, so
+   Margyn on WhatsApp knows it's them. What the number may do follows the
+   role the owner gave them; the server decides that (team-my-phone). */
+(function(){
+  const btn = document.getElementById('mgMyPhoneBtn');
+  if(!btn) return;
+  btn.addEventListener('click', async () => {
+    if(typeof mgCloseAllPops === 'function') mgCloseAllPops();
+    if(!mgActor || mgActor.isOwner) return;
+    const company = mgActor.company || 'this business';
+    const can = mgCan('edit') ? 'ask about the numbers, send in bills and invoices, and confirm changes'
+      : mgCan('approve') ? 'ask about the numbers and confirm approvals' : 'ask about the numbers';
+    mgDrawer({ title:'My WhatsApp number', sub:escapeHtml('Link your number and Margyn on WhatsApp will know it’s you, for ' + company + '. As ' + mgActor.roleLabel + ' you can ' + can + '.'),
+      body:'<form id="mgMyPhoneForm"><label class="mg-tf"><span>Your WhatsApp number</span><input type="tel" class="mono" id="mgMyPhoneIn" inputmode="numeric" placeholder="98765 43210" disabled></label>' +
+        '<small class="mg-sub" id="mgMyPhoneHint">Loading…</small><div class="mg-form-err" id="mgMyPhoneErr" hidden></div></form>',
+      foot:'<button class="mg-btn hidden" type="button" id="mgMyPhoneOff">Unlink</button><button class="mg-btn primary" type="button" id="mgMyPhoneGo" disabled>Save</button>' });
+    const inp = document.getElementById('mgMyPhoneIn'), hint = document.getElementById('mgMyPhoneHint'),
+      err = document.getElementById('mgMyPhoneErr'), go = document.getElementById('mgMyPhoneGo'), off = document.getElementById('mgMyPhoneOff');
+    let now = '';
+    try {
+      const t = await mgTeamApi('team-list');
+      const me = (t.members || []).find(m => m.user_id === mgActor.authId);
+      now = (me && me.whatsapp) || '';
+    } catch(e){}
+    if(!document.getElementById('mgMyPhoneIn')) return;   // drawer closed meanwhile
+    inp.disabled = false; go.disabled = false;
+    inp.value = now ? (typeof waPrettyPhone === 'function' ? waPrettyPhone(now) : now) : '';
+    off.classList.toggle('hidden', !now);
+    hint.textContent = now ? 'Linked. Message Margyn from this number any time.' : 'A 10-digit Indian mobile, or a full number with country code.';
+    const save = async (val) => {
+      err.hidden = true; go.disabled = true; off.disabled = true;
+      try {
+        const j = await mgTeamApi('team-my-phone', { phone:val });
+        mgCloseDrawer();
+        mgTeamToast(j.whatsapp ? 'Linked. Message Margyn on WhatsApp from this number.' : 'Your number is unlinked.');
+      } catch(x){ err.textContent = x.message; err.hidden = false; go.disabled = false; off.disabled = false; }
+    };
+    go.addEventListener('click', () => {
+      if(!inp.value.replace(/[^\d]/g, '')){ err.textContent = 'Enter your number, or press Unlink.'; err.hidden = false; return; }
+      save(inp.value);
+    });
+    off.addEventListener('click', () => save(''));
+    document.getElementById('mgMyPhoneForm').addEventListener('submit', e => { e.preventDefault(); go.click(); });
   });
 })();
 

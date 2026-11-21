@@ -230,6 +230,40 @@ const call = async (tok, action, o) => { const res = mkRes(); await team.handle(
   r = await call('tok-fin', 'team-whoami');
   check('whoami: features on, and her settings come back', r.body.features.member_prefs && r.body.memberships[0].preferences.whats_new_seen === 'x');
 
+  /* ---------- 2026-11-21: a member links their own number ---------- */
+  check('gate: any member (even a Viewer) may link their own number', may('/api/ops?action=team-my-phone', 'POST', 'viewer'));
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98765 43211' } });
+  let mine = DB.business_stakeholders.find((x) => x.member_id === priya2.id && x.whatsapp_access);
+  check('self-link: Priya links her own number to this business', r.code === 200 && r.body.whatsapp === '919876543211' && mine && mine.phone === '919876543211' && mine.business_id === OWNER, { r: r.body, mine });
+  check('self-link: WhatsApp still follows her role (Viewer: ask only)', mine.permissions.ask && !mine.permissions.act && !mine.permissions.forward);
+  check('self-link: her role is unchanged', priya2.role === 'viewer');
+  check('self-link: logged as done by herself', ev('whatsapp_linked').some((e) => e.actor_id === FIN && /by themselves/.test(e.note)));
+  r = await call('tok-fin', 'team-list', { account: OWNER });
+  check('self-link: App logins shows it to the owner', r.body.members.find((m) => m.id === priya2.id).whatsapp === '919876543211');
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98765 43212' } });
+  check('self-link: changing it moves the link, one number per person', r.code === 200 && DB.business_stakeholders.filter((x) => x.member_id === priya2.id && x.whatsapp_access).length === 1
+    && DB.business_stakeholders.filter((x) => x.member_id === priya2.id && x.whatsapp_access)[0].phone === '919876543212');
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9800000001' } });
+  check('self-link: the business\'s own number is refused', r.code === 409);
+  DB.profiles.push({ id: FIN, company_name: 'Priya Co', whatsapp_phone: '919811111111' });
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98111 11111' } });
+  check('self-link: her own business\'s number is refused with a way out', r.code === 409 && /your own Margyn business/.test(r.body.error), r.body);
+  DB.profiles = DB.profiles.filter((x) => x.id !== FIN);
+  const elseP = DB.profiles.find((x) => x.id === STRANGER); elseP.whatsapp_phone = '919800000077';
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9800000077' } });
+  check('self-link: another business\'s main number is refused', r.code === 409 && /another business/.test(r.body.error));
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, phone: '9800000077' } });
+  check('owner linking: another business\'s main number is refused too', r.code === 409);
+  delete elseP.whatsapp_phone;
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: {} });
+  check('self-link: a missing phone is a 400, not an unlink', r.code === 400 && DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access));
+  r = await call('tok-owner', 'team-my-phone', { method: 'POST', body: { phone: '9876500000' } });
+  check('the owner uses Settings > People, not this', r.code === 400);
+  r = await call('tok-stranger', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9876500000' } });
+  check('a stranger cannot link a number to someone else\'s business', r.code !== 200);
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
+  check('self-unlink: her number loses access', r.code === 200 && r.body.whatsapp === null && !DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access));
+
   await call('tok-owner', 'team-remove', { method: 'POST', body: { member_id: priya2.id } });
 
   /* ---------- WhatsApp follows the login ---------- */
