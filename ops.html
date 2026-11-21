@@ -85,7 +85,7 @@
   .invform{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; font-size:12.5px; }
   .invform input{ font:inherit; font-size:12.5px; border:1px solid var(--border); border-radius:7px; padding:6px 9px; background:var(--surf); min-width:200px; }
   /* team logins (2026-11-21) */
-  .kpis{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin-bottom:18px; }
+  .kpis{ display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:8px; margin-bottom:18px; }
   .kpi{ background:var(--surf); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
   .kpi span{ display:block; font-size:11px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.04em; }
   .kpi b{ display:block; font-size:20px; font-family:'IBM Plex Mono',monospace; font-weight:500; margin-top:2px; }
@@ -427,6 +427,7 @@ const HRANK = { red:0, yellow:1, green:2, grey:3 };
 const STATUS_LABEL = { member:'Member', invited:'Invited', expired:'Invite expired', cancelled:'Cancelled', removed:'Removed', suspended:'Suspended' };
 const PAGE_LABEL = { home:'Home', cash:'Cash', receivables:'Receivables', payables:'Payables', customers:'Customers', vendors:'Vendors', gst:'GST and tax', books:'Books', margin:'Margin', analytics:'Reports', cashflow:'Cash flow', cfopack:'CFO pack', scores:'Pulse score', history:'Conversations', inbox:'Inbox', agents:'Automations', settings:'Settings', people:'People', connectors:'Organisations and sources', invoicing:'Invoicing', payments:'Payments', audit:'Audit', channels:'Channel health', profile:'Profile', financing:'Capital readiness' };
 const pageName = (k) => PAGE_LABEL[k] || k;
+const ZOHO_STATE = { active:'connected', needs_reauth:'connected, needs signing in again', pending_org_selection:'started connecting, didn’t finish', disconnected:'disconnected' };
 const hrs = (h) => h == null ? '—' : h < 1 ? Math.round(h * 60) + ' min' : h < 48 ? (Math.round(h * 10) / 10) + ' h' : Math.round(h / 24 * 10) / 10 + ' d';
 const mins = (s) => s < 60 ? s + ' s' : Math.round(s / 60) + ' min';
 function kpi(label, value, sub, bad){ return '<div class="kpi' + (bad ? ' bad' : '') + '"><span>' + label + '</span><b>' + value + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>'; }
@@ -522,7 +523,7 @@ function openPerson(key){
   const own = p.own_account;
   const ownHtml = own ? '<div class="kv"><div>Their business</div><div>' + escapeHtml(own.company || '—') + '</div>'
       + '<div>Books connected there</div><div>' + (own.books ? (own.books.length ? escapeHtml(own.books.join(', ')) : 'none') : '—') + '</div>'
-      + '<div>Zoho</div><div>' + escapeHtml(own.zoho || 'never tried') + '</div></div>'
+      + '<div>Zoho</div><div>' + escapeHtml(own.zoho ? own.zoho.split(', ').map(z => ZOHO_STATE[z] || z).join(', ') : 'never tried') + '</div></div>'
       + (own.zoho_failures.length ? '<h3>Zoho connect attempts that failed</h3>' + own.zoho_failures.map(f => '<div class="evrow"><div>' + fmtDate(f.at) + '</div><div class="mono">' + escapeHtml(f.code) + '</div><div class="muted">' + escapeHtml(f.code === 'no_books_organization' ? 'The Zoho login they approved has no Zoho Books company' : '') + '</div></div>').join('') : '')
     : '<p class="muted">No business of their own on Margyn' + (p.user_id ? '' : ' (not joined yet)') + '.</p>';
   ov.innerHTML = '<div class="drawer"><div class="dhead"><button class="x">&times;</button><h2>' + escapeHtml(p.name || p.email) + '</h2>'
