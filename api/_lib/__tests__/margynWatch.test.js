@@ -311,6 +311,8 @@ const W = require('../margynWatch');
   check('runs over Tally accounts', all.accounts === 1 && all.results.length === 1, all);
 
   console.log('first message to a newly linked team member (21 Nov 2026)');
+  check('welcome wording: a name ending in s gets an apostrophe only, and the business is the one they were added to',
+    /^Hi Varad, I'm Margyn\. You've been added to Margyn Demos on Margyn as Finance.*\n\nMargyn Demos' Zoho Books as of/.test(W.welcomeText('Good morning Varad. Your Zoho Books as of 21 Nov.\n\nx', { firstName: 'Varad', company: 'Margyn Demos', role: 'Finance' })));
   DB.profiles[0].preferences.margyn_watch.mode = 'on';
   DB.margyn_signals = []; DB.watch_pending = [];
   process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-3';

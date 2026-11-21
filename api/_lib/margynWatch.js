@@ -457,7 +457,7 @@ async function watchAccountInner(userId, opts) {
   const all = list.concat(deep);
 
   if (o.previewOnly) {
-    const res = { user: userId, mode, slot, company, found: all.length, chosen: sentItems.map((x) => x.kind), text: msg.send ? msg.text : null, note: msg.send ? undefined : 'Nothing has changed enough to send an update right now.' };
+    const res = { user: userId, mode, slot, company, account_name: profile.company_name || null, found: all.length, chosen: sentItems.map((x) => x.kind), text: msg.send ? msg.text : null, note: msg.send ? undefined : 'Nothing has changed enough to send an update right now.' };
     if (msg.send && mode === 'preview' && process.env.MARGYN_WATCH_PREVIEW_PHONE) {
       const to = process.env.MARGYN_WATCH_PREVIEW_PHONE;
       const s = (await sessionOpen(to, o.now)) ? await bsp.sendText({ to, text: build(true).msg.text }) : null;
@@ -695,11 +695,12 @@ async function signals(userId) {
  */
 function welcomeText(text, { firstName, company, role }) {
   const co = shortCompany(company);
+  const poss = /s$/i.test(co) ? co + "'" : co + "'s";
   const intro = `Hi ${firstName || 'there'}, I'm Margyn. You've been added to ${co} on Margyn${role ? ' as ' + role : ''}, so you can ask me about its books here any time, by text or voice note. Here's where it stands.`;
   return String(text || '')
     .replace(/^Good (morning|afternoon|evening)[^.]*\.\s*/, intro + '\n\n')
-    .replace(/^(Hi [^\n]*?Here's where it stands\.\n\n)Your /, `$1${co}'s `)
-    .replace(/^(Hi [^\n]*?Here's where it stands\.\n\n)From your /, `$1From ${co}'s `)
+    .replace(/^(Hi [^\n]*?Here's where it stands\.\n\n)Your /, `$1${poss} `)
+    .replace(/^(Hi [^\n]*?Here's where it stands\.\n\n)From your /, `$1From ${poss} `)
     .replace(/ I'll check back this evening on what moved\./, '')
     .replace(/ Reply STOP ALERTS to pause these\./, '')
     .trim();
@@ -720,7 +721,8 @@ async function welcomeMember(userId, { to, firstName, role, now } = {}) {
       const res = await watchAccountInner(userId, { previewOnly: true, slot: 'morning', mode: 'on', firstName, now });
       if (!res || res.skipped || !res.text) return { sent: false, reason: res && res.skipped ? 'no books yet' : 'nothing to send' };
       const raw = res.text;
-      const text = welcomeText(raw, { firstName, company: res.company, role });
+      const business = res.account_name || res.company;   // the name they see in the app's business switcher
+      const text = welcomeText(raw, { firstName, company: business, role });
       let sent = null, via = null;
       if (await sessionOpen(to, now)) {
         sent = await bsp.sendText({ to, text });
@@ -728,7 +730,7 @@ async function welcomeMember(userId, { to, firstName, role, now } = {}) {
       }
       // A proper hello once its template is approved; until then the numbers template, which already works.
       if (!via && process.env.WHATSAPP_TEMPLATE_WELCOME) {
-        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_WELCOME, params: welcomeParams(raw, { firstName, company: res.company, role, now }) });
+        sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_WELCOME, params: welcomeParams(raw, { firstName, company: business, role, now }) });
         if (sent && sent.ok) via = 'template';
       }
       if (!via && process.env.WHATSAPP_TEMPLATE_UPDATE) {
