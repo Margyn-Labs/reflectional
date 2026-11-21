@@ -49,6 +49,10 @@ const bsp = require('../whatsappBsp');
       const demo = u.includes('id=eq.demo-1');
       return { ok: true, status: 200, json: async () => [{ preferences: demo ? { external_sends: 'off' } : {}, whatsapp_phone: demo ? '+91 98000 00099' : null }], text: async () => '[]' };
     }
+    if (u.includes('/rest/v1/business_stakeholders')) {
+      const rows = u.includes('business_id=eq.demo-1') && u.includes('member_id=not.is.null') && u.includes('whatsapp_access=eq.true') ? [{ phone: '919800000077' }] : [];
+      return { ok: true, status: 200, json: async () => rows, text: async () => '[]' };
+    }
     gupshup++;
     return { ok: true, status: 200, json: async () => ({ status: 'submitted', messageId: 'm' }), text: async () => '{}' };
   };
@@ -67,5 +71,9 @@ const bsp = require('../whatsappBsp');
   guard._clearCache(); delete process.env.MARGYN_DEMO_ACCOUNTS;
   const own = await guard.runAsAccount('demo-1', () => bsp2.sendText({ to: '919800000099', text: 'your update' }));
   assert.ok(!own.blocked); assert.strictEqual(gupshup, 2, "demo tenant: the owner's own WhatsApp still gets replies and updates");
+  const team = await guard.runAsAccount('demo-1', () => bsp2.sendText({ to: '+91 98000 00077', text: 'welcome' }));
+  assert.ok(!team.blocked); assert.strictEqual(gupshup, 3, "demo tenant: a team member's linked number is the account's own too");
+  const stranger = await guard.runAsAccount('demo-1', () => bsp2.sendText({ to: '919800000055', text: 'chase' }));
+  assert.strictEqual(stranger.blocked, true); assert.strictEqual(gupshup, 3, 'demo tenant: anyone else still gets nothing');
   console.log('per-account guard ok');
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -204,7 +204,7 @@ async function linkPhone(deps, c, m, raw) {
   const mine = (await deps.selectRows('business_stakeholders', `select=id,phone,permissions&business_id=eq.${acct}&member_id=eq.${m.id}&limit=1`))[0] || null;
   const unlink = (row) => deps.updateRows('business_stakeholders', `id=eq.${row.id}`, { member_id: null, whatsapp_access: false,
     permissions: { ...(row.permissions || {}), ask: false, act: false, forward: false } });
-  if (!digits) { if (mine) await unlink(mine); return null; }
+  if (!digits) { if (mine) await unlink(mine); return { linked: null, isNew: false }; }
   if (digits.length < 11 || digits.length > 15) return [400, { error: 'Enter a 10-digit mobile, or a full number with country code.' }];
   const owner = await deps.selectRows('profiles', `select=whatsapp_phone&id=eq.${acct}&limit=1`).catch(() => []);
   if (owner[0] && normPhone(owner[0].whatsapp_phone) === digits) return [409, { error: 'That’s the account’s own WhatsApp number.' }];
@@ -228,7 +228,18 @@ async function linkPhone(deps, c, m, raw) {
     await deps.insertRows('business_stakeholders', [{ business_id: acct, name: m.name || String(m.email || '').split('@')[0] || 'Team member',
       phone: digits, role: m.role === 'finance' ? 'finance' : 'other', whatsapp_access: true, member_id: m.id, permissions }]);
   }
-  return null;
+  return { linked: digits, isNew: !(mine && String(mine.phone) === digits && same && mine.id === same.id) };
+}
+
+/* A number just linked: Margyn messages it first (margynWatch.welcomeMember), so the person never has to
+   find and save Margyn's number. Waits at most ~25 s; a slow or failed send never fails the link. */
+async function welcomeIfNew(deps, c, m, link) {
+  if (!link || !link.linked || !link.isNew) return null;
+  const firstName = String(m.name || '').trim().split(/\s+/)[0] || null;
+  const run = (deps.welcome || ((acct, o) => require('./margynWatch').welcomeMember(acct, o)))(c.accountId, { to: link.linked, firstName });
+  const cap = new Promise((resolve) => setTimeout(() => resolve({ sent: false, reason: 'still working' }), deps.welcomeWaitMs || 25000));
+  try { return await Promise.race([Promise.resolve(run).catch(() => ({ sent: false, reason: 'failed' })), cap]); }
+  catch (e) { return { sent: false, reason: 'failed' }; }
 }
 
 /* ---------- a member links their own number ----------
@@ -242,11 +253,12 @@ async function myPhone(deps, c, b) {
     `select=id,user_id,role,permissions,name,email,status&account_id=eq.${c.accountId}&user_id=eq.${c.authId}&status=eq.active&limit=1`);
   const m = rows[0];
   if (!m) return [404, { error: 'Membership not found' }];
-  const err = await linkPhone(deps, c, m, b.phone);
-  if (err) return err;
+  const link = await linkPhone(deps, c, m, b.phone);
+  if (Array.isArray(link)) return link;
   const digits = normPhone(b.phone);
   await audit(deps, c, 'whatsapp_linked', m.name || m.email, digits ? '+' + digits + ' (by themselves)' : 'unlinked (by themselves)');
-  return [200, { ok: true, whatsapp: digits || null }];
+  const welcome = await welcomeIfNew(deps, c, m, link);
+  return [200, { ok: true, whatsapp: digits || null, welcome }];
 }
 
 /* ---------- a member's own settings ---------- */
@@ -334,15 +346,16 @@ async function update(deps, c, b) {
   if (b.status !== undefined) { if (!['active', 'suspended'].includes(b.status)) return [400, { error: 'Unknown status' }]; patch.status = b.status; }
   if (b.name !== undefined) patch.name = String(b.name || '').trim().slice(0, 80) || null;
   if (!Object.keys(patch).length && b.phone === undefined) return [400, { error: 'Nothing to change' }];
-  let row = m;
+  let row = m, welcome = null;
   if (Object.keys(patch).length) [row] = await deps.updateRows('account_members', `id=eq.${m.id}&account_id=eq.${c.accountId}`, patch);
   row = row || m;
   const who = m.name || m.email;
   // A linked WhatsApp number follows the new role / switches.
   if (b.phone !== undefined) {
-    const err = await linkPhone(deps, c, row, b.phone);
-    if (err) return err;
+    const link = await linkPhone(deps, c, row, b.phone);
+    if (Array.isArray(link)) return link;
     await audit(deps, c, 'whatsapp_linked', who, normPhone(b.phone) ? '+' + normPhone(b.phone) : 'unlinked');
+    welcome = await welcomeIfNew(deps, c, row, link);
   } else if (patch.role || patch.permissions) {
     const linked = await deps.selectRows('business_stakeholders', `select=id,permissions&business_id=eq.${c.accountId}&member_id=eq.${m.id}&limit=1`).catch(() => []);
     if (linked[0]) await deps.updateRows('business_stakeholders', `id=eq.${linked[0].id}`, { permissions: waPermsFor(row, linked[0].permissions) }).catch(() => {});
@@ -350,7 +363,7 @@ async function update(deps, c, b) {
   if (patch.role) await audit(deps, c, 'role_changed', who, `${ROLE_LABEL[m.role] || m.role} to ${ROLE_LABEL[patch.role]}`);
   if (patch.permissions) await audit(deps, c, 'access_changed', who, Object.entries(patch.permissions).map(([k, v]) => `${k} ${v ? 'on' : 'off'}`).join(', ') || 'back to role defaults');
   if (patch.status) await audit(deps, c, patch.status === 'suspended' ? 'suspended' : 'restored', who);
-  return [200, { ok: true, member: { id: row.id, role: row.role, status: row.status, permissions: effectivePermissions(row.role, row.permissions) } }];
+  return [200, { ok: true, welcome, member: { id: row.id, role: row.role, status: row.status, permissions: effectivePermissions(row.role, row.permissions) } }];
 }
 async function remove(deps, c, b) {
   if (!canManage(c)) return [403, { error: 'Only the owner or an admin can do that.' }];

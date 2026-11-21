@@ -275,6 +275,34 @@ const call = async (tok, action, o) => { const res = mkRes(); await team.handle(
   r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
   check('self-unlink twice is harmless', r.code === 200 && r.body.whatsapp === null && !DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access));
 
+  /* ---------- 2026-11-21: Margyn messages a newly linked number first ---------- */
+  const welcomes = [];
+  deps.welcome = async (acct, o) => { welcomes.push({ acct, ...o }); return { sent: true, via: 'template' }; };
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '98765 43213' } });
+  check('welcome: linking a number makes Margyn message it first, for this business, by first name', r.code === 200 && r.body.welcome && r.body.welcome.sent === true
+    && welcomes.length === 1 && welcomes[0].acct === OWNER && welcomes[0].to === '919876543213' && welcomes[0].firstName === 'Priya', { body: r.body, welcomes });
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9876543213' } });
+  check('welcome: saving the same number again sends nothing', r.code === 200 && welcomes.length === 1 && r.body.welcome === null);
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9876543214' } });
+  check('welcome: a different number gets its own first message', welcomes.length === 2 && welcomes[1].to === '919876543214');
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
+  check('welcome: unlinking sends nothing', r.code === 200 && welcomes.length === 2);
+  r = await call('tok-owner', 'team-update', { method: 'POST', body: { member_id: priya2.id, phone: '9876543215' } });
+  check('welcome: the owner linking someone\'s number also gets them the first message', r.code === 200 && welcomes.length === 3 && welcomes[2].to === '919876543215' && r.body.welcome.sent === true);
+  await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
+  deps.welcome = async () => { throw new Error('gupshup down'); };
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9876543216' } });
+  check('welcome failing never fails the link', r.code === 200 && r.body.whatsapp === '919876543216' && r.body.welcome.sent === false
+    && DB.business_stakeholders.some((x) => x.member_id === priya2.id && x.whatsapp_access && x.phone === '919876543216'));
+  await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
+  deps.welcomeWaitMs = 30;
+  deps.welcome = () => new Promise((res) => setTimeout(() => res({ sent: true }), 300));
+  r = await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '9876543217' } });
+  check('welcome: a slow send doesn\'t hold up saving', r.code === 200 && r.body.welcome.sent === false && r.body.welcome.reason === 'still working');
+  await new Promise((res) => setTimeout(res, 320));
+  await call('tok-fin', 'team-my-phone', { method: 'POST', account: OWNER, body: { phone: '' } });
+  delete deps.welcomeWaitMs; deps.welcome = async () => ({ sent: false, reason: 'test' });
+
   await call('tok-owner', 'team-remove', { method: 'POST', body: { member_id: priya2.id } });
 
   /* ---------- WhatsApp follows the login ---------- */
