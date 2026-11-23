@@ -10,6 +10,7 @@
  *   ledger_events (entity_type 'person')    who invited, linked, changed, removed (the audit log)
  *   business_stakeholders (member_id)       the linked WhatsApp number
  *   wa_deliveries (kind 'welcome')          WhatsApp's own delivered / read / failed for the first message
+ *   wa_deliveries (to their number)         every message Margyn sent them since, with WhatsApp's receipts (23 Nov)
  *   whatsapp_conversations                  counts and times per linked number (never the text)
  *   chat_messages (author_id)               Ask Margyn questions per person (never the text)
  *   product_events (props.by = person)      app opens and page views per person (by: track.js, 21 Nov)
@@ -128,7 +129,7 @@ function analyze(d, now) {
     const wel = phone ? welcomes.filter((w) => digits(w.to_phone) === phone && w.user_id === p.account_id).sort((a, b) => t(a.sent_at) - t(b.sent_at)) : [];
     const w = wel[wel.length - 1] || null;
     p.whatsapp = {
-      linked: !!link, last4: phone ? phone.slice(-4) : null, linked_at: iso(linkedAt),
+      linked: !!link, last4: phone ? phone.slice(-4) : null, linked_at: iso(linkedAt), stakeholder_id: link ? link.id || null : null,
       linked_by: linkedEv ? (/automatically/.test(linkedEv.note || '') ? 'automatically, from their sign-up' : /by themselves/.test(linkedEv.note || '') ? 'themselves' : (linkedEv.actor_name || 'the owner')) : null,
       welcome: w ? {
         status: w.read_at ? 'read' : w.delivered_at ? 'delivered' : w.failed_at || w.status === 'failed' ? 'failed' : 'sent',
@@ -136,6 +137,18 @@ function analyze(d, now) {
         error_code: w.error_code || null, sends: wel.length
       } : null
     };
+    // Every message Margyn sent this number for this business (welcome, daily updates, hand-written ones), newest first.
+    const KIND_LABEL = { welcome: 'First message', watch: 'Daily update', note: 'Hand-written update', chase: 'Payment reminder' };
+    const msgs = phone ? (d.sends || []).filter((x) => digits(x.to_phone) === phone && x.user_id === p.account_id)
+      .sort((a, b) => t(b.sent_at) - t(a.sent_at)) : [];
+    p.whatsapp.messages = msgs.slice(0, 20).map((x) => ({
+      kind: x.kind || 'watch', label: KIND_LABEL[x.kind] || 'Message', sent_at: x.sent_at || null,
+      status: x.read_at || x.status === 'read' ? 'read' : x.delivered_at || x.status === 'delivered' ? 'delivered' : x.failed_at || x.status === 'failed' ? 'failed' : 'sent',
+      delivered_at: x.delivered_at || null, read_at: x.read_at || null, error_code: x.error_code || null
+    }));
+    p.whatsapp.sent_30d = msgs.filter((x) => now - t(x.sent_at) < 30 * DAY).length;
+    const lastDel = msgs.find((x) => x.delivered_at || x.read_at);
+    p.whatsapp.last_delivered_at = lastDel ? (lastDel.read_at && !lastDel.delivered_at ? lastDel.read_at : lastDel.delivered_at) : null;
 
     // Activity: app (props.by), Ask Margyn (author_id), WhatsApp (their number)
     const evs = p.user_id ? (d.events || []).filter((e) => e.props && e.props.by === p.user_id && e.user_id === p.account_id) : [];
@@ -324,7 +337,7 @@ async function load(deps, now) {
   const none = Promise.resolve([]);
   const allIds = [...new Set(accountIds.concat(personIds))];
   const booksOf = deps.connectedBooks || require('./booksSource').connectedBooks;
-  const [profiles, chats, events, convo, emails, ownZoho, ownEvents, booksList] = await Promise.all([
+  const [profiles, chats, events, convo, emails, ownZoho, ownEvents, booksList, sends] = await Promise.all([
     allIds.length ? S('profiles', `select=id,company_name,whatsapp_phone&id=in.(${inList(allIds)})`) : none,
     personIds.length ? S('chat_messages', `select=author_id,user_id,role,created_at&author_id=in.(${inList(personIds)})&role=eq.user&order=created_at.asc&limit=20000`) : none,
     personIds.length ? S('product_events', `select=user_id,name,at,props&props->>by=in.(${inList(personIds)})&at=gte.${since30}&order=at.asc&limit=20000`) : none,
@@ -332,9 +345,10 @@ async function load(deps, now) {
     deps.loadUserEmails && accountIds.length ? deps.loadUserEmails(accountIds).catch(() => ({})) : Promise.resolve({}),
     personIds.length ? S('zoho_organizations', `select=user_id,status&user_id=in.(${inList(personIds)})`) : none,
     personIds.length ? S('product_events', `select=user_id,name,at,props&user_id=in.(${inList(personIds)})&name=eq.zoho_callback&order=at.asc&limit=2000`) : none,
-    Promise.all(allIds.slice(0, 60).map((id) => booksOf(id).then((b) => [id, b]).catch(() => [id, null])))
+    Promise.all(allIds.slice(0, 60).map((id) => booksOf(id).then((b) => [id, b]).catch(() => [id, null]))),
+    phones.length ? S('wa_deliveries', `select=message_id,user_id,kind,sent_to,to_phone,status,sent_at,delivered_at,read_at,failed_at,error_code&to_phone=in.(${inList(phones)})&order=sent_at.desc&limit=2000`) : none
   ]);
-  return analyze({ members, invites, personEvents, links, welcomes, profiles, chats, events, convo, emails, ownZoho, ownEvents,
+  return analyze({ members, invites, personEvents, links, welcomes, sends, profiles, chats, events, convo, emails, ownZoho, ownEvents,
     books: Object.fromEntries(booksList.filter(([, b]) => Array.isArray(b))) }, now);
 }
 

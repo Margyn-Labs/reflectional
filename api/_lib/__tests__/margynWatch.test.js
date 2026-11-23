@@ -403,6 +403,9 @@ const W = require('../margynWatch');
   check('note: closed chat = the numbers template with exactly the six values', nt.sent && nt.via === 'template' && sent.length === n1 + 1 && nm.destination === '919811105508' && ntp.id === 'tpl-3' && JSON.stringify(ntp.params) === JSON.stringify(P), { nt, ntp });
   const np = (DB.watch_pending || []).find((x) => x.phone === '919811105508');
   check('note: a reply brings his full update; kept in his thread; comparison cleared', np && /^Good morning Yash\./.test(np.text) && DB.whatsapp_conversations.some((x) => x.from_phone === '919811105508' && /Margyn account update \(MARGYN DEMO/.test(x.content)) && nt.comparison_reset === true, { np: np && np.text.slice(0, 80), nt });
+  const dr = await W.draftMemberNote(U, 's2', { now: Date.parse('2026-11-23T07:40:00Z') });
+  check('draft: six lines pre-filled from his update, ready to send as they are', !dr.error && dr.params.length === 6 && dr.params[0] === 'Yash' && dr.params[1] === 'Acme, 23 Nov, afternoon' && /₹/.test(dr.params[2]) && W.checkNoteParams(dr.params) === null && dr.to_end === '5508', dr);
+  check('draft: never for the main number', /not the main number/.test((await W.draftMemberNote(U, 's1')).error || ''));
   delete process.env.WHATSAPP_TEMPLATE_UPDATE;
 
   console.log(`\n${pass} passed, ${fail} failed`);

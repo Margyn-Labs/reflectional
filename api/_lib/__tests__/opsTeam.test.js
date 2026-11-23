@@ -116,6 +116,18 @@ console.log('honest when a source is missing');
 const r2 = T.analyze(Object.assign({}, d, { welcomes: null, events: null }), NOW);
 check('says which sources are missing instead of showing zeros as fact', r2.missing.includes('welcome_receipts') && r2.missing.includes('app_events'), r2.missing);
 check('still works', r2.people.length === 6);
+console.log('every message sent to them (23 Nov 2026)');
+const rs = T.analyze(Object.assign({}, d, { sends: [
+  { user_id: DEMO, kind: 'welcome', to_phone: '919800001510', status: 'read', sent_at: at(40 * H), delivered_at: at(40 * H - 5000), read_at: at(39 * H) },
+  { user_id: DEMO, kind: 'note', to_phone: '919800001510', status: 'delivered', sent_at: at(2 * H), delivered_at: at(2 * H - 9000) },
+  { user_id: DEMO, kind: 'watch', to_phone: '919800001510', status: 'queued', sent_at: at(1 * H) },
+  { user_id: OTHER, kind: 'watch', to_phone: '919800001510', status: 'delivered', sent_at: at(1 * H), delivered_at: at(1 * H) }
+] }), NOW);
+const vm = rs.people.find((p) => p.email === 'v@test.in').whatsapp;
+check('messages: newest first, this business only, labelled, with WhatsApp\'s status', vm.messages.length === 3 && vm.messages[0].label === 'Daily update' && vm.messages[0].status === 'sent' && vm.messages[1].label === 'Hand-written update' && vm.messages[1].status === 'delivered' && vm.messages[2].status === 'read', vm.messages);
+check('messages: sent in 30 days and the last one WhatsApp delivered', vm.sent_30d === 3 && vm.last_delivered_at === at(2 * H - 9000), vm);
+check('messages: no read of them = an empty list, not a crash', Array.isArray(vt.whatsapp.messages) && vt.whatsapp.messages.length === 0);
+
 const r3 = T.analyze({}, NOW);
 check('empty: no crash, nothing invented', r3.people.length === 0 && r3.totals.join_rate_pct === null && r3.totals.median_hours_to_join === null);
 

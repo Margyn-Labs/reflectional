@@ -709,6 +709,14 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'member-note-draft' && req.method === 'GET') {
+      if (!req.query.account_id || !req.query.stakeholder_id) { res.status(400).json({ error: 'account_id and stakeholder_id required' }); return; }
+      const out = await require('./_lib/margynWatch').draftMemberNote(String(req.query.account_id), String(req.query.stakeholder_id));
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(out.error ? 400 : 200).json(out);
+      return;
+    }
+
     if (action === 'member-note' && req.method === 'POST') {
       // A hand-written update to one team member's WhatsApp (margynWatch.sendMemberNote). dry_run shows it first.
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});

@@ -68,6 +68,11 @@
   .kv div:nth-child(odd){ color:var(--ink-1); }
   .evrow{ display:grid; grid-template-columns:190px 200px 1fr; gap:10px; font-size:12px; padding:4px 0; border-bottom:1px dashed var(--border); }
   textarea{ width:100%; min-height:90px; font:inherit; font-size:13px; border:1px solid var(--border); border-radius:8px; padding:9px; resize:vertical; background:var(--surf); }
+  .noteform label{ display:block; font-size:11.5px; font-weight:700; color:var(--ink-1); margin:10px 0 3px; }
+  .noteform input{ width:100%; font:inherit; font-size:13px; border:1px solid var(--border); border-radius:7px; padding:7px 9px; background:var(--surf); }
+  .noteform .count{ float:right; font-weight:400; color:var(--ink-2); }
+  .notepreview{ white-space:pre-wrap; font-size:12.5px; background:#E7F6EE; border:1px solid rgba(14,143,92,.25); border-radius:8px; padding:10px 12px; margin-top:12px; }
+  .ghostbtn{ margin-top:8px; font:inherit; font-size:12.5px; font-weight:700; background:var(--surf); color:var(--ink-0); border:1px solid var(--border); border-radius:7px; padding:7px 14px; cursor:pointer; }
   .savebtn{ margin-top:8px; font:inherit; font-size:12.5px; font-weight:700; background:var(--emerald); color:#fff; border:none; border-radius:7px; padding:7px 14px; cursor:pointer; }
   .pill{ display:inline-block; font-size:11px; background:#F4F2EE; border:1px solid var(--border); border-radius:6px; padding:1px 7px; margin:2px; }
   .suggest{ background:rgba(204,91,52,.08); border:1px solid rgba(204,91,52,.25); color:#8a3f24; border-radius:8px; padding:9px 12px; font-size:12.5px; margin-bottom:16px; }
@@ -441,7 +446,9 @@ function waCell(p){
   const wl = w.welcome;
   const chip = !wl ? '<span class="chip grey">no first message</span>'
     : '<span class="chip ' + (wl.status === 'read' || wl.status === 'delivered' ? 'green' : wl.status === 'failed' ? 'red' : 'yellow') + '">' + (wl.status === 'sent' ? 'sent, unconfirmed' : wl.status) + '</span>';
-  return '<span class="mono">…' + escapeHtml(w.last4) + '</span> ' + chip;
+  const last = (w.messages || [])[0];
+  const lastTxt = last ? ' <span class="muted" style="font-size:11px">last: ' + escapeHtml(last.label.toLowerCase()) + ', ' + ago(last.sent_at) + ' ago, ' + escapeHtml(last.status) + '</span>' : '';
+  return '<span class="mono">…' + escapeHtml(w.last4) + '</span> ' + chip + lastTxt;
 }
 function renderTeam(){
   const d = team;
@@ -549,8 +556,11 @@ function openPerson(key){
       + '<div>Margyn’s first message</div><div>' + (w.welcome ? escapeHtml(w.welcome.status) + (w.welcome.error_code ? ' <span class="mono">' + escapeHtml(w.welcome.error_code) + '</span>' : '') : '—') + '</div>'
       + (w.welcome ? '<div>Sent / delivered / read</div><div>' + fmtDate(w.welcome.sent_at) + ' / ' + fmtDate(w.welcome.delivered_at) + ' / ' + fmtDate(w.welcome.read_at) + '</div>' : '')
       + '<div>Replied after it</div><div>' + (a.replied_after_welcome ? 'yes' : w.welcome ? 'not yet' : '—') + '</div>'
-      + '<div>Margyn’s messages to them, 30d</div><div class="num">' + a.whatsapp_out_30d + '</div></div>'
-      + '<p class="muted" style="font-size:12px">Counts and times only. Message text never comes here.</p></div>'
+      + '<div>Margyn’s messages to them, 30d</div><div class="num">' + (w.sent_30d != null ? w.sent_30d : a.whatsapp_out_30d) + '</div>'
+      + '<div>Last one WhatsApp delivered</div><div>' + fmtDate(w.last_delivered_at) + '</div></div>'
+      + '<h3>Every message Margyn sent them</h3>' + ((w.messages || []).length ? w.messages.map(m => '<div class="evrow"><div>' + escapeHtml(m.label) + '</div><div><span class="chip ' + (m.status === 'read' || m.status === 'delivered' ? 'green' : m.status === 'failed' ? 'red' : 'yellow') + '">' + escapeHtml(m.status === 'sent' ? 'sent, unconfirmed' : m.status) + '</span>' + (m.error_code ? ' <span class="mono">' + escapeHtml(m.error_code) + '</span>' : '') + '</div><div class="muted">sent ' + fmtDate(m.sent_at) + (m.delivered_at ? ' · delivered ' + fmtDate(m.delivered_at) : '') + (m.read_at ? ' · read ' + fmtDate(m.read_at) : '') + '</div></div>').join('') : '<p class="muted">None yet.</p>')
+      + (w.linked && w.stakeholder_id ? '<h3 style="margin-top:18px">Send them an update</h3><div id="noteBox"><p class="muted" style="font-size:12px;margin:0 0 6px">Fills WhatsApp’s approved update message with lines you choose, pre-filled from this business’s books right now. You see exactly what goes before anything is sent. If they reply, Margyn sends the full update.</p><button class="savebtn" id="noteStart">Write an update</button></div>' : '')
+      + '<p class="muted" style="font-size:12px">Times and WhatsApp’s receipts only. Message text never comes here.</p></div>'
     + '<div class="tabpane" data-p="o" hidden>' + ownHtml + '</div></div>';
   document.body.appendChild(ov);
   $('.x', ov).onclick = () => ov.remove();
@@ -558,6 +568,49 @@ function openPerson(key){
     ov.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
     ov.querySelectorAll('.tabpane').forEach(x => x.hidden = x.dataset.p !== b.dataset.t);
   });
+  const ns = $('#noteStart', ov);
+  if(ns) ns.onclick = () => noteForm(ov, p);
+}
+/* Send a team member a hand-written update (api/ops.js member-note-draft / member-note). */
+async function opsCall(path, opts){
+  const res = await fetch('/api/ops' + path, { ...(opts || {}), headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + token } });
+  let body = null; try { body = await res.json(); } catch(e){}
+  if(!res.ok) throw new Error((body && body.error) || ('Could not do that (' + res.status + ')'));
+  return body;
+}
+async function noteForm(ov, p){
+  const box = $('#noteBox', ov), w = p.whatsapp;
+  const ids = { account_id: p.account_id, stakeholder_id: w.stakeholder_id };
+  box.innerHTML = '<p class="muted">Reading the books…</p>';
+  let d;
+  try { d = await opsCall('?action=member-note-draft&account_id=' + encodeURIComponent(ids.account_id) + '&stakeholder_id=' + encodeURIComponent(ids.stakeholder_id)); }
+  catch(e){ box.innerHTML = '<p class="muted">' + escapeHtml(e.message) + '</p>'; return; }
+  const max = [60, 60, 220, 220, 220, 220];
+  box.innerHTML = '<div class="noteform">'
+    + '<p class="muted" style="font-size:12px;margin:0">To …' + escapeHtml(d.to_end) + '. ' + (d.chat_open ? 'Their chat is open, so it goes as a normal message.' : 'They haven’t messaged in over a day, so WhatsApp only takes the approved update message: “Hi [name], this is your scheduled Margyn account update ([which update]), worked out from the books you connected.” and then your four lines.') + '</p>'
+    + d.labels.map((l, i) => '<label>' + escapeHtml(l) + '<span class="count" data-c="' + i + '"></span></label><input data-i="' + i + '" maxlength="' + max[i] + '" value="' + escapeHtml(d.params[i] || '') + '">').join('')
+    + '<label style="font-weight:400"><input type="checkbox" id="noteReset" style="width:auto;margin-right:6px">Also make the next scheduled update state the figures instead of comparing with earlier ones (use after the books were refreshed or corrected)</label>'
+    + '<div><button class="ghostbtn" id="notePrev">Preview</button> <span class="muted" id="noteMsg"></span></div><div id="noteOut"></div></div>';
+  const vals = () => [...box.querySelectorAll('input[data-i]')].map(x => x.value.replace(/\s+/g, ' ').trim());
+  const count = () => box.querySelectorAll('input[data-i]').forEach(x => { box.querySelector('[data-c="' + x.dataset.i + '"]').textContent = x.value.length + '/' + max[x.dataset.i]; });
+  box.querySelectorAll('input[data-i]').forEach(x => x.oninput = () => { count(); $('#noteOut', box).innerHTML = ''; });
+  count();
+  const msg = (t) => { $('#noteMsg', box).textContent = t || ''; };
+  $('#notePrev', box).onclick = async () => {
+    msg('Checking…');
+    let r;
+    try { r = await opsCall('?action=member-note', { method:'POST', body: JSON.stringify({ ...ids, params: vals(), dry_run: true }) }); }
+    catch(e){ msg(e.message); return; }
+    msg('');
+    $('#noteOut', box).innerHTML = '<div class="notepreview">' + escapeHtml(r.text) + '</div><button class="savebtn" id="noteSend">Send to …' + escapeHtml(r.to_end) + '</button>';
+    $('#noteSend', box).onclick = async (ev) => {
+      ev.target.disabled = true; ev.target.textContent = 'Sending…';
+      let s;
+      try { s = await opsCall('?action=member-note', { method:'POST', body: JSON.stringify({ ...ids, params: vals(), reset_comparison: $('#noteReset', box).checked }) }); }
+      catch(e){ ev.target.disabled = false; ev.target.textContent = 'Send to …' + r.to_end; msg(e.message); return; }
+      box.innerHTML = '<div class="suggest" style="background:#E7F6EE;border-color:rgba(14,143,92,.25);color:var(--emerald)"><b>Sent</b> to …' + escapeHtml(s.to_end) + (s.via === 'template' ? ' as the approved update message' : '') + '. WhatsApp’s delivered / read shows above once it reports.' + (s.comparison_reset ? ' The next scheduled update will state the figures.' : '') + '</div>';
+    };
+  };
 }
 async function loadTeam(){
   try { team = await api('?action=people'); }
