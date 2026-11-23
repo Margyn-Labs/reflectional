@@ -37,6 +37,7 @@ const booksEngine = require('./_lib/booksEngine');
 const { memberPerms, describePerms, mayConfirm } = require('./_lib/memberAccess');
 const sendGuard = require('./_lib/sendGuard');
 const onboard = require('./_lib/onboardText');
+const remindCustomer = require('./_lib/remindCustomer');
 
 // Every request runs in a send-guard context: once the account is known (resolveSender, matchChaseTarget),
 // an account with external sends off (a demo tenant) sends nothing, however deep the send is (sendGuard.js).
@@ -539,11 +540,13 @@ async function resolveActionReply(userId, from, pending, decision, sender) {
     channel: 'whatsapp'
   };
   const result = await marginActions.resolvePendingAction(pending, decision === 'confirm', actor);
+  // An action can say what actually happened ("Sent ✅ ...", "Preview only ...") or, when refused, why in
+  // plain words (no number saved, reminders off): marginActions result.reply / result.userMessage.
   const replyText = result.executed
-    ? 'Done ✅' + (pending.human_summary ? '\n' + pending.human_summary : '')
+    ? (result.reply || 'Done ✅' + (pending.human_summary ? '\n' + pending.human_summary : ''))
     : result.ok
       ? 'Cancelled. Nothing changed.'
-      : "That didn't go through, so nothing changed. Try again in a minute, or do it from the app.";
+      : result.userMessage || "That didn't go through, so nothing changed. Try again in a minute, or do it from the app.";
   // The raw error (often a Postgres message) belongs in the logs, not in the
   // user's WhatsApp.
   if (!result.ok) console.error('[whatsapp] action failed', pending.action_type, pending.id, result.error);
@@ -1295,7 +1298,7 @@ async function syncChaseQueueManualOnly(userId, config) {
   try {
     existing = await selectRows(
       'whatsapp_chase_targets',
-      `select=id,receivable_id,party_name,state&user_id=eq.${userId}&limit=2000`
+      `select=id,receivable_id,party_name,state,next_chase_at&user_id=eq.${userId}&limit=2000`
     );
   } catch (e) { /* treat as none */ }
   const targetByRecv = new Map(existing.filter((t) => t.receivable_id).map((t) => [t.receivable_id, t]));
@@ -1343,16 +1346,33 @@ async function syncChaseQueueManualOnly(userId, config) {
     }
   }
 
-  // Receivable settled/removed out from under an active chase -> stop chasing.
-  for (const t of existing) {
-    if (!t.receivable_id || openRecvIds.has(t.receivable_id)) continue;
-    if (['active', 'paused_promise'].includes(t.state)) {
-      await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, {
-        state: 'resolved_paid',
-        resolution: 'Receivable was settled or removed in the app.',
-        resolved_at: new Date().toISOString(),
-        next_chase_at: null
-      }).catch(() => {});
+  // A chase whose entry isn't open any more. Paid ONLY when the app's own entry is there and settled: a
+  // customer from the books (a one-off reminder from the Remind button or WhatsApp leaves one of these) isn't a
+  // manual entry at all, and this run never reads the books, so it has no say on whether they paid
+  // (2026-11-23: Tally customers were being marked "paid" here). An entry that is gone is no longer
+  // chased automatically, without calling it paid.
+  const gone = existing.filter((t) => t.receivable_id && !openRecvIds.has(t.receivable_id) && ['active', 'paused_promise'].includes(t.state));
+  const settledIds = new Set(), knownIds = new Set();
+  let lookedUp = true;
+  for (let i = 0; i < gone.length; i += 100) {
+    const ids = gone.slice(i, i + 100).map((t) => '"' + String(t.receivable_id).replace(/"/g, '') + '"').join(',');
+    try {
+      const rows = await selectRows('receivables', `select=id,status&user_id=eq.${userId}&id=in.(${encodeURIComponent(ids)})`);
+      for (const r of rows) { knownIds.add(r.id); if (r.status !== 'open') settledIds.add(r.id); }
+    } catch (e) { lookedUp = false; }
+  }
+  if (lookedUp) {
+    for (const t of gone) {
+      if (settledIds.has(t.receivable_id)) {
+        await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, {
+          state: 'resolved_paid',
+          resolution: 'Receivable was settled in the app.',
+          resolved_at: new Date().toISOString(),
+          next_chase_at: null
+        }).catch(() => {});
+      } else if (!knownIds.has(t.receivable_id) && t.next_chase_at) {
+        await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, { next_chase_at: null }).catch(() => {});
+      }
     }
   }
 
@@ -1426,79 +1446,12 @@ async function handleRemindNow(req, res) {
   if (!can(actor, 'view_receivables') || (send && !can(actor, 'approve'))) { res.status(403).json({ error: 'Your access doesn\'t include sending reminders. The account owner can change it under Settings > People.' }); return; }
   const userId = actor.accountId;
   try {
-    const pos = (await moneyModel.positionForAccount(userId, { dirs: ['recv'], withRows: true })).receivables;
-    const item = chase.pickReminderItem(chase.chaseItemsFromPosition(pos.groups).items, String(b.party || '').slice(0, 160));
-    if (!item) { res.status(404).json({ error: 'not_found', message: 'I couldn\'t find anything ' + (b.party || 'they') + ' owes in your books.' }); return; }
-    const k = normPartyName(item.party);
-    const [parties, deps, targets, businessName, sendsOff] = await Promise.all([
-      selectRows('ledger_parties', `select=id,name,phone&user_id=eq.${userId}&limit=5000`).catch(() => []),
-      selectRows('agent_deployments', `select=status,config&user_id=eq.${userId}&agent_id=eq.chase_agent&limit=1`).catch(() => []),
-      selectRows('whatsapp_chase_targets', `select=*&user_id=eq.${userId}&receivable_id=eq.${encodeURIComponent(item.receivable_id)}&limit=1`).catch(() => []),
-      businessNameFor(userId),
-      sendGuard.accountSendsOff(userId).catch(() => false)
-    ]);
-    const party = parties.find((p) => normPartyName(p.name) === k && p.phone) || parties.find((p) => normPartyName(p.name) === k) || null;
-    const dep = deps[0] || null, config = chase.mergeConfig(dep && dep.config);
-    let target = targets[0] || null;
-    const phone = (target && target.contact_phone) || (party && party.phone ? normalizePhone(party.phone) : '');
-    const n = target ? Number(target.chases_sent) || 0 : 0;
-    const tier = chase.resolveTier(n, item.due || null, config, target ? Number(target.broken_promise_count) || 0 : 0);
-    const msg = chase.buildChaseMessage({ tier, tonePreset: config.tone_preset, businessName, invoiceRef: item.ref, amount: item.amount, dueDate: item.due });
-    // The same refusals as the 10:30 run, plus one a day: a customer on the business opt-out list (replied STOP),
-    // switched off, a wrong number, inside a promise to pay, or already reminded in the last 20 hours.
-    const optedOut = !!phone && Array.isArray(config.opt_out) && config.opt_out.includes(normalizePhone(phone));
-    const promiseUntil = target && target.state === 'paused_promise' && target.promise_to_pay_date && String(target.promise_to_pay_date).slice(0, 10) >= new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10) ? String(target.promise_to_pay_date).slice(0, 10) : null;
-    const remindedAt = target && target.last_chase_at && Date.now() - Date.parse(target.last_chase_at) < 20 * 3600000 ? target.last_chase_at : null;
-    const stopped = optedOut ? 'opted_out' : target && ['stopped', 'opted_out', 'wrong_contact'].includes(target.state) ? target.state
-      : promiseUntil ? 'promised' : remindedAt ? 'reminded_recently' : null;
-    const out = {
-      party: item.party, amount: item.amount, invoice_ref: item.ref || null, due_date: item.due || null, party_id: party ? party.id : null,
-      has_phone: !!phone, phone_end: phone ? String(phone).replace(/\D/g, '').slice(-4) : null,
-      text: msg.body, template_ready: !!msg.templateId, sends_off: sendsOff, chase_number: n + 1, stopped,
-      promise_until: promiseUntil, reminded_at: remindedAt
-    };
-    if (!send) { res.setHeader('Cache-Control', 'no-store'); res.status(200).json(out); return; }
-    if (stopped) {
-      const why = stopped === 'stopped' ? 'You switched reminders off for ' + item.party + ' (Automations > Chasing).'
-        : stopped === 'promised' ? item.party + ' promised to pay by ' + promiseUntil + ', so no reminder until then.'
-        : stopped === 'reminded_recently' ? item.party + ' was already reminded in the last day, so nothing was sent again.'
-        : item.party + ' asked not to be messaged, or the number is wrong.';
-      res.status(409).json(Object.assign(out, { error: why })); return;
-    }
-    if (!phone) { res.status(400).json(Object.assign(out, { error: 'need_phone' })); return; }
-    if (!msg.templateId) { res.status(409).json(Object.assign(out, { error: 'The WhatsApp reminder template isn\'t set up yet, so nothing was sent.' })); return; }
-    if (!target) {
-      const rows = await insertRows('whatsapp_chase_targets', [{
-        user_id: userId, receivable_id: item.receivable_id, party_id: party ? party.id : null, party_name: item.party || 'Customer',
-        contact_phone: phone, amount: Number(item.amount) || 0, due_date: item.due || null, invoice_ref: item.ref || null,
-        state: 'active', current_tier: tier, next_chase_at: null
-      }], { onConflict: 'user_id,receivable_id', merge: false }).catch(() => null);
-      target = (Array.isArray(rows) && rows[0]) || (await selectRows('whatsapp_chase_targets', `select=*&user_id=eq.${userId}&receivable_id=eq.${encodeURIComponent(item.receivable_id)}&limit=1`).catch(() => []))[0] || null;
-      if (!target) { res.status(500).json({ error: 'Could not record the reminder, so nothing was sent.' }); return; }
-    }
-    const result = await sendGuard.runAsAccount(userId, () => bsp.sendTemplate({ to: phone, templateId: msg.templateId, params: msg.params }));
-    const nowIso = new Date().toISOString();
-    const preview = !!(result && result.ok && result.blocked);
-    const ok = !!(result && result.ok);
-    if (ok && !preview) await deliveries.record({ messageId: result.messageId || null, userId, kind: 'chase', to: phone, sentTo: 'customer', ref: target.id });
-    try {
-      await insertRows('whatsapp_chases', [{
-        user_id: userId, chase_target_id: target.id, receivable_id: target.receivable_id || null, party_id: target.party_id || null,
-        invoice_ref: item.ref || null, contact_phone: phone, chase_number: n + 1, escalation_tier: tier, channel: 'whatsapp_template',
-        tone_preset: config.tone_preset || 'friendly', template_name: msg.templateName, template_params: msg.params, message_body: msg.body,
-        wa_message_id: ok ? result.messageId || null : null, status: preview ? 'skipped' : ok ? 'sent' : 'failed',
-        error: preview ? chase.PREVIEW_NOTE : ok ? null : (result && result.error) || 'send failed', scheduled_for: nowIso, sent_at: ok && !preview ? nowIso : null
-      }]);
-    } catch (err) { console.error('remind-now: could not log the chase', err.message); }
-    if (ok) {
-      // The next reminder follows the owner's Chase settings, only where Chase is switched on.
-      const nextAt = dep && dep.status === 'active' && config.enabled !== false ? chase.nextChaseAt(item.due || null, n + 1, config, new Date()) : null;
-      await updateRows('whatsapp_chase_targets', `id=eq.${target.id}`, { chases_sent: n + 1, current_tier: tier, last_chase_at: nowIso, contact_phone: phone,
-        next_chase_at: nextAt && n + 1 < config.max_chases ? nextAt.toISOString() : null }).catch(() => {});
-    }
-    await logConnectorEvent({ userId, connectorType: 'whatsapp', operation: 'chase_now_' + tier, status: ok ? 'success' : 'error',
-      errorMessage: preview ? chase.PREVIEW_NOTE : ok ? null : (result && result.error) || null, recordsSynced: ok && !preview ? 1 : 0 }).catch(() => {});
-    res.status(ok ? 200 : 502).json(Object.assign(out, { sent: ok && !preview, preview, error: ok ? undefined : 'WhatsApp didn\'t take the message: ' + ((result && result.error) || 'unknown error') }));
+    // One code path for this button and WhatsApp's "chase <customer>" (_lib/remindCustomer.js, 2026-11-23).
+    const prep = await remindCustomer.prepare(userId, b.party);
+    if (!prep.found) { res.status(404).json({ error: 'not_found', message: 'I couldn\'t find anything ' + (b.party || 'they') + ' owes in your books.' }); return; }
+    if (!send) { res.setHeader('Cache-Control', 'no-store'); res.status(200).json(prep.out); return; }
+    const r = await remindCustomer.send(userId, prep);
+    res.status(r.code).json(r.body);
   } catch (err) {
     console.error('remind-now failed:', err.message);
     res.status(500).json({ error: 'Could not prepare the reminder' });

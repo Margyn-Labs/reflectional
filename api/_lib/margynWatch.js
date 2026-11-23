@@ -459,7 +459,9 @@ async function watchAccountInner(userId, opts) {
   const mode = o.mode || modeOf(profile);
   const company = ctx.company || profile.company_name;
   const snaps = await loadSnaps(userId);
-  const snap = brief.snapshot(ctx, fc, o.now);
+  // The newest snapshot kept: whether this read's balances agree with its entries is judged against it (watchBrief.tieVerdict).
+  const prior = [snaps.last, snaps.morning].filter((x) => x && x.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0] || null;
+  const snap = brief.snapshot(ctx, fc, o.now, prior);
   const promises = slot === 'evening' ? await forecastStore.promises(userId) : [];
   const build = (preview) => buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, { firstName: preview ? null : (o.firstName || firstNameOf(profile)), preview, company, promises });
   const { msg, sentItems, points } = build(false);
@@ -571,7 +573,8 @@ async function watchAccountInner(userId, opts) {
         .concat(((snaps.morning && snaps.morning.hist) || []).filter((h) => h.day !== snap.day)).slice(0, 14);
       await saveSnap(userId, 'morning', snap);
       await saveSnap(userId, 'last', snap);
-    } else if (sentInfo || slot === 'evening' || !(snaps.last && snaps.last.day === snap.day)) {
+    } else if (!(INTRADAY.has(slot) && brief.halfSynced(snap)) && (sentInfo || slot === 'evening' || !(snaps.last && snaps.last.day === snap.day))) {
+      // A pulse held because the books were half updated keeps nothing: the next one compares with the last good read.
       // What's been said today (each pulse line once a day) and how many pulses went out (at most four).
       const same = snaps.last && snaps.last.day === snap.day;
       const keep = sentInfo ? { said: msg.said, pulses: msg.pulses, sig: msg.sig || null } : { said: same ? snaps.last.said : [], pulses: same ? snaps.last.pulses : 0, sig: same ? snaps.last.sig || null : null };

@@ -216,14 +216,16 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
     return;
   }
 
-  // A short "your update is ready" template went out and this is their reply (a See details tap or anything
-  // else): the full update goes first. A bare "see details" / "show" needs nothing more.
+  // A short "your update is ready" template went out and this is their reply. A tap or a yes ("See details",
+  // "ok", "full update") brings the saved full update and nothing more. A real question is answered on its own,
+  // fresh from the books: before 23 Nov 2026 "what is my total sales for this year?" got last night's wrap first
+  // and Mihir had to ask again. The saved update stays for a later tap (under a day old).
   try {
-    const waiting = await require('./margynWatch').takePending(fromPhone);
+    const waiting = asksSomething(cleanText) ? null : await require('./margynWatch').takePending(fromPhone);
     if (waiting && waiting.text) {
       await sendReply(fromPhone, waiting.text);
       if (String(waiting.user_id) === String(profileId)) await persist({ profileId, phone: fromPhone }, 'assistant', waiting.text, null);
-      if (/^\s*(see|show|view|open)?\s*(details?|update|it|more)?\s*[.!]*\s*$/i.test(cleanText) || /^\s*(ok|okay|yes|haan|ha)\s*[.!]*\s*$/i.test(cleanText)) return;
+      if (isTapOrAck(cleanText)) return;
     }
   } catch (e) { console.error('[whatsappAgent] pending update:', e.message); }
 
@@ -412,7 +414,7 @@ async function handleProposal(p, { profileId, fromPhone, textOut }) {
 
   // Never send a card whose Confirm can't work: the target must be one real
   // row this user owns (a name is resolved to its row id here).
-  const checked = await marginActions.validateProposal(p, profileId);
+  const checked = await marginActions.validateProposal(p, profileId, { channel: 'whatsapp' });
   if (!checked.ok) {
     await persist({ profileId, phone: fromPhone }, 'assistant', checked.message, null);
     await sendReply(fromPhone, checked.message);
@@ -499,6 +501,21 @@ function senderLine(companyName, sender) {
 // Byte-identical for every business and sender so it caches; the business
 // name, who is texting and their access go in the ACCOUNT block after it
 // (see runConversation).
+/** A reply that just opens the saved update: a See details tap, "ok", "yes", "full update", "show me". */
+function isTapOrAck(text) {
+  const t = String(text || '').trim();
+  return /^(see|show|view|open|send|give)?\s*(me\s*)?(the\s*)?(full\s*)?(details?|update|it|more|all)?\s*(please|pls)?\s*[.!]*$/i.test(t)
+    || /^(ok|okay|k|yes|yess+|yeah|yep|sure|haan|ha|han|ji|ji haan|thanks|thank you|👍)\s*[.!]*$/i.test(t);
+}
+/** A reply that asks for something specific, so it gets its own fresh answer rather than the saved update. */
+function asksSomething(text) {
+  const t = String(text || '').trim();
+  if (!t || isTapOrAck(t)) return false;
+  if (/\?/.test(t)) return true;
+  if (/^(what|whats|what's|how|why|when|who|which|where|is|are|can|could|should|do|does|did|will|tell|show me|give me|list|kitna|kitne|kya|kaun|kab|kaise|kyun|batao)\b/i.test(t)) return true;
+  return t.split(/\s+/).length >= 4;
+}
+
 const STATIC_SYSTEM_PROMPT = `You are Margyn's WhatsApp assistant for a digital-native Indian business: the one named in the ACCOUNT section at the end of these instructions. Someone from the business has messaged the Margyn WhatsApp line (the same line that sends the daily Opening Bell and Closing Bell briefings). Reply like a sharp finance teammate texting back — not a dashboard bot, not a consultant memo.
 
 VOICE:
@@ -527,6 +544,7 @@ YOUR BOOKS (TALLY, ZOHO BOOKS OR ODOO): THE MOST IMPORTANT PART
 - The person texting may not follow their finances closely. Answer in plain words, the number first, then what it means for them, in one or two short lines. Hindi or Hinglish in, easy Hinglish out. No finance jargon: "customers take about 70 days to pay you", not "DSO 70".
 - For ANY question about sales, purchases, profit, costs, a customer or vendor, products, who owes what, cash, overdraft, interest, GST or "what should I look at", use the books tools first: books_summary, books_breakdown, customer_or_vendor, products, money_owed, find_entries, cash_and_loans, cash_flow_statement, borrowing_history, what_needs_attention, books_health_check. They read every Tally entry for the year, not a summary. Never say Zoho isn't connected when the books are in Tally, and never say you only see 30 days.
 - Money comes back written the Indian way ("₹1.32 Cr", "₹41.2 L"). Copy it exactly; never convert lakh and crore or add figures up yourself.
+- Every figure you give is fetched fresh for this reply. Never repeat a number from an earlier message in this chat (a morning or evening update, a briefing, or your own earlier answer) as if it were current: the books change through the day, and on 17 Nov 2026 a cash figure was repeated from the night before after the books had moved. Call the tool again. If you do mention an earlier figure, say when it was from ("this morning's update said ...").
 - "This year" means this Indian financial year (from 1 April). If a tool says a period isn't synced (like last year), say so plainly.
 - These are the business's own books, in whichever system the tools' source line names: say "per your Tally books" or "per your Zoho Books" once at most. Don't tack "Signal" on every number.
 - "The above", "that problem" with nothing before it: call what_needs_attention and answer about the biggest item.
@@ -546,12 +564,16 @@ You can do three things:
 3. PROPOSE an action with propose_action — approve/reject an import, approve/dismiss an agent-queue item, pause/resume/reconfigure payment reminders, mark a ledger item or a chase target paid, log a new ledger entry, stop chasing someone, or send a one-off chase reminder. Calling this NEVER executes anything — it sends the sender a WhatsApp button to tap. Only the tapped button, never a typed reply, makes the write happen. Use the list_* tools first if you need to resolve which specific row the sender means.
 
 Invoices and bills that come from Zoho Books, Tally or Odoo are read-only in Margyn: you cannot mark them paid or edit them. If asked to, say it needs to be recorded in their accounting system and Margyn will pick it up on the next sync. Only rows from list_open_ledger_items (the app's own ledger) can be marked paid.
+Read-only does NOT stop a payment reminder. Margyn can send any customer who owes money, from Tally, Zoho Books, Odoo or the app's own ledger, one WhatsApp payment reminder after the sender taps Confirm. Before you offer or propose a reminder ("chase X", "remind X", or when you suggest chasing someone yourself), call list_chase_targets with party_query = the customer's name and read reminder_check:
+   - can_remind true: call propose_action with type send_one_off_chase and payload.party set to reminder_check.party. Margyn writes the Confirm card itself, with the amount, the number and the exact message.
+   - can_remind false: do not offer a reminder. Reply with reminder_check.say, word for word. If it has an offer (reminders are switched off), you may also call propose_action resume_chase_agent so the sender can switch them back on with one tap.
+Never say a customer "isn't on the reminder list" or that a reminder is impossible because the books are read-only. Never hand a chase to the AR contact instead.
 
 Pick the right tool: for "how much is overdue", "receivables 30/60/90 days", "who should I chase", "what bills are due" use list_receivables / list_payables and read the per-item days — do NOT answer those from the single 90-day figure in get_vitals. Use get_vitals for the scores and the headline totals.
 
 HARD RULE — you cannot make, schedule or confirm an actual payment, move funds, or freely rewrite a balance figure, ever, confirmed or not — there is no tool for any of that. If the sender asks YOU to do one of those specifically, do NOT call any tool — reply only with exactly this line: "${APPROVAL_REQUIRED_REPLY}"
 Everything else that changes Margyn's own data (approvals, marking paid, logging entries, payment reminders) is fine to propose — propose_action always requires an explicit button tap before anything actually changes, so there is no harm in proposing when the sender's intent is clear.
-Relaying is different and allowed: "tell my AP person the Acme bill needs paying" is a routing request — use route_message to forward it to the right person; you are passing a message to a human, not actioning anything. But "chase Acme on the overdue payment" — the sender asking Margyn itself to chase — is now a propose_action (send_one_off_chase), not a route_message.
+Relaying is different and allowed: "tell my AP person the Acme bill needs paying" is a routing request — use route_message to forward it to the right person; you are passing a message to a human, not actioning anything. But "chase Acme on the overdue payment", or a plain "yes" to a reminder you offered, is the sender asking Margyn itself to chase. That is a propose_action (send_one_off_chase, payload.party = the customer) after checking reminder_check. It is never a route_message, and never a reason to look for an AR contact.
 
 Other rules:
 - Who is texting is in the ACCOUNT section: follow what it says about recognising them.
@@ -974,4 +996,4 @@ async function persist(thread, role, content, toolCalls, waMessageId) {
   }
 }
 
-module.exports = { runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS, buildMessages, newerFromSameNumber };
+module.exports = { isTapOrAck, asksSomething, runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS, buildMessages, newerFromSameNumber };

@@ -295,6 +295,8 @@ async function mgoRemind(party){
     : who + ' asked not to be messaged, or the number is wrong.') + '</p>';
   else if(!d.template_ready) html += '<p class="mgo-note">The WhatsApp reminder template isn’t set up on Margyn’s side yet, so I can’t send this one.</p>';
   else if(!d.has_phone) html += '<form class="mgr-name mgo-form" data-mgo-remindphone="' + escapeHtml(d.party) + '"><label>' + escapeHtml(who) + '’s WhatsApp number isn’t in your books. Add it and I’ll show the reminder again:</label><div><input type="tel" inputmode="tel" maxlength="20" placeholder="10-digit mobile"><button type="submit" class="mgr-chip on">Save number</button></div><div class="mgo-err" data-mgo-err></div></form>';
+  // Payment reminders off for the whole account: the same words WhatsApp uses, no Send button (2026-11-23).
+  else if(d.reminders_off) html += '<p class="mgo-note">' + escapeHtml(d.reminders_off) + '</p>';
   else html += (d.sends_off ? '<p class="mgo-note">This account is in demo mode: it will be logged as “Preview: not sent” and won’t reach ' + escapeHtml(who) + '.</p>' : '') +
     '<div class="mgr-acts"><button type="button" class="mgr-chip on" data-mgo-send="' + escapeHtml(d.party) + '">Send to …' + escapeHtml(d.phone_end || '') + '</button><button type="button" class="mgr-chip ghost" data-mgo-cancel>Not now</button></div>';
   mgrHtmlLine(html, 'mgo-remind');

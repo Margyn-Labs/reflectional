@@ -88,7 +88,46 @@ function owedByParty(ctx) {
  * The position now, kept with each update so the next one can say what moved.
  * parties: the 80 biggest customer balances as [name, owed, more-than-a-month-late].
  */
-function snapshot(ctx, fc, now) {
+/**
+ * Tally only: do this read's balances agree with its entries, measured against the last read that agreed?
+ * gaps: per ledger (money ledgers and the snapshot's customers), Tally's balance minus opening + entries
+ * (booksEngine.ledgerTie). A gap that moved by a threshold or more since the base means a balance changed with no
+ * entry to explain it (or an entry arrived before its balance): the sync is still catching up. prior: the newest
+ * snapshot kept. The base is the gaps of the last read that agreed; after 36 hours without one, the books are
+ * taken as they are (an opening balance edited in Tally changes a gap for good).
+ * Returns { gaps, base, base_at, ok, off: [{ name, gap, was }] } or null for other books.
+ */
+const TIE_BASE_MAX_MS = 36 * 3600000;
+function tieVerdict(ctx, parties, now, prior) {
+  if (ctx.source && ctx.source !== 'tally') return null;
+  let tie;
+  try { tie = E.ledgerTie(ctx); } catch (e) { return null; }
+  const byNorm = new Map();
+  for (const [name, gap] of tie.all) byNorm.set(norm(name), gap);
+  const gaps = {}, names = {};
+  for (const [name, gap] of tie.money) { gaps['$' + norm(name)] = gap; names['$' + norm(name)] = name; }
+  for (const k of Object.keys(parties)) if (byNorm.has(k)) { gaps[k] = byNorm.get(k); names[k] = parties[k][0]; }
+  const at = new Date(now || Date.now()).getTime();
+  const pt = prior && prior.tie;
+  const base = pt ? (pt.ok ? pt.gaps : pt.base) : null;
+  const baseAt = pt ? (pt.ok ? prior.at : pt.base_at) : null;
+  const t = threshold(ctx);
+  const off = [];
+  if (base && !(Date.parse(baseAt || '') < at - TIE_BASE_MAX_MS)) {
+    for (const k of Object.keys(gaps)) {
+      if (!(k in base)) continue;
+      const g = gaps[k], was = base[k];
+      if (Math.abs(g) >= t && Math.abs(g - was) >= t) off.push({ name: names[k], money: k[0] === '$', gap: g, was });
+    }
+  }
+  const ok = off.length === 0;
+  return { gaps, ok, base: ok ? null : base, base_at: ok ? null : baseAt, off: off.sort((a, b) => Math.abs(b.gap - b.was) - Math.abs(a.gap - a.was)).slice(0, 5) };
+}
+/** True when this read's balances and entries don't agree yet (tieVerdict): no cash figure, no "fell with no receipt". */
+const halfSynced = (snap) => !!(snap && snap.tie && snap.tie.ok === false);
+const HALF_SYNC_LINE = (ctx) => `Bank and cash: ${SRC(ctx)}'s balances and its entries don't agree yet (a sync is still catching up), so I'll give the figure once they do.`;
+
+function snapshot(ctx, fc, now, prior) {
   let cash = null, borrowed = null;
   // Bank, cash and borrowing are only reported when they are Tally's own figures for today. When Tally's
   // balances stop at an earlier date (last year's company file was the one read) Margyn works them forward or
@@ -108,9 +147,12 @@ function snapshot(ctx, fc, now) {
   const pay = E.billRows(ctx, 'payable').filter((b) => !b.kind || b.kind === 'trade');
   const parties = {};
   for (const [k, g] of [...owed.entries()].sort((a, b) => b[1].owed - a[1].owed).slice(0, 80)) parties[k] = [g.name, Math.round(g.owed), Math.round(g.late30)];
+  // Balances that moved with no entry behind them: the read is half updated, so no cash or borrowing figure.
+  const tie = tieVerdict(ctx, parties, now, prior);
+  if (tie && !tie.ok) { cash = null; borrowed = null; }
   return {
     v: 1, basis, at: new Date(now || Date.now()).toISOString(), day: istDay(now), last_sync: ctx.lastSync || null,
-    cash, borrowed,
+    cash, borrowed, tie: tie || undefined,
     recv_total: Math.round([...owed.values()].reduce((s, g) => s + g.owed, 0)),
     recv_late30: Math.round([...owed.values()].reduce((s, g) => s + g.late30, 0)),
     pay_total: Math.round(pay.reduce((s, b) => s + b.amount, 0)),
@@ -414,6 +456,7 @@ function morning(ctx, fc, snap, prev, points, insight, o) {
   const asOf = ctx.lastSync && istDay(ctx.lastSync) !== snap.day ? ` (books as of ${istStamp(ctx.lastSync)})` : '';
   if (snap.cash != null) stand.push(`Bank and cash ${inr(snap.cash)}${asOf}` + (prev && prev.day !== snap.day ? `, ${moved(snap.cash, prev.cash, 'yesterday morning', ctx)}` : '') +
     (snap.borrowed ? `. Overdraft and loans ${inr(snap.borrowed)}` : '') + '.');
+  else if (halfSynced(snap)) stand.push(HALF_SYNC_LINE(ctx));
   if (snap.recv_total) stand.push(`Customers owe you ${inr(snap.recv_total)}` + (snap.recv_late30 ? `; ${inr(snap.recv_late30)} of it is more than a month late` : '') +
     (prev && prev.recv_total ? ` (${moved(snap.recv_total, prev.recv_total, 'yesterday', ctx)})` : '') + '.');
   if (snap.pay_total) stand.push(`You owe suppliers ${inr(snap.pay_total)}.`);
@@ -459,7 +502,7 @@ function morning(ctx, fc, snap, prev, points, insight, o) {
   const text = fit([head, stand.length > 1 ? stand.join('\n') : null, wk, ySec, week.length > 1 ? week.join('\n') : null, pts, worth], foot);
   const headline = points.length
     ? (points.length === 1 ? 'One thing in your books needs you today: ' : `${points.length} things in your books need you today. The biggest: `) + points[0].title
-    : `Your morning update is ready: bank and cash ${snap.cash != null ? inr(snap.cash) : 'n/a'}, customers owe ${inr(snap.recv_total)}${asOf}.`;
+    : `Your morning update is ready: ${snap.cash != null ? `bank and cash ${inr(snap.cash)}, ` : halfSynced(snap) ? '' : 'bank and cash n/a, '}customers owe ${inr(snap.recv_total)}${asOf}.`;
   return { text, headline, send: true };
 }
 
@@ -493,11 +536,16 @@ function partyMoves(ctx, before, now, sinceDay) {
   const recBy = new Map();
   for (const r of ctx.rows) if (r.kind === 'receipt' && r.party && r.day >= sinceDay) recBy.set(norm(r.party), (recBy.get(norm(r.party)) || 0) + r.total);
   const out = [];
+  // A balance that fell while its entries stayed put is a sync still catching up, not a credit note (16 Nov 2026:
+  // "Bafna Surgical's balance fell ₹19.7 L with no receipt entered" was a payment whose receipt hadn't arrived).
+  const bt = before && before.tie && before.tie.gaps, nt = now && now.tie && now.tie.gaps;
+  const offNow = new Set(((now && now.tie && now.tie.off) || []).map((o) => norm(o.name)));
   for (const [k, p] of Object.entries((before && before.parties) || {})) {
     const nowOwed = cur.has(k) ? cur.get(k).owed : 0;
     const drop = p[1] - nowOwed;
     if (drop < t) continue;
     const paid = recBy.get(k) || 0;
+    if (paid < drop * 0.5 && (offNow.has(k) || (bt && nt && k in bt && k in nt && bt[k] - nt[k] >= drop * 0.5))) continue;
     out.push({ key: k, name: p[0], before: p[1], now: nowOwed, drop, paid: paid >= drop * 0.5 ? paid : 0, late30Now: cur.has(k) ? cur.get(k).late30 : 0 });
   }
   return out.sort((a, b) => b.drop - a.drop);
@@ -521,6 +569,13 @@ function pulse(ctx, fc, snap, last, morningSnap, deadlines, o) {
   const opt = o || {};
   const t = threshold(ctx);
   const today = snap.day;
+  // Balances ahead of (or behind) their entries: anything said now would be the sync, not the money. Held; the
+  // next pulse compares with the last update that went out, so nothing that really moved is lost.
+  if (halfSynced(snap)) {
+    const o1 = snap.tie.off[0];
+    return { send: false, said: (last && last.day === today && last.said) || [], halfSynced: true,
+      reason: `${SRC(ctx)}'s balances and its entries didn't agree yet (${o1 ? `${nice(o1.name)} moved ${inr(Math.abs(o1.gap - o1.was))} with no entry behind it` : 'a sync still catching up'}), so this waits for the next update.` };
+  }
   // What was already said today is remembered whatever the basis; only comparisons need like for like.
   const said = new Set((last && last.day === today && last.said) || []);
   const prevSig = (last && last.day === today && last.sig) || null;
@@ -694,6 +749,7 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
   if (day.length === 1) day.push(`Nothing entered in ${ctx.source_name || 'Tally'} for today yet.`);
   const ms = morningSnap && morningSnap.day === today ? morningSnap : null;
   if (snap.cash != null) day.push(`Bank and cash ${inr(snap.cash)}` + (ms && ms.cash != null ? `, ${moved(snap.cash, ms.cash, 'this morning', ctx)}` : '') + '.');
+  else if (halfSynced(snap)) day.push(HALF_SYNC_LINE(ctx));
   const usual = usualDay(ctx);
   if (usual) {
     const custIn = m.in_by.reduce((s, [, v]) => s + v, 0);
@@ -762,6 +818,6 @@ function evening(ctx, fc, snap, morningSnap, live, fresh, promises, o) {
 }
 
 module.exports = {
-  snapshot, comparable, movement, deepInsights, mix, morning, pulse, evening, usualDay, weekReview, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
+  snapshot, tieVerdict, halfSynced, comparable, movement, deepInsights, mix, morning, pulse, evening, usualDay, weekReview, whyNow, pointBlock, partyMoves, dueBetween, regularOut,
   istDay, istStamp, booksOf, RECEIVABLE_KINDS, INSIGHT_KINDS, FOLLOW_UP_KINDS, MAX_POINTS
 };

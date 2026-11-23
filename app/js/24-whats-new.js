@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-23-remind-any-customer', date:'23 Nov 2026', title:'Remind any customer, from WhatsApp or chat',
+    items:[
+      { t:'Ask Margyn to remind a customer', what:'Text Margyn on WhatsApp, or ask in the Margyn panel, “remind Centaur”. You see the exact WhatsApp message and the number it goes to, and it is sent only when you tap Confirm. This works for customers in Tally, Zoho Books and Odoo too, not just the ones you typed into Margyn. If their number is missing, or payment reminders are off for your business, Margyn tells you what’s missing and how to fix it in one step.',
+        how:'Say or type <b>remind</b> and the customer’s name, check the message, then tap <b>Confirm</b>.' }
+    ]
+  },
+  {
     id:'2026-11-23-team-daily-update', date:'23 Nov 2026', title:'Your team can get the daily update too',
     items:[
       { t:'Morning update for anyone on your team', what:'Anyone you have added under People can now get the same morning update you get on WhatsApp, with their name on it. They can text STOP ALERTS to stop it, or START ALERTS to get it again.',
