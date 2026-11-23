@@ -1147,8 +1147,16 @@ async function handleIngest(req, res) {
     : await sweepStale(kind, inst, mapped, snapshotCutoff(body, now), body.partial === true);
 
   // Customer/supplier phone, email, GSTIN -> the party master (fills blanks only; never fails the sync).
-  const parties = kind === 'ledgers' && mapped.some((m) => m.contact)
-    ? await syncTallyPartyContacts(inst.user_id, mapped) : null;
+  // Only the current year's file feeds the party master, keyed by Tally's own GUID (a "~tag" only keeps two
+  // year-files apart in the ledger table). Last year's file still holds old names and numbers: letting it in
+  // re-keyed every party to the tagged GUID and split a renamed customer in two (two-file e2e, 24 Nov 2026).
+  let parties = null;
+  if (kind === 'ledgers' && mapped.some((m) => m.contact)) {
+    let past = false;
+    try { past = await isPastYearFile(inst.id, companyName); } catch (e) { past = false; }
+    parties = past ? { skipped: 'past_year_file' }
+      : await syncTallyPartyContacts(inst.user_id, mapped.map((m) => Object.assign({}, m, { tally_guid: String(m.tally_guid || '').split('~')[0] || m.tally_guid })));
+  }
 
   await updateRows('tally_installs', `id=eq.${inst.id}`, { last_sync_at: now }).catch(() => {});
   await logRun({ userId: inst.user_id, installId: inst.id, kind, received: rawRows.length, upserted, status: 'ok',
