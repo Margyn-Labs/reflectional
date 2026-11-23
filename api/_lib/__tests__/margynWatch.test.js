@@ -45,6 +45,7 @@ global.fetch = async (url, opts = {}) => {
     if (eq('role')) rows = rows.filter((r) => r.role === eq('role'));
     if (eq('phone')) rows = rows.filter((r) => r.phone === eq('phone'));
     if (eq('id')) rows = rows.filter((r) => String(r.id) === eq('id'));
+    if (eq('business_id')) rows = rows.filter((r) => !r.business_id || r.business_id === eq('business_id'));
     if (table === 'whatsapp_conversations') rows = rows.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     const off = parseInt(u.searchParams.get('offset') || '0', 10), lim = parseInt(u.searchParams.get('limit') || '1000', 10);
     return ok(rows.slice(off, off + lim));
@@ -383,6 +384,25 @@ const W = require('../margynWatch');
   check('Zoho: any reply brings the member\'s full update, in his thread', mp && /^Good morning Yash\. MARGYN DEMO's/.test(mp.text) && DB.whatsapp_conversations.some((x) => x.from_phone === '919811105508' && /Good morning Yash/.test(x.content)), mp && mp.text);
   await W.setMemberUpdates('s2', false);
   check('STOP ALERTS from a member turns off only their own update', DB.business_stakeholders[1].permissions.opening_bell === false && DB.business_stakeholders[1].permissions.ask === true && DB.business_stakeholders[0].permissions.opening_bell === true, DB.business_stakeholders);
+  delete process.env.WHATSAPP_TEMPLATE_UPDATE;
+
+  console.log('hand-written update to one team member (23 Nov 2026)');
+  const P = ['Yash', 'MARGYN DEMO, 23 Nov, 1 pm', 'Bank ₹43.1 L. Customers owe ₹1.31 Cr.', 'You asked what is coming in this month: ₹14 L so far.', '₹9 L due this week.', 'Mehta Traders ₹11.6 L, about 4 months late.'];
+  check('note: six values, no line breaks, within limits', W.checkNoteParams(P) === null && /Six values/.test(W.checkNoteParams(P.slice(0, 5))) && /line break/.test(W.checkNoteParams(P.map((x, i) => (i === 3 ? 'a\nb' : x)))) && /too long/.test(W.checkNoteParams(P.map((x, i) => (i === 4 ? 'x'.repeat(300) : x)))));
+  process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-3';
+  n1 = sent.length;
+  let nt = await W.sendMemberNote(U, 's2', { params: P, dryRun: true });
+  check('note: dry run shows the text and sends nothing', nt.dry_run && nt.via === 'template' && /Hi Yash, this is your Margyn account update \(MARGYN DEMO, 23 Nov, 1 pm\)/.test(nt.text) && sent.length === n1, nt);
+  nt = await W.sendMemberNote(U, 's1', { params: P });
+  check('note: never to the main number', !nt.sent && /not the main number/.test(nt.error) && sent.length === n1, nt);
+  nt = await W.sendMemberNote('22222222-2222-2222-2222-222222222222', 's2', { params: P });
+  check('note: only a person on that account', !nt.sent && sent.length === n1, nt);
+  DB.watch_pending = (DB.watch_pending || []).filter((x) => x.phone !== '919811105508');
+  nt = await W.sendMemberNote(U, 's2', { params: P, resetComparison: true });
+  const nm = sent[sent.length - 1], ntp = nm && nm.template ? JSON.parse(nm.template) : {};
+  check('note: closed chat = the numbers template with exactly the six values', nt.sent && nt.via === 'template' && sent.length === n1 + 1 && nm.destination === '919811105508' && ntp.id === 'tpl-3' && JSON.stringify(ntp.params) === JSON.stringify(P), { nt, ntp });
+  const np = (DB.watch_pending || []).find((x) => x.phone === '919811105508');
+  check('note: a reply brings his full update; kept in his thread; comparison cleared', np && /^Good morning Yash\./.test(np.text) && DB.whatsapp_conversations.some((x) => x.from_phone === '919811105508' && /Margyn account update \(MARGYN DEMO/.test(x.content)) && nt.comparison_reset === true, { np: np && np.text.slice(0, 80), nt });
   delete process.env.WHATSAPP_TEMPLATE_UPDATE;
 
   console.log(`\n${pass} passed, ${fail} failed`);
