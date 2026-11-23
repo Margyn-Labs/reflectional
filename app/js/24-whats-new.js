@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-23-team-daily-update', date:'23 Nov 2026', title:'Your team can get the daily update too',
+    items:[
+      { t:'Morning update for anyone on your team', what:'Anyone you have added under People can now get the same morning update you get on WhatsApp, with their name on it. They can text STOP ALERTS to stop it, or START ALERTS to get it again.',
+        how:'Open <b>People</b> and switch on <b>Morning update</b> next to their name.' }
+    ]
+  },
+  {
     id:'2026-11-21-my-whatsapp-number', date:'21 Nov 2026', title:'Team members can link their own WhatsApp',
     items:[
       { t:'Link your own WhatsApp number', what:'If you were invited to a business, you can now link your own WhatsApp number to it yourself, without asking the owner. Margyn messages you there straight away with that business’s latest figures, so there’s no number to save: just reply. What you can do there follows your role. The owner sees your number under App logins. Until you link one, Margyn asks once each time you sign in, for a business whose books are connected.',

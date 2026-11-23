@@ -44,6 +44,7 @@ global.fetch = async (url, opts = {}) => {
     if (eq('from_phone')) rows = rows.filter((r) => r.from_phone === eq('from_phone'));
     if (eq('role')) rows = rows.filter((r) => r.role === eq('role'));
     if (eq('phone')) rows = rows.filter((r) => r.phone === eq('phone'));
+    if (eq('id')) rows = rows.filter((r) => String(r.id) === eq('id'));
     if (table === 'whatsapp_conversations') rows = rows.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     const off = parseInt(u.searchParams.get('offset') || '0', 10), lim = parseInt(u.searchParams.get('limit') || '1000', 10);
     return ok(rows.slice(off, off + lim));
@@ -355,6 +356,34 @@ const W = require('../margynWatch');
   check('welcome: no template and no open chat = nothing sent, and says why', !w.sent && w.reason === 'no update template set' && sent.length === n1, w);
   w = await W.welcomeMember(U, { to: '' });
   check('welcome: no number, no send', !w.sent);
+
+  console.log('daily update for team members (23 Nov 2026)');
+  const owner = "Good morning Varad. Your Zoho Books as of 23 Nov, 7:00 am.\n\n*Where you stand*\nBank and cash ₹25.6 L.\n\nAsk me anything about your books. I'll check back this evening on what moved. Reply STOP ALERTS to pause these.";
+  const mt = W.memberUpdateText(owner, { firstName: 'Yash', company: 'MARGYN DEMO' });
+  check('member text: greets the member, names the business\'s books', /^Good morning Yash\. MARGYN DEMO's Zoho Books as of 23 Nov/.test(mt), mt);
+  check('member text: no owner promises, STOP ALERTS stops only theirs', !/Varad|check back this evening|pause these/.test(mt) && /STOP ALERTS to stop getting these/.test(mt), mt);
+  DB.business_stakeholders = [
+    { id: 's1', business_id: U, name: 'Varad Pandey', phone: '919324000000', is_primary: true, whatsapp_access: true, permissions: { opening_bell: true } },
+    { id: 's2', business_id: U, name: 'Yash Kumar', phone: '919811105508', is_primary: false, whatsapp_access: true, permissions: { ask: true, opening_bell: true } },
+    { id: 's3', business_id: U, name: 'Old Bell', phone: '919811100099', is_primary: false, whatsapp_access: false, permissions: { opening_bell: true } }
+  ];
+  process.env.WHATSAPP_TEMPLATE_UPDATE = 'tpl-3';
+  const build = (fn) => owner.replace('Varad', fn || '');
+  n1 = sent.length;
+  let ms = await W.sendToMembers(U, { slot: 'morning', ownerTo: '+919324000000', company: 'Acme', ctx: { source: 'tally', source_name: 'Tally' }, build });
+  check('Tally accounts: members get nothing (Mihir untouched)', ms.length === 0 && sent.length === n1, ms);
+  ms = await W.sendToMembers(U, { slot: 'midday', ownerTo: '+919324000000', company: 'Acme', ctx: { source: 'zoho' }, build });
+  check('pulses through the day stay with the owner', ms.length === 0 && sent.length === n1, ms);
+  ms = await W.sendToMembers(U, { slot: 'morning', ownerTo: '+919324000000', company: 'MARGYN DEMO', ctx: { source: 'zoho', source_name: 'Zoho Books' }, build });
+  const mine = sent.slice(n1);
+  const mtp = mine[0] && mine[0].template ? JSON.parse(mine[0].template) : {};
+  check('Zoho: morning update to the member with it switched on, as the numbers template', ms.length === 1 && ms[0].sent && mine.length === 1 && mine[0].destination === '919811105508' && mtp.id === 'tpl-3' && mtp.params[0] === 'Yash', { ms, mine });
+  check('Zoho: never the primary number again, never a number without WhatsApp access', !mine.some((x) => x.destination === '919324000000' || x.destination === '919811100099'));
+  const mp = (DB.watch_pending || []).find((x) => x.phone === '919811105508');
+  check('Zoho: any reply brings the member\'s full update, in his thread', mp && /^Good morning Yash\. MARGYN DEMO's/.test(mp.text) && DB.whatsapp_conversations.some((x) => x.from_phone === '919811105508' && /Good morning Yash/.test(x.content)), mp && mp.text);
+  await W.setMemberUpdates('s2', false);
+  check('STOP ALERTS from a member turns off only their own update', DB.business_stakeholders[1].permissions.opening_bell === false && DB.business_stakeholders[1].permissions.ask === true && DB.business_stakeholders[0].permissions.opening_bell === true, DB.business_stakeholders);
+  delete process.env.WHATSAPP_TEMPLATE_UPDATE;
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

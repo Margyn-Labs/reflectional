@@ -232,7 +232,14 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   const startAlerts = /^\s*(start|resume)\s+(alerts?|updates?)\s*[.!]*\s*$/i.test(cleanText);
   if (stopAlerts || startAlerts) {
     let reply;
-    if (sender && !sender.is_primary) reply = 'Only the account owner can switch Margyn\'s updates on or off. They can do it by texting START ALERTS or STOP ALERTS, or in the app under Conversations.';
+    if (sender && !sender.is_primary && sender.id) {
+      // A team member: only their own morning update (People > Opening Bell), never the owner's (23 Nov 2026).
+      try {
+        await require('./margynWatch').setMemberUpdates(sender.id, startAlerts);
+        reply = stopAlerts ? 'Done. I won\'t send you the daily update any more. You can still ask me anything here, and text START ALERTS to get it again.'
+          : 'Done. I\'ll send you the morning update on the books each day. Text STOP ALERTS any time to stop.';
+      } catch (e) { reply = 'I couldn\'t change that just now. The account owner can also do it in the app under People.'; }
+    } else if (sender && !sender.is_primary) reply = 'Only the account owner can switch Margyn\'s updates on or off. They can do it by texting START ALERTS or STOP ALERTS, or in the app under Conversations.';
     else {
       try {
         await require('./margynWatch').setMode(profileId, stopAlerts ? 'off' : 'on');
@@ -292,7 +299,7 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   let cloudBooks = null;
   try { const { ctx: bc } = await booksTools.contextFor(profileId); if (bc && !/^tally/i.test(bc.source || 'tally')) cloudBooks = bc.source_name || 'Zoho Books'; } catch (e) { /* the tools say so */ }
   const accountPart = `ACCOUNT\n- The business is ${companyName}.\n${senderLine(companyName, sender)}` +
-    (cloudBooks ? `\n- Its books are in ${cloudBooks}. What customers owe are invoices; bills are what the business owes suppliers. Say "invoice" for customers. When a customer's whole balance and the late part are both given, say both, never the late part as what they owe.\n- Cash in the weeks ahead ("cash in 4 weeks", "will we run short", "next month's cash"): cash_and_loans carries the 13-week forecast (cash_forecast), the same one as the app's Cash page. Quote it with its range and track record; never say there is no forecast.` : '') + (canAct ? '' :
+    (cloudBooks ? `\n- Its books are in ${cloudBooks}. What customers owe are invoices; bills are what the business owes suppliers. Say "invoice" for customers. When a customer's whole balance and the late part are both given, say both, never the late part as what they owe.\n- Cash in the weeks ahead ("cash in 4 weeks", "will we run short", "next month's cash"): cash_and_loans carries the 13-week forecast (cash_forecast), the same one as the app's Cash page. Quote it with its range and track record; never say there is no forecast. It is your own forecast, not ${cloudBooks}'s: say "my forecast", never "Zoho's forecast" or "${cloudBooks}'s forecast".` : '') + (canAct ? '' :
     '\n\nThis person has read-only access: you cannot propose any action for them. If they ask for a change (mark paid, approve, log an entry, chase someone), say their number is set up to ask questions only and the account owner can allow actions under Settings > People. Routing a message to someone is still fine.');
   // Memory across channels: the owner's latest voice call / in-app chat, so
   // "like I said on the call" works here too. Owner's number only (member

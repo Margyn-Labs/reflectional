@@ -531,6 +531,12 @@ async function watchAccountInner(userId, opts) {
             .catch(() => insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text }]).catch(() => {}));
         }
         await track(userId, 'watch_sent', { kind: (sentItems[0] && sentItems[0].kind) || slot, points: sentItems.length, mode, via: sentInfo.via });
+        if (!preview) {
+          try {
+            const members = await sendToMembers(userId, { slot, ownerTo: to, company, ctx, now: o.now, build: (fn) => { const b = buildMessage(slot, ctx, fc, list, deep, state, snaps, snap, mode, o, { firstName: fn, preview: false, company, promises }); return b.msg.send ? b.msg.text : null; } });
+            if (members.length) result.members = members;
+          } catch (e) { console.error('[watch] member updates', String(e.message || e).slice(0, 160)); }
+        }
       } else if (!templateOk) {
         result.held = true;
         result.not_sent = 'No open WhatsApp chat, and this change isn\'t urgent enough to send a template for; it will be in the evening wrap.';
@@ -699,6 +705,72 @@ async function signals(userId) {
  * account's own). Never throws: { sent, via?, reason? }.
  */
 /**
+ * The owner's morning / evening update, reworded for a team member who has it switched on in People (Opening Bell =
+ * morning, Closing Bell = evening; 23 Nov 2026: the switches existed but nothing read them). "Good morning Yash."
+ * and the business's books, not "your". STOP ALERTS from a member turns off only their own updates. Pure.
+ */
+function memberUpdateText(text, { firstName, company }) {
+  const co = shortCompany(company);
+  const poss = /s$/i.test(co) ? co + "'" : co + "'s";
+  return String(text || '')
+    .replace(/^(Good (?:morning|afternoon|evening))[^.\n]*\./, `$1${firstName ? ' ' + firstName : ''}.`)
+    .replace(/^(Good [^\n]*?\.\s*)Your /, `$1${poss} `)
+    .replace(/^(Good [^\n]*?\.\s*)From your /, `$1From ${poss} `)
+    .replace(/ I'll check back this evening on what moved\./, '')
+    .replace(/ Reply STOP ALERTS to pause these\./, ' Reply STOP ALERTS to stop getting these.')
+    .trim();
+}
+const MEMBER_SLOT_KEY = { morning: 'opening_bell', evening: 'closing_bell' };
+/** Team numbers on this account with the slot's switch on (never the primary number: that's the owner's own send). */
+async function membersFor(userId, slot) {
+  const key = MEMBER_SLOT_KEY[slot];
+  if (!key) return [];
+  const rows = await selectRows('business_stakeholders',
+    `select=id,name,phone,is_primary,whatsapp_access,permissions&business_id=eq.${userId}&permissions->>${key}=eq.true&limit=20`).catch(() => []);
+  return rows.filter((r) => !r.is_primary && r.whatsapp_access && digits(r.phone));
+}
+/**
+ * Send this morning's / evening's update to the team members who asked for it. Zoho Books / Odoo only for now:
+ * Tally accounts (Mihir's) get exactly what they had. Never touches the owner's signal state or snapshots.
+ */
+async function sendToMembers(userId, { slot, ownerTo, build, company, ctx, now }) {
+  if (!MEMBER_SLOT_KEY[slot]) return [];
+  if (String(ctx.source || '') === 'tally' || /tally/i.test(String(ctx.source_name || ''))) return [];
+  const owner = digits(ownerTo);
+  const out = [];
+  for (const m of await membersFor(userId, slot)) {
+    const to = digits(m.phone);
+    if (!to || to === owner) continue;
+    const firstName = String(m.name || '').trim().split(/\s+/)[0] || null;
+    const raw = build(firstName);
+    if (!raw) continue;
+    const text = memberUpdateText(raw, { firstName, company });
+    let sent = null, via = null;
+    if (await sessionOpen(to, now)) {
+      sent = await bsp.sendText({ to, text });
+      if (sent && sent.ok) via = 'session';
+    }
+    if (!via && process.env.WHATSAPP_TEMPLATE_UPDATE) {
+      sent = await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: updateParams({ text: raw }, { company, firstName, slot, now }) });
+      if (sent && sent.ok) { via = 'template'; await savePending(to, userId, text); }
+    }
+    if (!via) { out.push({ to_end: to.slice(-4), sent: false, reason: (sent && sent.blocked) ? 'sends are off' : (sent && sent.error) ? String(sent.error).slice(0, 80) : 'not sent' }); continue; }
+    await deliveries.record({ messageId: sent.messageId, userId, kind: 'watch', to, sentTo: 'member', keys: [] });
+    await insertRows('whatsapp_conversations', [{ profile_id: userId, role: 'assistant', content: text, tool_calls: null, wa_message_id: sent.messageId || null, from_phone: to }])
+      .catch(() => {});
+    out.push({ to_end: to.slice(-4), sent: true, via });
+  }
+  return out;
+}
+/** STOP ALERTS / START ALERTS from a team member: only their own morning + evening updates. */
+async function setMemberUpdates(stakeholderId, on) {
+  const r = (await selectRows('business_stakeholders', `select=id,permissions&id=eq.${stakeholderId}&limit=1`))[0];
+  if (!r) throw new Error('not found');
+  const permissions = Object.assign({}, r.permissions || {}, { opening_bell: !!on, closing_bell: false });
+  await updateRows('business_stakeholders', `id=eq.${stakeholderId}`, on ? { permissions, bell_consent_at: new Date().toISOString() } : { permissions });
+}
+
+/**
  * The update, reworded as a first hello to someone just added: who Margyn is, which business, what they can do;
  * "Good morning" only fits at 7:30 am, and the scheduled-update promises (evening check-in, STOP ALERTS) are the
  * owner's, not theirs. Pure.
@@ -762,4 +834,4 @@ async function welcomeMember(userId, { to, firstName, role, now } = {}) {
   }
 }
 
-module.exports = { welcomeMember, welcomeText, welcomeParams, firstNameOf, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { memberUpdateText, sendToMembers, setMemberUpdates, welcomeMember, welcomeText, welcomeParams, firstNameOf, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };

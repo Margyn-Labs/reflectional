@@ -19,8 +19,8 @@ const PEOPLE_PERMS = [
   { key:'ask',          label:'Ask',           desc:'Ask Margyn about the numbers' },
   { key:'act',          label:'Act',           desc:'Confirm changes Margyn proposes (mark paid, approve). Needs Ask' },
   { key:'forward',      label:'Forward',       desc:'Forward invoices and bills to import' },
-  { key:'opening_bell', label:'Opening Bell',  desc:'Morning briefing', bell:true },
-  { key:'closing_bell', label:'Closing Bell',  desc:'Evening briefing', bell:true }
+  { key:'opening_bell', label:'Morning update', desc:'Margyn\'s morning update on the books, on WhatsApp', bell:true },
+  { key:'closing_bell', label:'Evening update', desc:'Margyn\'s evening wrap on the books, on WhatsApp', bell:true }
 ];
 /* What a new person starts with, by role. Bells always start off: they need
    the person's consent first. */
@@ -187,13 +187,13 @@ function peopleBlockHtml(){
 
   let html = '<div class="ppl-summary">' +
     '<div><b>' + canAsk + '</b>Can ask Margyn</div>' +
-    '<div><b>' + onBells + '</b>Get a Bell</div>' +
+    '<div><b>' + onBells + '</b>Get the daily update</div>' +
     '<div><b>' + activeWeek + '</b>Active this week</div>' +
     '<div><b>' + msgs + '</b>Messages to Margyn</div>' +
   '</div>';
 
   if(!peopleBellDeployed() && list.length){
-    html += '<div class="ppl-banner">Bells go out once the WhatsApp Bell agent is deployed. You can set who gets them now. <button class="ppl-link" data-act="go-bell" style="color:var(--emerald);">Deploy the Bell</button></div>';
+    html += '<div class="ppl-banner">Switch on Morning update for anyone here and Margyn sends them the same daily update you get, with their name on it. They can text STOP ALERTS to stop it.</div>';
   }
 
   if(!hasPrimary){
@@ -291,7 +291,7 @@ async function peopleTogglePerm(id, key){
   const def = PEOPLE_PERMS.find(x => x.key === key);
   const patch = {};
   if(def.bell && next && !cur.bell_consent_at){
-    if(!(await mgConfirm({ title:'Turn on WhatsApp briefings for ' + cur.name + '?', body:'WhatsApp requires the person’s opt-in before Margyn sends them anything.', effect:[['Number', waPrettyPhone(cur.phone)]], tick:cur.name + ' has agreed to get WhatsApp briefings from Margyn', confirmLabel:'Turn on' }))) return;
+    if(!(await mgConfirm({ title:'Turn on the daily update for ' + cur.name + '?', body:'WhatsApp requires the person’s opt-in before Margyn sends them anything.', effect:[['Number', waPrettyPhone(cur.phone)]], tick:cur.name + ' has agreed to get Margyn’s updates on WhatsApp', confirmLabel:'Turn on' }))) return;
     patch.bell_consent_at = new Date().toISOString();
   }
   const perms2 = { ...perms, [key]: next };
