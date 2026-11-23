@@ -17,6 +17,7 @@
 
 const { selectRows, insertRows, updateRows } = require('./supabaseRest');
 const { reviewAgentAction } = require('../reconcile');
+const remindCustomer = require('./remindCustomer');
 
 /* ------------------------------------------------------------------ */
 /* Read-only lookup tools                                              */
@@ -50,7 +51,7 @@ const READ_TOOLS = [
   {
     name: 'list_chase_targets',
     description:
-      "List the customers Margyn is chasing for payment on WhatsApp, optionally filtered by state or a party-name search. Read-only. Use to resolve 'stop chasing Acme', 'mark X's chase as paid', or 'chase Y right now'.",
+      "List the customers Margyn is chasing for payment on WhatsApp, optionally filtered by state or a party-name search. Read-only. Use to resolve 'stop chasing Acme' or 'mark X's chase as paid'. With party_query it also returns reminder_check for that customer from ANY source (Tally, Zoho Books, Odoo or the app's own ledger): what they owe, whether a one-off WhatsApp reminder can go now (can_remind), and if not, the exact words to tell the user (say). Check it before offering or proposing a reminder ('chase Y', 'remind Y').",
     input_schema: {
       type: 'object',
       properties: {
@@ -170,8 +171,29 @@ async function toolListChaseTargets(input, userId) {
   const partyQuery = (input && input.party_query) ? String(input.party_query).trim() : '';
   if (partyQuery) query += `&party_name=ilike.*${encodeURIComponent(partyQuery)}*`;
   const rows = await selectRows('whatsapp_chase_targets', query);
-  if (!rows.length) return { targets: [], note: 'No matching chase targets.' };
-  return { targets: rows };
+  const out = rows.length ? { targets: rows } : { targets: [], note: 'No matching chase targets.' };
+  if (partyQuery) out.reminder_check = await reminderCheck(userId, partyQuery);
+  return out;
+}
+
+/** Can a one-off reminder go to this customer now, and if not, what to say (2026-11-23). */
+async function reminderCheck(userId, party) {
+  try {
+    const prep = await remindCustomer.prepare(userId, party);
+    const v = remindCustomer.whatsappVerdict(prep);
+    if (!prep.found) return { found: false, can_remind: false, say: v.say };
+    const o = prep.out;
+    return {
+      found: true, party: o.party, owes: o.amount, invoice_ref: o.invoice_ref, due_date: o.due_date,
+      has_whatsapp_number: o.has_phone, payment_reminders: o.reminders,
+      can_remind: v.can,
+      ...(v.can ? { how: 'propose_action send_one_off_chase with payload.party = "' + o.party + '"' } : { missing: v.reason, say: v.say }),
+      ...(v.offer ? { offer: 'propose_action ' + v.offer + ' (switch payment reminders back on)' } : {})
+    };
+  } catch (e) {
+    console.error('[marginActions] reminderCheck failed:', e.message);
+    return { found: false, can_remind: false, say: 'I couldn\'t check that customer just now. Try again in a minute.' };
+  }
 }
 
 async function toolGetChaseAgentConfig(userId) {
@@ -208,7 +230,10 @@ const NAME_SEARCHABLE = { receivables: 'status=eq.open', payables: 'status=eq.op
  *
  * @returns {Promise<{ok:true, proposal:object} | {ok:false, message:string}>}
  */
-async function validateProposal(p, userId) {
+async function validateProposal(p, userId, opts) {
+  // A one-off reminder, for a customer from any source, on both doors: WhatsApp sends it on the tap
+  // (executeAction below); the web chat's Confirm posts it to remind-now. Same checks, same words.
+  if (p && p.type === 'send_one_off_chase') return validateReminder(p, userId, opts);
   const tableFor = TARGET_TABLE[p && p.type];
   if (!tableFor) return { ok: true, proposal: p };           // no row target (create, pause, config, list_for_review)
   const table = tableFor(p);
@@ -236,6 +261,39 @@ async function validateProposal(p, userId) {
   }
   const list = rows.slice(0, 5).map((r, i) => `${i + 1}. ${r.party_name}${r.amount != null ? ' (₹' + Number(r.amount).toLocaleString('en-IN') + ')' : ''}`).join('\n');
   return { ok: false, message: `More than one match for "${name}":\n${list}\nWhich one?` };
+}
+
+/** Which customer a send_one_off_chase means: payload.party, a name in target_id, or a Chase row's id. */
+async function reminderParty(targetId, payload, userId) {
+  const named = String((payload && (payload.party || payload.party_name)) || '').trim();
+  if (named) return named;
+  const raw = String(targetId || '').trim();
+  if (!UUID_RE.test(raw)) return raw;
+  const rows = await selectRows('whatsapp_chase_targets', `select=party_name&user_id=eq.${userId}&or=(id.eq.${raw},receivable_id.eq.${raw})&limit=1`).catch(() => []);
+  return rows[0] ? rows[0].party_name : '';
+}
+
+/**
+ * "Chase Centaur" on WhatsApp (2026-11-23). A card goes out only when the reminder can really go:
+ * the customer owes something in the books, has a WhatsApp number, isn't switched off, and payment
+ * reminders are on. Otherwise the user gets one plain message with what's missing; when reminders
+ * are paused, the card offered is the switch instead.
+ */
+async function validateReminder(p, userId, opts) {
+  const web = !!(opts && opts.channel === 'web');
+  // WhatsApp shows "Tap Confirm and I will:\n" before the line; the web card shows it on its own.
+  const line = (t) => (web ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+  const party = await reminderParty(p.target_id, p.payload, userId);
+  if (!party) return { ok: false, message: 'Which customer should I remind? Tell me their name.' };
+  const prep = await remindCustomer.prepare(userId, party);
+  const v = remindCustomer.whatsappVerdict(prep);
+  if (v.can) {
+    return { ok: true, proposal: { type: 'send_one_off_chase', target_id: prep.item.receivable_id, payload: { party: prep.item.party }, human_summary: line(remindCustomer.confirmSummary(prep)) } };
+  }
+  if (v.offer === 'resume_chase_agent') {
+    return { ok: true, proposal: { type: 'resume_chase_agent', payload: { then_remind: prep.item.party }, human_summary: line(remindCustomer.resumeSummary(prep)) } };
+  }
+  return { ok: false, message: v.say };
 }
 
 /* ------------------------------------------------------------------ */
@@ -323,7 +381,7 @@ async function resolvePendingAction(pending, confirmed, actor) {
     return { ok: true, executed: false };
   }
   try {
-    await executeAction({
+    const done = await executeAction({
       type: pending.action_type,
       targetId: pending.target_id,
       targetKind: pending.target_kind,
@@ -331,10 +389,12 @@ async function resolvePendingAction(pending, confirmed, actor) {
     }, pending.user_id, actor);
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'confirmed', resolved_at: new Date().toISOString() });
     await expireDuplicatePending(pending);
-    return { ok: true, executed: true };
+    // reply: what to tell the person instead of the generic "Done" (e.g. "Sent ✅ ..." or "Preview only").
+    return { ok: true, executed: true, reply: (done && done.reply) || null };
   } catch (e) {
     await updateRows('whatsapp_pending_actions', `id=eq.${pending.id}`, { status: 'failed', error: e.message, resolved_at: new Date().toISOString() }).catch(() => {});
-    return { ok: false, executed: false, error: e.message };
+    // userMessage: plain words safe to show on WhatsApp (never the raw error).
+    return { ok: false, executed: false, error: e.message, userMessage: e.userMessage || null };
   }
 }
 
@@ -360,6 +420,13 @@ async function logEvent(actor, rows) {
   const who = actor ? { actor_id: actor.id || null, actor_name: actor.name || null, channel: actor.channel || 'whatsapp' } : {};
   try { return await insertRows('ledger_events', rows.map((r) => ({ ...r, ...who }))); }
   catch (e) { return insertRows('ledger_events', rows).catch(() => {}); }
+}
+
+/** An error whose message is plain words for the user (shown on WhatsApp instead of "That didn't go through"). */
+function userError(message) {
+  const e = new Error(message);
+  e.userMessage = message;
+  return e;
 }
 
 async function executeAction(action, userId, actor) {
@@ -389,7 +456,18 @@ async function executeAction(action, userId, actor) {
   }
 
   if (type === 'pause_chase_agent' || type === 'resume_chase_agent') {
-    await updateRows('agent_deployments', `user_id=eq.${userId}&agent_id=eq.chase_agent`, { status: type === 'pause_chase_agent' ? 'paused' : 'active', updated_at: new Date().toISOString() });
+    const rows = await selectRows('agent_deployments', `select=status,config&user_id=eq.${userId}&agent_id=eq.chase_agent&limit=1`);
+    if (!rows.length) {
+      // Never deployed: there is nothing to switch, and "Done" would be a lie (2026-11-23).
+      throw userError('Payment reminders were never set up for this business, so there was nothing to switch. Set them up in the Margyn app: Automations > Roster > Payment Chase > Deploy.');
+    }
+    const patch = { status: type === 'pause_chase_agent' ? 'paused' : 'active', updated_at: new Date().toISOString() };
+    // Switched off inside the config too: switching on means on.
+    if (type === 'resume_chase_agent' && rows[0].config && rows[0].config.enabled === false) patch.config = Object.assign({}, rows[0].config, { enabled: true });
+    await updateRows('agent_deployments', `user_id=eq.${userId}&agent_id=eq.chase_agent`, patch);
+    if (type === 'resume_chase_agent' && payload && payload.then_remind) {
+      return { reply: 'Done ✅ Payment reminders are on again. Ask me to remind ' + payload.then_remind + ' and I\'ll show you the message before it goes.' };
+    }
     return;
   }
 
@@ -436,21 +514,17 @@ async function executeAction(action, userId, actor) {
   }
 
   if (type === 'send_one_off_chase') {
-    const rows = await selectRows('whatsapp_chase_targets', `select=*&id=eq.${targetId}&user_id=eq.${userId}&limit=1`);
-    if (!rows.length) throw new Error('Chase target not found');
-    const t = rows[0];
-    // An account with external sends off (investor demo) drafts it but nothing reaches the customer: say so.
-    const off = await require('./sendGuard').accountSendsOff(userId).catch(() => false);
-    await updateRows('whatsapp_chase_targets', `id=eq.${t.id}`, { state: 'escalated_human', resolution: off ? 'One-off reminder drafted (preview: not sent).' : 'One-off reminder sent via WhatsApp agent.', next_chase_at: null });
-    // Best-effort only: a free-text session send to the CUSTOMER's number,
-    // which only lands if they've messaged this WABA in the last 24h — same
-    // constraint sendText always carries. Untested against a real account.
-    if (t.contact_phone) {
-      const bsp = require('./whatsappBsp');
-      const msg = 'Hi ' + (t.party_name || '') + ', following up on invoice ' + (t.invoice_ref || '') + ' for ' + (t.amount || 0) + '. Could we sort out payment this week?';
-      await require('./sendGuard').runAsAccount(userId, () => bsp.sendText({ to: t.contact_phone, text: msg })).catch(() => {});
-    }
-    return;
+    // One approved chase template through sendGuard, logged as a chase (_lib/remindCustomer.js), for a customer
+    // from any source. Everything is checked again at the tap: the number, the switch, a reply since the card.
+    // (Before 2026-11-23 this sent free text, which WhatsApp drops outside 24 hours, and still said "Done".)
+    const party = await reminderParty(targetId, payload, userId);
+    const prep = await remindCustomer.prepare(userId, party);
+    const v = remindCustomer.whatsappVerdict(prep);
+    if (!v.can) throw userError(v.offer ? v.say + ' Nothing was sent. Ask me again and I\'ll offer to switch them on.' : v.say);
+    const r = await remindCustomer.send(userId, prep);
+    const reply = remindCustomer.replyAfterSend(prep, r);
+    if (!reply) throw userError('WhatsApp didn\'t take the reminder to ' + prep.item.party + ', so nothing was sent. Try again later, or remind them from the app.');
+    return { reply };
   }
 
   throw new Error('Unknown action type: ' + type);

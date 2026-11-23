@@ -466,8 +466,8 @@ function wireActionCardConfirm(cardEl, actionCard){
         for(const it of checked) await runProposedAction(it);
         cardEl.outerHTML = '<div class="action-card-done">Done — ' + checked.length + ' item(s) actioned.</div>';
       } else {
-        await runProposedAction(actionCard);
-        cardEl.outerHTML = '<div class="action-card-done">Done.</div>';
+        const said = await runProposedAction(actionCard);
+        cardEl.outerHTML = '<div class="action-card-done">' + escapeHtml(typeof said === 'string' ? said : 'Done.') + '</div>';
       }
     } catch(err){
       confirmBtn.textContent = 'Confirm';
@@ -547,6 +547,20 @@ async function runProposedAction(action){
   }
   if(type === 'stop_chasing_party'){
     return chaseUpdateTarget(action.targetId, { state:'stopped', resolution:'Stopped via Ask Margyn.', next_chase_at:null });
+  }
+  if(type === 'send_one_off_chase' && action.payload && action.payload.party){
+    // One reminder now, through the same server path as the Remind button and WhatsApp
+    // (api/_lib/remindCustomer.js): approved template, sendGuard, logged as a chase. Checked again here.
+    const { data:{ session } } = await sbClient.auth.getSession();
+    const r = await fetch('/api/whatsapp?action=remind-now', { method:'POST',
+      headers:{ 'Content-Type':'application/json', ...(session ? { 'Authorization':'Bearer ' + session.access_token } : {}) },
+      body:JSON.stringify({ party:action.payload.party, send:true }) });
+    const d = await r.json().catch(() => ({}));
+    const who = d.party || action.payload.party;
+    if(typeof loadChaseTargets === 'function') try { await loadChaseTargets(); } catch(e){}
+    if(d.sent) return 'Sent to ' + who + ' on WhatsApp (number ending ' + (d.phone_end || '') + ').';
+    if(d.preview) return 'Logged as “Preview: not sent”: this account doesn’t send to customers. Nothing reached ' + who + '.';
+    throw new Error(d.error === 'need_phone' ? 'I need ' + who + '’s WhatsApp number first: Customers > ' + who + ' > Edit > Phone.' : (d.error || d.message || 'the reminder wasn’t sent.'));
   }
   if(type === 'mark_chase_target_paid' || type === 'send_one_off_chase'){
     const { data: t, error } = await sbClient.from('whatsapp_chase_targets').select('*').eq('id', action.targetId).single();

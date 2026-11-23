@@ -356,7 +356,8 @@ export default async function handler(req, res) {
         let p = proposal.input || {};
         // Same guard as WhatsApp: no card unless the target is one real row
         // this user owns (a name is resolved to its id).
-        const checked = await validateProposal(p, user.id);
+        // channel 'web': this card's Confirm runs in the app (a reminder posts to remind-now).
+        const checked = await validateProposal(p, user.id, { channel: 'web' });
         if (!checked.ok) {
           finalText = checked.message;
           break;

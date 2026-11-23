@@ -983,6 +983,40 @@ function isBorrowing(ctx, l) {
   return /\b(o\.?\s?d|overdraft|cash\s*credit|loans?)\b/i.test(l.parent || '') || (b === 'bank' && /\b(o\.?\s?d|overdraft|cash\s*credit)\b/i.test(l.name));
 }
 
+/**
+ * Do the ledger balances agree with the entries synced so far? For every ledger with an opening and a closing
+ * balance: Tally's balance minus (opening + this balance period's entries), debit positive. A sync sends the
+ * balances first and the entries after (tally-agent runFullSync), and a voucher step that stops early still ends
+ * with the health report, so for a while the balances can already show a payment whose entry hasn't arrived
+ * (Care Hygiene, 16 Nov 2026: cash "down ₹27.6 L" with no money out, then "up ₹25.4 L" with no money in and a
+ * customer's balance "fell with no receipt"). Some ledgers never tie exactly (history kept elsewhere), so callers
+ * compare a gap with the same ledger's gap at the last read that agreed, not with zero (watchBrief.snapshot).
+ * Returns { from, money: [[name, gap]] for bank, cash, overdraft and loan ledgers, all: Map(name -> gap) }.
+ */
+function ledgerTie(ctx) {
+  const an = ctx.analytics || {};
+  const bs = (an.quality || {}).balance_sign || {};
+  const eff = bs.effective || (!bs.convention || bs.convention === 'unknown' ? 'opposite' : bs.convention);
+  const debitPos = (b) => (eff === 'same' ? -num(b) : num(b));
+  // The balance period starts where the current year's Tally file does (as dataCompleteness reads it), else at
+  // the period the analytics found, else at this financial year.
+  const files = (ctx.book && ctx.book.files) || {};
+  const curFile = Array.isArray(files.files) && files.files.length > 1 ? files.files.find((f) => f && f.name === files.current) : null;
+  const from = (curFile && /^\d{4}-\d{2}-\d{2}$/.test(String(curFile.from || '')) ? curFile.from : null)
+    || ((an.quality || {}).balances_period || {}).from || isoDay(resolvePeriod('this_fy', ctx.now).from);
+  const move = new Map();
+  for (const r of ctx.rows) { if (r.day < from) continue; for (const l of r.lines) { const k = nameKey(l.ledger); move.set(k, (move.get(k) || 0) + l.amount); } }
+  const money = [], all = new Map();
+  for (const l of ctx.ledgers) {
+    if (!l || !l.name || l.opening_balance == null || l.closing_balance == null || l.history_only) continue;
+    const gap = Math.round(debitPos(l.closing_balance) - (debitPos(l.opening_balance) - (move.get(nameKey(l.name)) || 0)));
+    all.set(l.name, gap);
+    const b = ctx.cls(l.name);
+    if (b === 'bank' || b === 'cash' || b === 'bank_od' || isBorrowing(ctx, l) || (/sweep/i.test(l.name) && /deposit/i.test(l.parent || ''))) money.push([l.name, gap]);
+  }
+  return { from, money, all };
+}
+
 function cashAndDebt(ctx) {
   const an = ctx.analytics;
   // The same reading of balance signs as the Margin page (the books' declared convention when the data can't tell).
@@ -1495,7 +1529,7 @@ function buildInsights(book, analytics, opts) {
 
 module.exports = {
   inr, pctStr, dayStr, resolvePeriod, PERIODS, MEASURES, GROUPS,
-  prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, isBorrowing, insights, attention, openingRead,
+  prepare, summary, breakdown, findEntries, moneyOwed, partyProfile, products, cashAndDebt, ledgerTie, isBorrowing, insights, attention, openingRead,
   buildInsights, kitsTable, branchTable, concentration, quietCustomers, matcher, branchOf, kindOf, niceName,
   billRows, dailySales90, lateRanking, recentReceipts
 };
