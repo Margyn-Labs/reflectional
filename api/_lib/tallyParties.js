@@ -105,6 +105,9 @@ function planPartyWrites(ledgers, parties, userId, opts) {
       const refs = Object.assign({}, found.external_refs || {});
       if (l[refKey] && refs[refKey] !== l[refKey]) { refs[refKey] = l[refKey]; patch.external_refs = refs; }
       if (found.type && found.type !== type && found.type !== 'both') patch.type = 'both';
+      // Renamed in the books: a party the books created follows the new name (matched on the books' own id).
+      // A name the owner typed stays theirs.
+      if (found.source === source && l[refKey] && byGuid.get(l[refKey]) === found && normName(found.name) !== normName(l.name)) patch.name = String(l.name).slice(0, 160);
       if (Object.keys(patch).length) updates.push({ id: found.id, patch });
       continue;
     }
@@ -130,7 +133,7 @@ async function syncTallyPartyContacts(userId, ledgers) {
     const withContact = (ledgers || []).filter((l) => l.contact && partyType(l.primary_group, l.parent));
     if (!withContact.length) return { inserted: 0, updated: 0 };
     const parties = await selectRows('ledger_parties',
-      `select=id,name,type,phone,email,gstin,address,state,pincode,pan,external_refs&user_id=eq.${userId}&limit=5000`);
+      `select=id,name,type,source,phone,email,gstin,address,state,pincode,pan,external_refs&user_id=eq.${userId}&limit=5000`);
     return await writePartyPlan(userId, planPartyWrites(withContact, parties, userId));
   } catch (e) {
     console.error('[tallyParties] contact sync failed:', e.message);

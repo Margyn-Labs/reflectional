@@ -340,10 +340,25 @@ function billsXml(direction) {
 </ENVELOPE>`;
 }
 
+// MOCK_BOOK=care2 (opt-in): two company files of one business, a file per financial year, sharing GUIDs
+// (mock-twofile.js). MOCK_TODAY=YYYY-MM-DD pins the date the book runs up to. Off by default.
+const TWOFILE = MOCK_BOOK === 'care2' ? require('./mock-twofile').createHandler({ today: process.env.MOCK_TODAY }) : null;
+function twoFileRequest(req, res, body) {
+  const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+  if (req.url === '/__control') { try { return send(200, TWOFILE.control(JSON.parse(body || '{}'))); } catch (e) { return send(400, { error: e.message }); } }
+  if (req.url.startsWith('/__log')) return send(200, TWOFILE.log(/reset=1/.test(req.url)));
+  const a = TWOFILE.answer(body);
+  if (a.destroy) { req.socket.destroy(); return; }
+  res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' });
+  res.end(a.xml);
+  if (process.env.MOCK_VERBOSE === '1') console.log(`${new Date().toISOString()}  ${a.kind}`);
+}
+
 const server = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
+    if (TWOFILE) return twoFileRequest(req, res, body);
     const isInfo = /MargynTallyInfo|\$\$ProductName/i.test(body);
     let xml, kind;
     if (/SOURCECOLLECTION>Voucher Types</.test(body) || (process.env.CRASH_ON && new RegExp(process.env.CRASH_ON).test(body))) {

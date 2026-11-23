@@ -74,13 +74,20 @@ async function prepare(userId, partyQuery) {
   if (!item) return { found: false, party: query };
   const k = normPartyName(item.party);
   const [parties, deps, targets, businessName, sendsOff] = await Promise.all([
-    selectRows('ledger_parties', `select=id,name,phone&user_id=eq.${userId}&limit=5000`).catch(() => []),
+    selectRows('ledger_parties', `select=id,name,phone,external_refs&user_id=eq.${userId}&limit=5000`).catch(() => []),
     selectRows('agent_deployments', `select=status,config&user_id=eq.${userId}&agent_id=eq.chase_agent&limit=1`).catch(() => []),
     selectRows('whatsapp_chase_targets', `select=*&user_id=eq.${userId}&receivable_id=eq.${encodeURIComponent(item.receivable_id)}&limit=1`).catch(() => []),
     businessNameFor(userId),
     sendGuard.accountSendsOff(userId).catch(() => false)
   ]);
-  const same = parties.filter((p) => normPartyName(p.name) === k);
+  let same = parties.filter((p) => normPartyName(p.name) === k);
+  // Renamed in Tally but the party still carries the name the owner typed: find it by the ledger's Tally id.
+  if (!same.some((p) => waNumber(p.phone))) {
+    const guids = new Set(((await selectRows('tally_ledgers', `select=tally_guid&user_id=eq.${userId}&name=eq.${encodeURIComponent(item.party)}&limit=5`).catch(() => [])) || [])
+      .map((r) => String(r.tally_guid || '').split('~')[0]).filter(Boolean));
+    const byId = guids.size ? parties.filter((p) => guids.has(String((p.external_refs || {}).tally_guid || ''))) : [];
+    if (byId.length) same = same.concat(byId.filter((p) => !same.includes(p)));
+  }
   const party = same.find((p) => waNumber(p.phone)) || same.find((p) => p.phone) || same[0] || null;
   const dep = deps[0] || null, config = chase.mergeConfig(dep && dep.config);
   const target = targets[0] || null;
