@@ -191,7 +191,7 @@ async function forecastFor(ctx, userId) {
     week_by_week: fc.weeks.map((x) => ({ week: x.n, ending: x.to, coming_in: E.inr(x.in), going_out: E.inr(x.out), cash_at_end: E.inr(x.close) })),
     track_record: m4 && sc.runs ? `Checked on your last ${sc.runs} weeks, cash four weeks out was typically off by about ${E.inr(m4.typical_miss)}.` : 'Not enough past weeks yet to check how close it gets.',
     how: (fc.notes || []).slice(0, 4),
-    note: 'Learned from how money actually moved in these books: each customer pays the way they have paid before, suppliers at your recent pace. Cash before loans, overdraft and transfers. Same forecast as the Cash page.'
+    note: 'This is Margyn\'s own forecast (yours, not the accounting software\'s): say "my forecast". Learned from how money actually moved in these books: each customer pays the way they have paid before, suppliers at your recent pace. Cash before loans, overdraft and transfers. Same forecast as the Cash page.'
   };
 }
 
