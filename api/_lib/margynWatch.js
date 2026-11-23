@@ -786,6 +786,21 @@ function checkNoteParams(params) {
   if (memberNoteText(params).length > 1000) return 'The whole message is over WhatsApp\'s 1,024-character limit; shorten a value.';
   return null;
 }
+/** The six lines, pre-filled from this member's update right now (read-only), for the founder to edit and send. */
+async function draftMemberNote(accountId, stakeholderId, { now } = {}) {
+  const m = (await selectRows('business_stakeholders', `select=id,name,phone,is_primary,whatsapp_access&id=eq.${stakeholderId}&business_id=eq.${accountId}&limit=1`).catch(() => []))[0];
+  if (!m) return { error: 'No such person on that account.' };
+  if (m.is_primary || !m.whatsapp_access || !digits(m.phone)) return { error: 'Only a team member with WhatsApp access, not the main number.' };
+  const firstName = String(m.name || '').trim().split(/\s+/)[0] || 'there';
+  const res = await require('./sendGuard').runAsAccount(accountId, () => watchAccountInner(accountId, { previewOnly: true, slot: 'morning', mode: 'on', firstName, now }));
+  if (!res || res.skipped || !res.text) return { error: res && res.skipped ? 'This business has no books to read yet.' : 'Nothing to say from the books right now.' };
+  const params = updateParams({ text: res.text }, { company: res.company, firstName, slot: 'morning', now });
+  const day = new Date((now ? new Date(now).getTime() : Date.now()) + 5.5 * 3600000);
+  const h = day.getUTCHours();
+  params[1] = `${shortCompany(res.account_name || res.company)}, ${day.getUTCDate()} ${MON[day.getUTCMonth()]}, ${h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'}`.slice(0, 60);
+  const open = await sessionOpen(m.phone, now);
+  return { name: m.name || null, to_end: digits(m.phone).slice(-4), chat_open: open, params, labels: ['First name', 'Which update', ...NOTE_LABELS] };
+}
 async function sendMemberNote(accountId, stakeholderId, { params, dryRun, resetComparison, now } = {}) {
   const bad = checkNoteParams(params);
   if (bad) return { sent: false, error: bad };
@@ -809,7 +824,7 @@ async function sendMemberNote(accountId, stakeholderId, { params, dryRun, resetC
     const sent = open ? await bsp.sendText({ to, text }) : await bsp.sendTemplate({ to, templateId: process.env.WHATSAPP_TEMPLATE_UPDATE, params: params6 });
     if (!sent || !sent.ok) return { sent: false, error: sent && sent.blocked ? 'Sends are off for this account.' : String((sent && sent.error) || 'WhatsApp did not take it').slice(0, 160) };
     if (!open && full) await savePending(to, accountId, full);
-    await deliveries.record({ messageId: sent.messageId, userId: accountId, kind: 'watch', to, sentTo: 'member', keys: [] });
+    await deliveries.record({ messageId: sent.messageId, userId: accountId, kind: 'note', to, sentTo: 'member', keys: [] });
     await insertRows('whatsapp_conversations', [{ profile_id: accountId, role: 'assistant', content: text, tool_calls: null, wa_message_id: sent.messageId || null, from_phone: to }]).catch(() => {});
     let reset = false;
     if (resetComparison) {
@@ -891,4 +906,4 @@ async function welcomeMember(userId, { to, firstName, role, now } = {}) {
   }
 }
 
-module.exports = { sendMemberNote, memberNoteText, checkNoteParams, memberUpdateText, sendToMembers, setMemberUpdates, welcomeMember, welcomeText, welcomeParams, firstNameOf, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
+module.exports = { draftMemberNote, sendMemberNote, memberNoteText, checkNoteParams, memberUpdateText, sendToMembers, setMemberUpdates, welcomeMember, welcomeText, welcomeParams, firstNameOf, refreshBooks, runs, logRun, headlineParams, updateParams, watchAccount, runWatchAll, setMode, mute, signals, choose, compose, templateParams, teaserParams, takePending, modeOf, isDeadline, MODES, COOLDOWN_DAYS };
