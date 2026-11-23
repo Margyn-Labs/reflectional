@@ -102,6 +102,26 @@ process.env.MARGYN_DEMO_ACCOUNTS = U2;   // an investor demo tenant: external se
     assert.ok(/couldn.t find/.test(r.body.message));
   });
 
+  await t('payment reminders switched off for the account: the draft says so, a send is refused with the same words as WhatsApp', async () => {
+    const before = gupshup.length;
+    DB.agent_deployments = [];
+    const d0 = await call({ party: 'Gupta Traders' });
+    assert.strictEqual(d0.body.reminders, 'not_set_up');
+    assert.ok(/aren't switched on/.test(d0.body.reminders_off) && /Payment Chase and tap Deploy/.test(d0.body.reminders_off), d0.body.reminders_off);
+    const s0 = await call({ party: 'Gupta Traders', send: true });
+    assert.strictEqual(s0.code, 409);
+    assert.strictEqual(s0.body.reminders_off, true);
+    assert.ok(/aren't switched on/.test(s0.body.error), s0.body.error);
+    DB.agent_deployments = [{ user_id: U, agent_id: 'chase_agent', status: 'paused', config: { enabled: true } }];
+    const s1 = await call({ party: 'Gupta Traders', send: true });
+    assert.strictEqual(s1.code, 409);
+    assert.ok(/switched off for your business/.test(s1.body.error) && /tap Resume/.test(s1.body.error), s1.body.error);
+    assert.strictEqual(gupshup.length, before, 'nothing reaches WhatsApp while reminders are off');
+    assert.strictEqual(DB.whatsapp_chase_targets.length, 0);
+    // on from here on (Customers from your books not ticked)
+    DB.agent_deployments = [{ user_id: U, agent_id: 'chase_agent', status: 'active', config: { enabled: true } }];
+  });
+
   await t('send (the owner tapped Send): one template to the customer, logged as a chase, target advanced', async () => {
     const r = await call({ party: 'Gupta Traders', send: true });
     assert.strictEqual(r.code, 200, JSON.stringify(r.body));
@@ -110,7 +130,7 @@ process.env.MARGYN_DEMO_ACCOUNTS = U2;   // an investor demo tenant: external se
     const tg = DB.whatsapp_chase_targets[0];
     assert.strictEqual(tg.party_name, 'Gupta Traders');
     assert.strictEqual(tg.chases_sent, 1);
-    assert.strictEqual(tg.next_chase_at, null, 'Chase is not switched on here, so nothing else is scheduled');
+    assert.strictEqual(tg.next_chase_at, null, 'Chase here does not cover books customers, so a one-off schedules nothing more');
     const row = DB.whatsapp_chases[0];
     assert.strictEqual(row.status, 'sent');
     assert.strictEqual(row.chase_target_id, tg.id);
@@ -136,7 +156,7 @@ process.env.MARGYN_DEMO_ACCOUNTS = U2;   // an investor demo tenant: external se
     const r = await call({ party: 'Gupta Traders', send: true });
     assert.strictEqual(r.code, 409);
     assert.strictEqual(gupshup.length, before);
-    DB.whatsapp_chase_targets = saved; DB.agent_deployments = [];
+    DB.whatsapp_chase_targets = saved; DB.agent_deployments = [{ user_id: U, agent_id: 'chase_agent', status: 'active', config: { enabled: true } }];
   });
 
   await t('a customer who promised to pay by a later date is left alone until then', async () => {
