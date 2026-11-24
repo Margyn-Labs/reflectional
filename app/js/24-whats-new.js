@@ -16,6 +16,13 @@
    ============================================================ */
 const MG_RELEASES = [
   {
+    id:'2026-11-24-short-questions-answered', date:'24 Nov 2026', title:'Short questions get a straight answer on WhatsApp',
+    items:[
+      { t:'Reply with a few words, get the answer', what:'On Zoho Books and Odoo businesses, a short reply to Margyn’s update on WhatsApp, like “collections this month” or “late customers”, now gets its own fresh answer from your books, instead of the full update first. Tapping See details or replying “yes” still brings the full update.',
+        how:'Reply to any Margyn update on WhatsApp with what you want to know, in a few words.' }
+    ]
+  },
+  {
     id:'2026-11-23-remind-any-customer', date:'23 Nov 2026', title:'Remind any customer, from WhatsApp or chat',
     items:[
       { t:'Ask Margyn to remind a customer', what:'Text Margyn on WhatsApp, or ask in the Margyn panel, “remind Centaur”. You see the exact WhatsApp message and the number it goes to, and it is sent only when you tap Confirm. This works for customers in Tally, Zoho Books and Odoo too, not just the ones you typed into Margyn. If their number is missing, or payment reminders are off for your business, Margyn tells you what’s missing and how to fix it in one step.',

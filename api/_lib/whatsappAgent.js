@@ -221,7 +221,8 @@ async function runConversation({ profileId, fromPhone, sender, canAct = true, te
   // fresh from the books: before 23 Nov 2026 "what is my total sales for this year?" got last night's wrap first
   // and Mihir had to ask again. The saved update stays for a later tap (under a day old).
   try {
-    const waiting = asksSomething(cleanText) ? null : await require('./margynWatch').takePending(fromPhone);
+    const asks = asksSomething(cleanText) || (!isTapOrAck(cleanText) && TOPIC_WORDS.test(cleanText) && asksSomething(cleanText, { cloud: await cloudBooksOnly(profileId) }));
+    const waiting = asks ? null : await require('./margynWatch').takePending(fromPhone);
     if (waiting && waiting.text) {
       await sendReply(fromPhone, waiting.text);
       if (String(waiting.user_id) === String(profileId)) await persist({ profileId, phone: fromPhone }, 'assistant', waiting.text, null);
@@ -507,13 +508,22 @@ function isTapOrAck(text) {
   return /^(see|show|view|open|send|give)?\s*(me\s*)?(the\s*)?(full\s*)?(details?|update|it|more|all)?\s*(please|pls)?\s*[.!]*$/i.test(t)
     || /^(ok|okay|k|yes|yess+|yeah|yep|sure|haan|ha|han|ji|ji haan|thanks|thank you|👍)\s*[.!]*$/i.test(t);
 }
-/** A reply that asks for something specific, so it gets its own fresh answer rather than the saved update. */
-function asksSomething(text) {
+/** A short reply that names a money topic ("collections this month", "cash", "late customers"). */
+const TOPIC_WORDS = /\b(cash|bank|balance|sales|revenue|collect\w*|receiv\w*|payabl\w*|owe\w*|owing|due|late|overdue|outstanding|invoice\w*|bills?|customers?|suppliers?|vendors?|margin\w*|profit\w*|forecast\w*|runway|gst|tds|expenses?|spend\w*|payments?|paid|pulse|aana|paisa)\b/i;
+/** A reply that asks for something specific, so it gets its own fresh answer rather than the saved update.
+ *  opts.cloud (Zoho/Odoo books): a short topic reply like "collections this month" also counts (24 Nov 2026).
+ *  Tally accounts keep the 23 Nov rule unchanged. */
+function asksSomething(text, opts) {
   const t = String(text || '').trim();
   if (!t || isTapOrAck(t)) return false;
   if (/\?/.test(t)) return true;
   if (/^(what|whats|what's|how|why|when|who|which|where|is|are|can|could|should|do|does|did|will|tell|show me|give me|list|kitna|kitne|kya|kaun|kab|kaise|kyun|batao)\b/i.test(t)) return true;
+  if (opts && opts.cloud && TOPIC_WORDS.test(t)) return true;
   return t.split(/\s+/).length >= 4;
+}
+/** Zoho/Odoo books and no Tally: the short-topic rule applies. Any doubt → false (the Tally rule). */
+async function cloudBooksOnly(profileId) {
+  try { const c = await require('./booksSource').connectedBooks(profileId); return c.length > 0 && !c.includes('tally'); } catch (e) { return false; }
 }
 
 const STATIC_SYSTEM_PROMPT = `You are Margyn's WhatsApp assistant for a digital-native Indian business: the one named in the ACCOUNT section at the end of these instructions. Someone from the business has messaged the Margyn WhatsApp line (the same line that sends the daily Opening Bell and Closing Bell briefings). Reply like a sharp finance teammate texting back — not a dashboard bot, not a consultant memo.
@@ -996,4 +1006,4 @@ async function persist(thread, role, content, toolCalls, waMessageId) {
   }
 }
 
-module.exports = { isTapOrAck, asksSomething, runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS, buildMessages, newerFromSameNumber };
+module.exports = { isTapOrAck, asksSomething, TOPIC_WORDS, runConversation, APPROVAL_REQUIRED_REPLY, isHardFinancialCommand, execTool, ALL_TOOLS, buildMessages, newerFromSameNumber };
